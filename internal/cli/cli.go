@@ -415,6 +415,15 @@ func UnknownOption(l Lang, name string) string {
 	return fmt.Sprintf("ic10c: unknown option %q (options go after the command, e.g. `ic10c decompile -s <file.ic>`)", name)
 }
 
+// IC10Hint suggests decompiling when a .ic/.ic10 file is passed to a command
+// that expects .icg source.
+func IC10Hint(l Lang, path string) string {
+	if l == ZH {
+		return fmt.Sprintf("提示：%s 看起来是原始 IC10 脚本；请先反编译为 .icg：ic10c decompile %s", path, path)
+	}
+	return fmt.Sprintf("hint: %s looks like a raw IC10 script; decompile it first: ic10c decompile %s", path, path)
+}
+
 func writeFlag(b *strings.Builder, label, arg, desc string) {
 	l := label
 	if arg != "" {

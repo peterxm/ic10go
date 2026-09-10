@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"ic10go/internal/ast"
@@ -148,6 +149,7 @@ func cmdBuild(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
+	ic10Hint(args[0])
 	code, diags, err := ic10.Compile(args[0], data)
 	file := source.NewFile(args[0], data)
 	if rc := report(file, diags); rc != 0 {
@@ -171,6 +173,7 @@ func cmdStats(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
+	ic10Hint(args[0])
 	code, diags, err := ic10.Compile(args[0], data)
 	file := source.NewFile(args[0], data)
 	if rc := report(file, diags); rc != 0 {
@@ -208,6 +211,7 @@ func cmdFmt(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
+	ic10Hint(files[0])
 	out, diags, err := ic10.Format(files[0], data)
 	if rc := report(source.NewFile(files[0], data), diags); rc != 0 {
 		return rc
@@ -322,6 +326,7 @@ func cmdLex(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
+	ic10Hint(args[0])
 	toks := lexer.Tokenize(file, diags)
 	for _, t := range toks {
 		fmt.Printf("%-12s %q\t%s\n", t.Kind, t.Text, t.Pos)
@@ -339,6 +344,7 @@ func cmdAST(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
+	ic10Hint(args[0])
 	toks := lexer.Tokenize(file, diags)
 	tree := parser.Parse(file, toks, diags)
 	if rc := report(file, diags); rc != 0 {
@@ -354,6 +360,14 @@ func readSource(path string) (*source.File, *diag.Bag, error) {
 		return nil, nil, err
 	}
 	return source.NewFile(path, data), &diag.Bag{}, nil
+}
+
+// ic10Hint prints a hint when a raw IC10 script is passed to an .icg command.
+func ic10Hint(path string) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".ic", ".ic10":
+		fmt.Fprintln(os.Stderr, cli.IC10Hint(lang, path))
+	}
 }
 
 // report prints diagnostics and returns a process exit code.

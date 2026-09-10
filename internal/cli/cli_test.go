@@ -80,3 +80,12 @@ func TestUnknownOptionHint(t *testing.T) {
 		t.Errorf("ZH unknown option = %q", got)
 	}
 }
+
+func TestIC10Hint(t *testing.T) {
+	if got := IC10Hint(EN, "a.ic"); !strings.Contains(got, "decompile") {
+		t.Errorf("EN IC10 hint = %q", got)
+	}
+	if got := IC10Hint(ZH, "a.ic"); !strings.Contains(got, "反编译") {
+		t.Errorf("ZH IC10 hint = %q", got)
+	}
+}
