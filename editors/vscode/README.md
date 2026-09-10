@@ -4,6 +4,8 @@
 
 扩展用**纯 JavaScript** 编写，无需 `npm install`，只要本机有 `ic10c` 可执行文件即可。
 
+界面文案（命令、设置说明）跟随 VSCode 的显示语言，**内置简体中文**（`package.nls.zh-cn.json`）：把 VSCode 语言设为中文即可看到中文命令名与设置说明。
+
 ## 一、安装（推荐，一条命令）
 
 在仓库根目录执行：
@@ -66,7 +68,7 @@ go build -o ic10c ./cmd/ic10c
 把 `editors/vscode` 整个目录复制到：
 
 ```
-~/.vscode/extensions/ic10go.icg-0.5.1/
+~/.vscode/extensions/ic10go.icg-0.5.2/
 ```
 
 目录里必须包含 `package.json`、`extension.js`、`language-configuration.json`、`syntaxes/` 和 `snippets/`，然后重启 VSCode。
@@ -124,8 +126,8 @@ go build -o ic10c ./cmd/ic10c
 ```bash
 cd editors/vscode
 npx @vscode/vsce package --allow-missing-repository
-# 生成 icg-0.5.1.vsix
-code --install-extension icg-0.5.1.vsix
+# 生成 icg-0.5.2.vsix
+code --install-extension icg-0.5.2.vsix
 ```
 
 `vsce` 需要联网下载，首次使用会慢一些。

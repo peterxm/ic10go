@@ -230,7 +230,7 @@ class LspClient {
     activeICG() {
         const editor = vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== 'icg') {
-            vscode.window.showWarningMessage('IC10 Go: open a .icg file first.');
+            vscode.window.showWarningMessage(t('IC10 Go: open a .icg file first.', 'IC10 Go: 请先打开一个 .icg 文件。'));
             return undefined;
         }
         return editor.document;
@@ -263,7 +263,7 @@ class LspClient {
             if (build.code !== 0) {
                 this.output.appendLine(`=== compile failed: ${path.basename(doc.fileName)} ===\n${build.stderr}`);
                 this.output.show(true);
-                vscode.window.showErrorMessage('IC10 Go: compilation failed. See the "IC10 Go" output.');
+                vscode.window.showErrorMessage(t('IC10 Go: compilation failed. See the "IC10 Go" output.', 'IC10 Go: 编译失败，详见 "IC10 Go" 输出面板。'));
                 return;
             }
             const stats = await this.execCli(['stats', tmp]);
@@ -277,7 +277,7 @@ class LspClient {
             });
             this.output.appendLine(`=== ${path.basename(doc.fileName)} ===\n${stats.stdout.trim()}`);
             const lines = stats.stdout.split('\n').find((l) => l.trim().startsWith('lines'));
-            vscode.window.setStatusBarMessage(`IC10 Go: ${lines ? lines.trim() : 'compiled'}`, 5000);
+            vscode.window.setStatusBarMessage(`IC10 Go: ${lines ? lines.trim() : t('compiled', '已编译')}`, 5000);
         });
     }
 
@@ -299,7 +299,7 @@ class LspClient {
     activeDoc(langs) {
         const editor = vscode.window.activeTextEditor;
         if (!editor || !langs.includes(editor.document.languageId)) {
-            vscode.window.showWarningMessage('IC10 Go: open a ' + langs.map((l) => '.' + l).join(' / ') + ' file first.');
+            vscode.window.showWarningMessage(t('IC10 Go: open a ' + langs.map((l) => '.' + l).join(' / ') + ' file first.', 'IC10 Go: 请先打开一个 ' + langs.map((l) => '.' + l).join(' / ') + ' 文件。'));
             return undefined;
         }
         return editor.document;
@@ -313,7 +313,7 @@ class LspClient {
             if (res.code !== 0) {
                 this.output.appendLine(`=== ${args[0]} failed ===\n${res.stderr}`);
                 this.output.show(true);
-                vscode.window.showErrorMessage('IC10 Go: ' + args[0] + ' failed. See the "IC10 Go" output.');
+                vscode.window.showErrorMessage(t('IC10 Go: ' + args[0] + ' failed. See the "IC10 Go" output.', 'IC10 Go: ' + args[0] + ' 执行失败，详见 "IC10 Go" 输出面板。'));
                 return;
             }
             const preview = await vscode.workspace.openTextDocument({
@@ -347,11 +347,14 @@ class LspClient {
         this.output.appendLine('searched: icg.serverPath, workspace folders, parent directories, ~/go/bin, $GOPATH/bin, PATH');
         vscode.window
             .showWarningMessage(
-                'IC10 Go: cannot find the ic10c executable. Build it with "go build -o ic10c ./cmd/ic10c" or set "icg.serverPath".',
-                'Open Settings'
+                t(
+                    'IC10 Go: cannot find the ic10c executable. Build it with "go build -o ic10c ./cmd/ic10c" or set "icg.serverPath".',
+                    'IC10 Go: 找不到 ic10c 可执行文件。请用 "go build -o ic10c ./cmd/ic10c" 构建，或设置 "icg.serverPath"。'
+                ),
+                t('Open Settings', '打开设置')
             )
             .then((choice) => {
-                if (choice === 'Open Settings') {
+                if (choice === 'Open Settings' || choice === '打开设置') {
                     vscode.commands.executeCommand('workbench.action.openSettings', 'icg.serverPath');
                 }
             });
@@ -773,4 +776,9 @@ function toDocumentSymbol(s) {
     const sym = new vscode.DocumentSymbol(s.name, '', s.kind, toRange(s.range), toRange(s.selectionRange));
     if (s.children) sym.children = s.children.map(toDocumentSymbol);
     return sym;
+}
+
+// t picks a message based on the editor's display language.
+function t(en, zh) {
+    return (vscode.env.language || 'en').toLowerCase().startsWith('zh') ? zh : en;
 }

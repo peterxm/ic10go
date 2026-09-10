@@ -1,8 +1,8 @@
 {
   "name": "icg",
-  "displayName": "IC10 Go (.icg)",
-  "description": "Syntax highlighting, language server, compile preview and VM run for the .icg language compiled by ic10c",
-  "version": "0.5.1",
+  "displayName": "%displayName%",
+  "description": "%description%",
+  "version": "0.5.2",
   "publisher": "ic10go",
   "license": "MIT",
   "engines": {
@@ -54,50 +54,50 @@
       }
     ],
     "configuration": {
-      "title": "IC10 Go",
+      "title": "%configuration.title%",
       "properties": {
         "icg.serverPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to the `ic10c` executable. Leave empty to use `ic10c` from PATH, or a binary named `ic10c` in the workspace folder."
+          "markdownDescription": "%icg.serverPath.desc%"
         },
         "icg.stableIns": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Compile with `--stable-ins` (the stable game branch's `ins` argument order). Leave off for the beta branch."
+          "markdownDescription": "%icg.stableIns.desc%"
         },
         "icg.noCheck": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Disable device logic-type checks (`IC10C_NO_CHECK`)."
+          "markdownDescription": "%icg.noCheck.desc%"
         }
       }
     },
     "commands": [
       {
         "command": "icg.compile",
-        "title": "IC10 Go: Compile to IC10",
+        "title": "%cmd.compile%",
         "icon": "$(file-code)"
       },
       {
         "command": "icg.run",
-        "title": "IC10 Go: Run in VM"
+        "title": "%cmd.run%"
       },
       {
         "command": "icg.decompile",
-        "title": "IC10 Go: Decompile IC10 to .icg"
+        "title": "%cmd.decompile%"
       },
       {
         "command": "icg.minify",
-        "title": "IC10 Go: Minify IC10"
+        "title": "%cmd.minify%"
       },
       {
         "command": "icg.disasm",
-        "title": "IC10 Go: Annotate IC10 (disasm)"
+        "title": "%cmd.disasm%"
       },
       {
         "command": "icg.restartServer",
-        "title": "IC10 Go: Restart Language Server"
+        "title": "%cmd.restartServer%"
       }
     ],
     "menus": {

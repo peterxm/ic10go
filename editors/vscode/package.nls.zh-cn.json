@@ -1,0 +1,14 @@
+{
+  "displayName": "IC10 Go (.icg)",
+  "description": "为 ic10c 编译的 .icg 语言提供语法高亮、语言服务器、编译预览与 VM 运行",
+  "configuration.title": "IC10 Go",
+  "icg.serverPath.desc": "`ic10c` 可执行文件的路径。留空则使用 PATH 上的 `ic10c`，或工作区目录中名为 `ic10c` 的二进制。",
+  "icg.stableIns.desc": "用 `--stable-ins` 编译（稳定版游戏的 `ins` 参数顺序）。beta 版请关闭。",
+  "icg.noCheck.desc": "关闭设备 logic type 校验（`IC10C_NO_CHECK`）。",
+  "cmd.compile": "IC10 Go: 编译为 IC10",
+  "cmd.run": "IC10 Go: 在内置 VM 中运行",
+  "cmd.decompile": "IC10 Go: 反编译为 .icg",
+  "cmd.minify": "IC10 Go: 压缩 IC10",
+  "cmd.disasm": "IC10 Go: 为 IC10 加注释（反汇编）",
+  "cmd.restartServer": "IC10 Go: 重启语言服务器"
+}
