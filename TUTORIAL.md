@@ -753,6 +753,7 @@ nan  pinf  ninf  isNaN(x)
 hash("...")  str("...")
 read(dev, lt)  write(dev, lt, v)
 isSet(dev)  isUnset(dev)  isLoadValid(dev, "lt")  isStoreValid(dev, "lt")
+rol(a, b)  ror(a, b)  sla(a, b)  srl(a, b)   // 旋转 / 移位（位运算，整数语义）
 ```
 
 常用命令：
