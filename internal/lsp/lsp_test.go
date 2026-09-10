@@ -230,3 +230,15 @@ func TestInlayHintBudget(t *testing.T) {
 		t.Errorf("inlay hint should show the budget:\n%s", out)
 	}
 }
+
+func TestFullTextChange(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"ft.icg","text":"func main() { d0.On = 1 }"}}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"ft.icg"},"contentChanges":[{"text":"func main() { x := foo }"}]}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "undefined variable") {
+		t.Errorf("full-text change not applied:\n%s", out)
+	}
+}

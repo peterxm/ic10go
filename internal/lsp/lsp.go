@@ -79,7 +79,7 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 				"capabilities": map[string]any{
 					"textDocumentSync": map[string]any{
 						"openClose": true,
-						"change":    2, // incremental
+						"change":    1, // full
 					},
 					"completionProvider": map[string]any{
 						"triggerCharacters": []string{"."},

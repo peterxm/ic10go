@@ -17,7 +17,12 @@ type Lexer struct {
 }
 
 func New(file *source.File, diags *diag.Bag) *Lexer {
-	return &Lexer{file: file, src: file.Src, diags: diags}
+	l := &Lexer{file: file, src: file.Src, diags: diags}
+	// Skip a UTF-8 byte order mark at the start of the file.
+	if len(l.src) >= 3 && l.src[0] == 0xEF && l.src[1] == 0xBB && l.src[2] == 0xBF {
+		l.off = 3
+	}
+	return l
 }
 
 // Tokenize scans the whole file and returns tokens with semicolons inserted.

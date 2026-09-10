@@ -66,7 +66,7 @@ go build -o ic10c ./cmd/ic10c
 把 `editors/vscode` 整个目录复制到：
 
 ```
-~/.vscode/extensions/ic10go.icg-0.5.0/
+~/.vscode/extensions/ic10go.icg-0.5.1/
 ```
 
 目录里必须包含 `package.json`、`extension.js`、`language-configuration.json`、`syntaxes/` 和 `snippets/`，然后重启 VSCode。
@@ -124,8 +124,8 @@ go build -o ic10c ./cmd/ic10c
 ```bash
 cd editors/vscode
 npx @vscode/vsce package --allow-missing-repository
-# 生成 icg-0.5.0.vsix
-code --install-extension icg-0.5.0.vsix
+# 生成 icg-0.5.1.vsix
+code --install-extension icg-0.5.1.vsix
 ```
 
 `vsce` 需要联网下载，首次使用会慢一些。

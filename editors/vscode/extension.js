@@ -365,17 +365,10 @@ class LspClient {
 
     onChange(e) {
         if (e.document.languageId !== 'icg' || !this.initialized) return;
-        const uri = e.document.uri.toString();
-        const changes = e.contentChanges.map((c) => ({
-            range: {
-                start: { line: c.range.start.line, character: c.range.start.character },
-                end: { line: c.range.end.line, character: c.range.end.character },
-            },
-            text: c.text,
-        }));
-        const queued = this.pendingChanges.get(uri) || [];
-        this.pendingChanges.set(uri, queued.concat(changes));
-        // Debounce so a burst of keystrokes triggers a single recompile.
+        // Send the whole document on each (debounced) change: full sync works
+        // with every ic10c version, and .icg files are tiny, so it is not worth
+        // depending on incremental-sync support.
+        this.pendingChanges.set(e.document.uri.toString(), e.document.getText());
         clearTimeout(this.changeTimer);
         this.changeTimer = setTimeout(() => this.flushChanges(), 150);
     }
@@ -384,10 +377,10 @@ class LspClient {
         clearTimeout(this.changeTimer);
         this.changeTimer = undefined;
         if (!this.pendingChanges || this.pendingChanges.size === 0) return;
-        for (const [uri, changes] of this.pendingChanges) {
+        for (const [uri, text] of this.pendingChanges) {
             this.notify('textDocument/didChange', {
                 textDocument: { uri },
-                contentChanges: changes,
+                contentChanges: [{ text }],
             });
         }
         this.pendingChanges.clear();

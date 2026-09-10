@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "IC10 Go (.icg)",
   "description": "Syntax highlighting, language server, compile preview and VM run for the .icg language compiled by ic10c",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "ic10go",
   "license": "MIT",
   "engines": {
