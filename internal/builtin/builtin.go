@@ -7,6 +7,19 @@ import "hash/crc32"
 // Hash returns the CRC-32 checksum used by IC10's HASH() function.
 func Hash(s string) uint32 { return crc32.ChecksumIEEE([]byte(s)) }
 
+// EnumConstants are game enum constants that IC10 source may reference by their
+// dotted name (e.g. SorterInstruction.FilterPrefabHashEquals). Values follow
+// the Stationeers sorter instruction encoding and the reference doc; verify
+// against the game before relying on them for new work.
+var EnumConstants = map[string]float64{
+	"SorterInstruction.FilterPrefabHashEquals":    1,
+	"SorterInstruction.FilterPrefabHashNotEquals": 2,
+	"SorterInstruction.FilterSlotTypeCompare":     3,
+	"SorterInstruction.FilterSortingClassCompare": 4,
+	"SlotClass.Battery":                           1,
+	"SortingClass.Ores":                           1,
+}
+
 // LogicTypes is the set of device logic type names understood by IC10.
 var LogicTypes = map[string]bool{
 	"Activate": true, "AirRelease": true, "Charge": true, "ClearMemory": true,

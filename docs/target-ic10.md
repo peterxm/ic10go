@@ -159,10 +159,13 @@ PressureWaste  PressureAir  MaxQuantity  Mature  ReferenceId  Seeding
 
 ### 5.5 枚举常量
 
-以下 IC10 枚举由编译器原样输出或编译期解析：
+以下 IC10 枚举由编译器编译期解析（表见 `internal/builtin.EnumConstants`，
+数值需以游戏 Stationpedia 为准）：
 
 - `LogicType.Channel0` … `LogicType.Channel7`
-- `SorterInstruction.*`
+- `SorterInstruction.FilterPrefabHashEquals`(1) / `FilterPrefabHashNotEquals`(2)
+  / `FilterSlotTypeCompare`(3) / `FilterSortingClassCompare`(4)
+- `SlotClass.Battery`、`SortingClass.Ores`
 - `PrinterInstruction.*`
 - `ReagentMode.*`
 

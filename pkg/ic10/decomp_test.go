@@ -28,6 +28,27 @@ func compareDevices(t *testing.T, a, b *vm.Machine) {
 				t.Errorf("device %s.%s: original=%v decompiled=%v", name, logic, va, vb)
 			}
 		}
+		for slot, sa := range da.Slots {
+			sb := db.Slots[slot]
+			for logic, va := range sa {
+				vb := sb[logic]
+				if math.IsNaN(va) && math.IsNaN(vb) {
+					continue
+				}
+				if va != vb {
+					t.Errorf("device %s.slot[%d].%s: original=%v decompiled=%v", name, slot, logic, va, vb)
+				}
+			}
+		}
+		for i, va := range da.Stack {
+			vb := db.Stack[i]
+			if math.IsNaN(va) && math.IsNaN(vb) {
+				continue
+			}
+			if va != vb {
+				t.Errorf("device %s.Stack[%d]: original=%v decompiled=%v", name, i, va, vb)
+			}
+		}
 	}
 }
 

@@ -781,6 +781,12 @@ func (l *lowerer) lowerDeviceRead(e *ast.SelectorExpr) ir.Value {
 		l.b.Emit(&ir.LoadSlot{Dst: r, Dev: dev, Index: l.lowerExpr(idx), Logic: e.Sel.Name})
 		return r
 	}
+	// Game enum constants such as SorterInstruction.FilterPrefabHashEquals.
+	if id, ok := e.X.(*ast.Ident); ok {
+		if v, ok := builtin.EnumConstants[id.Name+"."+e.Sel.Name]; ok {
+			return &ir.Const{V: v}
+		}
+	}
 	l.diags.Errorf(e.Pos(), "unsupported device access")
 	return &ir.Const{V: 0}
 }

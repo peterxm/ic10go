@@ -13,12 +13,6 @@ import (
 	"ic10go/pkg/ic10"
 )
 
-// roundTripSkip lists real scripts whose decompilation cannot be recompiled
-// yet, with the reason.
-var roundTripSkip = map[string]string{
-	"logic sorter demonstration code.ic": "decompiler emits SorterInstruction.*/SlotClass.*/SortingClass.* enum constants the compiler does not model",
-}
-
 // TestIc10CodeRoundTrip decompiles every real IC10 script in ic10code/ and
 // recompiles it, then checks that it performs exactly the same sequence of
 // device writes as the original. Comparing writes (rather than a fixed-step
@@ -48,9 +42,6 @@ func TestIc10CodeRoundTrip(t *testing.T) {
 	for _, path := range files {
 		name := filepath.Base(path)
 		t.Run(name, func(t *testing.T) {
-			if reason, ok := roundTripSkip[name]; ok {
-				t.Skip(reason)
-			}
 			src, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)

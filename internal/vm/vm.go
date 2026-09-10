@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ic10go/internal/builtin"
 	"ic10go/internal/ic10asm"
 )
 
@@ -197,6 +198,9 @@ func Parse(src string) (*Program, error) {
 		Instrs:  make([]*Instr, len(lines)),
 		Labels:  map[string]int{},
 		Symbols: map[string]string{},
+	}
+	for k, v := range builtin.EnumConstants {
+		prog.Symbols[k] = strconv.FormatFloat(v, 'g', -1, 64)
 	}
 	resolve := func(s string) string {
 		for i := 0; i < 10; i++ {
