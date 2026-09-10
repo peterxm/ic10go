@@ -55,6 +55,16 @@ func TestGolden(t *testing.T) {
 	}
 }
 
+func TestHashIsSignedInt32(t *testing.T) {
+	code, diags, err := ic10.Compile("test.icg", []byte(`func main() { d0.Setting = hash("StructureBattery") }`))
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("compile: diags=%v err=%v", diags.Diags, err)
+	}
+	if !strings.Contains(code, "-400115994") {
+		t.Errorf("hash() should emit the signed int32 form, got:\n%s", code)
+	}
+}
+
 func TestNoMain(t *testing.T) {
 	_, diags, _ := ic10.Compile("test.icg", []byte("const A = 1\n"))
 	if !diags.HasErrors() {

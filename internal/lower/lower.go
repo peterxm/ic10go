@@ -839,7 +839,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			l.diags.Errorf(call.Args[0].Pos(), "hash expects a string literal")
 			return &ir.Const{V: 0}
 		}
-		return &ir.Const{V: float64(builtin.Hash(s.Value))}
+		return &ir.Const{V: float64(int32(builtin.Hash(s.Value)))}
 	}
 
 	// str("...") produces a display string hash.

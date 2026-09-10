@@ -246,7 +246,7 @@ func evalCall(e *ast.CallExpr, consts map[string]float64) (float64, bool) {
 	if id.Name == "hash" {
 		if len(e.Args) == 1 {
 			if s, ok := e.Args[0].(*ast.StringLit); ok {
-				return float64(builtin.Hash(s.Value)), true
+				return float64(int32(builtin.Hash(s.Value))), true
 			}
 		}
 		return 0, false
