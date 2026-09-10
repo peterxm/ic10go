@@ -25,6 +25,24 @@ func TestReuseNonOverlapping(t *testing.T) {
 	}
 }
 
+func TestCoalescing(t *testing.T) {
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	c := b.NewReg("c")
+	b.Emit(&ir.Bin{Op: ir.Add, Dst: a, A: &ir.Const{V: 1}, B: &ir.Const{V: 2}})
+	b.Emit(&ir.Assign{Dst: c, Src: a})
+	b.Emit(&ir.Builtin{Name: "sleep", Args: []ir.Value{c}})
+	b.SetTerm(&ir.Ret{})
+
+	colors, err := Allocate(b.Fn(), 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if colors[a] != colors[c] {
+		t.Errorf("copy a=c not coalesced: %d vs %d", colors[a], colors[c])
+	}
+}
+
 func TestPressureSpills(t *testing.T) {
 	b := ir.NewBuilder("f")
 	regs := make([]*ir.Reg, 20)

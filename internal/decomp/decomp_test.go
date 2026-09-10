@@ -20,10 +20,8 @@ s s Setting r1
 		t.Fatalf("unexpected warnings: %v", warns)
 	}
 	for _, want := range []string{
-		"var r0 = 0",
-		"var r1 = 0",
-		"r0 = d0.Temperature",
-		"r1 = (r0 + 5)",
+		"r0 := d0.Temperature",
+		"r1 := (r0 + 5)",
 		"d0.Setting = r1",
 	} {
 		if !strings.Contains(code, want) {
@@ -97,6 +95,23 @@ mod r0 r0 rr5
 	}
 	if !strings.Contains(code, "ireg(r5)") {
 		t.Errorf("indirect read not translated:\n%s", code)
+	}
+}
+
+func TestDecompileReadFirstDeclaration(t *testing.T) {
+	// r1 is read as the select condition before it is written.
+	code, warns, err := Decompile("select r1 r1 45000 40000\ns d0 Setting r1\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	if !strings.Contains(code, "var r1 = 0") {
+		t.Errorf("read-before-write register should be declared:\n%s", code)
+	}
+	if strings.Contains(code, "r1 :=") {
+		t.Errorf("r1 should be assigned with =, not :=\n%s", code)
 	}
 }
 

@@ -50,7 +50,7 @@ j 1
 ## 状态
 
 **M0 已完成**：lexer / parser / AST / 诊断 / CLI 骨架。
-**M1 已完成**：sema（名字解析、常量求值）、lower（AST→三地址 IR、全内联）、regalloc（活跃性 + 图着色，寄存器复用）、codegen（指令选择、空块消除、逆后序布局、绝对行号、限额校验）。
+**M1 已完成**：sema（名字解析、常量求值）、lower（AST→三地址 IR、全内联）、regalloc（活跃性 + 图着色 + 拷贝合并 + 溢出，寄存器复用）、codegen（指令选择、空块消除、逆后序布局、绝对行号、限额校验）。
 **M2 已完成**：IR 优化器（块内拷贝/常量传播、全局常量传播、常量折叠、代数化简、局部 CSE、select 转换、冗余设备/槽位/批量读消除、常量分支折叠、循环不变量外提、活跃性死代码消除、不可达块删除）、比较-分支融合、`&&`/`||`→`min`/`max`（纯操作数）。
 **M3 已完成**：批量 IO（`batch.read/readName/readSlot/readNameSlot/write/writeName/writeSlot`）、网络通道 `d.channel[conn][ch]`、栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr`、`isSet/isUnset/rmap`、`approx/approxZero`、`str("...")` 显示字符串、补充 logic type。
 **M5 已完成**：测试用最小 IC10 解释器 `internal/vm`（寄存器 / 栈 / 设备 / 槽位 / 通道 / 批量 / 分支 / 标签与绝对行号），配套端到端语义测试与常量折叠差分测试。
@@ -83,6 +83,8 @@ sh editors/vscode/install.sh   # 安装到 ~/.vscode/extensions
 > 提示：IC10 里常见的「尾调用跳转」状态机（如 `gasHeaters` 循环后 `j greenhouseGasCheck`）在 `.icg` 中请改写为结构化循环，因为函数是全内联且不支持递归。
 >
 > 寄存器压力超过 16 时，编译器会自动把多余的值**溢出到 IC10 栈**（固定高地址槽 + 暂存寄存器），而不是报错。未知 logic type 会给出**警告**（可用 `IC10C_NO_CHECK=1` 关闭）。
+>
+> 反编译：`ic10c decompile` 会替换 `alias`/`define`、用 `:=` 声明首次写入的寄存器、用 `label`/`goto`/`call`/`ret` 表达控制流；配合寄存器拷贝合并，`ic10code/` 下的 17 个真实脚本都能反编译并在 128 行内重新编译（含最复杂的 Furnace，148→121 行）。
 
 ## 测试
 

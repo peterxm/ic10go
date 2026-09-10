@@ -34,6 +34,7 @@ type decompiler struct {
 	labelsAt   map[int][]string
 	nameToLine map[string]int
 	labelAt    map[int]string
+	declared   map[string]bool
 	tmpN       int
 	warnings   []Warning
 }
@@ -96,7 +97,9 @@ func Decompile(src string) (string, []Warning, error) {
 
 	var b strings.Builder
 	b.WriteString("func main() {\n")
-	for _, r := range d.usedRegisters(lines) {
+	d.declared = map[string]bool{}
+	for _, r := range d.readFirstRegisters(lines) {
+		d.declared[r] = true
 		fmt.Fprintf(&b, "    var %s = 0\n", r)
 	}
 	for _, l := range lines {
@@ -189,23 +192,51 @@ func regNum(s string) int {
 	return n
 }
 
-// usedRegisters returns the direct registers referenced by the program, sorted.
-func (d *decompiler) usedRegisters(lines []icLine) []string {
-	set := map[string]bool{}
+// destOps lists instructions whose first argument is a register destination.
+var destOps = map[string]bool{
+	"move": true, "l": true, "ls": true, "lb": true, "lbn": true, "lbs": true, "lbns": true,
+	"pop": true, "peek": true, "get": true, "getd": true, "rmap": true, "sdse": true, "sdns": true,
+	"not": true, "abs": true, "sgn": true, "sqrt": true, "exp": true, "log": true,
+	"floor": true, "ceil": true, "round": true, "trunc": true, "rand": true,
+	"sin": true, "cos": true, "tan": true, "asin": true, "acos": true, "atan": true,
+	"add": true, "sub": true, "mul": true, "div": true, "mod": true, "pow": true,
+	"atan2": true, "min": true, "max": true, "sla": true, "srl": true, "rol": true,
+	"ror": true, "and": true, "or": true, "xor": true, "sll": true, "sra": true,
+	"seq": true, "sne": true, "slt": true, "sle": true, "sgt": true, "sge": true,
+	"seqz": true, "snez": true, "sltz": true, "slez": true, "sgtz": true, "sgez": true,
+	"snan": true, "snanz": true, "sap": true, "sna": true, "sapz": true, "snaz": true,
+	"select": true, "clamp": true, "lerp": true, "ext": true, "ins": true,
+}
+
+// readFirstRegisters returns the direct registers that are read before being
+// written, sorted. Only these need an explicit declaration; other registers
+// are declared with := at their first assignment.
+func (d *decompiler) readFirstRegisters(lines []icLine) []string {
+	written := map[string]bool{}
+	readFirst := map[string]bool{}
 	for _, l := range lines {
-		for _, a := range l.args {
+		if l.op == "" {
+			continue
+		}
+		hasDest := destOps[l.op]
+		// Uses are read before the destination is written.
+		for i, a := range l.args {
+			if hasDest && i == 0 {
+				continue
+			}
 			r := d.resolve(a)
-			if isDirectReg(r) {
-				set[r] = true
-			} else if isIndirect(r) {
-				if ptr := strings.TrimPrefix(r, "r"); isDirectReg(ptr) {
-					set[ptr] = true
-				}
+			if isDirectReg(r) && !written[r] {
+				readFirst[r] = true
+			}
+		}
+		if hasDest {
+			if r := d.resolve(l.args[0]); isDirectReg(r) {
+				written[r] = true
 			}
 		}
 	}
-	regs := make([]string, 0, len(set))
-	for r := range set {
+	regs := make([]string, 0, len(readFirst))
+	for r := range readFirst {
 		regs = append(regs, r)
 	}
 	sort.Slice(regs, func(i, j int) bool { return regNum(regs[i]) < regNum(regs[j]) })

@@ -51,7 +51,12 @@ func (d *decompiler) assignDst(dstArg, expr string) string {
 		ptr := strings.TrimPrefix(dst, "r")
 		return fmt.Sprintf("%s := %s; setIreg(%s, %s)", tmp, expr, ptr, tmp)
 	}
-	return dst + " = " + expr
+	op := " = "
+	if isDirectReg(dst) && !d.declared[dst] {
+		op = " := "
+		d.declared[dst] = true
+	}
+	return dst + op + expr
 }
 
 func (d *decompiler) translate(l icLine) []string {

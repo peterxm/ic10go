@@ -246,29 +246,111 @@ func allRegs(fn *ir.Function) map[*ir.Reg]bool {
 	return nodes
 }
 
-// colorGraph colours the interference graph using Chaitin-Briggs: simplify by
-// removing low-degree nodes, spilling the cheapest node when stuck, then assign
-// colours in reverse. This avoids spilling short-lived temporaries when a
-// long-lived value would be a better spill candidate.
+// colorGraph colours the interference graph. It first coalesces copy-related
+// registers (union-find, only when they do not interfere), then colours the
+// resulting classes with Chaitin-Briggs.
 func colorGraph(fn *ir.Function, g map[*ir.Reg]map[*ir.Reg]bool, k int) (map[*ir.Reg]int, map[*ir.Reg]bool) {
 	nodes := allRegs(fn)
-	list := make([]*ir.Reg, 0, len(nodes))
+
+	parent := map[*ir.Reg]*ir.Reg{}
+	var find func(*ir.Reg) *ir.Reg
+	find = func(r *ir.Reg) *ir.Reg {
+		if p, ok := parent[r]; ok {
+			root := find(p)
+			parent[r] = root
+			return root
+		}
+		return r
+	}
+	cadj := map[*ir.Reg]map[*ir.Reg]bool{}
+	addEdge := func(a, b *ir.Reg) {
+		if a == b {
+			return
+		}
+		if cadj[a] == nil {
+			cadj[a] = map[*ir.Reg]bool{}
+		}
+		if cadj[b] == nil {
+			cadj[b] = map[*ir.Reg]bool{}
+		}
+		cadj[a][b] = true
+		cadj[b][a] = true
+	}
+	for u := range g {
+		for v := range g[u] {
+			addEdge(find(u), find(v))
+		}
+	}
+	union := func(a, b *ir.Reg) {
+		for n := range cadj[b] {
+			if n != a {
+				addEdge(a, n)
+			}
+		}
+		delete(cadj, b)
+		parent[b] = a
+	}
+	for _, blk := range fn.Blocks {
+		for _, ins := range blk.Instrs {
+			a, ok := ins.(*ir.Assign)
+			if !ok {
+				continue
+			}
+			s, ok := a.Src.(*ir.Reg)
+			if !ok {
+				continue
+			}
+			rd, rs := find(a.Dst), find(s)
+			if rd == rs || cadj[rd][rs] {
+				continue
+			}
+			union(rd, rs)
+		}
+	}
+
+	// Build the class node list and costs.
+	classSet := map[*ir.Reg]bool{}
 	for r := range nodes {
+		classSet[find(r)] = true
+	}
+	list := make([]*ir.Reg, 0, len(classSet))
+	for r := range classSet {
 		list = append(list, r)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 
 	cost := spillCosts(fn)
-	degree := map[*ir.Reg]int{}
+	ccost := map[*ir.Reg]int{}
 	for r := range nodes {
-		degree[r] = len(g[r])
+		ccost[find(r)] += cost[r]
 	}
 
+	classColors, spilledClasses := chaitinBriggs(list, cadj, ccost, k)
+
+	colors := map[*ir.Reg]int{}
+	spilled := map[*ir.Reg]bool{}
+	for r := range nodes {
+		rep := find(r)
+		if c, ok := classColors[rep]; ok {
+			colors[r] = c
+		} else if spilledClasses[rep] {
+			spilled[r] = true
+		}
+	}
+	return colors, spilled
+}
+
+// chaitinBriggs colours the graph: simplify by removing low-degree nodes,
+// spilling the cheapest node when stuck, then assign colours in reverse.
+func chaitinBriggs(list []*ir.Reg, g map[*ir.Reg]map[*ir.Reg]bool, cost map[*ir.Reg]int, k int) (map[*ir.Reg]int, map[*ir.Reg]bool) {
+	degree := map[*ir.Reg]int{}
+	for _, r := range list {
+		degree[r] = len(g[r])
+	}
 	removed := map[*ir.Reg]bool{}
 	var stack []*ir.Reg
 
-	for len(stack) < len(nodes) {
-		// Remove any node that is trivially colourable.
+	for len(stack) < len(list) {
 		var trivial *ir.Reg
 		for _, r := range list {
 			if !removed[r] && degree[r] < k {
@@ -277,7 +359,6 @@ func colorGraph(fn *ir.Function, g map[*ir.Reg]map[*ir.Reg]bool, k int) (map[*ir
 			}
 		}
 		if trivial == nil {
-			// Spill the cheapest node (lowest cost/degree).
 			bestRatio := 0.0
 			for _, r := range list {
 				if removed[r] {

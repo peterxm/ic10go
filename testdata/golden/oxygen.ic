@@ -1,7 +1,6 @@
 yield
 s d0 Mode 1
-l r0 d0 PressureOutput
-move r1 r0
+l r1 d0 PressureOutput
 l r0 d0 On
 select r0 r0 45000 40000
 slt r0 r1 r0
