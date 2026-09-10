@@ -160,12 +160,15 @@ func (m *Machine) Run(maxSteps int) error {
 	if m.Program == nil {
 		return fmt.Errorf("vm: no program loaded")
 	}
-	for steps := 0; steps < maxSteps; steps++ {
+	executed := 0
+	for executed < maxSteps {
 		if m.Halted || m.PC < 0 || m.PC >= len(m.Program.Instrs) {
 			return nil
 		}
 		ins := m.Program.Instrs[m.PC]
 		if ins == nil {
+			// Labels, comments and alias/define lines are not instructions and
+			// do not consume the step budget.
 			m.PC++
 			continue
 		}
@@ -177,6 +180,7 @@ func (m *Machine) Run(maxSteps int) error {
 			return fmt.Errorf("vm: line %d: %w", m.PC, err)
 		}
 		m.PC = next
+		executed++
 	}
 	return ErrStepLimit
 }

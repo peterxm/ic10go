@@ -1,0 +1,52 @@
+alias CC1 d0
+alias CC2 d1
+
+#CC1 Variables
+alias rpm1 r0 #read
+alias stress1 r1 #read
+alias CC1on r2 #read
+alias rpmhi1 r3 #1 or 0
+alias stresshi1 r4 #1 or 0
+alias dontstart1 r5 #1 or 0
+
+#CC2 Variables
+alias rpm2 r7 #read
+alias stress2 r8 #read
+alias CC2on r9 #read
+alias rpmhi2 r10 #1 or 0
+alias stresshi2 r11 #1 or 0
+alias dontstart2 r12 #1 or 0
+
+Main:
+l CC1on CC1 On
+l CC2on CC2 On
+beqz CC1on TurnCC1on
+beqz CC2on TurnCC2on
+s db Setting 0 #debug status indicator
+j Main
+
+TurnCC1on:
+s db Setting 1 #debug status indicator
+s CC1 Throttle 0
+s CC1 CombustionLimiter 0
+l rpm1 CC1 Rpm
+l stress1 CC1 Stress
+sgtz rpmhi1 rpm1
+sgtz stresshi1 stress1
+or dontstart1 rpmhi1 stresshi1
+bnez dontstart1 TurnCC1on
+s CC1 On 1
+j Main
+
+TurnCC2on:
+s db Setting 2 #debug status indicator
+s CC2 Throttle 0
+s CC2 CombustionLimiter 0
+l rpm2 CC2 Rpm
+l stress2 CC2 Stress
+sgtz rpmhi2 rpm2
+sgtz stresshi2 stress2
+or dontstart2 rpmhi2 stresshi2
+bnez dontstart2 TurnCC2on
+s CC2 On 1
+j Main

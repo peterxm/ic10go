@@ -1,0 +1,76 @@
+alias Switch d0
+alias InVent d1
+alias OutVent d2
+alias InSensor d3
+alias OutSensor d4
+define SMDoors 1736080881
+define MEDDoors -566348148
+define LGDoors -1351081801
+
+alias RoomPres r0
+alias SwitchState r1
+alias NeedClean r2
+alias AmbientPres r3
+alias DoorState r4
+define PresSet 22
+
+move NeedClean 1 #Initializing the cleaning logic
+
+Main:
+s db Setting 1
+l SwitchState Switch Open
+bnez SwitchState DePresAndOpen
+beqz SwitchState CloseAndPres
+j Main
+
+DePresAndOpen:
+s db Setting 2
+l RoomPres InSensor Pressure
+l AmbientPres OutSensor Pressure
+add AmbientPres AmbientPres 5 #Adds redundancy for edge cases
+lb DoorState MEDDoors Open Maximum
+s db Setting DoorState
+bnez DoorState Main
+ble RoomPres 0.002 Main
+DPAOLoop:
+l AmbientPres OutSensor Pressure
+s db Setting 3
+s InVent On 1
+s InVent Mode 1
+sleep 10
+s InVent On 0
+sleep 1
+l RoomPres InSensor Pressure
+bgt RoomPres 0.002 DPAOLoop
+sleep 1
+sb MEDDoors Open SwitchState
+move NeedClean 1
+j Main
+
+CloseAndPres:
+s db Setting 4
+l RoomPres InSensor Pressure
+sb MEDDoors Open SwitchState
+yield
+bge RoomPres PresSet Main
+beqz NeedClean CAPLoop
+CAPClean:
+s OutVent On 1
+s OutVent Mode 1
+sleep 10
+s OutVent On 0
+sleep 1
+l RoomPres InSensor Pressure
+bgt RoomPres 0.01 CAPClean
+move NeedClean 0
+yield
+CAPLoop:
+l RoomPres InSensor Pressure
+s db Setting 5
+s InVent On 1
+s InVent Mode 0
+ble RoomPres PresSet CAPLoop
+yield
+s InVent On 0
+yield
+j Main

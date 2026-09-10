@@ -1,0 +1,119 @@
+alias Engine d0
+alias DPLPA d1
+alias FLPA d2
+alias OLPA d3
+alias FPump d4
+alias OPump d5
+alias OnState r0
+alias EngThrot r1
+alias DPVol r2
+alias TotMol r3
+alias FDP r4 #Liquid Fuel in DP
+alias ODP r5 #Liquid Ox in DP
+alias GFDP r6 #Gas Fuel in DP
+alias GODP r7 #Gas Ox in DP
+alias FPumpSet r8
+alias OPumpSet r9
+alias MathHolder r11
+alias VRatio r12
+alias DPPres r13
+define MaxPres 6070
+define MaxHeatEx 8
+
+define FParts 2 #Mix specific
+define OParts 1 #Mix specific
+define TotalParts 3 #Mix specific
+define FMolarDens 25  #Mix specific
+define OMolarDens 33.3 #Mix specific
+div VRatio FParts FMolarDens
+div MathHolder OParts OMolarDens
+div VRatio VRatio MathHolder
+
+Main:
+s DPLPA On 1
+s FLPA On 1
+s OLPA On 1
+l OnState Engine On
+beqz OnState EngineOff
+bnez OnState EngineOn
+Main1:
+#Loading things in
+l DPVol DPLPA Volume
+l TotMol DPLPA TotalMoles
+l FDP DPLPA RatioLiquidMethane #Mix specific
+l GFDP DPLPA RatioMethane #Mix specific
+add FDP FDP GFDP
+l ODP DPLPA RatioLiquidOxygen #Mix specific
+l GODP DPLPA RatioOxygen #Mix specific
+add ODP ODP GODP
+#Fuel settings below
+mul FPumpSet DPVol VRatio
+add MathHolder 1 VRatio
+div FPumpSet FPumpSet MathHolder #Ideal fuel volume in DP
+mul FPumpSet FPumpSet FMolarDens #Ideal fuel moles in DP
+mul MathHolder TotMol FDP
+mul MathHolder MathHolder 1.0101 #Makes code think there is 1% more than actual
+sub FPumpSet FPumpSet MathHolder #Molar fuel difference between ideal and actual
+div FPumpSet FPumpSet FMolarDens #Volume fuel difference between ideal and actual
+s FPump Setting FPumpSet
+#Oxidizer settings below
+add MathHolder 1 VRatio
+div OPumpSet DPVol MathHolder #Ideal ox volume in DP
+mul OPumpSet OPumpSet OMolarDens #Ideal ox moles in DP
+mul MathHolder TotMol ODP
+mul MathHolder MathHolder 1.0101 #Makes code think there is 1% more than actual
+sub OPumpSet OPumpSet MathHolder #Molar ox difference between ideal and actual
+div OPumpSet OPumpSet OMolarDens #Volume ox difference between ideal and actual
+s OPump Setting OPumpSet
+#Heat exchanger pressure control below
+l DPPres DPLPA Pressure
+bge DPPres MaxPres OverPres
+Main2:
+j NormalOp
+Main3:
+j Main
+
+#Conditional mumbo jumbo below
+EngineOn:
+s FPump On 1
+s OPump On 1
+yield
+j Main1
+
+EngineOff:
+s FPump On 0
+s OPump On 0
+j Main1
+
+NormalOp:
+#s db Setting 2w
+l EngThrot Engine Throttle
+l DPPres DPLPA Pressure
+mul EngThrot EngThrot 0.01
+sub EngThrot EngThrot 1
+pow EngThrot 20 EngThrot
+s db Setting EngThrot
+mul EngThrot MaxPres EngThrot
+sub DPPres EngThrot DPPres
+add DPPres DPPres 50
+mul DPPres DPPres 0.04
+bgt DPPres MaxHeatEx NOCorrect
+NO1:
+s Engine Setting DPPres
+j Main3
+
+OverPres:
+bnez OnState OPEnd
+OP1:
+l DPPres DPLPA Pressure
+s Engine Setting 0
+s Engine On 1
+bge DPPres 5900 OP1
+s Engine On 0
+yield
+OPEnd:
+j Main2
+
+NOCorrect:
+move DPPres MaxHeatEx
+j NO1

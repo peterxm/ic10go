@@ -71,3 +71,20 @@ func TestCSEInvalidatedOnRedefinition(t *testing.T) {
 		t.Errorf("stale CSE: t2 defined by %T, want *ir.Bin", found)
 	}
 }
+
+// TestGlobalCSESelfLoopRedefinedOperand checks that an expression is not reused
+// across a loop back edge when one of its operands is redefined each iteration
+// (e.g. a device load feeding an arithmetic expression in a label/goto loop).
+func TestGlobalCSESelfLoopRedefinedOperand(t *testing.T) {
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	c := b.NewReg("b")
+	b.Emit(&ir.Load{Dst: a, Dev: "d1", Logic: "PositionX"})
+	b.Emit(&ir.Bin{Op: ir.Sub, Dst: c, A: a, B: &ir.Const{V: 1}})
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Horizontal", Src: c})
+	b.SetTerm(&ir.Goto{Target: b.Fn().Blocks[0]})
+
+	if globalCSE(b.Fn()) {
+		t.Error("globalCSE reused an expression whose operand was redefined in a loop")
+	}
+}

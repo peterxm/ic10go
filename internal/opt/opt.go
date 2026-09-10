@@ -717,28 +717,15 @@ func globalCSE(fn *ir.Function) bool {
 	availIn, _ := availableExprs(fn)
 	changed := false
 	for _, b := range fn.Blocks {
-		avail := map[string]*ir.Reg{}
+		avail := map[string]availExpr{}
 		rev := map[*ir.Reg]map[string]bool{}
-		for k, r := range availIn[b] {
-			avail[k] = r
-			if rev[r] == nil {
-				rev[r] = map[string]bool{}
+		register := func(key string, e availExpr) {
+			avail[key] = e
+			if rev[e.reg] == nil {
+				rev[e.reg] = map[string]bool{}
 			}
-			rev[r][k] = true
-		}
-		invalidate := func(r *ir.Reg) {
-			for key := range rev[r] {
-				delete(avail, key)
-			}
-			delete(rev, r)
-		}
-		add := func(key string, r *ir.Reg, operands []ir.Value) {
-			avail[key] = r
-			if rev[r] == nil {
-				rev[r] = map[string]bool{}
-			}
-			rev[r][key] = true
-			for _, v := range operands {
+			rev[e.reg][key] = true
+			for _, v := range e.ops {
 				if rr, ok := v.(*ir.Reg); ok {
 					if rev[rr] == nil {
 						rev[rr] = map[string]bool{}
@@ -747,12 +734,21 @@ func globalCSE(fn *ir.Function) bool {
 				}
 			}
 		}
+		for k, e := range availIn[b] {
+			register(k, e)
+		}
+		invalidate := func(r *ir.Reg) {
+			for key := range rev[r] {
+				delete(avail, key)
+			}
+			delete(rev, r)
+		}
 		for idx, ins := range b.Instrs {
 			key, operands, ok := exprKey(ins)
 			d := defOf(ins)
 			if ok {
-				if r, found := avail[key]; found {
-					b.Instrs[idx] = &ir.Assign{Dst: d, Src: r}
+				if e, found := avail[key]; found {
+					b.Instrs[idx] = &ir.Assign{Dst: d, Src: e.reg}
 					if d != nil {
 						invalidate(d)
 					}
@@ -764,21 +760,30 @@ func globalCSE(fn *ir.Function) bool {
 				invalidate(d)
 			}
 			if ok && !containsReg(operands, d) {
-				add(key, d, operands)
+				register(key, availExpr{reg: d, ops: operands})
 			}
 		}
 	}
 	return changed
 }
 
+// availExpr is an available expression: the register holding its result and
+// the values it reads. The operands are needed so that redefining an operand
+// invalidates the expression, including expressions inherited from a
+// predecessor block.
+type availExpr struct {
+	reg *ir.Reg
+	ops []ir.Value
+}
+
 // availableExprs computes, for each block, the expressions available at entry
 // (and exit), mapped to the register holding them.
-func availableExprs(fn *ir.Function) (in, out map[*ir.Block]map[string]*ir.Reg) {
-	in = map[*ir.Block]map[string]*ir.Reg{}
-	out = map[*ir.Block]map[string]*ir.Reg{}
+func availableExprs(fn *ir.Function) (in, out map[*ir.Block]map[string]availExpr) {
+	in = map[*ir.Block]map[string]availExpr{}
+	out = map[*ir.Block]map[string]availExpr{}
 	for _, b := range fn.Blocks {
-		in[b] = map[string]*ir.Reg{}
-		out[b] = map[string]*ir.Reg{}
+		in[b] = map[string]availExpr{}
+		out[b] = map[string]availExpr{}
 	}
 	for changed := true; changed; {
 		changed = false
@@ -798,17 +803,17 @@ func availableExprs(fn *ir.Function) (in, out map[*ir.Block]map[string]*ir.Reg) 
 	return in, out
 }
 
-func meetAvail(b *ir.Block, out map[*ir.Block]map[string]*ir.Reg) map[string]*ir.Reg {
-	res := map[string]*ir.Reg{}
+func meetAvail(b *ir.Block, out map[*ir.Block]map[string]availExpr) map[string]availExpr {
+	res := map[string]availExpr{}
 	if len(b.Preds) == 0 {
 		return res
 	}
-	for k, r := range out[b.Preds[0]] {
-		res[k] = r
+	for k, e := range out[b.Preds[0]] {
+		res[k] = e
 	}
 	for _, p := range b.Preds[1:] {
-		for k, r := range res {
-			if pr, ok := out[p][k]; !ok || pr != r {
+		for k, e := range res {
+			if pe, ok := out[p][k]; !ok || pe.reg != e.reg {
 				delete(res, k)
 			}
 		}
@@ -816,29 +821,16 @@ func meetAvail(b *ir.Block, out map[*ir.Block]map[string]*ir.Reg) map[string]*ir
 	return res
 }
 
-func transferAvail(b *ir.Block, in map[string]*ir.Reg) map[string]*ir.Reg {
-	avail := map[string]*ir.Reg{}
+func transferAvail(b *ir.Block, in map[string]availExpr) map[string]availExpr {
+	avail := map[string]availExpr{}
 	rev := map[*ir.Reg]map[string]bool{}
-	for k, r := range in {
-		avail[k] = r
-		if rev[r] == nil {
-			rev[r] = map[string]bool{}
+	register := func(key string, e availExpr) {
+		avail[key] = e
+		if rev[e.reg] == nil {
+			rev[e.reg] = map[string]bool{}
 		}
-		rev[r][k] = true
-	}
-	invalidate := func(r *ir.Reg) {
-		for key := range rev[r] {
-			delete(avail, key)
-		}
-		delete(rev, r)
-	}
-	add := func(key string, r *ir.Reg, operands []ir.Value) {
-		avail[key] = r
-		if rev[r] == nil {
-			rev[r] = map[string]bool{}
-		}
-		rev[r][key] = true
-		for _, v := range operands {
+		rev[e.reg][key] = true
+		for _, v := range e.ops {
 			if rr, ok := v.(*ir.Reg); ok {
 				if rev[rr] == nil {
 					rev[rr] = map[string]bool{}
@@ -847,6 +839,15 @@ func transferAvail(b *ir.Block, in map[string]*ir.Reg) map[string]*ir.Reg {
 			}
 		}
 	}
+	for k, e := range in {
+		register(k, e)
+	}
+	invalidate := func(r *ir.Reg) {
+		for key := range rev[r] {
+			delete(avail, key)
+		}
+		delete(rev, r)
+	}
 	for _, ins := range b.Instrs {
 		key, operands, ok := exprKey(ins)
 		d := defOf(ins)
@@ -854,18 +855,18 @@ func transferAvail(b *ir.Block, in map[string]*ir.Reg) map[string]*ir.Reg {
 			invalidate(d)
 		}
 		if ok && !containsReg(operands, d) {
-			add(key, d, operands)
+			register(key, availExpr{reg: d, ops: operands})
 		}
 	}
 	return avail
 }
 
-func availEqual(a, b map[string]*ir.Reg) bool {
+func availEqual(a, b map[string]availExpr) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for k, r := range a {
-		if b[k] != r {
+	for k, e := range a {
+		if b[k].reg != e.reg {
 			return false
 		}
 	}

@@ -1,0 +1,35 @@
+alias stim d2
+alias health d3
+
+alias EState r0
+alias EHealth r1
+alias EStun r2
+alias StimOcc r3
+alias HealthOcc r4
+
+Main:
+l EState db EntityState
+beqz EState AOK
+Main0:
+l EHealth db HealthDamage
+bge EHealth 75 UseHealth
+Main1:
+beq EState 2 UseStim
+Main2:
+j Main
+
+AOK:
+s db SoundAlert 0
+j Main
+
+UseHealth:
+brdns health 2
+s health Activate 1
+s db SoundAlert 1
+j Main1
+
+UseStim:
+brdns stim 2
+s stim Activate 1
+s db SoundAlert 1
+j Main2

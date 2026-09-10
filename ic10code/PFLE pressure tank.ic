@@ -1,0 +1,86 @@
+define Engine 379750958 #Standard Engine
+#define Engine -2122207560 #Heavy Engine
+alias DPLPA d0
+alias FLPA d1
+alias OLPA d2
+alias PLPA d3
+alias FPump d4
+alias OPump d5
+alias OnState r0
+alias DPVol r1
+alias TotMol r2
+alias FDP r3 #Liquid Fuel in DP
+alias ODP r4 #Liquid Ox in DP
+alias GFDP r5 #Gas Fuel in DP
+alias GODP r6 #Gas Ox in DP
+alias FPumpSet r7
+alias OPumpSet r8
+alias MathHolder r9
+alias VRatio r10
+alias DPPres r11
+define MaxPres 6070
+
+define FParts 1 #Mix specific
+define OParts 2 #Mix specific
+define TotalParts 3 #Mix specific
+define FMolarDens 17.2  #Mix specific
+define OMolarDens 38.5 #Mix specific
+div VRatio FParts FMolarDens
+div MathHolder OParts OMolarDens
+div VRatio VRatio MathHolder
+
+Main:
+sb -2113838091 On 1 #LPAs
+sb 435685051 On 1 #GPA
+sb -737232128 On 1 #Purge
+sb -737232128 Setting MaxPres
+sb -321403609 On 1 #GasPump
+sb 23052817 On 1 #Pressurant
+sb 23052817 Setting 5300 #5300 for Standard | 5100 for Heavy
+lb OnState Engine On Maximum
+s db Setting OnState
+s FPump On OnState
+s OPump On OnState
+#Loading things in
+l DPVol DPLPA Volume
+l TotMol DPLPA TotalMoles
+l FDP DPLPA RatioLiquidAlcohol #Mix specific
+l GFDP DPLPA RatioMethane #Mix specific
+add FDP FDP GFDP
+l ODP DPLPA RatioLiquidNitrousOxide #Mix specific
+l GODP DPLPA RatioNitrousOxide #Mix specific
+add ODP ODP GODP
+mul FPumpSet DPVol VRatio#Fuel settings below
+add MathHolder 1 VRatio
+div FPumpSet FPumpSet MathHolder #Ideal fuel volume in DP
+mul FPumpSet FPumpSet FMolarDens #Ideal fuel moles in DP
+mul MathHolder TotMol FDP
+mul MathHolder MathHolder 1.1111 #Makes code think there is 10% more liquid
+sub FPumpSet FPumpSet MathHolder #Molar fuel difference between ideal and actual
+div FPumpSet FPumpSet FMolarDens #Volume fuel difference between ideal and actual
+s FPump Setting FPumpSet
+add MathHolder 1 VRatio#Oxidizer settings below
+div OPumpSet DPVol MathHolder #Ideal ox volume in DP
+mul OPumpSet OPumpSet OMolarDens #Ideal ox moles in DP
+mul MathHolder TotMol ODP
+mul MathHolder MathHolder 1.1111 #Makes code think there is 10% more liquid
+sub OPumpSet OPumpSet MathHolder #Molar ox difference between ideal and actual
+div OPumpSet OPumpSet OMolarDens #Volume ox difference between ideal and actual
+s OPump Setting OPumpSet
+l DPPres DPLPA Pressure
+bge DPPres MaxPres OverPres
+Main1:
+j Main
+
+OverPres:
+bnez OnState OPEnd
+OP1:
+s db Setting 3
+l DPPres DPLPA Pressure
+sb Engine Setting 0
+sb Engine On 1
+bge DPPres MaxPres OP1
+sb Engine On 0
+yield
+OPEnd:
+j Main1
