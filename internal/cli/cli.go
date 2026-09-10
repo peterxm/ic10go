@@ -171,10 +171,18 @@ var Commands = []Command{
 				"symbols are inlined, labels are converted to absolute line numbers\n" +
 				"and unreachable instructions are removed.\n\n" +
 				"Use --keep-defines/--keep-labels to retain those lines and\n" +
-				"--no-dead-code to keep unreachable code.",
+				"--no-dead-code to keep unreachable code.\n\n" +
+				"Unlike decompile+build, minify keeps the original instructions,\n" +
+				"registers and device access order unchanged, so it is a safe\n" +
+				"transformation. To also re-optimise and maintain the program as\n" +
+				".icg source, use:\n" +
+				"  ic10c decompile -s -o out.icg <file.ic> && ic10c build out.icg",
 			ZH: "在保持行为不变的前提下，用更少的行重写现有 IC10 程序：删除注释与\n" +
 				"空行、内联 alias/define 符号、把标签改写为绝对行号、删除不可达指令。\n\n" +
-				"--keep-defines/--keep-labels 保留对应行；--no-dead-code 保留不可达代码。",
+				"--keep-defines/--keep-labels 保留对应行；--no-dead-code 保留不可达代码。\n\n" +
+				"与 decompile+build 不同，minify 不改动原指令、寄存器分配和设备读写\n" +
+				"顺序，因此是安全的变换。若想同时重新优化并以 .icg 维护，请用：\n" +
+				"  ic10c decompile -s -o out.icg <file.ic> && ic10c build out.icg",
 		},
 		Flags: []Flag{
 			{Long: "--keep-defines", Desc: text{EN: "keep alias/define lines", ZH: "保留 alias/define 行"}},
@@ -246,11 +254,14 @@ var Commands = []Command{
 				"flow becomes label/goto/call/ret. Unsupported instructions are\n" +
 				"reported on stderr and emitted as comments.\n\n" +
 				"With --structured the decompiler recovers if/else/for using the\n" +
-				"post-dominator tree, and falls back to goto where it cannot.",
+				"post-dominator tree, and falls back to goto where it cannot.\n\n" +
+				"To only shrink the line count while keeping the original\n" +
+				"instructions and register usage, use `ic10c minify` instead.",
 			ZH: "将 IC10 程序翻译为 .icg 源码。alias 与 define 会被替换，寄存器变为\n" +
 				"变量 r0..r15，控制流变为 label/goto/call/ret。不支持的指令会在\n" +
 				"stderr 报告，并在源码中作为注释保留。\n\n" +
-				"加 --structured 时用后支配树还原 if/else/for；无法还原的部分回退为 goto。",
+				"加 --structured 时用后支配树还原 if/else/for；无法还原的部分回退为 goto。\n\n" +
+				"若只想压缩行数、保持原指令与寄存器分配不变，请改用 `ic10c minify`。",
 		},
 		Flags: []Flag{
 			{Short: "-s", Long: "--structured", Desc: text{
@@ -407,6 +418,15 @@ func Usage(l Lang) string {
 	fmt.Fprintf(&b, "  ic10c build blink.icg > blink.ic\n")
 	fmt.Fprintf(&b, "  ic10c stats blink.icg\n")
 	fmt.Fprintf(&b, "  ic10c fmt -w blink.icg\n")
+	b.WriteString("\n")
+	fmt.Fprintf(&b, "%s:\n", lblNotes.get(l))
+	if l == ZH {
+		b.WriteString("  minify 压缩现有 IC10 行数（保真）；decompile+build 反编译为\n")
+		b.WriteString("  .icg 后重新优化（可维护，尽力保真）。`ic10c help <command>` 看详情。\n")
+	} else {
+		b.WriteString("  minify shrinks an existing IC10 script (faithful); decompile+build\n")
+		b.WriteString("  re-optimises via .icg (maintainable, best-effort). `ic10c help <command>`.\n")
+	}
 	return b.String()
 }
 
