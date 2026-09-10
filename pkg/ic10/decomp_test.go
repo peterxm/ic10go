@@ -31,32 +31,44 @@ func compareDevices(t *testing.T, a, b *vm.Machine) {
 	}
 }
 
+func solarSetup(m *vm.Machine) {
+	p1 := m.Device("p1")
+	p1.Hash = vm.HashOf(-2045627372)
+	p2 := m.Device("p2")
+	p2.Hash = vm.HashOf(-295209029)
+	m.Set("d0", "Vertical", 30)
+	m.Set("d0", "Horizontal", 120)
+	m.Set("d1", "Ratio", 0)
+}
+
+func batterySetup(m *vm.Machine) {
+	b1 := m.Device("b1")
+	b1.Hash = vm.HashOf(-400115994)
+	b1.Values["Charge"] = 100
+	b1.Values["Ratio"] = 0.5
+	b2 := m.Device("b2")
+	b2.Hash = vm.HashOf(-400115994)
+	b2.Values["Charge"] = 200
+	b2.Values["Ratio"] = 0.7
+	l := m.Device("lights")
+	l.Hash = vm.HashOf(797794350)
+	m.Set("d0", "Activate", 1)
+}
+
 func TestDecompileSolar(t *testing.T) {
-	roundTrip(t, "../../testdata/ic10/solar.ic", func(m *vm.Machine) {
-		p1 := m.Device("p1")
-		p1.Hash = vm.HashOf(-2045627372)
-		p2 := m.Device("p2")
-		p2.Hash = vm.HashOf(-295209029)
-		m.Set("d0", "Vertical", 30)
-		m.Set("d0", "Horizontal", 120)
-		m.Set("d1", "Ratio", 0)
-	})
+	roundTripWith(t, "../../testdata/ic10/solar.ic", solarSetup, decomp.Decompile)
 }
 
 func TestDecompileBattery(t *testing.T) {
-	roundTrip(t, "../../testdata/ic10/battery.ic", func(m *vm.Machine) {
-		b1 := m.Device("b1")
-		b1.Hash = vm.HashOf(-400115994)
-		b1.Values["Charge"] = 100
-		b1.Values["Ratio"] = 0.5
-		b2 := m.Device("b2")
-		b2.Hash = vm.HashOf(-400115994)
-		b2.Values["Charge"] = 200
-		b2.Values["Ratio"] = 0.7
-		l := m.Device("lights")
-		l.Hash = vm.HashOf(797794350)
-		m.Set("d0", "Activate", 1)
-	})
+	roundTripWith(t, "../../testdata/ic10/battery.ic", batterySetup, decomp.Decompile)
+}
+
+func TestDecompileStructuredSolar(t *testing.T) {
+	roundTripWith(t, "../../testdata/ic10/solar.ic", solarSetup, decomp.DecompileStructured)
+}
+
+func TestDecompileStructuredBattery(t *testing.T) {
+	roundTripWith(t, "../../testdata/ic10/battery.ic", batterySetup, decomp.DecompileStructured)
 }
 
 func TestDecompileSmoke(t *testing.T) {
@@ -95,13 +107,13 @@ func TestDecompileSmoke(t *testing.T) {
 	}
 }
 
-func roundTrip(t *testing.T, path string, setup func(*vm.Machine)) {
+func roundTripWith(t *testing.T, path string, setup func(*vm.Machine), dec func(string) (string, []decomp.Warning, error)) {
 	t.Helper()
 	src, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, warns, err := decomp.Decompile(string(src))
+	code, warns, err := dec(string(src))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,14 +134,14 @@ func roundTrip(t *testing.T, path string, setup func(*vm.Machine)) {
 		t.Fatalf("original run: %v", err)
 	}
 
-	dec := vm.New()
-	setup(dec)
-	if err := dec.Load(compiled); err != nil {
+	decVM := vm.New()
+	setup(decVM)
+	if err := decVM.Load(compiled); err != nil {
 		t.Fatal(err)
 	}
-	if err := dec.Run(3000); err != nil && err != vm.ErrStepLimit {
+	if err := decVM.Run(3000); err != nil && err != vm.ErrStepLimit {
 		t.Fatalf("decompiled run: %v", err)
 	}
 
-	compareDevices(t, orig, dec)
+	compareDevices(t, orig, decVM)
 }

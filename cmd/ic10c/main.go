@@ -239,6 +239,7 @@ func cmdDisasm(args []string) int {
 
 func cmdDecompile(args []string) int {
 	in, out := "", ""
+	structured := false
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "-o", "--output":
@@ -246,6 +247,8 @@ func cmdDecompile(args []string) int {
 				out = args[i+1]
 				i++
 			}
+		case "-s", "--structured":
+			structured = true
 		default:
 			in = args[i]
 		}
@@ -259,7 +262,19 @@ func cmdDecompile(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	code, warns, err := decomp.Decompile(string(data))
+	var code string
+	var warns []decomp.Warning
+	if structured {
+		code, warns, err = decomp.DecompileStructured(string(data))
+		if err == nil {
+			if _, diags, cerr := ic10.Compile(in, []byte(code)); diags.HasErrors() || cerr != nil {
+				fmt.Fprintln(os.Stderr, "ic10c: structured decompilation is invalid here, falling back to goto form")
+				code, warns, err = decomp.Decompile(string(data))
+			}
+		}
+	} else {
+		code, warns, err = decomp.Decompile(string(data))
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1

@@ -39,8 +39,20 @@ type decompiler struct {
 	warnings   []Warning
 }
 
-// Decompile converts IC10 source into .icg source.
+// Decompile converts IC10 source into .icg source. Control flow is expressed
+// with label/goto/call/ret.
 func Decompile(src string) (string, []Warning, error) {
+	return decompile(src, false)
+}
+
+// DecompileStructured is like Decompile but attempts to recover structured
+// control flow (if/else/for). It is best-effort and falls back to goto for
+// patterns it cannot recognise.
+func DecompileStructured(src string) (string, []Warning, error) {
+	return decompile(src, true)
+}
+
+func decompile(src string, structured bool) (string, []Warning, error) {
 	d := &decompiler{
 		symbols:    map[string]string{},
 		labelsAt:   map[int][]string{},
@@ -98,28 +110,41 @@ func Decompile(src string) (string, []Warning, error) {
 	var b strings.Builder
 	b.WriteString("func main() {\n")
 	d.declared = map[string]bool{}
-	for _, r := range d.readFirstRegisters(lines) {
+	regs := d.readFirstRegisters(lines)
+	if structured {
+		// Structuring may reorder emission, so declare every register up front.
+		regs = d.allRegisters(lines)
+	}
+	for _, r := range regs {
 		d.declared[r] = true
 		fmt.Fprintf(&b, "    var %s = 0\n", r)
 	}
+	if structured {
+		b.WriteString(d.structure(lines))
+	} else {
+		d.flat(&b, lines)
+	}
+	b.WriteString("}\n")
+	return b.String(), d.warnings, nil
+}
+
+// flat emits the program with explicit labels and gotos.
+func (d *decompiler) flat(b *strings.Builder, lines []icLine) {
 	for _, l := range lines {
 		if names := d.labelsAt[l.num]; len(names) > 0 {
 			for _, n := range names {
-				fmt.Fprintf(&b, "    label %s:\n", n)
+				fmt.Fprintf(b, "    label %s:\n", n)
 			}
 		} else if name, ok := d.labelAt[l.num]; ok {
-			fmt.Fprintf(&b, "    label %s:\n", name)
+			fmt.Fprintf(b, "    label %s:\n", name)
 		}
 		if l.op == "" {
 			continue
 		}
-		stmts := d.translate(l)
-		for _, s := range stmts {
-			fmt.Fprintf(&b, "    %s\n", s)
+		for _, s := range d.translate(l) {
+			fmt.Fprintf(b, "    %s\n", s)
 		}
 	}
-	b.WriteString("}\n")
-	return b.String(), d.warnings, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +231,29 @@ var destOps = map[string]bool{
 	"seqz": true, "snez": true, "sltz": true, "slez": true, "sgtz": true, "sgez": true,
 	"snan": true, "snanz": true, "sap": true, "sna": true, "sapz": true, "snaz": true,
 	"select": true, "clamp": true, "lerp": true, "ext": true, "ins": true,
+}
+
+// allRegisters returns every direct register referenced by the program, sorted.
+func (d *decompiler) allRegisters(lines []icLine) []string {
+	set := map[string]bool{}
+	for _, l := range lines {
+		for _, a := range l.args {
+			r := d.resolve(a)
+			if isDirectReg(r) {
+				set[r] = true
+			} else if isIndirect(r) {
+				if ptr := strings.TrimPrefix(r, "r"); isDirectReg(ptr) {
+					set[ptr] = true
+				}
+			}
+		}
+	}
+	regs := make([]string, 0, len(set))
+	for r := range set {
+		regs = append(regs, r)
+	}
+	sort.Slice(regs, func(i, j int) bool { return regNum(regs[i]) < regNum(regs[j]) })
+	return regs
 }
 
 // readFirstRegisters returns the direct registers that are read before being

@@ -63,7 +63,7 @@ ic10c build  <file.icg>       # 编译为 IC10 并输出到 stdout
 ic10c stats  <file.icg>       # 行 / 字节 / 寄存器预算报告
 ic10c fmt    [-w] <file.icg>  # 格式化源码
 ic10c disasm <file.ic>        # 反汇编注释旧 IC10
-ic10c decompile <file.ic>     # 将 IC10 反编译为 .icg 源码（-o 输出到文件）
+ic10c decompile <file.ic>     # 将 IC10 反编译为 .icg 源码（-o 输出到文件，-s 结构化）
 ic10c lsp                     # 启动语言服务器（stdio）
 ic10c lex    <file.icg>       # 打印词法单元
 ic10c ast    <file.icg>       # 打印 AST
@@ -84,7 +84,7 @@ sh editors/vscode/install.sh   # 安装到 ~/.vscode/extensions
 >
 > 寄存器压力超过 16 时，编译器会自动把多余的值**溢出到 IC10 栈**（固定高地址槽 + 暂存寄存器），而不是报错。未知 logic type 会给出**警告**（可用 `IC10C_NO_CHECK=1` 关闭）。
 >
-> 反编译：`ic10c decompile` 会替换 `alias`/`define`、用 `:=` 声明首次写入的寄存器、用 `label`/`goto`/`call`/`ret` 表达控制流；配合寄存器拷贝合并，`ic10code/` 下的 17 个真实脚本都能反编译并在 128 行内重新编译（含最复杂的 Furnace，148→121 行）。
+> 反编译：`ic10c decompile` 会替换 `alias`/`define`、用 `:=` 声明首次写入的寄存器、用 `label`/`goto`/`call`/`ret` 表达控制流；配合寄存器拷贝合并，`ic10code/` 下的 17 个真实脚本都能反编译并在 128 行内重新编译（含最复杂的 Furnace，148→121 行）。加 `-s/--structured` 可进一步尝试还原 `if`/`else`/`for`（尽力而为，复杂控制流自动回退到 goto）。
 
 ## 测试
 

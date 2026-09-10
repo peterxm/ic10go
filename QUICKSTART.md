@@ -224,8 +224,14 @@ ic10c decompile -o old.icg old.ic  # 输出到文件
 反编译会：
 
 - 替换 `alias` 与 `define`
-- 把 `r0..r15` 变成同名变量
+- 只对"先读后写"的寄存器发 `var`，其余首次赋值用 `:=`
 - 用 `label` / `goto` / `call` / `ret` 表达控制流
+
+加 `--structured` 会进一步尝试还原 `if`/`else`/`for`（尽力而为；遇到复杂控制流会自动回退到 goto 形式）：
+
+```bash
+ic10c decompile --structured -o old.icg old.ic
+```
 - 把算术、设备、槽位、批量、栈等映射为对应语法
 
 产物可直接编译回 IC10：
