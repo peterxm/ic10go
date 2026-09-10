@@ -163,16 +163,20 @@ Ret
 | 通道 | 作用 |
 |------|------|
 | 常量折叠 | 编译期计算常量表达式、`hash()` |
-| 常量传播 | 把已知常量代入使用点 |
-| 拷贝传播 | 消除 `t1 = t2` 的间接链 |
-| 死代码消除 | 删除无副作用且结果未使用的指令、不可达块 |
-| 公共子表达式消除 | 复用相同表达式 |
+| 块内拷贝/常量传播 | 把已知常量、拷贝代入使用点 |
+| 全局常量传播 | must 分析，跨基本块传播常量 |
+| 代数化简 | `x*1`、`x/1`、`x+0`、`x&0`、`min(x,x)`、`select c x x` 等恒等式 |
+| 冗余读消除 | 复用更早的设备/槽位/批量读（写、`yield`/`sleep` 使其失效） |
+| 公共子表达式消除 | 复用相同表达式（块内） |
+| 常量分支折叠 | 条件恒真/恒假或两分支相同 → 跳转，未走分支可删 |
+| 循环不变量外提 | 纯计算提到 preheader（目标非循环入口活跃变量） |
+| 死代码消除 | 活跃性驱动的纯指令删除、不可达块删除 |
 | 内联 | 全内联所有函数，消除 `jal/ra` |
 | 比较-分支融合 | `if a<b` → `bge`，省一条比较 |
 | select 化 | 同左值赋常量的 `if-else` → `select` |
 | 逻辑化简 | `&&`→`min`、`||`→`max`、`!`→`seqz`（无副作用时） |
-| 循环优化 | 循环不变量外提（谨慎，可能增行）、强度削弱 |
-| 窥孔优化 | IC10 指令级合并 |
+
+> 尚未实现：强度削弱、全局 CSE、以动态指令数为目标的优化。
 
 > 优化目标函数：**优先减少行数，其次减少字节数**。某些变换（如常量提为 `define`）会增加行但减少字节，由大小模型决策。
 
@@ -256,19 +260,22 @@ Ret
 
 | 子命令 | 功能 |
 |--------|------|
-| `ic10c build file.icg` | 编译并输出 IC10 |
-| `ic10c build -o out.ic file.icg` | 输出到文件 |
-| `ic10c fmt file.icg` | 格式化源码 |
-| `ic10c disasm file.ic` | 反汇编旧 `.ic` → `.icg` / IR |
-| `ic10c stats file.icg` | 行/字节/寄存器压力报告 |
-| `ic10c ast file.icg` | 打印 AST（调试） |
-| `ic10c ir file.icg` | 打印优化各阶段 IR（调试） |
-| `ic10c lsp` | 启动 LSP |
+| `ic10c build <file.icg>` | 编译并输出 IC10 到 stdout |
+| `ic10c stats <file.icg>` | 行/字节/寄存器预算报告 |
+| `ic10c fmt [-w] <file.icg>` | 格式化源码（保留注释；`-w` 原地写回） |
+| `ic10c disasm <file.ic>` | 反汇编旧 `.ic`（解析跳转目标为标签） |
+| `ic10c decompile [-s] [-o out.icg] <file.ic>` | 反编译为 `.icg`；`-s` 尝试结构化 |
+| `ic10c lex <file.icg>` | 打印词法单元（调试） |
+| `ic10c ast <file.icg>` | 打印 AST（调试） |
+| `ic10c lsp` | 启动 LSP（stdio） |
+| `ic10c help [command]` | 帮助（中英双语） |
+
+环境变量：`IC10C_LANG`（输出语言）、`IC10C_NO_CHECK`（关闭 logic type 校验）、`IC10C_NO_OPT`（关闭优化，调试用）。
 
 配套：
 
-- VSCode 语法高亮（TextMate grammar）
-- LSP：诊断、补全（逻辑类型/内建函数）、跳转、悬停
+- VSCode 扩展（TextMate 语法高亮 + 无依赖 LSP 客户端），见 `editors/vscode`
+- LSP：诊断、补全（逻辑类型/内建函数/设备端口）
 
 ---
 
@@ -278,6 +285,7 @@ Ret
 ic10go/
   go.mod
   README.md
+  QUICKSTART.md
   docs/
     spec.md
     architecture.md
@@ -285,69 +293,71 @@ ic10go/
   cmd/ic10c/
     main.go
   internal/
-    source/       // 位置、文件、诊断
+    source/       // 位置、文件、注释
+    diag/         // 诊断
     token/
     lexer/
-    ast/
+    ast/          // AST + 打印机/格式化
     parser/
-    sema/
-    ir/           // 指令、块、builder、liveness
-    lower/
-    opt/
-    regalloc/
-    isel/
-    asm/
-    emit/
-    builtin/
-    disasm/
-    format/
-    lsp/
-    vm/           // 测试用最小解释器（M5）
-  pkg/ic10/       // 公开 API
+    sema/         // 名字解析、常量求值
+    ir/           // 指令、块、CFG
+    lower/        // AST → IR、全内联
+    opt/          // 优化通道
+    regalloc/     // 图着色 + 拷贝合并 + 溢出
+    codegen/      // 指令选择、布局、绝对行号、限额校验
+    builtin/      // logic type / 内建函数 / CRC-32
+    ic10asm/      // IC10 文本共享词法（分词/分支/标签）
+    disasm/       // IC10 注释清单
+    decomp/       // IC10 → .icg 反编译（含结构化）
+    lsp/          // 语言服务器
+    vm/           // 测试用最小解释器
+  pkg/ic10/       // 公开 API（Compile/Format/StatsOf）
+  editors/vscode/ // VSCode 扩展
   testdata/
     golden/       // 源 → 期望 IC10
-    programs/     // 端到端程序
+    programs/     // 端到端 .icg 程序
+    ic10/         // 真实 .ic 脚本（反编译测试）
 ```
 
 ---
 
-## 11. 里程碑
+## 11. 里程碑（M0–M5 已实现）
 
-### M0 骨架
+### M0 骨架 ✅
 - `go.mod`、`cmd/ic10c` 骨架
 - token / lexer / ast / parser（表达式与基础语句）
 - 诊断基础设施
 
-### M1 单函数编译
+### M1 单函数编译 ✅
 - `const` / `var` / `:=`
 - 算术、比较、位运算
 - `if` / `for` / `switch` / `break` / `continue` / `return`
 - 设备属性读写、`yield` / `sleep`
-- 活跃性分析 + 线性扫描
-- 绝对行号回填
+- 活跃性分析 + 图着色（Chaitin-Briggs）+ 拷贝合并 + 溢出
+- 逆后序布局、绝对行号回填
 - 128 行 / 4KiB / 90 字符校验
 
-### M2 优化器
-- 常量折叠 / 传播、拷贝传播、DCE、CSE
-- 比较-分支融合、`select` 化、逻辑化简
+### M2 优化器 ✅
+- 块内拷贝/常量传播、全局常量传播、常量折叠、代数化简
+- 冗余设备/槽位/批量读消除、常量分支折叠、循环不变量外提
+- DCE、局部 CSE、比较-分支融合、`select` 化、逻辑化简
 - 全内联
-- 大小模型与 `define` 决策
+- ⏳ 未实现：大小模型与 `define` 决策、强度削弱、全局 CSE
 
-### M3 领域特性
+### M3 领域特性 ✅
 - 槽位 `ls/ss`、通道 `ChannelN`
 - 批量 `lb/lbn/lbs/sb/sbn/sbs`
 - 栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr`
-- 动态 logicType `read/write`
-- `approx` / `isSet` / `rmap` / NaN 支持
+- `approx` / `isSet` / `rmap` / NaN 支持、`ext/ins/sla/srl/rol/ror`
+- 底层控制流：`label/goto/call/ret`、`ra/sp`、`ireg/setIreg`、`jump(expr)`
+- ⏳ 未实现：动态 logicType `read/write`
 
-### M4 工具链
-- `fmt` 格式化
-- `disasm` 反汇编旧 `.ic`
-- `stats` 预算报告
-- LSP（诊断 / 补全 / 跳转 / 悬停）
-- VSCode 语法高亮
+### M4 工具链 ✅
+- `fmt`（保留注释）、`stats`、`disasm`
+- `decompile`（IC10 → `.icg`，含 `-s` 结构化）
+- LSP（诊断 / 补全）、VSCode 扩展
 
-### M5 测试用最小解释器（VM）
+### M5 测试用最小解释器（VM）✅
 - 仅用于测试与开发验证，不作为用户可见模拟器
 - 实现 IC10 指令解释、寄存器、栈、标签/行号
 - mock 设备模型（可脚本化读写逻辑类型）

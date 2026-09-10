@@ -9,7 +9,7 @@
 
 ## 特点
 
-- **寄存器复用**：基于活跃性分析的线性扫描分配，`r0` 可在不同时刻承载不同变量；尽量不落栈。
+- **寄存器复用**：活跃性分析 + 图着色（Chaitin-Briggs）+ 拷贝合并；寄存器不足时自动溢出到 IC10 栈。
 - **面向 128 行 / 4 KiB 约束**：不生成 `alias` / `define` / 注释 / 空行 / 标签，跳转用绝对行号。
 - **现代语法**：`:=`、`if/for/switch`、函数（编译期全内联）、设备属性 `d0.On`、槽位 `d0.slot[i].X`、批量 IO、通道。
 - **编译期求值**：常量折叠、`hash()` 的 CRC-32、逻辑类型校验。
@@ -39,10 +39,10 @@ func main() {
 move r1 0
 yield
 l r0 d1 Temperature
-slt r2 r0 283
-select r1 r2 1 r1
-sgt r2 r0 296
-select r1 r2 0 r1
+bge r0 283.15 5
+move r1 1
+ble r0 296.15 7
+move r1 0
 s d0 On r1
 j 1
 ```

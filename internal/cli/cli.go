@@ -165,9 +165,9 @@ var Commands = []Command{
 		Long: text{
 			EN: "Parse an IC10 program and print an annotated listing. Jump and\n" +
 				"branch targets are resolved to labels so that old scripts are\n" +
-				"easier to read and migrate. This is not a full decompiler.",
+				"easier to read. Use 'ic10c decompile' to get editable .icg source.",
 			ZH: "解析 IC10 程序并打印带注释的清单。跳转与分支目标会被解析为标签，\n" +
-				"便于阅读和迁移旧脚本。这不是完整的反编译器。",
+				"便于阅读。若要可编辑的 .icg 源码，请用 `ic10c decompile`。",
 		},
 		Flags:    []Flag{commonHelp},
 		Examples: []string{"ic10c disasm old.ic"},
@@ -275,6 +275,7 @@ var (
 	lblUsage       = text{EN: "Usage", ZH: "用法"}
 	lblCommands    = text{EN: "Commands", ZH: "命令"}
 	lblGlobalFlags = text{EN: "Global options", ZH: "全局选项"}
+	lblEnv         = text{EN: "Environment", ZH: "环境变量"}
 	lblOptions     = text{EN: "Options", ZH: "选项"}
 	lblExamples    = text{EN: "Examples", ZH: "示例"}
 	lblNotes       = text{EN: "Notes", ZH: "说明"}
@@ -322,6 +323,20 @@ func Usage(l Lang) string {
 	writeFlag(&b, "-v, --version", "", text{
 		EN: "print version",
 		ZH: "打印版本",
+	}.get(l))
+	b.WriteString("\n")
+	fmt.Fprintf(&b, "%s:\n", lblEnv.get(l))
+	writeFlag(&b, "IC10C_LANG", "", text{
+		EN: "output language (en|zh)",
+		ZH: "输出语言（en|zh）",
+	}.get(l))
+	writeFlag(&b, "IC10C_NO_CHECK", "", text{
+		EN: "disable device logic type checks",
+		ZH: "关闭设备 logic type 校验",
+	}.get(l))
+	writeFlag(&b, "IC10C_NO_OPT", "", text{
+		EN: "disable the optimiser (debugging)",
+		ZH: "关闭优化器（调试用）",
 	}.get(l))
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "%s:\n", lblExamples.get(l))

@@ -405,13 +405,10 @@ str("Ready!")              // 显示字符串，输出为 STR("Ready!")
 
 ### 10.2 寄存器分配
 
-- 反向数据流计算活跃性，构造活跃区间。
-- 线性扫描分配到 `r0..r15`，优先复用空闲的最小编号寄存器。
-- 拷贝合并消除 `move`。
-- 溢出策略（按优先级）：
-  1. 常量重物化（不占寄存器）
-  2. 廉价表达式重算
-  3. 固定栈地址 + `poke` / 恢复 `sp` 后 `peek`
+- 反向数据流计算活跃性，构造干涉图。
+- **图着色（Chaitin-Briggs）**分配到 `r0..r15`，优先复用空闲寄存器。
+- **拷贝合并**（union-find，仅在不冲突时合并）消除 `move`。
+- 寄存器不足时**溢出到 IC10 栈**：固定高地址槽（511 起）用 `poke` 写入，读取时保存/恢复 `sp` 后 `peek`；最高寄存器保留作溢出加载暂存。
 - `ra` 与 `sp` 不参与通用分配。
 
 ### 10.3 示例
@@ -437,10 +434,10 @@ func main() {
 move r1 0
 yield
 l r0 d1 Temperature
-slt r2 r0 283
-select r1 r2 1 r1
-sgt r2 r0 296
-select r1 r2 0 r1
+bge r0 283 5
+move r1 1
+ble r0 296 7
+move r1 0
 s d0 On r1
 j 1
 ```
@@ -493,17 +490,17 @@ func filterControl() {
 编译产物（示意）：
 
 ```
+move r1 45000
 yield
 s d0 Mode 1
 l r0 d0 PressureOutput
-sgt r1 r0 45000
-select r2 r1 45000 40000
-slt r1 r0 r2
-s d0 On r1
+ble r0 45000 5
+slt r0 r0 r1
+s d0 On r0
 l r0 db PressureOutput
-slt r1 r0 19000
-s db Mode r1
-j 0
+slt r0 r0 19000
+s db Mode r0
+j 1
 ```
 
 ---
