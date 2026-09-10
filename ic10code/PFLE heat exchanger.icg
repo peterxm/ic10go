@@ -1,0 +1,77 @@
+// PFLE 热交换器控制：按燃料/氧化剂配比调节两台泵，并把引擎作为背压阀，
+// 根据引擎节流计算目标压力写入 Engine.Setting。
+// d0=Engine, d1=DPLPA, d2=FLPA, d3=OLPA, d4=燃料泵, d5=氧化剂泵。
+
+const (
+    maxPres   = 6070
+    maxHeatEx = 8
+)
+
+func main() {
+    vRatio := (2 / 25) / (1 / 33.3) // 燃料:氧化剂 配比
+
+    for {
+        d1.On = 1
+        d2.On = 1
+        d3.On = 1
+
+        on := d0.On
+        if on == 0 {
+            d4.On = 0
+            d5.On = 0
+        } else {
+            d4.On = 1
+            d5.On = 1
+            yield()
+        }
+
+        // 按实际摩尔数与理想值的差修正两台泵的体积设定
+        dpVol := d1.Volume
+        totMol := d1.TotalMoles
+        fdp := d1.RatioLiquidMethane + d1.RatioMethane
+        odp := d1.RatioLiquidOxygen + d1.RatioOxygen
+
+        fPump := dpVol * vRatio / (1 + vRatio) * 25
+        fPump -= totMol * fdp * 1.0101
+        d4.Setting = fPump / 25
+
+        oPump := dpVol / (1 + vRatio) * 33.3
+        oPump -= totMol * odp * 1.0101
+        d5.Setting = oPump / 33.3
+
+        if d1.Pressure >= maxPres {
+            overPres(on)
+        }
+
+        d0.Setting = normalOp()
+    }
+}
+
+// 超压处理：引擎已开则跳过；否则反复点火泄压，直到压力低于 5900。
+func overPres(on num) {
+    if on != 0 { return }
+    for {
+        p := d1.Pressure
+        d0.Setting = 0
+        d0.On = 1
+        if p < 5900 { break }
+    }
+    d0.On = 0
+    yield()
+}
+
+// 正常运行：按引擎节流换算目标热交换压力，并限制在 MaxHeatEx 以内。
+func normalOp() num {
+    throt := d0.Throttle
+    p := d1.Pressure
+    throt = throt * 0.01
+    throt = throt - 1
+    throt = pow(20, throt)
+    db.Setting = throt
+    throt = maxPres * throt
+    p = throt - p
+    p = p + 50
+    p = p * 0.04
+    if p > maxHeatEx { p = maxHeatEx }
+    return p
+}

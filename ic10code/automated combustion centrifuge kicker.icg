@@ -1,21 +1,19 @@
-// 燃烧离心机启动器（Episode 9）。
-// 依次启动两台离心机：确认转速与应力都归零后再开机。db.Setting 用于调试显示状态。
+// 自动燃烧离心机启动器：当离心机停机时，先泄压（Throttle/CombustionLimiter 归零），
+// 等 Rpm 与 Stress 都回零后再点火启动；两台离心机依次处理。
 
 func main() {
     for {
         if d0.On == 0 {
             turnOnCC1()
-            continue
-        }
-        if d1.On == 0 {
+        } else if d1.On == 0 {
             turnOnCC2()
-            continue
+        } else {
+            db.Setting = 0 // 调试指示灯：全部运行中
         }
-        db.Setting = 0  // 两台都运行中
     }
 }
 
-// 启动离心机 1：转速与应力都归零前，持续压油门与燃烧限制。
+// 启动 1 号离心机：循环归零并等待其完全停稳，然后点火。
 func turnOnCC1() {
     for {
         db.Setting = 1
@@ -26,7 +24,7 @@ func turnOnCC1() {
     d0.On = 1
 }
 
-// 启动离心机 2。
+// 启动 2 号离心机。
 func turnOnCC2() {
     for {
         db.Setting = 2

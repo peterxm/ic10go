@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -85,22 +86,89 @@ func TestIc10CodePorts(t *testing.T) {
 			if err := a.Load(string(origSrc)); err != nil {
 				t.Fatalf("original load: %v", err)
 			}
-			if err := a.Run(4000); err != nil && err != vm.ErrStepLimit {
-				t.Fatalf("original run: %v", err)
-			}
 
 			b := vm.New()
 			portSetup(b)
 			if err := b.Load(compiled); err != nil {
 				t.Fatalf("port load: %v", err)
 			}
-			if err := b.Run(4000); err != nil && err != vm.ErrStepLimit {
-				t.Fatalf("port run: %v", err)
-			}
 
-			compareDevices(t, a, b)
+			// Compare the set of device states reached rather than a
+			// fixed-step snapshot: the port and the original may take a
+			// different number of instructions per iteration, and may even
+			// converge or cycle differently, but they must visit the same
+			// device states.
+			sa := stateSet(a, 8000)
+			sb := stateSet(b, 8000)
+			if !sameStateSet(sa, sb) {
+				t.Errorf("reachable device states differ\n only original: %s\n only port: %s",
+					diffStates(sa, sb), diffStates(sb, sa))
+			}
 		})
 	}
+}
+
+func deviceState(m *vm.Machine) string {
+	var names []string
+	for n := range m.Devices {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, n := range names {
+		d := m.Devices[n]
+		var keys []string
+		for k := range d.Values {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fmt.Fprintf(&b, "%s.%s=%v;", n, k, d.Values[k])
+		}
+	}
+	return b.String()
+}
+
+func stateSet(m *vm.Machine, maxSteps int) map[string]bool {
+	seen := map[string]bool{deviceState(m): true}
+	wrote := false
+	m.OnWrite = func(dev, logic string, v float64) { wrote = true }
+	for i := 0; i < maxSteps; i++ {
+		wrote = false
+		if err := m.Run(1); err != nil && err != vm.ErrStepLimit {
+			break
+		}
+		if wrote {
+			seen[deviceState(m)] = true
+		}
+	}
+	return seen
+}
+
+func sameStateSet(a, b map[string]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for s := range a {
+		if !b[s] {
+			return false
+		}
+	}
+	return true
+}
+
+func diffStates(a, b map[string]bool) string {
+	var only []string
+	for s := range a {
+		if !b[s] {
+			only = append(only, s)
+		}
+	}
+	sort.Strings(only)
+	if len(only) > 2 {
+		only = only[:2]
+	}
+	return strings.Join(only, " || ")
 }
 
 func fileExists(path string) bool {

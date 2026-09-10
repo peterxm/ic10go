@@ -1,0 +1,83 @@
+// 加压贸易着陆场：由开关控制加压/泄压。
+//  - 打开开关：泄压后开门（DoorState 为最大门状态；未清理过则先通风清理）。
+//  - 关闭开关：关门并加压到 PresSet，必要时先抽真空（CAPClean）。
+// d0=Switch, d1=InVent, d2=OutVent, d3=InSensor, d4=OutSensor。
+
+const (
+    medDoors = -566348148 // MED Doors 的类型哈希
+    presSet  = 22
+)
+
+func main() {
+    needClean := 1 // 初始化清理逻辑
+    for {
+        db.Setting = 1
+        sw := d0.Open
+        if sw != 0 {
+            needClean = dePresAndOpen(sw, needClean)
+        } else {
+            needClean = closeAndPres(needClean)
+        }
+    }
+}
+
+// 泄压并开门：先确认门已关闭、室内已基本排空，再启动进气阀泄压。
+func dePresAndOpen(sw num, needClean num) num {
+    db.Setting = 2
+    roomPres := d3.Pressure
+    door := batch.read(medDoors, "Open", "Maximum")
+    db.Setting = door
+    if door != 0 { return needClean }
+    if roomPres <= 0.002 { return needClean }
+
+    for {
+        db.Setting = 3
+        d1.On = 1
+        d1.Mode = 1
+        sleep(10)
+        d1.On = 0
+        sleep(1)
+        roomPres = d3.Pressure
+        if roomPres <= 0.002 { break }
+    }
+    sleep(1)
+    batch.write(medDoors, "Open", sw)
+    return 1
+}
+
+// 关门并加压：把室内抽到接近真空后再加压到 PresSet。
+func closeAndPres(needClean num) num {
+    db.Setting = 4
+    roomPres := d3.Pressure
+    batch.write(medDoors, "Open", 0)
+    yield()
+    if roomPres >= presSet { return needClean }
+
+    if needClean != 0 {
+        // CAPClean：用排气阀抽真空
+        for {
+            d2.On = 1
+            d2.Mode = 1
+            sleep(10)
+            d2.On = 0
+            sleep(1)
+            roomPres = d3.Pressure
+            if roomPres <= 0.01 { break }
+        }
+        needClean = 0
+        yield()
+    }
+
+    // CAPLoop：用进气阀加压到 PresSet
+    for {
+        roomPres = d3.Pressure
+        db.Setting = 5
+        d1.On = 1
+        d1.Mode = 0
+        if roomPres > presSet { break }
+    }
+    yield()
+    d1.On = 0
+    yield()
+    return needClean
+}
