@@ -73,6 +73,9 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 					"completionProvider": map[string]any{
 						"triggerCharacters": []string{"."},
 					},
+					"documentFormattingProvider": true,
+					"hoverProvider":              true,
+					"definitionProvider":         true,
 				},
 				"serverInfo": map[string]any{"name": "ic10c", "version": "0.1.0"},
 			})
@@ -88,6 +91,12 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 			s.didChange(writer, msg.Params)
 		case "textDocument/completion":
 			reply(writer, msg.ID, completionItems())
+		case "textDocument/formatting":
+			s.formatting(writer, msg.ID, msg.Params)
+		case "textDocument/hover":
+			s.hover(writer, msg.ID, msg.Params)
+		case "textDocument/definition":
+			s.definition(writer, msg.ID, msg.Params)
 		default:
 			if len(msg.ID) > 0 && string(msg.ID) != "null" {
 				replyError(writer, msg.ID, -32601, "method not found: "+msg.Method)
@@ -228,6 +237,160 @@ func completionItems() []completionItem {
 		items = append(items, completionItem{name, 21, "slot type"})
 	}
 	return items
+}
+
+// ---------------------------------------------------------------------------
+// Formatting / hover / definition
+// ---------------------------------------------------------------------------
+
+type textDocumentParams struct {
+	TextDocument struct {
+		URI string `json:"uri"`
+	} `json:"textDocument"`
+	Position lspPosition `json:"position"`
+}
+
+func (s *Server) formatting(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p textDocumentParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		reply(w, id, []any{})
+		return
+	}
+	text, ok := s.docs[p.TextDocument.URI]
+	if !ok {
+		reply(w, id, []any{})
+		return
+	}
+	out, diags, err := ic10.Format(p.TextDocument.URI, []byte(text))
+	if diags.HasErrors() || err != nil {
+		reply(w, id, []any{})
+		return
+	}
+	reply(w, id, []any{map[string]any{
+		"range":   lspRange{Start: lspPosition{0, 0}, End: endPosition(text)},
+		"newText": out,
+	}})
+}
+
+func (s *Server) hover(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p textDocumentParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		reply(w, id, nil)
+		return
+	}
+	content := hoverFor(wordAt(s.docs[p.TextDocument.URI], p.Position))
+	if content == "" {
+		reply(w, id, nil)
+		return
+	}
+	reply(w, id, map[string]any{
+		"contents": map[string]any{"kind": "markdown", "value": content},
+	})
+}
+
+func (s *Server) definition(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p textDocumentParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		reply(w, id, nil)
+		return
+	}
+	text := s.docs[p.TextDocument.URI]
+	reply(w, id, findDefinition(p.TextDocument.URI, text, wordAt(text, p.Position)))
+}
+
+func endPosition(text string) lspPosition {
+	lines := strings.Split(text, "\n")
+	return lspPosition{Line: len(lines) - 1, Character: len(lines[len(lines)-1])}
+}
+
+func wordAt(text string, pos lspPosition) string {
+	lines := strings.Split(text, "\n")
+	if pos.Line < 0 || pos.Line >= len(lines) {
+		return ""
+	}
+	line := lines[pos.Line]
+	i := pos.Character
+	if i > len(line) {
+		i = len(line)
+	}
+	start := i
+	for start > 0 && isWordByte(line[start-1]) {
+		start--
+	}
+	end := i
+	for end < len(line) && isWordByte(line[end]) {
+		end++
+	}
+	return line[start:end]
+}
+
+func isWordByte(b byte) bool {
+	return b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+}
+
+func hoverFor(word string) string {
+	switch word {
+	case "func", "const", "var", "if", "else", "for", "switch", "case", "default",
+		"break", "continue", "return", "label", "goto", "call", "ret":
+		return "keyword `" + word + "`"
+	case "true", "false", "nan", "pinf", "ninf":
+		return "literal `" + word + "`"
+	}
+	if word == "db" || (len(word) == 2 && word[0] == 'd' && word[1] >= '0' && word[1] <= '5') {
+		return "device port `" + word + "`"
+	}
+	if f, ok := builtin.Funcs[word]; ok {
+		return "builtin `" + f.Mnemonic + "`"
+	}
+	if builtin.LogicTypes[word] {
+		return "logic type `" + word + "`"
+	}
+	if builtin.SlotTypes[word] {
+		return "slot type `" + word + "`"
+	}
+	return ""
+}
+
+func findDefinition(uri, text, word string) any {
+	if word == "" {
+		return nil
+	}
+	for i, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if hasDecl(trimmed, "func ", word) || hasDecl(trimmed, "const ", word) ||
+			hasDecl(trimmed, "var ", word) {
+			return location(uri, i, line, word)
+		}
+		if strings.HasPrefix(trimmed, "label "+word+":") {
+			return location(uri, i, line, word)
+		}
+		if strings.Contains(line, word+" :=") {
+			return location(uri, i, line, word)
+		}
+	}
+	return nil
+}
+
+func hasDecl(line, prefix, word string) bool {
+	rest, ok := strings.CutPrefix(line, prefix)
+	if !ok || !strings.HasPrefix(rest, word) {
+		return false
+	}
+	return len(rest) == len(word) || !isWordByte(rest[len(word)])
+}
+
+func location(uri string, lineIdx int, line, word string) any {
+	col := strings.Index(line, word)
+	if col < 0 {
+		col = 0
+	}
+	return map[string]any{
+		"uri": uri,
+		"range": lspRange{
+			Start: lspPosition{lineIdx, col},
+			End:   lspPosition{lineIdx, col + len(word)},
+		},
+	}
 }
 
 // ---------------------------------------------------------------------------

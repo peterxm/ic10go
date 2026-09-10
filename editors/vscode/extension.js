@@ -54,6 +54,21 @@ class LspClient {
                 provideCompletionItems: (doc, pos) => this.completion(doc, pos),
             })
         );
+        this.disposables.push(
+            vscode.languages.registerDocumentFormattingEditProvider('icg', {
+                provideDocumentFormattingEdits: (doc) => this.formatting(doc),
+            })
+        );
+        this.disposables.push(
+            vscode.languages.registerHoverProvider('icg', {
+                provideHover: (doc, pos) => this.hover(doc, pos),
+            })
+        );
+        this.disposables.push(
+            vscode.languages.registerDefinitionProvider('icg', {
+                provideDefinition: (doc, pos) => this.definition(doc, pos),
+            })
+        );
     }
 
     start() {
@@ -200,6 +215,65 @@ class LspClient {
             });
         } catch (err) {
             return [];
+        }
+    }
+
+    // -- formatting / hover / definition -----------------------------------
+
+    async formatting(doc) {
+        if (!this.initialized) return [];
+        try {
+            const res = await this.request('textDocument/formatting', {
+                textDocument: { uri: doc.uri.toString() },
+                options: { tabSize: 4, insertSpaces: true },
+            });
+            if (!Array.isArray(res)) return [];
+            return res.map(
+                (e) =>
+                    new vscode.TextEdit(
+                        new vscode.Range(
+                            e.range.start.line,
+                            e.range.start.character,
+                            e.range.end.line,
+                            e.range.end.character
+                        ),
+                        e.newText
+                    )
+            );
+        } catch (err) {
+            return [];
+        }
+    }
+
+    async hover(doc, pos) {
+        if (!this.initialized) return undefined;
+        try {
+            const res = await this.request('textDocument/hover', {
+                textDocument: { uri: doc.uri.toString() },
+                position: { line: pos.line, character: pos.character },
+            });
+            if (!res || !res.contents) return undefined;
+            return new vscode.Hover(new vscode.MarkdownString(res.contents.value));
+        } catch (err) {
+            return undefined;
+        }
+    }
+
+    async definition(doc, pos) {
+        if (!this.initialized) return undefined;
+        try {
+            const res = await this.request('textDocument/definition', {
+                textDocument: { uri: doc.uri.toString() },
+                position: { line: pos.line, character: pos.character },
+            });
+            if (!res) return undefined;
+            const r = res.range;
+            return new vscode.Location(
+                vscode.Uri.parse(res.uri),
+                new vscode.Range(r.start.line, r.start.character, r.end.line, r.end.character)
+            );
+        } catch (err) {
+            return undefined;
         }
     }
 

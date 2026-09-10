@@ -8,7 +8,7 @@
 set -e
 
 here=$(cd "$(dirname "$0")" && pwd)
-dest="$HOME/.vscode/extensions/ic10go.icg-0.2.0"
+dest="$HOME/.vscode/extensions/ic10go.icg-0.3.0"
 
 rm -rf "$dest"
 mkdir -p "$dest"
