@@ -1,0 +1,124 @@
+define Dial 554524804 #Update 6.24
+define Button 491845673
+define lever 1220484876
+define Vent -1129453144
+alias Hash db
+main:
+sbn Dial HASH("Ingot Dial") Mode 17
+sbn Dial HASH("Amount Dial") Mode 30
+sb 435685051 On 1
+lbn r7 lever HASH("Override") Open 1
+lbn r13 lever HASH("VentLever") Open 2
+beqzal r13 VentOn
+bnezal r13 VentOff
+jal Mixer
+lbn r0 Dial HASH("Ingot Dial") Setting 2
+lbn r1 Button HASH("Confirm Button") Setting 2
+lbn r5 Dial HASH("Amount Dial") Setting 2
+yield
+lbn r15 2037291645 HASH("Silos CD") Setting 2
+bltz r15 off
+move r6 r5
+brnez r5 3
+sbn Dial HASH("Amount Dial") Setting 1
+move r5 1
+brle r0 17 2
+sbn Dial HASH("Ingot Dial") Setting 17
+brgt r0 7 2
+mul r6 r6 50
+brne r0 8 2
+mul r6 r6 200
+brgt r0 13 2
+brlt r0 13 3
+mul r6 r6 50
+jr 3
+brle r0 8 2
+mul r6 r6 100
+blez r0 off
+beqal r1 1 Set
+sub r0 r0 1
+mul r0 r0 3
+sbn -815193061 HASH("Amount") Setting r6
+add r0 r0 1
+brnez r0 r0
+s db Setting -1301215609 #iron
+move r2 0.00950100000010010000
+j main
+s db Setting -404336834 #copper
+move r2 0.00950100000100010000
+j main
+s db Setting 226410516 #gold
+move r2 0.00950100000100010000
+j main
+s db Setting -290196476 #silicon
+move r2 0.00950100000100010000
+j main
+s db Setting -929742000 #silver
+move r2 0.00950100000100010000
+j main
+s db Setting 2134647745 #lead
+move r2 0.00950100000100010000
+j main
+s db Setting -1406385572 #nickel
+move r2 0.00950100000100010000
+j main
+s db Setting -654790771 #steel
+move r2 0.00900100000100010000
+j main
+s db Setting -297990285 #Invar
+move r2 0.01200015001800020000
+j main
+s db Setting -82508479 #Solder
+move r2 0.00350005500100010000
+j main
+s db Setting 502280180 #Electrum
+move r2 0.00600100000080002350
+j main
+s db Setting 1058547521 #Constantan
+move r2 0.01000100002000055000
+j main
+s db Setting 156348098 #Waspaloy
+move r2 0.00400008005000055000
+j main
+s db Setting -787796599 #Inconel
+move r2 0.00600100002350023800
+j main
+s db Setting 412924554 #Astroloy
+move r2 0.01000100003000040000
+j main
+s db Setting 1579842814 #Hastelloy
+move r2 0.00950010002500030000
+j main
+s db Setting -1897868623 #Setllite
+move r2 0.01800100001000019500
+j main
+off:
+s db Setting 0
+j main
+Set:
+yield
+sbn 2037291645 HASH("Furnace IC") Setting r2
+j ra
+VentOn:
+sbn Vent HASH("Vent 1") Mode 0
+sbn Vent HASH("Vent 1") PressureExternal 101
+sbn Vent HASH("Vent 1") PressureInternal 0
+sbn Vent HASH("Vent 2") Mode 1
+sbn Vent HASH("Vent 2") PressureExternal 101
+sbn Vent HASH("Vent 2") PressureInternal 55000
+sbn Vent HASH("Vent 1") On 1
+sbn Vent HASH("Vent 2") On 1
+j ra
+VentOff:
+sbn Vent HASH("Vent 1") PressureExternal 0
+sbn Vent HASH("Vent 2") PressureExternal 0
+j ra
+Mixer:
+lbn r12 435685051 HASH("O2 Analyzer") Temperature 2
+lbn r13 435685051 HASH("H2 Analyzer") Temperature 2
+mul r14 r13 2
+div r14 r12 r14
+add r14 r14 1
+div r14 100 r14
+sbn 2104106366 HASH("Fuel Mixer") Setting r14
+j ra

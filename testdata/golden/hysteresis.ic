@@ -1,0 +1,9 @@
+move r0 0
+yield
+l r1 d1 Temperature
+bge r1 283.15 5
+move r0 1
+ble r1 296.15 7
+move r0 0
+s d0 On r0
+j 1

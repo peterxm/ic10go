@@ -1,0 +1,19 @@
+const Threshold = 100
+
+func clamp(x num, lo num, hi num) num {
+    if x < lo { return lo }
+    if x > hi { return hi }
+    return x
+}
+
+func main() {
+    var sum = 0
+    for i := 0; i < 10; i++ {
+        sum += i
+    }
+    d0.Setting = clamp(sum, 0, Threshold)
+    d0.On = sum > 20 && d0.Open == 1
+    d1.Setting = sum > 20 ? 1 : 0
+    d2.slot[0].Harvest = 1
+    yield()
+}

@@ -1,0 +1,874 @@
+// Package vm is a small IC10 interpreter used only for testing the compiler.
+// It models registers, the stack, device ports and batched device access well
+// enough to run compiler output and assert on resulting device state.
+package vm
+
+import (
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
+)
+
+const (
+	regCount  = 16
+	regRA     = 16
+	regSP     = 17
+	numRegs   = 18
+	stackSize = 512
+	eps       = 2.220446049250313e-16 // float64 machine epsilon
+)
+
+// Device is a mock device with logic values, slots, a stack and a pin state.
+type Device struct {
+	Name     string
+	Hash     uint32
+	NameHash uint32
+	Set      bool
+	Values   map[string]float64
+	Slots    map[int]map[string]float64
+	Stack    []float64
+}
+
+func newDevice(name string) *Device {
+	return &Device{
+		Name:   name,
+		Values: map[string]float64{},
+		Slots:  map[int]map[string]float64{},
+		Stack:  make([]float64, stackSize),
+	}
+}
+
+// Program is a parsed IC10 program. Instrs is indexed by line number.
+type Program struct {
+	Instrs []*Instr
+	Labels map[string]int
+}
+
+// Instr is a single parsed instruction.
+type Instr struct {
+	Op   string
+	Args []string
+	Line int
+}
+
+// Machine executes a program.
+type Machine struct {
+	Regs    [numRegs]float64
+	Stack   []float64
+	Program *Program
+	PC      int
+	Clock   float64
+	Ticks   int
+	Halted  bool
+	Devices map[string]*Device
+	order   []*Device
+}
+
+// New returns an empty machine.
+func New() *Machine {
+	m := &Machine{Devices: map[string]*Device{}, Stack: make([]float64, stackSize)}
+	m.Regs[regSP] = 0
+	return m
+}
+
+// Device returns the device with the given port name, creating it if needed.
+func (m *Machine) Device(name string) *Device {
+	if d, ok := m.Devices[name]; ok {
+		return d
+	}
+	d := newDevice(name)
+	m.Devices[name] = d
+	m.order = append(m.order, d)
+	return d
+}
+
+// Set sets a logic value on a device port.
+func (m *Machine) Set(name, logic string, v float64) {
+	m.Device(name).Values[logic] = v
+}
+
+// Get reads a logic value from a device port.
+func (m *Machine) Get(name, logic string) float64 {
+	return m.Device(name).Values[logic]
+}
+
+// SetSlot sets a slot logic value.
+func (m *Machine) SetSlot(name string, slot int, logic string, v float64) {
+	d := m.Device(name)
+	if d.Slots[slot] == nil {
+		d.Slots[slot] = map[string]float64{}
+	}
+	d.Slots[slot][logic] = v
+}
+
+// GetSlot reads a slot logic value.
+func (m *Machine) GetSlot(name string, slot int, logic string) float64 {
+	d := m.Device(name)
+	if d.Slots[slot] == nil {
+		return 0
+	}
+	return d.Slots[slot][logic]
+}
+
+// Load parses IC10 source into the machine.
+func (m *Machine) Load(src string) error {
+	prog, err := Parse(src)
+	if err != nil {
+		return err
+	}
+	m.Program = prog
+	m.PC = 0
+	m.Halted = false
+	return nil
+}
+
+// Run executes at most maxSteps instructions. It returns ErrStepLimit if the
+// limit is reached before the program ends.
+func (m *Machine) Run(maxSteps int) error {
+	if m.Program == nil {
+		return fmt.Errorf("vm: no program loaded")
+	}
+	for steps := 0; steps < maxSteps; steps++ {
+		if m.Halted || m.PC < 0 || m.PC >= len(m.Program.Instrs) {
+			return nil
+		}
+		ins := m.Program.Instrs[m.PC]
+		if ins == nil {
+			m.PC++
+			continue
+		}
+		next := m.PC + 1
+		if err := m.exec(ins, &next); err != nil {
+			return fmt.Errorf("vm: line %d: %w", m.PC, err)
+		}
+		m.PC = next
+	}
+	return ErrStepLimit
+}
+
+// ErrStepLimit indicates the execution budget was exhausted.
+var ErrStepLimit = fmt.Errorf("vm: step limit reached")
+
+// Parse parses IC10 source into a Program.
+func Parse(src string) (*Program, error) {
+	lines := strings.Split(src, "\n")
+	prog := &Program{Instrs: make([]*Instr, len(lines)), Labels: map[string]int{}}
+	for i, raw := range lines {
+		line := strings.TrimSpace(stripComment(raw))
+		if line == "" {
+			continue
+		}
+		if isLabel(line) {
+			prog.Labels[strings.TrimSuffix(line, ":")] = i
+			continue
+		}
+		fields := strings.Fields(line)
+		prog.Instrs[i] = &Instr{Op: strings.ToLower(fields[0]), Args: fields[1:], Line: i}
+	}
+	return prog, nil
+}
+
+func stripComment(line string) string {
+	if i := strings.IndexByte(line, '#'); i >= 0 {
+		return line[:i]
+	}
+	return line
+}
+
+func isLabel(line string) bool {
+	if !strings.HasSuffix(line, ":") {
+		return false
+	}
+	return !strings.ContainsAny(line[:len(line)-1], " \t")
+}
+
+// ---------------------------------------------------------------------------
+// Operand resolution
+// ---------------------------------------------------------------------------
+
+func regIndex(s string) (int, bool) {
+	switch s {
+	case "ra":
+		return regRA, true
+	case "sp":
+		return regSP, true
+	}
+	if len(s) >= 2 && s[0] == 'r' {
+		if n, err := strconv.Atoi(s[1:]); err == nil && n >= 0 && n < regCount {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+func parseNum(s string) (float64, bool) {
+	switch s {
+	case "nan":
+		return math.NaN(), true
+	case "pinf":
+		return math.Inf(1), true
+	case "ninf":
+		return math.Inf(-1), true
+	}
+	if strings.HasPrefix(s, "$") {
+		if v, err := strconv.ParseUint(s[1:], 16, 64); err == nil {
+			return float64(v), true
+		}
+	}
+	if strings.HasPrefix(s, "%") {
+		if v, err := strconv.ParseUint(strings.ReplaceAll(s[1:], "_", ""), 2, 64); err == nil {
+			return float64(v), true
+		}
+	}
+	if v, err := strconv.ParseFloat(s, 64); err == nil {
+		return v, true
+	}
+	return 0, false
+}
+
+func (m *Machine) num(s string) (float64, error) {
+	if i, ok := regIndex(s); ok {
+		return m.Regs[i], nil
+	}
+	if v, ok := parseNum(s); ok {
+		return v, nil
+	}
+	return 0, fmt.Errorf("not a number or register: %q", s)
+}
+
+func (m *Machine) reg(s string) (int, error) {
+	if i, ok := regIndex(s); ok {
+		return i, nil
+	}
+	return 0, fmt.Errorf("not a register: %q", s)
+}
+
+func (m *Machine) target(s string) (int, error) {
+	if line, ok := m.Program.Labels[s]; ok {
+		return line, nil
+	}
+	if v, ok := parseNum(s); ok {
+		return int(v), nil
+	}
+	return 0, fmt.Errorf("not a branch target: %q", s)
+}
+
+// ---------------------------------------------------------------------------
+// Execution
+// ---------------------------------------------------------------------------
+
+func (m *Machine) exec(ins *Instr, next *int) error {
+	switch ins.Op {
+	case "yield":
+		m.Ticks++
+		return nil
+	case "sleep":
+		v, err := m.num(ins.Args[0])
+		if err != nil {
+			return err
+		}
+		m.Clock += v
+		m.Ticks++
+		return nil
+	case "hcf":
+		m.Halted = true
+		return nil
+	case "j":
+		t, err := m.target(ins.Args[0])
+		if err != nil {
+			return err
+		}
+		*next = t
+		return nil
+	case "jal":
+		t, err := m.target(ins.Args[0])
+		if err != nil {
+			return err
+		}
+		m.Regs[regRA] = float64(ins.Line + 1)
+		*next = t
+		return nil
+	case "jr":
+		v, err := m.num(ins.Args[0])
+		if err != nil {
+			return err
+		}
+		*next = ins.Line + int(v)
+		return nil
+	}
+
+	if isBranch(ins.Op) {
+		return m.execBranch(ins, next)
+	}
+	return m.execOp(ins)
+}
+
+func (m *Machine) execOp(ins *Instr) error {
+	a := ins.Args
+	switch ins.Op {
+	case "move":
+		return m.setDst(a[0], mustNum(m, a[1]))
+	case "select":
+		dst, _ := m.reg(a[0])
+		cond, _ := m.num(a[1])
+		if cond != 0 {
+			m.Regs[dst] = mustNum(m, a[2])
+		} else {
+			m.Regs[dst] = mustNum(m, a[3])
+		}
+		return nil
+	case "add", "sub", "mul", "div", "mod", "pow", "atan2", "min", "max":
+		return m.binOp(ins.Op, a[0], a[1], a[2])
+	case "and", "or", "xor", "sll", "sra", "srl", "sla", "rol", "ror":
+		return m.bitOp(ins.Op, a[0], a[1], a[2])
+	case "not":
+		return m.setDst(a[0], float64(^int64(mustNum(m, a[1]))))
+	case "neg":
+		return m.setDst(a[0], -mustNum(m, a[1]))
+	case "abs", "sgn", "sqrt", "exp", "log", "floor", "ceil", "round", "trunc",
+		"sin", "cos", "tan", "asin", "acos", "atan":
+		return m.unOp(ins.Op, a[0], a[1])
+	case "rand":
+		return m.setDst(a[0], 0)
+	case "clamp":
+		v := mustNum(m, a[1])
+		lo := mustNum(m, a[2])
+		hi := mustNum(m, a[3])
+		return m.setDst(a[0], math.Min(math.Max(v, lo), hi))
+	case "lerp":
+		x := mustNum(m, a[1])
+		y := mustNum(m, a[2])
+		t := mustNum(m, a[3])
+		t = math.Min(math.Max(t, 0), 1)
+		return m.setDst(a[0], x+(y-x)*t)
+	case "seq", "sne", "slt", "sle", "sgt", "sge", "sap", "sna", "sapz", "snaz":
+		return m.cmpOp(ins.Op, a)
+	case "seqz", "snez", "sltz", "slez", "sgtz", "sgez", "snan", "snanz":
+		return m.cmpZeroOp(ins.Op, a[0], a[1])
+	case "l":
+		dst, _ := m.reg(a[0])
+		m.Regs[dst] = m.Device(a[1]).Values[a[2]]
+		return nil
+	case "s":
+		m.Device(a[0]).Values[a[1]] = mustNum(m, a[2])
+		return nil
+	case "ls":
+		dst, _ := m.reg(a[0])
+		slot, _ := m.num(a[2])
+		m.Regs[dst] = m.GetSlot(a[1], int(slot), a[3])
+		return nil
+	case "ss":
+		slot, _ := m.num(a[1])
+		m.SetSlot(a[0], int(slot), a[2], mustNum(m, a[3]))
+		return nil
+	case "lb", "lbn", "lbs", "lbns":
+		return m.batchLoad(ins.Op, a)
+	case "sb", "sbn", "sbs":
+		return m.batchStore(ins.Op, a)
+	case "push":
+		v := mustNum(m, a[0])
+		sp := int(m.Regs[regSP])
+		if sp < 0 || sp >= stackSize {
+			return fmt.Errorf("stack overflow")
+		}
+		m.Stack[sp] = v
+		m.Regs[regSP] = float64(sp + 1)
+		return nil
+	case "pop":
+		sp := int(m.Regs[regSP]) - 1
+		if sp < 0 {
+			return fmt.Errorf("stack underflow")
+		}
+		m.Regs[regSP] = float64(sp)
+		return m.setDst(a[0], m.Stack[sp])
+	case "peek":
+		sp := int(m.Regs[regSP]) - 1
+		if sp < 0 {
+			return fmt.Errorf("stack underflow")
+		}
+		return m.setDst(a[0], m.Stack[sp])
+	case "poke":
+		addr, _ := m.num(a[0])
+		m.Stack[int(addr)] = mustNum(m, a[1])
+		return nil
+	case "sdse":
+		dst, _ := m.reg(a[0])
+		if m.Device(a[1]).Set {
+			m.Regs[dst] = 1
+		} else {
+			m.Regs[dst] = 0
+		}
+		return nil
+	case "sdns":
+		dst, _ := m.reg(a[0])
+		if !m.Device(a[1]).Set {
+			m.Regs[dst] = 1
+		} else {
+			m.Regs[dst] = 0
+		}
+		return nil
+	case "rmap":
+		return m.setDst(a[0], 0)
+	case "get":
+		dst, _ := m.reg(a[0])
+		addr, _ := m.num(a[2])
+		m.Regs[dst] = m.Device(a[1]).Stack[int(addr)]
+		return nil
+	case "put":
+		addr, _ := m.num(a[1])
+		m.Device(a[0]).Stack[int(addr)] = mustNum(m, a[2])
+		return nil
+	case "getd":
+		dst, _ := m.reg(a[0])
+		addr, _ := m.num(a[2])
+		m.Regs[dst] = m.deviceByID(mustNum(m, a[1])).Stack[int(addr)]
+		return nil
+	case "putd":
+		addr, _ := m.num(a[1])
+		m.deviceByID(mustNum(m, a[0])).Stack[int(addr)] = mustNum(m, a[2])
+		return nil
+	case "clr":
+		d := m.Device(a[0])
+		d.Stack = make([]float64, stackSize)
+		return nil
+	}
+	return fmt.Errorf("unsupported instruction %q", ins.Op)
+}
+
+func (m *Machine) deviceByID(id float64) *Device {
+	for _, d := range m.order {
+		if v, ok := d.Values["ReferenceId"]; ok && v == id {
+			return d
+		}
+	}
+	return m.Device("db")
+}
+
+func (m *Machine) setDst(reg string, v float64) error {
+	i, err := m.reg(reg)
+	if err != nil {
+		return err
+	}
+	m.Regs[i] = v
+	return nil
+}
+
+func mustNum(m *Machine, s string) float64 {
+	v, err := m.num(s)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+func (m *Machine) binOp(op, dst, x, y string) error {
+	a := mustNum(m, x)
+	b := mustNum(m, y)
+	var r float64
+	switch op {
+	case "add":
+		r = a + b
+	case "sub":
+		r = a - b
+	case "mul":
+		r = a * b
+	case "div":
+		r = a / b
+	case "mod":
+		r = ic10Mod(a, b)
+	case "pow":
+		r = math.Pow(a, b)
+	case "atan2":
+		r = math.Atan2(a, b)
+	case "min":
+		r = math.Min(a, b)
+	case "max":
+		r = math.Max(a, b)
+	}
+	return m.setDst(dst, r)
+}
+
+func (m *Machine) bitOp(op, dst, x, y string) error {
+	a := int64(mustNum(m, x))
+	b := uint(mustNum(m, y)) & 63
+	var r int64
+	switch op {
+	case "and":
+		r = a & int64(mustNum(m, y))
+	case "or":
+		r = a | int64(mustNum(m, y))
+	case "xor":
+		r = a ^ int64(mustNum(m, y))
+	case "sll":
+		r = a << b
+	case "sra":
+		r = a >> b
+	case "srl":
+		r = int64(uint64(a) >> b)
+	case "sla":
+		r = a << b
+	case "rol":
+		r = int64((uint64(a) << b) | (uint64(a) >> (64 - b)))
+	case "ror":
+		r = int64((uint64(a) >> b) | (uint64(a) << (64 - b)))
+	}
+	return m.setDst(dst, float64(r))
+}
+
+func (m *Machine) unOp(op, dst, x string) error {
+	a := mustNum(m, x)
+	var r float64
+	switch op {
+	case "abs":
+		r = math.Abs(a)
+	case "sgn":
+		switch {
+		case a < 0:
+			r = -1
+		case a > 0:
+			r = 1
+		default:
+			r = 0
+		}
+	case "sqrt":
+		r = math.Sqrt(a)
+	case "exp":
+		r = math.Exp(a)
+	case "log":
+		r = math.Log(a)
+	case "floor":
+		r = math.Floor(a)
+	case "ceil":
+		r = math.Ceil(a)
+	case "round":
+		r = math.Round(a)
+	case "trunc":
+		r = math.Trunc(a)
+	case "sin":
+		r = math.Sin(a)
+	case "cos":
+		r = math.Cos(a)
+	case "tan":
+		r = math.Tan(a)
+	case "asin":
+		r = math.Asin(a)
+	case "acos":
+		r = math.Acos(a)
+	case "atan":
+		r = math.Atan(a)
+	}
+	return m.setDst(dst, r)
+}
+
+func (m *Machine) cmpOp(op string, a []string) error {
+	x := mustNum(m, a[1])
+	y := mustNum(m, a[2])
+	var r bool
+	switch op {
+	case "seq":
+		r = x == y
+	case "sne":
+		r = x != y
+	case "slt":
+		r = x < y
+	case "sle":
+		r = x <= y
+	case "sgt":
+		r = x > y
+	case "sge":
+		r = x >= y
+	case "sap":
+		tol := mustNum(m, a[3])
+		r = math.Abs(x-y) <= math.Max(tol*math.Max(math.Abs(x), math.Abs(y)), eps*8)
+	case "sna":
+		tol := mustNum(m, a[3])
+		r = math.Abs(x-y) > math.Max(tol*math.Max(math.Abs(x), math.Abs(y)), eps*8)
+	case "sapz":
+		tol := mustNum(m, a[2])
+		r = math.Abs(x) <= math.Max(tol*math.Abs(x), eps*8)
+	case "snaz":
+		tol := mustNum(m, a[2])
+		r = math.Abs(x) > math.Max(tol*math.Abs(x), eps*8)
+	}
+	return m.setDst(a[0], boolNum(r))
+}
+
+func (m *Machine) cmpZeroOp(op, dst, x string) error {
+	v := mustNum(m, x)
+	var r bool
+	switch op {
+	case "seqz":
+		r = v == 0
+	case "snez":
+		r = v != 0
+	case "sltz":
+		r = v < 0
+	case "slez":
+		r = v <= 0
+	case "sgtz":
+		r = v > 0
+	case "sgez":
+		r = v >= 0
+	case "snan":
+		r = math.IsNaN(v)
+	case "snanz":
+		r = !math.IsNaN(v)
+	}
+	return m.setDst(dst, boolNum(r))
+}
+
+func boolNum(b bool) float64 {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func ic10Mod(x, y float64) float64 {
+	r := math.Mod(x, y)
+	if r != 0 && (r < 0) != (y < 0) {
+		r += y
+	}
+	return r
+}
+
+// ---------------------------------------------------------------------------
+// Branching
+// ---------------------------------------------------------------------------
+
+var branchConds = map[string]bool{
+	"eq": true, "ne": true, "lt": true, "le": true, "gt": true, "ge": true,
+	"eqz": true, "nez": true, "ltz": true, "lez": true, "gtz": true, "gez": true,
+	"nan": true,
+}
+
+// branchInfo splits a branch mnemonic into its condition, relative and ra flags.
+func branchInfo(op string) (cond string, relative, withRA bool, ok bool) {
+	s := op
+	if strings.HasSuffix(s, "al") {
+		withRA = true
+		s = strings.TrimSuffix(s, "al")
+	}
+	if strings.HasPrefix(s, "br") {
+		relative = true
+		s = strings.TrimPrefix(s, "br")
+	}
+	if !strings.HasPrefix(s, "b") {
+		return "", false, false, false
+	}
+	cond = strings.TrimPrefix(s, "b")
+	return cond, relative, withRA, branchConds[cond]
+}
+
+func isBranch(op string) bool {
+	_, _, _, ok := branchInfo(op)
+	return ok
+}
+
+func (m *Machine) execBranch(ins *Instr, next *int) error {
+	cond, relative, withRA, ok := branchInfo(ins.Op)
+	if !ok {
+		return fmt.Errorf("unsupported branch %q", ins.Op)
+	}
+	args := ins.Args
+	var targetArg string
+	var take bool
+	switch cond {
+	case "eq", "ne", "lt", "le", "gt", "ge":
+		x := mustNum(m, args[0])
+		y := mustNum(m, args[1])
+		targetArg = args[2]
+		take = branchTake(cond, x, y)
+	default: // unary
+		x := mustNum(m, args[0])
+		targetArg = args[1]
+		take = branchTake(cond, x, 0)
+	}
+	if !take {
+		return nil
+	}
+	if withRA {
+		m.Regs[regRA] = float64(ins.Line + 1)
+	}
+	if relative {
+		off, _ := m.num(targetArg)
+		*next = ins.Line + int(off)
+		return nil
+	}
+	t, err := m.target(targetArg)
+	if err != nil {
+		return err
+	}
+	*next = t
+	return nil
+}
+
+func branchTake(cond string, x, y float64) bool {
+	switch cond {
+	case "eq":
+		return x == y
+	case "ne":
+		return x != y
+	case "lt":
+		return x < y
+	case "le":
+		return x <= y
+	case "gt":
+		return x > y
+	case "ge":
+		return x >= y
+	case "eqz":
+		return x == 0
+	case "nez":
+		return x != 0
+	case "ltz":
+		return x < 0
+	case "lez":
+		return x <= 0
+	case "gtz":
+		return x > 0
+	case "gez":
+		return x >= 0
+	case "nan":
+		return math.IsNaN(x)
+	}
+	return false
+}
+
+// ---------------------------------------------------------------------------
+// Batched device access
+// ---------------------------------------------------------------------------
+
+func (m *Machine) matching(hash, nameHash float64) []*Device {
+	h := hashBits(hash)
+	n := hashBits(nameHash)
+	var out []*Device
+	for _, d := range m.order {
+		if d.Hash != 0 && h == d.Hash && (nameHash == 0 || n == d.NameHash) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// HashOf normalises a signed or unsigned 32-bit hash value for device setup.
+func HashOf(v int64) uint32 { return uint32(v) }
+
+func hashBits(v float64) uint32 {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0
+	}
+	return uint32(int64(v))
+}
+
+func (m *Machine) batchLoad(op string, a []string) error {
+	dst, _ := m.reg(a[0])
+	hash := mustNum(m, a[1])
+	var nameHash float64
+	var slot float64
+	var logic string
+	var mode float64
+	switch op {
+	case "lb":
+		logic = a[2]
+		mode = mustNum(m, a[3])
+	case "lbn":
+		nameHash = mustNum(m, a[2])
+		logic = a[3]
+		mode = mustNum(m, a[4])
+	case "lbs":
+		slot = mustNum(m, a[2])
+		logic = a[3]
+		mode = mustNum(m, a[4])
+	case "lbns":
+		nameHash = mustNum(m, a[2])
+		slot = mustNum(m, a[3])
+		logic = a[4]
+		mode = mustNum(m, a[5])
+	}
+	devs := m.matching(hash, nameHash)
+	var vals []float64
+	for _, d := range devs {
+		if op == "lbs" || op == "lbns" {
+			if s, ok := d.Slots[int(slot)]; ok {
+				vals = append(vals, s[logic])
+			}
+		} else {
+			vals = append(vals, d.Values[logic])
+		}
+	}
+	m.Regs[dst] = aggregate(int(mode), vals)
+	return nil
+}
+
+func aggregate(mode int, vals []float64) float64 {
+	if len(vals) == 0 {
+		switch mode {
+		case 0:
+			return math.NaN()
+		case 3:
+			return math.Inf(-1)
+		default:
+			return 0
+		}
+	}
+	switch mode {
+	case 0:
+		sum := 0.0
+		for _, v := range vals {
+			sum += v
+		}
+		return sum / float64(len(vals))
+	case 1:
+		sum := 0.0
+		for _, v := range vals {
+			sum += v
+		}
+		return sum
+	case 2:
+		min := vals[0]
+		for _, v := range vals[1:] {
+			min = math.Min(min, v)
+		}
+		return min
+	case 3:
+		max := vals[0]
+		for _, v := range vals[1:] {
+			max = math.Max(max, v)
+		}
+		return max
+	}
+	return 0
+}
+
+func (m *Machine) batchStore(op string, a []string) error {
+	hash := mustNum(m, a[0])
+	var nameHash, slot float64
+	var logic string
+	var value float64
+	switch op {
+	case "sb":
+		logic = a[1]
+		value = mustNum(m, a[2])
+	case "sbn":
+		nameHash = mustNum(m, a[1])
+		logic = a[2]
+		value = mustNum(m, a[3])
+	case "sbs":
+		slot = mustNum(m, a[1])
+		logic = a[2]
+		value = mustNum(m, a[3])
+	}
+	for _, d := range m.matching(hash, nameHash) {
+		if op == "sbs" {
+			if d.Slots[int(slot)] == nil {
+				d.Slots[int(slot)] = map[string]float64{}
+			}
+			d.Slots[int(slot)][logic] = value
+		} else {
+			d.Values[logic] = value
+		}
+	}
+	return nil
+}

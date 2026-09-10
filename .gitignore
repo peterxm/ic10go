@@ -1,0 +1,15 @@
+# Build output
+/ic10c
+ic10c
+*.exe
+
+# Go test artifacts
+*.test
+*.out
+coverage.txt
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

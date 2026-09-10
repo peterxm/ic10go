@@ -1,0 +1,378 @@
+# 编译器架构与路线图
+
+> 本文描述 `ic10go` 编译器的内部架构、关键算法与里程碑。
+> 语言语法见 [`spec.md`](./spec.md)，IC10 目标细节见 [`target-ic10.md`](./target-ic10.md)。
+
+---
+
+## 1. 目标
+
+将 `.icg` 源码编译为满足 Stationeers IC10 硬约束的机器码：
+
+- ≤ 128 行、≤ 4096 字节、≤ 90 字符/行
+- 输出**不可读但高效**：无 alias / define / 注释 / 空行 / 标签
+- 基于活跃性的寄存器复用，最小化栈溢出
+- 编译期完成一切可完成的工作（常量、哈希、内联）
+
+---
+
+## 2. 编译管线
+
+```
+.icg 源码
+  │
+  ▼
+┌─────────┐   ┌─────────┐   ┌─────────┐
+│  lexer  │──▶│ parser  │──▶│  AST    │
+└─────────┘   └─────────┘   └────┬────┘
+                                 ▼
+                          ┌─────────────┐
+                          │    sema     │  名字解析 / 类型检查 / 内建表校验
+                          └──────┬──────┘
+                                 ▼
+                          ┌─────────────┐
+                          │   lower     │  AST → 三地址 IR
+                          └──────┬──────┘
+                                 ▼
+                          ┌─────────────┐
+                          │     opt     │  常量折叠/传播/DCE/CSE/内联/...
+                          └──────┬──────┘
+                                 ▼
+                          ┌─────────────┐
+                          │  regalloc   │  活跃性 + 线性扫描 + 合并 + 溢出
+                          └──────┬──────┘
+                                 ▼
+                          ┌─────────────┐
+                          │    isel     │  IR → IC10 指令选择
+                          └──────┬──────┘
+                                 ▼
+                          ┌─────────────┐
+                          │    asm      │  布局 / 行号回填 / 限额校验
+                          └──────┬──────┘
+                                 ▼
+                          ┌─────────────┐
+                          │    emit     │  IC10 文本
+                          └─────────────┘
+```
+
+---
+
+## 3. 各阶段职责
+
+### 3.1 lexer / parser / ast
+
+- 手写递归下降解析器（错误恢复好、无第三方依赖）。
+- 位置信息贯穿所有节点，供诊断与源码映射使用。
+- 设备端口 `d0..d5` / `db` 在词法层识别为专用 token。
+- 字符串保留原始值，供 `hash()` 与逻辑类型名使用。
+
+### 3.2 sema（语义分析）
+
+- 作用域链与符号表；检测未定义变量、重复声明。
+- 类型检查：`num` / `bool` / `device` / `void`。
+- 内建表校验（可开关 `-no-check`）：
+  - 设备逻辑类型名合法性
+  - 槽位类型名合法性
+  - 批量模式名合法性
+- 标记常量、内联候选函数。
+
+### 3.3 lower（AST → IR）
+
+- 生成三地址码，虚拟寄存器无限。
+- 基本块划分；`if` / `for` / `switch` 展开为分支与块。
+- 函数调用点按全内联策略展开。
+- 生成短路的 `&&` / `||` 分支。
+
+### 3.4 opt（优化）
+
+见第 5 节。
+
+### 3.5 regalloc（寄存器分配）
+
+见第 6 节。
+
+### 3.6 isel（指令选择）
+
+- 把 IR 操作映射为 IC10 指令。
+- 比较-分支融合、`select` 化、立即数选择。
+- 处理 IC10 操作数限制（如 `select` 4 操作数、`s` 的源可为立即数）。
+
+### 3.7 asm（汇编 / 布局）
+
+- 线性布局，每条指令占 1 行。
+- 计算绝对行号，回填所有跳转目标。
+- 统计行数 / 字节数 / 单行长度，超限报错。
+
+### 3.8 emit
+
+- 输出纯 IC10 文本，无任何装饰。
+
+---
+
+## 4. IR 设计
+
+采用**非 SSA 三地址码**（程序规模小，数据流迭代足够；后续可升级 SSA）。
+
+```go
+type Value interface{} // Const | VReg | Device | Label
+
+type Instr struct {
+    Op   Op
+    Dst  *VReg
+    Args []Value
+}
+
+type Block struct {
+    Instrs []Instr
+    Succs  []*Block
+    Preds  []*Block
+}
+```
+
+指令集（示意）：
+
+```
+Const    t = k
+Move     t = v
+BinOp    t = op a b        // add/sub/mul/div/mod/and/or/xor/sll/sra...
+UnOp     t = op a          // neg/not/seqz...
+Cmp      t = cmp a b
+Select   t = select c a b
+Load     t = l dev logic
+Store    s dev logic v
+LoadSlot t = ls dev idx logic
+StoreSlot ss dev idx logic v
+Batch    ...
+Push/Pop/Peek/Poke
+Call     // 仅内联阶段内部使用，最终应被消除
+Yield/Sleep/Hcf
+Br       j label
+BrCond   b<cmp> a b label
+Ret
+```
+
+数据流分析（反向）：
+
+- `live-out[b] = ∪ live-in[s]`
+- `live-in[b] = use[b] ∪ (live-out[b] \ def[b])`
+
+---
+
+## 5. 优化通道
+
+| 通道 | 作用 |
+|------|------|
+| 常量折叠 | 编译期计算常量表达式、`hash()` |
+| 常量传播 | 把已知常量代入使用点 |
+| 拷贝传播 | 消除 `t1 = t2` 的间接链 |
+| 死代码消除 | 删除无副作用且结果未使用的指令、不可达块 |
+| 公共子表达式消除 | 复用相同表达式 |
+| 内联 | 全内联所有函数，消除 `jal/ra` |
+| 比较-分支融合 | `if a<b` → `bge`，省一条比较 |
+| select 化 | 同左值赋常量的 `if-else` → `select` |
+| 逻辑化简 | `&&`→`min`、`||`→`max`、`!`→`seqz`（无副作用时） |
+| 循环优化 | 循环不变量外提（谨慎，可能增行）、强度削弱 |
+| 窥孔优化 | IC10 指令级合并 |
+
+> 优化目标函数：**优先减少行数，其次减少字节数**。某些变换（如常量提为 `define`）会增加行但减少字节，由大小模型决策。
+
+---
+
+## 6. 寄存器分配
+
+### 6.1 活跃区间
+
+- 每条指令的 `live-in` / `live-out`。
+- 虚拟寄存器 `v` 的区间 = `[首次定义位置, 最后使用位置]`。
+
+### 6.2 线性扫描
+
+1. 按起点排序区间。
+2. 维护 active 集合与空闲寄存器池（`r0..r15`）。
+3. 区间过期即归还寄存器。
+4. 分配编号最小的空闲寄存器，最大化复用。
+
+### 6.3 合并
+
+- 对 `move` 的源/目的，若区间不冲突则合并到同一物理寄存器。
+
+### 6.4 溢出
+
+按优先级：
+
+1. **重物化**：常量直接嵌入指令，永不占寄存器。
+2. **重算**：廉价纯表达式在使用点重算。
+3. **栈溢出**：固定地址 `poke` 写入；读取时需恢复 `sp` 后 `peek`（或按栈纪律 push/pop）。仅在寄存器压力 > 16 时发生。
+
+### 6.5 保留寄存器
+
+- `ra`：IC10 返回地址，不参与分配。
+- `sp`：栈指针，不参与分配。
+- 全内联后通常无需 `ra` 保存。
+
+### 6.6 寄存器压力报告
+
+`stats` 输出各函数峰值活跃变量数，便于定位溢出。
+
+---
+
+## 7. 指令选择要点
+
+| 源构造 | 目标 |
+|--------|------|
+| `a + b` | `add d a b` |
+| `if a < b { ... }` | `bge a b Lelse` + body |
+| `if c { x = 1 } else { x = 0 }` | `select x c 1 0` |
+| `c ? a : b` | `select d c a b` |
+| `!a` | `seqz d a` |
+| `a && b`（无副作用） | `min d a b` |
+| `a \|\| b`（无副作用） | `max d a b` |
+| `d0.On` | `l d d0 On` |
+| `d0.On = v` | `s d0 On v` |
+| `d.slot[i].X` | `ls d d i X` |
+| `d.slot[i].X = v` | `ss d i X v` |
+| `d.channel[c][n]` | `l d d:c Channel<n>` |
+| `batch.read(...)` | `lb ...` |
+| `yield()` | `yield` |
+
+立即数策略：IC10 多数指令允许立即数操作数，常量直接内联，避免额外 `move`。
+
+---
+
+## 8. 内建表
+
+存放于 `internal/builtin`，通过 `go:embed` 加载：
+
+- **逻辑类型表**：`Temperature` `On` `Ratio` ... 用于校验。
+- **槽位类型表**：`Occupied` `Mature` ...
+- **批量模式表**：`Average`→0 等。
+- **prefab hash 表**（可选）：常用设备类型名 → CRC-32，支持 `hash("...")` 之外的直接名字。
+
+表的来源可以是手工整理，或后续从游戏数据生成。所有表均可独立更新以适配游戏版本。
+
+---
+
+## 9. 工具链
+
+| 子命令 | 功能 |
+|--------|------|
+| `ic10c build file.icg` | 编译并输出 IC10 |
+| `ic10c build -o out.ic file.icg` | 输出到文件 |
+| `ic10c fmt file.icg` | 格式化源码 |
+| `ic10c disasm file.ic` | 反汇编旧 `.ic` → `.icg` / IR |
+| `ic10c stats file.icg` | 行/字节/寄存器压力报告 |
+| `ic10c ast file.icg` | 打印 AST（调试） |
+| `ic10c ir file.icg` | 打印优化各阶段 IR（调试） |
+| `ic10c lsp` | 启动 LSP |
+
+配套：
+
+- VSCode 语法高亮（TextMate grammar）
+- LSP：诊断、补全（逻辑类型/内建函数）、跳转、悬停
+
+---
+
+## 10. 目录结构
+
+```
+ic10go/
+  go.mod
+  README.md
+  docs/
+    spec.md
+    architecture.md
+    target-ic10.md
+  cmd/ic10c/
+    main.go
+  internal/
+    source/       // 位置、文件、诊断
+    token/
+    lexer/
+    ast/
+    parser/
+    sema/
+    ir/           // 指令、块、builder、liveness
+    lower/
+    opt/
+    regalloc/
+    isel/
+    asm/
+    emit/
+    builtin/
+    disasm/
+    format/
+    lsp/
+    vm/           // 测试用最小解释器（M5）
+  pkg/ic10/       // 公开 API
+  testdata/
+    golden/       // 源 → 期望 IC10
+    programs/     // 端到端程序
+```
+
+---
+
+## 11. 里程碑
+
+### M0 骨架
+- `go.mod`、`cmd/ic10c` 骨架
+- token / lexer / ast / parser（表达式与基础语句）
+- 诊断基础设施
+
+### M1 单函数编译
+- `const` / `var` / `:=`
+- 算术、比较、位运算
+- `if` / `for` / `switch` / `break` / `continue` / `return`
+- 设备属性读写、`yield` / `sleep`
+- 活跃性分析 + 线性扫描
+- 绝对行号回填
+- 128 行 / 4KiB / 90 字符校验
+
+### M2 优化器
+- 常量折叠 / 传播、拷贝传播、DCE、CSE
+- 比较-分支融合、`select` 化、逻辑化简
+- 全内联
+- 大小模型与 `define` 决策
+
+### M3 领域特性
+- 槽位 `ls/ss`、通道 `ChannelN`
+- 批量 `lb/lbn/lbs/sb/sbn/sbs`
+- 栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr`
+- 动态 logicType `read/write`
+- `approx` / `isSet` / `rmap` / NaN 支持
+
+### M4 工具链
+- `fmt` 格式化
+- `disasm` 反汇编旧 `.ic`
+- `stats` 预算报告
+- LSP（诊断 / 补全 / 跳转 / 悬停）
+- VSCode 语法高亮
+
+### M5 测试用最小解释器（VM）
+- 仅用于测试与开发验证，不作为用户可见模拟器
+- 实现 IC10 指令解释、寄存器、栈、标签/行号
+- mock 设备模型（可脚本化读写逻辑类型）
+- 端到端测试：`.icg` → 编译 → VM 执行 → 断言设备状态
+- 作为优化器的语义回归基准
+
+---
+
+## 12. 风险与对策
+
+| 风险 | 对策 |
+|------|------|
+| 128 行 + 4KiB 双约束导致内联爆行 | 大小感知内联、按需回退、`stats` 报告 |
+| IC10 操作数限制与分配冲突 | 分配器带约束；必要时引入临时寄存器 |
+| 位运算是整数语义（double 的坑） | 规范明确，VM 覆盖测试 |
+| `ra` / `sp` 管理错误 | 全内联为主；VM 回归 |
+| 游戏版本导致哈希/枚举漂移 | 内建表独立、可更新 |
+| NaN / 无穷语义 | 显式内建 `nan/pinf/ninf/isNaN`，VM 测试 |
+| 无 VM 时语义验证弱 | M5 最小解释器作为强制测试手段 |
+
+---
+
+## 13. 开发约定
+
+- 所有包提供单元测试；黄金文件放 `testdata/golden`。
+- 优化通道必须可通过 flag 单独关闭，便于定位。
+- 每次改动跑 `go test ./...` 与 `go vet ./...`。
+- 不引入第三方运行时依赖；标准库优先。

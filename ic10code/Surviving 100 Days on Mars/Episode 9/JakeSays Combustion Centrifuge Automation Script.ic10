@@ -1,0 +1,63 @@
+alias CC db
+alias LED1 d0
+alias LED2 d1
+alias processed r0 #read
+alias stress r1 #read
+alias slerpm r3 #read
+alias sgethrottle r4 #read
+alias rpm r5 #read
+alias throttle r6 #read
+alias bigbad r7
+
+Init:
+l stress CC Stress
+bgt stress 10 Init
+Start10:
+s CC Open 0
+s CC Throttle 10
+l stress CC Stress
+blt stress 50 Start10
+Start0:
+s CC Throttle 0
+l stress CC Stress
+bgt stress 45 Start0
+Start50:
+l rpm CC Rpm
+blt rpm 125 Start50
+s CC Throttle 50
+StartFull:
+l rpm CC Rpm
+blt rpm 275 StartFull
+s CC Throttle 100
+s CC CombustionLimiter 20
+
+Operation:
+l processed CC Reagents
+bge processed 1000 Empty
+#Emergency Power Loss Logic
+l rpm CC Rpm
+l throttle CC Throttle
+sge sgethrottle throttle 20
+sle slerpm rpm 100
+and bigbad sgethrottle slerpm
+beq bigbad 1 Emergency
+s LED1 Setting processed
+j Operation
+
+Empty:
+s CC Throttle 0
+s CC CombustionLimiter 0
+s CC On 0
+l rpm CC Rpm
+bgt rpm 50 Empty
+s CC Open 1
+l processed CC Reagents
+blt processed 20 Init
+j Empty
+
+Emergency:
+s CC Throttle 0
+s CC CombustionLimiter 0
+l stress CC Stress
+bgt stress 10 Emergency
+j Init

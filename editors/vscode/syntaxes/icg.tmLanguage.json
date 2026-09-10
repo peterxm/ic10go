@@ -1,0 +1,72 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "IC10 Go",
+  "scopeName": "source.icg",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#builtins" },
+    { "include": "#batch" },
+    { "include": "#devices" },
+    { "include": "#logictypes" },
+    { "include": "#numbers" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.icg", "match": "//.*$" },
+        { "name": "comment.block.icg", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        { "name": "string.quoted.double.icg", "begin": "\"", "end": "\"", "patterns": [
+          { "name": "constant.character.escape.icg", "match": "\\\\." }
+        ]}
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.icg", "match": "\\b(if|else|for|break|continue|return|switch|case|default)\\b" },
+        { "name": "storage.type.icg", "match": "\\b(const|var|func)\\b" },
+        { "name": "constant.language.icg", "match": "\\b(true|false|nan|pinf|ninf)\\b" },
+        { "name": "storage.type.icg", "match": "\\b(num|bool|device|void)\\b" }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        { "name": "support.function.icg", "match": "\\b(yield|sleep|hcf|abs|sgn|sqrt|exp|log|floor|ceil|round|trunc|rand|sin|cos|tan|asin|acos|atan|atan2|pow|min|max|clamp|lerp|hash|str|isNaN|approx|approxZero|isSet|isUnset|rmap|get|put|getd|putd|clr|push|pop|peek|poke|read|write)\\b" }
+      ]
+    },
+    "batch": {
+      "patterns": [
+        { "name": "support.class.icg", "match": "\\bbatch\\b" }
+      ]
+    },
+    "devices": {
+      "patterns": [
+        { "name": "variable.other.device.icg", "match": "\\b(db|d[0-5])\\b" }
+      ]
+    },
+    "logictypes": {
+      "patterns": [
+        { "name": "constant.other.logictype.icg", "match": "\\b(Activate|AirRelease|Charge|ClearMemory|Color|CompletionRatio|DataNetwork|ElevatorLevel|ElevatorSpeed|Error|ExportCount|Filtration|Harvest|Horizontal|HorizontalRatio|Idle|ImportCount|Lock|Maximum|Mode|On|Open|Output|Plant|PositionX|PositionY|PositionZ|Power|PowerActual|PowerPotential|PowerRequired|PrefabHash|Pressure|PressureExternal|PressureInternal|PressureOutput|PressureSetting|Quantity|Ratio|RatioCarbonDioxide|RatioNitrogen|RatioOxygen|RatioPollutant|RatioVolatiles|RatioWater|Reagents|RecipeHash|ReferenceId|RequestHash|RequiredPower|Setting|SettingInput|SettingOutput|SolarAngle|Temperature|TemperatureSettings|TotalMoles|VelocityMagnitude|VelocityRelativeX|VelocityRelativeY|VelocityRelativeZ|Vertical|VerticalRatio|Volume|Occupied|OccupantHash|Damage|Efficiency|FilterType|Health|Growth|Class|PressureWaste|PressureAir|MaxQuantity|Mature|Seeding|Average|Sum|Minimum|Channel[0-7]|slot|channel)\\b" }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.hex.icg", "match": "\\b0[xX][0-9a-fA-F_]+" },
+        { "name": "constant.numeric.binary.icg", "match": "\\b0[bB][01_]+" },
+        { "name": "constant.numeric.float.icg", "match": "\\b[0-9][0-9_]*\\.[0-9_]+([eE][+-]?[0-9]+)?" },
+        { "name": "constant.numeric.integer.icg", "match": "\\b[0-9][0-9_]*\\b" }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.icg", "match": ":=|==|!=|<=|>=|&&|\\|\\||<<=|>>=|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<|>>|\\+\\+|--|[-+*/%&|^~!<>=?:]" }
+      ]
+    }
+  }
+}

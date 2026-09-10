@@ -1,0 +1,31 @@
+func main() {
+    var x = 0
+    if d0.Activate {
+        x = 1
+    } else {
+        x = 2
+    }
+
+    switch x {
+    case 1:
+        d1.On = 1
+    case 2, 3:
+        d1.On = 0
+    default:
+        d1.On = -1
+    }
+
+    y := sqrt(abs(-16)) + min(3, 5) * 2
+    d2.Setting = y
+    d2.Mode = x&3 | 1
+    sleep(0.5)
+
+    for d0.Activate {
+        yield()
+    }
+
+    for {
+        d0.Open = 1
+        break
+    }
+}

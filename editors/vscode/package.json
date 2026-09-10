@@ -1,0 +1,28 @@
+{
+  "name": "icg",
+  "displayName": "IC10 Go (.icg)",
+  "description": "Syntax highlighting for the .icg language compiled by ic10c",
+  "version": "0.1.0",
+  "publisher": "ic10go",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "icg",
+        "aliases": ["IC10 Go", "icg"],
+        "extensions": [".icg"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "icg",
+        "scopeName": "source.icg",
+        "path": "./syntaxes/icg.tmLanguage.json"
+      }
+    ]
+  }
+}

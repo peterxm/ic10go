@@ -1,0 +1,8 @@
+yield
+l r0 d0 Vertical
+sub r0 90 r0
+sb -539224550 Vertical r0
+l r0 d0 Horizontal
+sub r0 r0 90
+sb -539224550 Horizontal r0
+j 0

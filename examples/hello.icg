@@ -1,0 +1,7 @@
+// 每 tick 把电池电量写入 IC 宿主显示屏
+func main() {
+    for {
+        yield()
+        db.Setting = d0.Ratio
+    }
+}

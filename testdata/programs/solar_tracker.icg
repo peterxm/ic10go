@@ -1,0 +1,10 @@
+// 太阳能追踪：将双轴面板角度对准太阳。
+const solarPanel = -539224550
+
+func main() {
+    for {
+        yield()
+        batch.write(solarPanel, "Vertical", 90-d0.Vertical)
+        batch.write(solarPanel, "Horizontal", d0.Horizontal-90)
+    }
+}

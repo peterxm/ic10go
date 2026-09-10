@@ -1,0 +1,11 @@
+yield
+s d0 Mode 1
+l r0 d0 PressureOutput
+l r1 d0 On
+select r1 r1 45000 40000
+slt r0 r0 r1
+s d0 On r0
+l r0 db PressureOutput
+slt r0 r0 19000
+s db Mode r0
+j 0

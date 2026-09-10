@@ -1,0 +1,28 @@
+l r0 d0 Activate
+select r0 r0 1 2
+seq r1 r0 1
+beqz r1 6
+s d1 On 1
+j 13
+seq r1 r0 2
+bnez r1 10
+seq r1 r0 3
+beqz r1 12
+s d1 On 0
+j 13
+s d1 On -1
+abs r1 -16
+sqrt r1 r1
+min r2 3 5
+mul r2 r2 2
+add r1 r1 r2
+s d2 Setting r1
+and r0 r0 3
+or r0 r0 1
+s d2 Mode r0
+sleep 0.5
+l r0 d0 Activate
+beqz r0 27
+yield
+j 23
+s d0 Open 1

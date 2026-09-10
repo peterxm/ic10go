@@ -1,0 +1,75 @@
+#Naming Variables
+alias iceCrusher d0
+alias waterBottleFiller d1
+alias occupied r0
+alias turnOn r1
+alias fillLevel r2
+alias leftSlot r3
+alias rightSlot r4
+alias pressure r5
+alias volume r6
+
+#Main loop. Each 'jal' is treated like its own function.
+main:
+yield
+jal CrushIce
+jal FillBottles
+#check gas pressure and liquid volume in waste line
+lbn pressure 1632165346 HASH("Waste Tank") Pressure Sum
+lbn volume 435685051 HASH("Ice Crusher Water Analyzer") VolumeOfLiquid Sum
+#clear line if there is either gas OR water present
+move turnOn 0
+sgt pressure pressure 10
+sgt volume volume 0.5
+or turnOn pressure volume
+bnez turnOn clearWaste
+#restart main loop
+j main
+
+#Runs a check to see if ice crusher needs to run
+CrushIce:
+ls occupied iceCrusher 0 Occupied #checks if the slot is occupied
+s iceCrusher On occupied #if it is, will turn on the ice crusher until it is not. Simple!
+yield
+j ra
+
+#Runs a check to see if water bottles need to be refilled.
+FillBottles:
+#The bottle filler has 2 slots (0,1) we need to check both.
+#Checks left slot
+ls occupied waterBottleFiller 0 Occupied #Is the left slot occupied?
+ls fillLevel waterBottleFiller 0 Quantity #Checks how full the bottle is (Max: 1.5L)
+slt fillLevel fillLevel 1.5 #Sets fillLevel to '1' if it reads less than 1.5L
+and leftSlot occupied fillLevel #sets '1' if the slot is occupied AND bottle is not full
+
+#Checks right slot
+ls occupied waterBottleFiller 1 Occupied #Is the right slot occupied?
+ls fillLevel waterBottleFiller 1 Quantity
+slt fillLevel fillLevel 1.5 #Sets fillLevel to '1' if it reads less than 1.5L
+and rightSlot occupied fillLevel
+
+#turns on water bottle filler if either slot needs it
+or turnOn leftSlot rightSlot
+s waterBottleFiller On turnOn
+yield
+j ra
+
+clearWaste:
+#turn on everything!
+s iceCrusher On 1
+sbn -321403609 HASH("Waste Pump") On 1
+sbn -454028979 HASH("Waste Water Pump") On 1
+#start a new loop within this loop to drain pipes
+drainLoop:
+yield #VERY important to avoid issues with the pumps
+#check pressure and volume again
+lbn pressure 1632165346 HASH("Waste Tank") Pressure Sum
+lbn volume 435685051 HASH("Ice Crusher Water Analyzer") VolumeOfLiquid Sum
+#resume loop until both of these checks fail
+bgt volume 0.1 drainLoop
+bgt pressure 0.1 drainLoop
+#if we get to hear, the pipes are empty and we can return to main.
+#first turn off everything!
+sbn -321403609 HASH("Waste Pump") On 0
+sbn -454028979 HASH("Waste Water Pump") On 0
+j main

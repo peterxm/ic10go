@@ -1,0 +1,101 @@
+#WARNING! This script relies HEAVILY on your setup being essentially identical to mine
+#Virtually any change will result in it breaking. This is only being shared for
+#informational purposes and is NOT ready to be used out of the box. 
+#Cows are evil has a great script on just this topic you can check out! 
+alias switchSetting r0
+alias color r1
+alias tankPressure r2
+alias gaugeReading r3
+alias batteryPercent r4
+alias batteryCharge r5
+define fuelLimit 45000 #maximum fuel this craft can take on
+#set up LEDs
+sbn -2041948072 HASH("Battery Percent LED") Mode 1
+sbn -2041948072 HASH("Battery Charge LED") Mode 2
+
+main: 
+#STEP 1: The Launch Sequence - Triggered when Important Button is pushed
+lbn switchSetting 1668452680 HASH("LAUNCH!") Setting 0
+bgtz switchSetting launchSequence
+
+#STEP 2: Umbilical Switches and states
+#Power umbilical
+lbn switchSetting -1612655781 HASH("Power Umbilical Switch") Setting 0
+sbn 1529453938 HASH("Launch Tower Umbilical (Power)") Open switchSetting
+#This goofy bit of math will give us a '4' (red) if swich is off and '2' (green) if on
+mul color switchSetting -2
+add color color 4
+sbn -1612655781 HASH("Power Umbilical Switch") Color color
+move color 0
+# Gas Umbilical
+lbn switchSetting -1612655781 HASH("Gas Umbilical Switch") Setting 0
+sbn -1814939203 HASH("Launch Tower Umbilical (Gas)") Open switchSetting
+mul color switchSetting -2
+add color color 4
+sbn -1612655781 HASH("Gas Umbilical Switch") Color color
+move color 0
+
+#STEP 3: Fuel Pump direction (to fill or drain tanks)
+lbn switchSetting -1612655781 HASH("Fuel Pump Direction Switch") Setting 0
+sbn 1310794736 HASH("Fuel Pump") Mode switchSetting
+#more goofy math to change colors!
+mul color switchSetting -3
+add color color 5
+sbn -1612655781 HASH("Fuel Pump Direction Switch") Color color
+
+#STEP 4: Fuel pump switch (Simple On/Off)
+lbn switchSetting -236516384 HASH("Fuel Pump Power Switch") Setting 0
+sbn 1310794736 HASH("Fuel Pump") On switchSetting
+
+#STEP 5: The fuel gauge and pump auto shutoff
+lb tankPressure -1093860567 Pressure 0
+div gaugeReading tankPressure fuelLimit #gives us a decimal between 0 and 1
+sbn -1252835556 HASH("Fuel Pressure Gauge") Setting gaugeReading #gauge needs decimals
+bgeal tankPressure fuelLimit pumpShutoff
+
+#Gauge colors
+move color 4
+blt gaugeReading 0.25 setColor
+move color 3
+blt gaugeReading 0.5 setColor
+move color 5
+blt gaugeReading 0.75 setColor
+move color 2
+setColor:
+sbn -1252835556 HASH("Fuel Pressure Gauge") Color color
+
+#STEP 6: Battery Monitors!
+lb batteryPercent -1125305264 Ratio 0
+sbn -2041948072 HASH("Battery Percent LED") Setting batteryPercent
+lb batteryCharge -1125305264 Charge 1
+sbn -2041948072 HASH("Battery Charge LED") Setting batteryCharge
+
+#take a lil snack break, you've earned it
+yield
+j main
+
+#shuts off the pump (and the switch) when fuel pressure is above set limit
+pumpShutoff: 
+sbn 1310794736 HASH("Fuel Pump") On 0
+j ra
+
+launchSequence:
+sleep 3 #You gotta have a countdown
+# Disconnect Umbilicals, flip switches, change colours
+sbn -1814939203 HASH("Launch Tower Umbilical (Gas)") Open 0
+sbn -1612655781 HASH("Gas Umbilical Switch") Setting 0
+sbn -1612655781 HASH("Gas Umbilical Switch") Color 4
+sbn 1529453938 HASH("Launch Tower Umbilical (Power)") Open 0
+sbn -1612655781 HASH("Power Umbilical Switch") Setting 0
+sbn -1612655781 HASH("Power Umbilical Switch") Color 4
+# Turn off the Fuel Pump and reset the switch!
+sbn 1310794736 HASH("Fuel Pump") On 0
+sbn -236516384 HASH("Fuel Pump Power Switch") Setting 0
+# Resets and closes the Launch Button to prevent loops
+sbn 1668452680 HASH("LAUNCH!") Setting 0
+sbn 1668452680 HASH("LAUNCH!") Open 0
+
+#LET'S LIGHT THIS CANDLE
+sbn -214232602 HASH("Pumped Gas Engine") On 1
+yield
+j main

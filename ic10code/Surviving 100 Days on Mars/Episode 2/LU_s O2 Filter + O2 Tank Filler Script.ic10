@@ -1,0 +1,24 @@
+#This script will run an filtration unit that is directly connected to 
+#the air in your room (by a passive vent, for example). It will also 
+#pressurise a gas canister for you, if the regulator and analyser are connected.
+
+#Naming Variables
+alias O2Filter db
+alias pressureRegulator d0
+alias pipeAnalyzer d1
+alias outputPressure r0
+alias O2Pressure r1
+alias turnOn r2
+
+#filter O2 out of the room if certain conditions are met
+filterOxygen:
+l outputPressure O2Filter PressureOutput #checks the pressure on the output pipe
+slt turnOn outputPressure 15000 #sets 'turnOn' to '1' if the presure is under 15Mpa
+s O2Filter Mode turnOn #turns on the filter until pressure reaches 1Mpa
+
+#Pressurise O2 Canister side too
+l O2Pressure pipeAnalyzer Pressure
+slt turnOn O2Pressure 9500
+s pressureRegulator On turnOn
+yield
+j filterOxygen

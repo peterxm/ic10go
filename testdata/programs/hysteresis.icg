@@ -1,0 +1,21 @@
+const (
+    MaxTemp = 296.15
+    MinTemp = 283.15
+)
+
+func main() {
+    var on = 0
+    for {
+        yield()
+        t := d1.Temperature
+        if t < MinTemp { on = 1 }
+        if t > MaxTemp { on = 0 }
+        d0.On = on
+    }
+}
+
+func clampTemp(x num) num {
+    if x < MinTemp { return MinTemp }
+    if x > MaxTemp { return MaxTemp }
+    return x
+}

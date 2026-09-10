@@ -1,0 +1,57 @@
+#This script will track the total charge, average percent, and overall change of
+#your base's station batteries. Make sure that the data port on the batteries is
+#connected to the data port on the IC Housing directly! The script will also
+#automatically turn on any Wall Light (Long) connected to the same network. 
+#If you do not wish to use this feature, remove those lines. 
+
+
+#Naming variables
+define lights 797794350 #Wall Lights (long)
+define batteries -400115994 #Station Batteries
+alias sensor d0 #daylight sensor
+alias powerScreen d1 #small LED screen
+s powerScreen Mode 2 #power display mode
+alias ratioScreen d2 #small LED screen
+s ratioScreen Mode 1 #percent display mode
+alias flowScreen d3 #small LED screen
+s flowScreen Mode 2 #power display mode
+alias daylight r1
+alias currentCharge r2
+alias batteryPercent r3
+alias netFlow r4
+alias prevCharge r5
+
+#Runs the main program. Each 'jal' is a seperate function
+main:
+yield
+jal battery #checks the battery status
+jal change #checks the change in charge over time
+jal light #turns lights on at night
+j main
+
+#checks the battery status
+battery:
+lb currentCharge batteries Charge 1 #loads the TOTAL charge of all batteries
+move prevCharge currentCharge #stores this number for use later
+lb batteryPercent batteries Ratio 0 #loads the AVERAGE percentage accross all batteries
+s powerScreen Setting currentCharge #displays the TOTAL charge
+s ratioScreen Setting batteryPercent #displays the AVERAGE percent
+yield
+j ra
+
+#checks the change in charge over time
+change:
+sleep 3 #wait 3 seconds
+lb currentCharge batteries Charge 1 #loads the TOTAL charge of all batteries again
+sub netFlow currentCharge prevCharge #checks the difference between charges
+s flowScreen Setting netFlow #displays the difference
+yield
+j ra
+
+#turns lights on at night
+light:
+l daylight sensor Activate #if the sensor 'sees' the sun, it outputs a '1'
+seq daylight daylight 0 #this flips the answer. 1 becomes 0, 0 becomes 1
+sb lights On daylight #turns the lights on at night.
+yield
+j ra

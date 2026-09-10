@@ -1,0 +1,43 @@
+# Satellite tracking
+alias radar d0
+alias resumeButton d1
+alias resetButton d2
+
+alias hangle r1
+alias vangle r2
+alias step r3
+alias signalID r4
+alias oldsignalID r5
+
+reset:
+move hangle 0
+move vangle 90
+move step 4
+
+start:
+l r0 resetButton Setting
+bnez r0 reset
+s radar Horizontal hangle
+s radar Vertical vangle
+sleep 0.5
+l signalID radar SignalID
+l r0 radar SignalStrength
+bgeal r0 0.95 wait
+add hangle hangle step
+bge hangle 360 changeDir
+ble hangle 0 changeDir
+j start
+
+changeDir:
+mul step step -1
+sub vangle vangle 5
+ble vangle 0 reset
+j start
+
+wait:
+beq signalID oldsignalID ra
+yield
+l r0 resumeButton Setting
+beqz r0 wait
+move oldsignalID signalID
+j ra

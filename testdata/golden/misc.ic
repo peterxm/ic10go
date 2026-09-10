@@ -1,0 +1,24 @@
+move r0 0
+move r1 0
+bge r1 10 6
+add r0 r0 r1
+add r1 r1 1
+j 2
+move r1 r0
+move r3 0
+move r2 100
+bge r1 r3 12
+move r1 r3
+j 14
+sgt r3 r1 r2
+select r1 r3 r2 r1
+s d0 Setting r1
+sgt r0 r0 20
+l r1 d0 Open
+seq r1 r1 1
+min r1 r0 r1
+s d0 On r1
+select r0 r0 1 0
+s d1 Setting r0
+ss d2 0 Harvest 1
+yield

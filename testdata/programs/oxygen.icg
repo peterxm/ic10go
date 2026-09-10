@@ -1,0 +1,27 @@
+// 氧气过滤灌装：滞回控制过滤器压力，建立压差实现高速过滤。
+const (
+    PreMax = 45000
+    PreMin = 40000
+)
+
+func main() {
+    for {
+        yield()
+        ventControl()
+        filterControl()
+    }
+}
+
+// 主动通风保持吸入模式，防止意外改成排气模式。
+func ventControl() {
+    d0.Mode = 1
+    p := d0.PressureOutput
+    target := d0.On != 0 ? PreMax : PreMin
+    d0.On = p < target
+}
+
+// 控制过滤器出口压力，匹配智能气瓶的最大承压。
+func filterControl() {
+    p := db.PressureOutput
+    db.Mode = p < 19000
+}
