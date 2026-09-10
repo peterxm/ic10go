@@ -146,6 +146,9 @@ class LspClient {
             this.output.appendLine(`language server exited (code ${code})`);
             this.proc = undefined;
             this.initialized = false;
+            // Do not leave the UI waiting on requests that will never be answered.
+            for (const [, p] of this.pending) p.reject(new Error('language server exited'));
+            this.pending.clear();
         });
 
         this.request('initialize', {
@@ -695,7 +698,7 @@ class LspClient {
     }
 
     handle(msg) {
-        if (msg.id !== undefined && (msg.result !== undefined || msg.error !== undefined)) {
+        if (msg.id !== undefined && msg.method === undefined) {
             const pending = this.pending.get(msg.id);
             if (pending) {
                 this.pending.delete(msg.id);

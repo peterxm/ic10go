@@ -133,4 +133,5 @@ var KeywordDocs = map[string]Doc{
 	"goto":     {"goto name", "Unconditional jump (low-level).", "无条件跳转（底层）。"},
 	"call":     {"call name", "Call a label, saving the return address.", "调用标签并保存返回地址。"},
 	"ret":      {"ret", "Return to the saved address.", "返回保存的地址。"},
+	"batch":    {"batch.read / batch.write ...", "Batch IO: aggregate reads/writes over devices of one type.", "批量 IO：对同类型设备聚合读写。"},
 }

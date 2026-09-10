@@ -365,6 +365,10 @@ func attachDocs(items []completionItem, zh bool) []completionItem {
 			items[i].Documentation = &markupContent{Kind: "markdown", Value: docText(d, zh)}
 			continue
 		}
+		if d, ok := builtin.KeywordDocs[items[i].Label]; ok {
+			items[i].Documentation = &markupContent{Kind: "markdown", Value: docText(d, zh)}
+			continue
+		}
 		if d, ok := builtin.LogicTypeDocs[items[i].Label]; ok {
 			items[i].Documentation = &markupContent{Kind: "markdown", Value: docText(d, zh)}
 		}
@@ -817,7 +821,9 @@ func send(w *bufio.Writer, v any) {
 }
 
 func reply(w *bufio.Writer, id json.RawMessage, result any) {
-	send(w, response{JSONRPC: "2.0", ID: id, Result: result})
+	// Always include "result" (even when null): clients match responses by id
+	// and some rely on the field being present.
+	send(w, map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 }
 
 func replyError(w *bufio.Writer, id json.RawMessage, code int, msg string) {

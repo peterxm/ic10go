@@ -266,3 +266,15 @@ func TestFullTextChange(t *testing.T) {
 		t.Errorf("full-text change not applied:\n%s", out)
 	}
 }
+
+func TestHoverUnknownHasResult(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"u.icg","text":"func main() { x := 1 }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"u.icg"},"position":{"line":0,"character":15}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"result":null`) {
+		t.Errorf("hover response must include a result field (even null):\n%s", out)
+	}
+}
