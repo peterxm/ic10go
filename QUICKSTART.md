@@ -54,6 +54,7 @@ j 0
 
 ```bash
 ic10c build  <file.icg>        # 编译并输出 IC10 到 stdout
+ic10c run    <file.icg>        # 编译并在内置 VM 中运行（无需进游戏）
 ic10c stats  <file.icg>        # 行/字节/寄存器预算报告
 ic10c fmt    [-w] <file.icg>   # 格式化源码（-w 原地写回）
 ic10c disasm <file.ic>         # 反汇编注释旧 IC10

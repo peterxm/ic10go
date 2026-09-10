@@ -132,6 +132,37 @@ var Commands = []Command{
 		},
 	},
 	{
+		Name: "run", Args: "<file.icg> [--steps N] [--set name.logic=v] [--trace]",
+		Summary: text{EN: "compile and run in the built-in VM", ZH: "编译并在内置 VM 中运行"},
+		Long: text{
+			EN: "Compile the file and run it in the built-in IC10 VM, then print\n" +
+				"the resulting device values. Useful for testing without the game.\n\n" +
+				"Initialise devices with --set (repeatable); use --trace to print\n" +
+				"every executed instruction.",
+			ZH: "编译文件并在内置 IC10 VM 中运行，然后打印设备状态。无需进游戏即可调试。\n\n" +
+				"用 --set 初始化设备（可重复）；--trace 打印每条执行的指令。",
+		},
+		Flags: []Flag{
+			{Long: "--steps", Arg: "N", Desc: text{
+				EN: "instruction budget (default 1000)",
+				ZH: "执行步数上限（默认 1000）",
+			}},
+			{Long: "--set", Arg: "name.logic=v", Desc: text{
+				EN: "set a device value before running (repeatable)",
+				ZH: "运行前设置设备值（可重复）",
+			}},
+			{Long: "--trace", Desc: text{
+				EN: "print every executed instruction",
+				ZH: "打印每条执行的指令",
+			}},
+			commonHelp,
+		},
+		Examples: []string{
+			"ic10c run blink.icg",
+			"ic10c run --steps 500 --set d0.Temperature=350 ctrl.icg",
+		},
+	},
+	{
 		Name: "stats", Args: "<file.icg>",
 		Summary: text{EN: "report the line/byte/register budget", ZH: "报告行/字节/寄存器预算"},
 		Long: text{

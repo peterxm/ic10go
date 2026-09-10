@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	"ic10go/internal/ast"
@@ -16,6 +18,7 @@ import (
 	"ic10go/internal/lsp"
 	"ic10go/internal/parser"
 	"ic10go/internal/source"
+	"ic10go/internal/vm"
 	"ic10go/pkg/ic10"
 )
 
@@ -98,6 +101,8 @@ parse:
 	switch cmd {
 	case "build":
 		return cmdBuild(args)
+	case "run":
+		return cmdRun(args)
 	case "stats":
 		return cmdStats(args)
 	case "fmt":
@@ -171,6 +176,109 @@ func cmdBuild(args []string) int {
 	}
 	fmt.Print(code)
 	return 0
+}
+
+func cmdRun(args []string) int {
+	steps := 1000
+	trace := false
+	var sets []string
+	var file string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--steps":
+			if i+1 < len(args) {
+				steps, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		case "--set":
+			if i+1 < len(args) {
+				sets = append(sets, args[i+1])
+				i++
+			}
+		case "--trace":
+			trace = true
+		default:
+			file = args[i]
+		}
+	}
+	if file == "" {
+		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "run"))
+		return 2
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	ic10Hint(file)
+	code, diags, err := ic10.Compile(file, data)
+	if rc := report(source.NewFile(file, data), diags); rc != 0 {
+		return rc
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+
+	m := vm.New()
+	for _, s := range sets {
+		name, logic, value, ok := parseSet(s)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "ic10c: bad --set %q (want name.logic=value)\n", s)
+			return 2
+		}
+		m.Set(name, logic, value)
+	}
+	if err := m.Load(code); err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if trace {
+		m.Trace = os.Stdout
+	}
+	if err := m.Run(steps); err != nil && err != vm.ErrStepLimit {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	printDevices(m)
+	return 0
+}
+
+// parseSet parses a "name.logic=value" device initialiser.
+func parseSet(s string) (name, logic string, value float64, ok bool) {
+	eq := strings.IndexByte(s, '=')
+	if eq < 0 {
+		return "", "", 0, false
+	}
+	v, err := strconv.ParseFloat(s[eq+1:], 64)
+	if err != nil {
+		return "", "", 0, false
+	}
+	lhs := s[:eq]
+	dot := strings.LastIndexByte(lhs, '.')
+	if dot < 0 {
+		return "", "", 0, false
+	}
+	return lhs[:dot], lhs[dot+1:], v, true
+}
+
+func printDevices(m *vm.Machine) {
+	names := make([]string, 0, len(m.Devices))
+	for n := range m.Devices {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		d := m.Devices[n]
+		keys := make([]string, 0, len(d.Values))
+		for k := range d.Values {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fmt.Printf("%s.%s = %v\n", n, k, d.Values[k])
+		}
+	}
 }
 
 func cmdStats(args []string) int {

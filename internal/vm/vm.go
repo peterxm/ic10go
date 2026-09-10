@@ -5,6 +5,7 @@ package vm
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"strconv"
 	"strings"
@@ -69,6 +70,8 @@ type Machine struct {
 	Halted  bool
 	Devices map[string]*Device
 	order   []*Device
+	// Trace, when non-nil, receives one line per executed instruction.
+	Trace io.Writer
 	// LogicByID maps IC10 logicType enum values to names, used to resolve
 	// runtime (register) logic type operands.
 	LogicByID map[int]string
@@ -167,6 +170,9 @@ func (m *Machine) Run(maxSteps int) error {
 			continue
 		}
 		next := m.PC + 1
+		if m.Trace != nil {
+			fmt.Fprintf(m.Trace, "%4d  %s %s\n", m.PC, ins.Op, strings.Join(ins.Args, " "))
+		}
 		if err := m.exec(ins, &next); err != nil {
 			return fmt.Errorf("vm: line %d: %w", m.PC, err)
 		}
