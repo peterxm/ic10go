@@ -39,6 +39,32 @@ func TestVMTemperatureControl(t *testing.T) {
 	}
 }
 
+// TestVMConditionalDefNotHoisted verifies that a variable conditionally
+// assigned inside a loop (here returned from an inlined function) is not
+// hoisted out of the loop by LICM.
+func TestVMConditionalDefNotHoisted(t *testing.T) {
+	src := `func unsafe() num {
+    var u = 0
+    if db.PressureExternal < 35 { u = 1 }
+    if db.PressureExternal > 125 { u = 1 }
+    return u
+}
+func main() {
+    for {
+        yield()
+        d0.Setting = unsafe()
+    }
+}`
+	m := runProgram(t, src, 50, func(m *vm.Machine) { m.Set("db", "PressureExternal", 200) })
+	if got := m.Get("d0", "Setting"); got != 1 {
+		t.Errorf("high pressure: Setting = %v, want 1", got)
+	}
+	m = runProgram(t, src, 50, func(m *vm.Machine) { m.Set("db", "PressureExternal", 100) })
+	if got := m.Get("d0", "Setting"); got != 0 {
+		t.Errorf("safe pressure: Setting = %v, want 0", got)
+	}
+}
+
 // TestVMCallRetKeepsCalleeWrites verifies that a value written by a call/ret
 // routine is observed by the caller on the next iteration; LICM must not treat
 // it as loop-invariant.

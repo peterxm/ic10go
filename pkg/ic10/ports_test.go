@@ -16,6 +16,7 @@ import (
 func portSetup(m *vm.Machine) {
 	for i := 0; i < 6; i++ {
 		d := m.Device(fmt.Sprintf("d%d", i))
+		d.Set = true
 		d.Values["Temperature"] = float64(20 + i*10)
 		d.Values["Pressure"] = float64(1000 * (i + 1))
 		d.Values["PressureOutput"] = float64(5000 * (i + 1))
@@ -33,6 +34,7 @@ func portSetup(m *vm.Machine) {
 		d.Values["SignalStrength"] = float64(i) / 10
 	}
 	m.Device("db").Values["Setting"] = 0.00300006003000050000
+	m.Device("db").Set = true
 }
 
 // TestIc10CodePorts runs every hand-written port next to its original .ic

@@ -1,0 +1,122 @@
+# =========================================================================
+# STATIONEERS - HARDSUIT + HELMET AUTO-SAFETY + LIFE-SUPPORT TOGGLE
+# -------------------------------------------------------------------------
+# 1) Auto-CLOSES + LOCKS the helmet when outside is unsafe. Writes only
+#    on change (no periodic re-writing). Never auto-opens (you do that).
+# 2) Visor OPEN -> filtration/AC/air OFF (save filters, O2, power);
+#    CLOSED -> ON. Also written only when open/closed state changes.
+#
+# Chip goes in the HARDSUIT IC slot. db = suit, d0 = helmet.
+#   db gives RELIABLE external PressureExternal / TemperatureExternal.
+#
+# Unsafe if ANY: pressure < pMin or > pMax, temp > tMax or < tMin,
+#   O2 < o2Min, or toxic sum > toxMax (CO2 + Methane + Pollutant + NOx
+#   + Hydrazine + Silanol + HydrochloricAcid).
+#
+# NOTE: Volatiles is now Methane (LogicType RatioMethane). The newer
+# toxic gases' Ratio* names follow the same pattern but confirm them in
+# the Stationpedia; a wrong Ratio* name only throws harmless errors.
+# Open-helmet gas readings lag - pressure/temp stay the main triggers.
+# =========================================================================
+
+# --- Devices ---
+alias suit db
+alias helmet d0
+
+# --- Thresholds (Kelvin / kPa / ratio 0..1) ---
+define tMin 273.15
+define tMax 313.15
+define pMin 35
+define pMax 125
+define o2Min 0.15
+define toxMax 0.02
+
+# --- Register aliases ---
+alias unsafe r0
+alias val r1
+alias tox r2
+alias hasHelmet r3
+alias isOpen r4
+alias lifeOn r5
+alias lastLife r6
+alias lastAlert r7
+
+# --- Init: force first write by making "last" states impossible ---
+move lastLife -1
+move lastAlert -1
+
+start:
+	yield
+	# Skip everything if no helmet is fitted (device not connected)
+	sdse hasHelmet helmet
+	beqz hasHelmet start
+	move unsafe 0
+	l isOpen helmet Open
+
+	# --- External PRESSURE (reliable, from suit) ---
+	l val suit PressureExternal
+	slt val val pMin
+	or unsafe unsafe val
+	l val suit PressureExternal
+	sgt val val pMax
+	or unsafe unsafe val
+
+	# --- External TEMPERATURE (reliable, from suit) ---
+	l val suit TemperatureExternal
+	sgt val val tMax
+	or unsafe unsafe val
+	l val suit TemperatureExternal
+	slt val val tMin
+	or unsafe unsafe val
+
+	# --- TOXIC GASES (helmet ratios; lag while open - safeguard only) ---
+	# Sum of all substances harmful to humans, then compare to threshold.
+	l tox helmet RatioCarbonDioxide
+	l val helmet RatioMethane
+	add tox tox val
+	l val helmet RatioPollutant
+	add tox tox val
+	l val helmet RatioNitrousOxide
+	add tox tox val
+	l val helmet RatioHydrazine
+	add tox tox val
+	l val helmet RatioSilanol
+	add tox tox val
+	l val helmet RatioHydrochloricAcid
+	add tox tox val
+	sgt val tox toxMax
+	or unsafe unsafe val
+
+	# --- BREATHABLE O2 too low ---
+	l val helmet RatioOxygen
+	slt val val o2Min
+	or unsafe unsafe val
+
+	# --- Alert/close: act only when the unsafe state CHANGES ---
+	beq unsafe lastAlert lifeSupport
+	move lastAlert unsafe
+	beqz unsafe safeState
+	# became UNSAFE: alert, and close only if still open
+	s suit Error 1
+	bnez isOpen doClose
+	j lifeSupport
+	doClose:
+	s helmet Open 0
+	s helmet Lock 1
+	j lifeSupport
+	safeState:
+	# became SAFE: clear alert, unlock (never auto-open)
+	s suit Error 0
+	s helmet Lock 0
+
+	lifeSupport:
+	# Re-read visor state (may have changed above)
+	l isOpen helmet Open
+	seqz lifeOn isOpen
+	# Write filtration/AC/air only when the state actually changes
+	beq lifeOn lastLife start
+	move lastLife lifeOn
+	s suit Filtration lifeOn
+	s suit On lifeOn
+	s suit AirRelease lifeOn
+j start

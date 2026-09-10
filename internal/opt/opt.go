@@ -1212,7 +1212,7 @@ func licm(fn *ir.Function) bool {
 		if pre == nil {
 			continue
 		}
-		if hoistLoop(fn, lp, pre, liveIn[lp.header]) {
+		if hoistLoop(fn, lp, pre, liveIn[lp.header], dom) {
 			changed = true
 		}
 	}
@@ -1382,17 +1382,27 @@ func redirect(b *ir.Block, from, to *ir.Block) {
 	}
 }
 
-func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool) bool {
+func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool, dom map[*ir.Block]map[*ir.Block]bool) bool {
 	changed := false
 	for {
-		defined := map[*ir.Reg]bool{}
+		definedSet := map[*ir.Reg]bool{}
+		defCount := map[*ir.Reg]int{}
+		useBlocks := map[*ir.Reg][]*ir.Block{}
 		for _, b := range fn.Blocks {
-			if !lp.blocks[b] {
-				continue
-			}
 			for _, ins := range b.Instrs {
-				if d := defOf(ins); d != nil {
-					defined[d] = true
+				if d := defOf(ins); d != nil && lp.blocks[b] {
+					definedSet[d] = true
+					defCount[d]++
+				}
+				for _, v := range usesOf(ins) {
+					if r, ok := v.(*ir.Reg); ok {
+						useBlocks[r] = append(useBlocks[r], b)
+					}
+				}
+			}
+			for _, v := range termUses(b.Term) {
+				if r, ok := v.(*ir.Reg); ok {
+					useBlocks[r] = append(useBlocks[r], b)
 				}
 			}
 		}
@@ -1403,7 +1413,13 @@ func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool
 			}
 			kept := b.Instrs[:0]
 			for _, ins := range b.Instrs {
-				if hoistable(ins) && !usesAny(ins, defined) && !definesLiveIn(ins, liveIn) {
+				d := defOf(ins)
+				// Hoisting a register that is defined more than once in the
+				// loop is unsound: a use could observe a different definition
+				// on some iteration.
+				soleDef := d != nil && defCount[d] == 1
+				if hoistable(ins) && !usesAny(ins, definedSet) && !definesLiveIn(ins, liveIn) &&
+					soleDef && dominatesAllUses(b, d, useBlocks, dom) {
 					pre.Instrs = append(pre.Instrs, ins)
 					moved = true
 					changed = true
@@ -1418,6 +1434,22 @@ func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool
 		}
 	}
 	return changed
+}
+
+// dominatesAllUses reports whether b dominates every block that uses d. A
+// definition may only be hoisted if it is the reaching definition for all of
+// its uses, otherwise moving it would change the value observed on paths that
+// bypass it.
+func dominatesAllUses(b *ir.Block, d *ir.Reg, useBlocks map[*ir.Reg][]*ir.Block, dom map[*ir.Block]map[*ir.Block]bool) bool {
+	if d == nil {
+		return true
+	}
+	for _, u := range useBlocks[d] {
+		if !dom[u][b] {
+			return false
+		}
+	}
+	return true
 }
 
 // definesLiveIn reports whether an instruction defines a register that is live
