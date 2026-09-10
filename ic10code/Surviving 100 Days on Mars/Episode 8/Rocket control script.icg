@@ -1,0 +1,90 @@
+// 火箭发射控制（Episode 8）。
+// 强烈依赖具体布局：按钮、脐带开关、燃料泵、压力表、电池 LED 的名称必须一致。
+
+const (
+    batteryLED = -2041948072
+    fuelPump   = 1310794736
+    fuelGauge  = -1252835556
+    batteries  = -1125305264
+    fuelLimit  = 45000
+)
+
+func main() {
+    // 初始化两个 LED 显示屏模式
+    batch.writeName(batteryLED, hash("Battery Percent LED"), "Mode", 1)
+    batch.writeName(batteryLED, hash("Battery Charge LED"), "Mode", 2)
+
+    for {
+        // STEP 1: 按下发射按钮 -> 执行发射序列
+        if batch.readName(1668452680, hash("LAUNCH!"), "Setting", "Average") > 0 {
+            launchSequence()
+            continue
+        }
+
+        // STEP 2: 脐带开关（电力 / 气体），颜色：开=绿(2) 关=红(4)
+        power := batch.readName(-1612655781, hash("Power Umbilical Switch"), "Setting", "Average")
+        batch.writeName(1529453938, hash("Launch Tower Umbilical (Power)"), "Open", power)
+        batch.writeName(-1612655781, hash("Power Umbilical Switch"), "Color", power != 0 ? 2 : 4)
+
+        gas := batch.readName(-1612655781, hash("Gas Umbilical Switch"), "Setting", "Average")
+        batch.writeName(-1814939203, hash("Launch Tower Umbilical (Gas)"), "Open", gas)
+        batch.writeName(-1612655781, hash("Gas Umbilical Switch"), "Color", gas != 0 ? 2 : 4)
+
+        // STEP 3: 燃料泵方向
+        dir := batch.readName(-1612655781, hash("Fuel Pump Direction Switch"), "Setting", "Average")
+        batch.writeName(fuelPump, hash("Fuel Pump"), "Mode", dir)
+        batch.writeName(-1612655781, hash("Fuel Pump Direction Switch"), "Color", dir != 0 ? 2 : 5)
+
+        // STEP 4: 燃料泵开关
+        on := batch.readName(-236516384, hash("Fuel Pump Power Switch"), "Setting", "Average")
+        batch.writeName(fuelPump, hash("Fuel Pump"), "On", on)
+
+        // STEP 5: 燃料表 + 超过上限自动关泵
+        tank := batch.read(-1093860567, "Pressure", "Average")
+        gauge := tank / fuelLimit
+        batch.writeName(fuelGauge, hash("Fuel Pressure Gauge"), "Setting", gauge)
+        if tank >= fuelLimit {
+            batch.writeName(fuelPump, hash("Fuel Pump"), "On", 0)
+        }
+
+        // 燃料表颜色：<0.25 红，<0.5 橙，<0.75 黄，否则绿
+        color := 4
+        if gauge >= 0.25 { color = 3 }
+        if gauge >= 0.5 { color = 5 }
+        if gauge >= 0.75 { color = 2 }
+        batch.writeName(fuelGauge, hash("Fuel Pressure Gauge"), "Color", color)
+
+        // STEP 6: 电池监控
+        batch.writeName(batteryLED, hash("Battery Percent LED"), "Setting",
+            batch.read(batteries, "Ratio", "Average"))
+        batch.writeName(batteryLED, hash("Battery Charge LED"), "Setting",
+            batch.read(batteries, "Charge", "Sum"))
+
+        yield()
+    }
+}
+
+// 发射序列：断开脐带、复位开关、关闭燃料泵、点火。
+func launchSequence() {
+    sleep(3)  // 倒计时
+
+    // 断开气体与电力脐带
+    batch.writeName(-1814939203, hash("Launch Tower Umbilical (Gas)"), "Open", 0)
+    batch.writeName(-1612655781, hash("Gas Umbilical Switch"), "Setting", 0)
+    batch.writeName(-1612655781, hash("Gas Umbilical Switch"), "Color", 4)
+    batch.writeName(1529453938, hash("Launch Tower Umbilical (Power)"), "Open", 0)
+    batch.writeName(-1612655781, hash("Power Umbilical Switch"), "Setting", 0)
+    batch.writeName(-1612655781, hash("Power Umbilical Switch"), "Color", 4)
+
+    // 关闭燃料泵并复位开关
+    batch.writeName(fuelPump, hash("Fuel Pump"), "On", 0)
+    batch.writeName(-236516384, hash("Fuel Pump Power Switch"), "Setting", 0)
+
+    // 复位发射按钮，防止循环触发
+    batch.writeName(1668452680, hash("LAUNCH!"), "Setting", 0)
+    batch.writeName(1668452680, hash("LAUNCH!"), "Open", 0)
+
+    // 点火！
+    batch.writeName(-214232602, hash("Pumped Gas Engine"), "On", 1)
+    yield()
+}

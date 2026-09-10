@@ -1,0 +1,123 @@
+// HASH 控制台（Episode 6）。
+// 读取两个旋钮选择矿石与数量，按确认按钮把比热写给熔炉 IC；
+// 同时根据通风杆控制两个通风口，并维持燃料混合器的配比。
+//
+// 原脚本用「计算跳转 + 查表」实现矿石 -> (显示值, 比热) 的映射，
+// 这里改为可读的 switch。
+
+const (
+    dial   = 554524804    // 两个旋钮的 deviceHash
+    button = 491845673    // 确认按钮
+    lever  = 1220484876   // 通风杆
+    vent   = -1129453144  // 通风口
+)
+
+func main() {
+    batch.writeName(dial, hash("Ingot Dial"), "Mode", 17)
+    batch.writeName(dial, hash("Amount Dial"), "Mode", 30)
+    batch.write(435685051, "On", 1)
+
+    heat := 0  // 比热，跨 tick 保存；Set 使用上一轮查表结果
+    for {
+        // 通风杆：0 = 开阀，否则关阀
+        if batch.readName(lever, hash("VentLever"), "Open", "Minimum") == 0 {
+            ventOn()
+        } else {
+            ventOff()
+        }
+        mixer()
+
+        // 读取界面
+        ore := batch.readName(dial, hash("Ingot Dial"), "Setting", "Minimum")
+        confirm := batch.readName(button, hash("Confirm Button"), "Setting", "Minimum")
+        amount := batch.readName(dial, hash("Amount Dial"), "Setting", "Minimum")
+        yield()
+
+        // 料斗 CD 为负表示未就绪
+        if batch.readName(2037291645, hash("Silos CD"), "Setting", "Minimum") < 0 {
+            db.Setting = 0
+            continue
+        }
+
+        // 数量为 0 时改为 1；矿石编号钳制到 17
+        if amount == 0 {
+            batch.writeName(dial, hash("Amount Dial"), "Setting", 1)
+            amount = 1
+        }
+        if ore > 17 {
+            batch.writeName(dial, hash("Ingot Dial"), "Setting", 17)
+            ore = 17
+        }
+
+        // 产量 = 数量 × 矿石系数
+        qty := amount
+        if ore <= 7 { qty *= 50 }
+        if ore == 8 { qty *= 200 }
+        if ore >= 13 {
+            qty *= 50
+        } else if ore >= 9 {
+            qty *= 100
+        }
+
+        if ore <= 0 {
+            db.Setting = 0
+            continue
+        }
+        if confirm == 1 {
+            set(heat)
+        }
+        batch.writeName(-815193061, hash("Amount"), "Setting", qty)
+
+        // 查表：设置 IC 宿主显示值与比热（比热供下一轮 Set 使用）
+        switch ore {
+        case 1: db.Setting = -1301215609; heat = 0.00950100000010010000  // Iron
+        case 2: db.Setting = -404336834; heat = 0.00950100000100010000   // Copper
+        case 3: db.Setting = 226410516; heat = 0.00950100000100010000    // Gold
+        case 4: db.Setting = -290196476; heat = 0.00950100000100010000   // Silicon
+        case 5: db.Setting = -929742000; heat = 0.00950100000100010000   // Silver
+        case 6: db.Setting = 2134647745; heat = 0.00950100000100010000   // Lead
+        case 7: db.Setting = -1406385572; heat = 0.00950100000100010000  // Nickel
+        case 8: db.Setting = -654790771; heat = 0.00900100000100010000   // Steel
+        case 9: db.Setting = -297990285; heat = 0.01200015001800020000   // Invar
+        case 10: db.Setting = -82508479; heat = 0.00350005500100010000   // Solder
+        case 11: db.Setting = 502280180; heat = 0.00600100000080002350   // Electrum
+        case 12: db.Setting = 1058547521; heat = 0.01000100002000055000  // Constantan
+        case 13: db.Setting = 156348098; heat = 0.00400008005000055000   // Waspaloy
+        case 14: db.Setting = -787796599; heat = 0.00600100002350023800  // Inconel
+        case 15: db.Setting = 412924554; heat = 0.01000100003000040000   // Astroloy
+        case 16: db.Setting = 1579842814; heat = 0.00950010002500030000  // Hastelloy
+        case 17: db.Setting = -1897868623; heat = 0.01800100001000019500 // Setllite
+        }
+    }
+}
+
+// 把比热写给熔炉 IC。
+func set(heat num) {
+    yield()
+    batch.writeName(2037291645, hash("Furnace IC"), "Setting", heat)
+}
+
+// 通风口开：Vent1 抽气、Vent2 加压。
+func ventOn() {
+    batch.writeName(vent, hash("Vent 1"), "Mode", 0)
+    batch.writeName(vent, hash("Vent 1"), "PressureExternal", 101)
+    batch.writeName(vent, hash("Vent 1"), "PressureInternal", 0)
+    batch.writeName(vent, hash("Vent 2"), "Mode", 1)
+    batch.writeName(vent, hash("Vent 2"), "PressureExternal", 101)
+    batch.writeName(vent, hash("Vent 2"), "PressureInternal", 55000)
+    batch.writeName(vent, hash("Vent 1"), "On", 1)
+    batch.writeName(vent, hash("Vent 2"), "On", 1)
+}
+
+// 通风口关：外部压力归零。
+func ventOff() {
+    batch.writeName(vent, hash("Vent 1"), "PressureExternal", 0)
+    batch.writeName(vent, hash("Vent 2"), "PressureExternal", 0)
+}
+
+// 燃料混合器配比：100 / (O2 / (2*H2) + 1)。
+func mixer() {
+    o2 := batch.readName(435685051, hash("O2 Analyzer"), "Temperature", "Maximum")
+    h2 := batch.readName(435685051, hash("H2 Analyzer"), "Temperature", "Maximum")
+    batch.writeName(2104106366, hash("Fuel Mixer"), "Setting", 100/(o2/(h2*2)+1))
+}

@@ -246,6 +246,9 @@ func (m *Machine) num(s string) (float64, error) {
 	if i, ok := regIndex(s); ok {
 		return m.Regs[i], nil
 	}
+	if i, ok := m.indirectIndex(s); ok {
+		return m.Regs[i], nil
+	}
 	if v, ok := parseNum(s); ok {
 		return v, nil
 	}
@@ -256,7 +259,27 @@ func (m *Machine) reg(s string) (int, error) {
 	if i, ok := regIndex(s); ok {
 		return i, nil
 	}
+	if i, ok := m.indirectIndex(s); ok {
+		return i, nil
+	}
 	return 0, fmt.Errorf("not a register: %q", s)
+}
+
+// indirectIndex resolves an IC10 indirect register operand (rrN) to a register
+// index. Multi-level indirection is not supported.
+func (m *Machine) indirectIndex(s string) (int, bool) {
+	if !strings.HasPrefix(s, "rr") {
+		return 0, false
+	}
+	base, ok := regIndex(s[1:])
+	if !ok {
+		return 0, false
+	}
+	idx := int(m.Regs[base])
+	if idx < 0 || idx >= regCount {
+		return 0, false
+	}
+	return idx, true
 }
 
 func (m *Machine) target(s string) (int, error) {

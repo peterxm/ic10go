@@ -1,0 +1,45 @@
+// CO2 过滤 + 温室气体管理（Episode 6 更新版）。
+// 混合器压力阈值 105；目标温度 23℃。
+
+const pipeHeater = -419758574
+
+func main() {
+    for {
+        filterCO2()
+        greenhouseGasCheck()
+        yield()
+    }
+}
+
+// 出口压力低于 35MPa 时开启 CO2 过滤器。
+func filterCO2() {
+    db.Mode = db.PressureOutput < 35000
+    yield()
+}
+
+// 监测并维持回流管温度，并按压力控制气体混合器。
+func greenhouseGasCheck() {
+    batch.write(pipeHeater, "On", 0)
+
+    desired := 23
+    pressure := d1.Pressure
+    temp := d1.Temperature - 273
+    if temp < desired {
+        heatUntil(desired)
+        batch.write(pipeHeater, "On", 0)
+        pressure = d1.Pressure
+        temp = d1.Temperature - 273
+    }
+
+    d0.On = pressure < 105
+    yield()
+}
+
+// 开启加热器直到温度达到 target（摄氏度）。
+func heatUntil(target num) {
+    for {
+        d0.On = 0
+        batch.write(pipeHeater, "On", 1)
+        if d1.Temperature-273 >= target { break }
+    }
+}

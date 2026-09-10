@@ -1,0 +1,44 @@
+// 电池监控 + 夜间自动照明（Episode 2）。
+// 电池数据口与 IC 宿主直连；同网络上的 Wall Light (Long) 由本脚本控制。
+
+const (
+    lights    = 797794350   // Wall Light (Long)
+    batteries = -400115994  // Station Battery
+)
+
+func main() {
+    d1.Mode = 2  // 电量显示
+    d2.Mode = 1  // 百分比显示
+    d3.Mode = 2  // 功率显示
+
+    prev := 0
+    for {
+        yield()
+        prev = battery()
+        change(prev)
+        light()
+    }
+}
+
+// 读取所有电池的总电量与平均百分比并显示，返回当前总电量。
+func battery() num {
+    cur := batch.read(batteries, "Charge", "Sum")
+    d1.Setting = cur
+    d2.Setting = batch.read(batteries, "Ratio", "Average")
+    yield()
+    return cur
+}
+
+// 等待 3 秒后再次读取电量，显示这段时间的变化量。
+func change(prev num) {
+    sleep(3)
+    cur := batch.read(batteries, "Charge", "Sum")
+    d3.Setting = cur - prev
+    yield()
+}
+
+// 传感器看到太阳时输出 1；取反后用于夜间开灯。
+func light() {
+    batch.write(lights, "On", d0.Activate == 0)
+    yield()
+}

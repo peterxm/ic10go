@@ -7,6 +7,13 @@ import "strings"
 
 // StripComment removes a trailing # comment, ignoring # inside strings.
 func StripComment(line string) string {
+	code, _ := SplitComment(line)
+	return code
+}
+
+// SplitComment returns the code before a # comment and the comment text
+// (including the leading #), ignoring # inside strings.
+func SplitComment(line string) (code, comment string) {
 	inStr := false
 	for i := 0; i < len(line); i++ {
 		switch line[i] {
@@ -14,11 +21,11 @@ func StripComment(line string) string {
 			inStr = !inStr
 		case '#':
 			if !inStr {
-				return line[:i]
+				return line[:i], line[i:]
 			}
 		}
 	}
-	return line
+	return line, ""
 }
 
 // Tokenize splits a line into whitespace-separated tokens, keeping quoted
