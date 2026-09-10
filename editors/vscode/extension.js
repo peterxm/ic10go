@@ -53,6 +53,7 @@ class LspClient {
         this.initialized = false;
         this.output = vscode.window.createOutputChannel('IC10 Go');
         this.diags = vscode.languages.createDiagnosticCollection('icg');
+        this.disposables = [this.output, this.diags];
         this.pendingChanges = new Map();
         this.changeTimer = undefined;
         this.statsByUri = new Map();
@@ -62,8 +63,6 @@ class LspClient {
         this.disposables.push(
             vscode.window.onDidChangeActiveTextEditor(() => this.refreshStatus())
         );
-
-        this.disposables = [this.output, this.diags];
         this.disposables.push(
             vscode.workspace.onDidOpenTextDocument((d) => this.onOpen(d))
         );

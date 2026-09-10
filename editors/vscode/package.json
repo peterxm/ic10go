@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "publisher": "ic10go",
   "license": "MIT",
   "engines": {
