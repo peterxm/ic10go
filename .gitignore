@@ -1,6 +1,5 @@
 # Build output
 /ic10c
-ic10c
 *.exe
 
 # Go test artifacts

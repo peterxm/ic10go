@@ -66,7 +66,10 @@ ic10c disasm <file.ic>        # 反汇编注释旧 IC10
 ic10c lsp                     # 启动语言服务器（stdio）
 ic10c lex    <file.icg>       # 打印词法单元
 ic10c ast    <file.icg>       # 打印 AST
+ic10c help   [command]        # 帮助（中英双语，-L en|zh 切换）
 ```
+
+帮助默认跟随 `$LANG`，可用 `IC10C_LANG` 或全局选项 `-L/--lang en|zh` 覆盖。
 
 编辑器：`editors/vscode` 为可直接加载的语法高亮扩展。
 

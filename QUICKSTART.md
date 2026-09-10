@@ -61,6 +61,16 @@ ic10c lsp                      # 启动语言服务器
 ic10c lex / ast <file.icg>     # 调试：打印词法单元 / AST
 ```
 
+帮助支持中英双语（默认跟随 `$LANG`，也可用 `IC10C_LANG` 或 `-L` 指定）：
+
+```bash
+ic10c help              # 总体帮助
+ic10c help build        # 单个命令的详细帮助
+ic10c build -h          # 同上
+ic10c -L en --help      # 强制英文
+ic10c -L zh --help      # 强制中文
+```
+
 编译到文件：
 
 ```bash
