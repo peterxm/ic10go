@@ -19,7 +19,7 @@ func Optimize(fn *ir.Function) {
 		c3 := foldAll(fn)
 		c4 := simplify(fn)
 		c5 := redundantLoads(fn)
-		c6 := cse(fn)
+		c6 := globalCSE(fn)
 		c7 := selectConvert(fn)
 		c8 := foldBranches(fn)
 		c9 := licm(fn)
@@ -706,14 +706,26 @@ func constText(v ir.Value) (string, bool) {
 }
 
 // ---------------------------------------------------------------------------
-// Common subexpression elimination (block-local)
+// Common subexpression elimination (global, via available expressions)
 // ---------------------------------------------------------------------------
 
-func cse(fn *ir.Function) bool {
+// globalCSE extends CSE across basic blocks using available expressions: an
+// expression is available at a point if it was computed on every path and its
+// operands have not been redefined.
+func globalCSE(fn *ir.Function) bool {
+	fn.BuildCFG()
+	availIn, _ := availableExprs(fn)
 	changed := false
 	for _, b := range fn.Blocks {
 		avail := map[string]*ir.Reg{}
 		rev := map[*ir.Reg]map[string]bool{}
+		for k, r := range availIn[b] {
+			avail[k] = r
+			if rev[r] == nil {
+				rev[r] = map[string]bool{}
+			}
+			rev[r][k] = true
+		}
 		invalidate := func(r *ir.Reg) {
 			for key := range rev[r] {
 				delete(avail, key)
@@ -722,6 +734,10 @@ func cse(fn *ir.Function) bool {
 		}
 		add := func(key string, r *ir.Reg, operands []ir.Value) {
 			avail[key] = r
+			if rev[r] == nil {
+				rev[r] = map[string]bool{}
+			}
+			rev[r][key] = true
 			for _, v := range operands {
 				if rr, ok := v.(*ir.Reg); ok {
 					if rev[rr] == nil {
@@ -753,6 +769,107 @@ func cse(fn *ir.Function) bool {
 		}
 	}
 	return changed
+}
+
+// availableExprs computes, for each block, the expressions available at entry
+// (and exit), mapped to the register holding them.
+func availableExprs(fn *ir.Function) (in, out map[*ir.Block]map[string]*ir.Reg) {
+	in = map[*ir.Block]map[string]*ir.Reg{}
+	out = map[*ir.Block]map[string]*ir.Reg{}
+	for _, b := range fn.Blocks {
+		in[b] = map[string]*ir.Reg{}
+		out[b] = map[string]*ir.Reg{}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, b := range fn.Blocks {
+			ni := meetAvail(b, out)
+			no := transferAvail(b, ni)
+			if !availEqual(ni, in[b]) {
+				in[b] = ni
+				changed = true
+			}
+			if !availEqual(no, out[b]) {
+				out[b] = no
+				changed = true
+			}
+		}
+	}
+	return in, out
+}
+
+func meetAvail(b *ir.Block, out map[*ir.Block]map[string]*ir.Reg) map[string]*ir.Reg {
+	res := map[string]*ir.Reg{}
+	if len(b.Preds) == 0 {
+		return res
+	}
+	for k, r := range out[b.Preds[0]] {
+		res[k] = r
+	}
+	for _, p := range b.Preds[1:] {
+		for k, r := range res {
+			if pr, ok := out[p][k]; !ok || pr != r {
+				delete(res, k)
+			}
+		}
+	}
+	return res
+}
+
+func transferAvail(b *ir.Block, in map[string]*ir.Reg) map[string]*ir.Reg {
+	avail := map[string]*ir.Reg{}
+	rev := map[*ir.Reg]map[string]bool{}
+	for k, r := range in {
+		avail[k] = r
+		if rev[r] == nil {
+			rev[r] = map[string]bool{}
+		}
+		rev[r][k] = true
+	}
+	invalidate := func(r *ir.Reg) {
+		for key := range rev[r] {
+			delete(avail, key)
+		}
+		delete(rev, r)
+	}
+	add := func(key string, r *ir.Reg, operands []ir.Value) {
+		avail[key] = r
+		if rev[r] == nil {
+			rev[r] = map[string]bool{}
+		}
+		rev[r][key] = true
+		for _, v := range operands {
+			if rr, ok := v.(*ir.Reg); ok {
+				if rev[rr] == nil {
+					rev[rr] = map[string]bool{}
+				}
+				rev[rr][key] = true
+			}
+		}
+	}
+	for _, ins := range b.Instrs {
+		key, operands, ok := exprKey(ins)
+		d := defOf(ins)
+		if d != nil {
+			invalidate(d)
+		}
+		if ok && !containsReg(operands, d) {
+			add(key, d, operands)
+		}
+	}
+	return avail
+}
+
+func availEqual(a, b map[string]*ir.Reg) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, r := range a {
+		if b[k] != r {
+			return false
+		}
+	}
+	return true
 }
 
 func containsReg(vs []ir.Value, r *ir.Reg) bool {

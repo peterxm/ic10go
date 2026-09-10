@@ -302,6 +302,33 @@ func TestVMDeviceValidity(t *testing.T) {
 	}
 }
 
+func TestVMCSEInvalidation(t *testing.T) {
+	// The second a+b must be recomputed because t was redefined.
+	src := `func main() {
+    a := d0.Temperature
+    b := d1.Temperature
+    t := a + b
+    d2.Setting = t
+    t = 5
+    d4.Setting = t
+    u := a + b
+    d3.Setting = u
+}`
+	m := runProgram(t, src, 100, func(m *vm.Machine) {
+		m.Set("d0", "Temperature", 3)
+		m.Set("d1", "Temperature", 4)
+	})
+	if got := m.Get("d2", "Setting"); got != 7 {
+		t.Errorf("d2 = %v, want 7", got)
+	}
+	if got := m.Get("d3", "Setting"); got != 7 {
+		t.Errorf("d3 = %v, want 7 (stale CSE)", got)
+	}
+	if got := m.Get("d4", "Setting"); got != 5 {
+		t.Errorf("d4 = %v, want 5", got)
+	}
+}
+
 func TestVMConstantFolding(t *testing.T) {
 	cases := []struct {
 		expr string
