@@ -350,7 +350,7 @@ ic10go/
 - 栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr`
 - `approx` / `isSet` / `rmap` / NaN 支持、`ext/ins/sla/srl/rol/ror`
 - 底层控制流：`label/goto/call/ret`、`ra/sp`、`ireg/setIreg`、`jump(expr)`
-- ⏳ 未实现：动态 logicType `read/write`
+- 动态 logicType：`read(dev, lt)` / `write(dev, lt, v)`
 
 ### M4 工具链 ✅
 - `fmt`（保留注释）、`stats`、`disasm`

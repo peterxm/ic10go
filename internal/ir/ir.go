@@ -221,6 +221,21 @@ type StoreSlot struct {
 	Src   Value
 }
 
+// LoadDyn reads a device logic value whose logic type is chosen at runtime
+// (IC10 "l r? d? rN").
+type LoadDyn struct {
+	Dst   *Reg
+	Dev   string
+	Logic Value
+}
+
+// StoreDyn writes a device logic value whose logic type is chosen at runtime.
+type StoreDyn struct {
+	Dev   string
+	Logic Value
+	Src   Value
+}
+
 // Builtin is a call to a built-in function, e.g. yield, sleep or sqrt.
 type Builtin struct {
 	Dst  *Reg // may be nil
@@ -262,6 +277,8 @@ func (*Load) isInstr()          {}
 func (*Store) isInstr()         {}
 func (*LoadSlot) isInstr()      {}
 func (*StoreSlot) isInstr()     {}
+func (*LoadDyn) isInstr()       {}
+func (*StoreDyn) isInstr()      {}
 func (*Builtin) isInstr()       {}
 func (*Batch) isInstr()         {}
 func (*LoadSpecial) isInstr()   {}

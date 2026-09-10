@@ -797,6 +797,38 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		return &ir.Const{Raw: "STR(" + strconv.Quote(s.Value) + ")"}
 	}
 
+	// read(dev, lt) / write(dev, lt, v) use a runtime logic type (IC10 "l r? d? rN").
+	if id.Name == "read" {
+		if len(call.Args) != 2 {
+			l.diags.Errorf(call.Pos(), "read expects a device and a logic type")
+			return &ir.Const{V: 0}
+		}
+		dev, ok := call.Args[0].(*ast.DeviceLit)
+		if !ok {
+			l.diags.Errorf(call.Args[0].Pos(), "read expects a device as its first argument")
+			return &ir.Const{V: 0}
+		}
+		logic := l.lowerExpr(call.Args[1])
+		r := l.b.NewReg("read")
+		l.b.Emit(&ir.LoadDyn{Dst: r, Dev: dev.Name, Logic: logic})
+		return r
+	}
+	if id.Name == "write" {
+		if len(call.Args) != 3 {
+			l.diags.Errorf(call.Pos(), "write expects a device, a logic type and a value")
+			return &ir.Const{V: 0}
+		}
+		dev, ok := call.Args[0].(*ast.DeviceLit)
+		if !ok {
+			l.diags.Errorf(call.Args[0].Pos(), "write expects a device as its first argument")
+			return &ir.Const{V: 0}
+		}
+		logic := l.lowerExpr(call.Args[1])
+		src := l.lowerExpr(call.Args[2])
+		l.b.Emit(&ir.StoreDyn{Dev: dev.Name, Logic: logic, Src: src})
+		return &ir.Const{V: 0}
+	}
+
 	// jump(expr) performs a computed jump (IC10 "j r0").
 	if id.Name == "jump" {
 		if len(call.Args) != 1 {

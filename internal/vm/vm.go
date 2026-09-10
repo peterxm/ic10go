@@ -66,13 +66,35 @@ type Machine struct {
 	Halted  bool
 	Devices map[string]*Device
 	order   []*Device
+	// LogicByID maps IC10 logicType enum values to names, used to resolve
+	// runtime (register) logic type operands.
+	LogicByID map[int]string
 }
 
 // New returns an empty machine.
 func New() *Machine {
-	m := &Machine{Devices: map[string]*Device{}, Stack: make([]float64, stackSize)}
+	m := &Machine{Devices: map[string]*Device{}, Stack: make([]float64, stackSize), LogicByID: map[int]string{}}
 	m.Regs[regSP] = 0
 	return m
+}
+
+// logicName resolves a device logic type operand, which may be a name or a
+// register holding a logicType enum value.
+func (m *Machine) logicName(s string) string {
+	if i, ok := regIndex(s); ok {
+		return m.logicNameByID(int(m.Regs[i]))
+	}
+	if i, ok := m.indirectIndex(s); ok {
+		return m.logicNameByID(int(m.Regs[i]))
+	}
+	return s
+}
+
+func (m *Machine) logicNameByID(id int) string {
+	if name, ok := m.LogicByID[id]; ok {
+		return name
+	}
+	return fmt.Sprintf("logic#%d", id)
 }
 
 // Device returns the device with the given port name, creating it if needed.
@@ -405,10 +427,10 @@ func (m *Machine) execOp(ins *Instr) error {
 		return m.cmpZeroOp(ins.Op, a[0], a[1])
 	case "l":
 		dst, _ := m.reg(a[0])
-		m.Regs[dst] = m.Device(a[1]).Values[a[2]]
+		m.Regs[dst] = m.Device(a[1]).Values[m.logicName(a[2])]
 		return nil
 	case "s":
-		m.Device(a[0]).Values[a[1]] = mustNum(m, a[2])
+		m.Device(a[0]).Values[m.logicName(a[1])] = mustNum(m, a[2])
 		return nil
 	case "ls":
 		dst, _ := m.reg(a[0])

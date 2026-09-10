@@ -119,6 +119,16 @@ func TestJumpBuiltin(t *testing.T) {
 	}
 }
 
+func TestDynamicLogicType(t *testing.T) {
+	code := mustCompile(t, "func main() { lt := 3\n d0.Setting = read(d1, lt)\n write(d1, lt, 1) }\n")
+	if !strings.Contains(code, "l r") || !strings.Contains(code, " d1 r") {
+		t.Errorf("dynamic read not emitted:\n%s", code)
+	}
+	if !strings.Contains(code, "s d1 r") {
+		t.Errorf("dynamic write not emitted:\n%s", code)
+	}
+}
+
 func TestUnknownLogicTypeWarns(t *testing.T) {
 	_, diags, _ := ic10.Compile("test.icg", []byte("func main() { d0.Temperatur = 1 }\n"))
 	if diags.HasErrors() {

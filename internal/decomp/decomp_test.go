@@ -130,6 +130,22 @@ func TestDecompileStructuredSplitsAtTarget(t *testing.T) {
 	}
 }
 
+func TestDecompileDynamicLogic(t *testing.T) {
+	code, warns, err := Decompile("l r0 d0 r1\ns d0 r1 r0\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	if !strings.Contains(code, "read(d0, r1)") {
+		t.Errorf("dynamic read not translated:\n%s", code)
+	}
+	if !strings.Contains(code, "write(d0, r1, r0)") {
+		t.Errorf("dynamic write not translated:\n%s", code)
+	}
+}
+
 func TestDecompileComputedJump(t *testing.T) {
 	code, warns, err := Decompile("brnez r0 r0\n")
 	if err != nil {

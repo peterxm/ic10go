@@ -229,6 +229,12 @@ func renderInstr(ins ir.Instr, colors map[*ir.Reg]int) (string, bool) {
 	case *ir.LoadSlot:
 		return "ls " + regName(v.Dst, colors) + " " + v.Dev + " " +
 			valueText(v.Index, colors) + " " + v.Logic, true
+	case *ir.LoadDyn:
+		return "l " + regName(v.Dst, colors) + " " + v.Dev + " " +
+			valueText(v.Logic, colors), true
+	case *ir.StoreDyn:
+		return "s " + v.Dev + " " + valueText(v.Logic, colors) + " " +
+			valueText(v.Src, colors), true
 	case *ir.StoreSlot:
 		return "ss " + v.Dev + " " + valueText(v.Index, colors) + " " +
 			v.Logic + " " + valueText(v.Src, colors), true

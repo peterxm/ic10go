@@ -52,6 +52,8 @@ func defOf(i ir.Instr) *ir.Reg {
 		return v.Dst
 	case *ir.LoadSlot:
 		return v.Dst
+	case *ir.LoadDyn:
+		return v.Dst
 	case *ir.Builtin:
 		return v.Dst
 	case *ir.Batch:
@@ -90,6 +92,10 @@ func usesOf(i ir.Instr) []ir.Value {
 		add(v.Index)
 	case *ir.StoreSlot:
 		add(v.Index, v.Src)
+	case *ir.LoadDyn:
+		add(v.Logic)
+	case *ir.StoreDyn:
+		add(v.Logic, v.Src)
 	case *ir.Builtin:
 		for _, a := range v.Args {
 			add(a)
@@ -123,6 +129,8 @@ func termUses(t ir.Term) []ir.Value {
 func hasSideEffect(i ir.Instr) bool {
 	switch v := i.(type) {
 	case *ir.Store, *ir.StoreSlot:
+		return true
+	case *ir.StoreDyn:
 		return true
 	case *ir.StoreSpecial, *ir.StoreIndirect:
 		return true

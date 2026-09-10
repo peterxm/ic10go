@@ -64,8 +64,14 @@ func (d *decompiler) translate(l icLine) []string {
 	case "move":
 		return []string{d.assignDst(l.args[0], d.a(l, 1))}
 	case "l":
+		if d.isDynLogic(l.args[2]) {
+			return []string{d.assignDst(l.args[0], fmt.Sprintf("read(%s, %s)", d.resolve(l.args[1]), d.a(l, 2)))}
+		}
 		return []string{d.assignDst(l.args[0], d.deviceRead(l.args[1], l.args[2]))}
 	case "s":
+		if d.isDynLogic(l.args[1]) {
+			return []string{fmt.Sprintf("write(%s, %s, %s)", d.resolve(l.args[0]), d.a(l, 1), d.a(l, 2))}
+		}
 		return []string{d.deviceWrite(l.args[0], l.args[1], d.a(l, 2))}
 	case "ls":
 		dst := d.assignDst(l.args[0], fmt.Sprintf("%s.slot[%s].%s", d.resolve(l.args[1]), d.a(l, 2), l.args[3]))
@@ -235,6 +241,17 @@ func (d *decompiler) branchExpr(cond string, l icLine) (string, bool) {
 		return "isSet(" + d.resolve(l.args[0]) + ")", true
 	}
 	return "", false
+}
+
+// isDynLogic reports whether a logic type operand is a runtime value (a
+// register or number) rather than a logic type name.
+func (d *decompiler) isDynLogic(s string) bool {
+	s = d.resolve(s)
+	if isReg(s) || isIndirect(s) {
+		return true
+	}
+	_, err := strconv.Atoi(s)
+	return err == nil
 }
 
 func (d *decompiler) deviceRead(devArg, logic string) string {

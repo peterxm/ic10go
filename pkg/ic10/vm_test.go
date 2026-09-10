@@ -258,6 +258,25 @@ func TestVMLoopInvariant(t *testing.T) {
 	}
 }
 
+func TestVMDynamicLogic(t *testing.T) {
+	code := mustCompile(t, "func main() { lt := 1\n d0.Setting = read(d1, lt)\n write(d1, lt, 5) }\n")
+	m := vm.New()
+	m.LogicByID[1] = "Temperature"
+	m.Set("d1", "Temperature", 42)
+	if err := m.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(50); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	if got := m.Get("d0", "Setting"); got != 42 {
+		t.Errorf("dynamic read = %v, want 42", got)
+	}
+	if got := m.Get("d1", "Temperature"); got != 5 {
+		t.Errorf("dynamic write = %v, want 5", got)
+	}
+}
+
 func TestVMConstantFolding(t *testing.T) {
 	cases := []struct {
 		expr string
