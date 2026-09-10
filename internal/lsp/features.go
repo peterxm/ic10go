@@ -654,3 +654,24 @@ func (s *Server) inlayHint(w *bufio.Writer, id json.RawMessage, params json.RawM
 	}
 	reply(w, id, []any{hint})
 }
+
+// publishStats notifies the client of the compiled program's budget so it can
+// show a persistent status indicator.
+func (s *Server) publishStats(w *bufio.Writer, uri, code string, err error, diags *diag.Bag) {
+	if err != nil || diags.HasErrors() {
+		notify(w, "icg/stats", map[string]any{"uri": uri, "error": true})
+		return
+	}
+	st := ic10.StatsOf(code)
+	notify(w, "icg/stats", map[string]any{
+		"uri":        uri,
+		"lines":      st.Lines,
+		"bytes":      st.Bytes,
+		"maxLineLen": st.MaxLineLen,
+		"regs":       st.RegsUsed,
+		"maxLines":   codegen.MaxLines,
+		"maxBytes":   codegen.MaxBytes,
+		"maxLineMax": codegen.MaxLineLen,
+		"maxRegs":    16,
+	})
+}

@@ -278,3 +278,14 @@ func TestHoverUnknownHasResult(t *testing.T) {
 		t.Errorf("hover response must include a result field (even null):\n%s", out)
 	}
 }
+
+func TestStatsNotification(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"s.icg","text":"func main() { d0.On = 1 }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"icg/stats"`) || !strings.Contains(out, `"maxLineLen"`) {
+		t.Errorf("expected an icg/stats notification with the budget:\n%s", out)
+	}
+}

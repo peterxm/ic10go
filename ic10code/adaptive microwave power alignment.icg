@@ -1,25 +1,19 @@
 // 自适应微波供电对准：根据发射器与接收器的位置差，计算水平/垂直指向角。
 // d0=PowerTransmitter（功率发射器），d1=LogicTransmitter（逻辑发射器，需与接收器连线）。
-
-const (
-    pi           = 3.1415
-    degFromNorth = 90 // 数据口朝向相对正北的角度
-)
-
+const pi = 3.1415
+const degFromNorth = 90  // 数据口朝向相对正北的角度
 func main() {
     for {
         yield()
         dx := d1.PositionX - d0.PositionX
         dz := d1.PositionZ - d0.PositionZ
         dy := d1.PositionY - d0.PositionY
-
         // 水平角
         h := atan2(dx, dz) * 180 / pi - 90 - degFromNorth
         d0.Horizontal = h
         d1.Horizontal = 180 + h
-
         // 垂直角
-        v := atan(dy / sqrt(dx*dx + dz*dz)) * 180 / pi + 90
+        v := atan(dy / sqrt(dx * dx + dz * dz)) * 180 / pi + 90
         d0.Vertical = v
         d1.Vertical = 180 - v
     }

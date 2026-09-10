@@ -20,7 +20,7 @@
 | 查找引用 / 重命名 | `Shift+F12` / `F2`（单文件内所有引用） |
 | 参数提示 | 函数调用时显示签名，高亮当前参数 |
 | 快速修复 | 未知 logic/slot type 的"你是不是想写…"；缺 `main` 一键补上 |
-| 预算内联 | 文件末尾显示 `IC10: 行/字节/寄存器` 预算（inlay hint） |
+| 预算常驻 | **状态栏**实时显示当前 `.icg` 的 `行/字节/行长/寄存器` 预算（点击即编译）；文件末尾另有 inlay hint |
 | 格式化 | `Shift+Alt+F`（或保存时）调用 `ic10c fmt` |
 | 片段 | `main`、`hyst`、`batchread`、`batchwrite`、`func`、`const`、`slotread` 等 |
 

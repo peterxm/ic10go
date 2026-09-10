@@ -288,7 +288,7 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 	if !ok {
 		return
 	}
-	_, diags, err := ic10.Compile(uri, []byte(text))
+	code, diags, err := ic10.Compile(uri, []byte(text))
 	var items []lspDiagnostic
 	for _, d := range diags.Diags {
 		line := d.Pos.Line - 1
@@ -318,6 +318,7 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 		"uri":         uri,
 		"diagnostics": items,
 	})
+	s.publishStats(w, uri, code, err, diags)
 }
 
 func severity(s int) int {

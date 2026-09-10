@@ -55,6 +55,13 @@ class LspClient {
         this.diags = vscode.languages.createDiagnosticCollection('icg');
         this.pendingChanges = new Map();
         this.changeTimer = undefined;
+        this.statsByUri = new Map();
+        this.status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+        this.status.command = 'icg.compile';
+        this.disposables.push(this.status);
+        this.disposables.push(
+            vscode.window.onDidChangeActiveTextEditor(() => this.refreshStatus())
+        );
 
         this.disposables = [this.output, this.diags];
         this.disposables.push(
@@ -396,7 +403,9 @@ class LspClient {
     onClose(doc) {
         if (doc.languageId !== 'icg') return;
         this.pendingChanges.delete(doc.uri.toString());
+        this.statsByUri.delete(doc.uri.toString());
         this.diags.delete(doc.uri);
+        this.refreshStatus();
         if (this.initialized) {
             this.notify('textDocument/didClose', {
                 textDocument: { uri: doc.uri.toString() },
@@ -709,7 +718,36 @@ class LspClient {
         }
         if (msg.method === 'textDocument/publishDiagnostics') {
             this.publishDiagnostics(msg.params);
+            return;
         }
+        if (msg.method === 'icg/stats') {
+            this.onStats(msg.params);
+        }
+    }
+
+    onStats(p) {
+        if (p.error) this.statsByUri.delete(p.uri);
+        else this.statsByUri.set(p.uri, p);
+        this.refreshStatus();
+    }
+
+    refreshStatus() {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor || editor.document.languageId !== 'icg') {
+            this.status.hide();
+            return;
+        }
+        const p = this.statsByUri.get(editor.document.uri.toString());
+        if (!p) {
+            this.status.hide();
+            return;
+        }
+        this.status.text = t(
+            `IC10: ${p.lines}/${p.maxLines} lines · ${p.bytes}/${p.maxBytes} B · ${p.maxLineLen}/${p.maxLineMax} ch · ${p.regs}/${p.maxRegs} reg`,
+            `IC10: ${p.lines}/${p.maxLines} 行 · ${p.bytes}/${p.maxBytes} 字节 · ${p.maxLineLen}/${p.maxLineMax} 字符 · ${p.regs}/${p.maxRegs} 寄存器`
+        );
+        this.status.tooltip = t('IC10 budget — click to compile', 'IC10 预算 — 点击编译');
+        this.status.show();
     }
 
     publishDiagnostics(params) {
