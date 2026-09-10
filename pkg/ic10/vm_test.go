@@ -39,6 +39,27 @@ func TestVMTemperatureControl(t *testing.T) {
 	}
 }
 
+// TestVMCallRetKeepsCalleeWrites verifies that a value written by a call/ret
+// routine is observed by the caller on the next iteration; LICM must not treat
+// it as loop-invariant.
+func TestVMCallRetKeepsCalleeWrites(t *testing.T) {
+	src := `func main() {
+    var x = 0
+    for {
+        yield()
+        d0.Setting = x
+        call f
+    }
+    label f:
+    x = d1.Ratio
+    ret
+}`
+	m := runProgram(t, src, 100, func(m *vm.Machine) { m.Set("d1", "Ratio", 0.42) })
+	if got := m.Get("d0", "Setting"); got != 0.42 {
+		t.Errorf("d0.Setting = %v, want 0.42 (callee write dropped)", got)
+	}
+}
+
 func TestVMHysteresis(t *testing.T) {
 	src := `const (
     MaxTemp = 296.15

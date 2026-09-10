@@ -1191,6 +1191,16 @@ type loop struct {
 // licm hoists pure, loop-invariant computations out of natural loops.
 func licm(fn *ir.Function) bool {
 	fn.BuildCFG()
+	// A call (jal) can modify any variable and returns via "j ra" to any call
+	// site. realSuccs below deliberately omits those return edges, so the loop
+	// analysis would not see a callee's writes; hoisting would then treat a
+	// variable written by the callee as loop-invariant. Skip LICM entirely
+	// when the function uses call/ret.
+	for _, b := range fn.Blocks {
+		if _, ok := b.Term.(*ir.JmpRA); ok {
+			return false
+		}
+	}
 	liveIn, _ := liveness(fn)
 	succs := realSuccs(fn)
 	preds := buildPreds(fn, succs)
