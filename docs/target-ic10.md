@@ -166,8 +166,8 @@ PressureWaste  PressureAir  MaxQuantity  Mature  ReferenceId  Seeding
 - `SorterInstruction.FilterPrefabHashEquals`(1) / `FilterPrefabHashNotEquals`(2)
   / `FilterSlotTypeCompare`(3) / `FilterSortingClassCompare`(4)
 - `SlotClass.Battery`、`SortingClass.Ores`
-- `PrinterInstruction.*`
-- `ReagentMode.*`
+- `ReagentMode.Contents`(0) / `Required`(1) / `Recipe`(2)
+- `PrinterInstruction.ExecuteRecipe`(1) / `WaitUntilNextValid`(2)（8 位 OP 码，需核对）
 
 ---
 

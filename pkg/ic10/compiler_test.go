@@ -295,3 +295,14 @@ func TestStackOps(t *testing.T) {
 		}
 	}
 }
+
+func TestEnumConstants(t *testing.T) {
+	src := []byte("func main() {\n    d0.Mode = ReagentMode.Recipe\n    put(d0, 0, PrinterInstruction.ExecuteRecipe)\n}\n")
+	code, diags, err := ic10.Compile("test.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("compile: diags=%v err=%v", diags.Diags, err)
+	}
+	if !strings.Contains(code, "s d0 Mode 2") || !strings.Contains(code, "put d0 0 1") {
+		t.Errorf("enum constants not resolved:\n%s", code)
+	}
+}

@@ -18,6 +18,13 @@ var EnumConstants = map[string]float64{
 	"SorterInstruction.FilterSortingClassCompare": 4,
 	"SlotClass.Battery":                           1,
 	"SortingClass.Ores":                           1,
+	// ReagentMode: Contents / Required / Recipe = 0 / 1 / 2 (reference doc).
+	"ReagentMode.Contents": 0,
+	"ReagentMode.Required": 1,
+	"ReagentMode.Recipe":   2,
+	// PrinterInstruction: 8-bit OP codes; verify against the game.
+	"PrinterInstruction.ExecuteRecipe":      1,
+	"PrinterInstruction.WaitUntilNextValid": 2,
 }
 
 // LogicTypes is the set of device logic type names understood by IC10.

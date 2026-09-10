@@ -129,7 +129,7 @@ func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
 // Validate checks the IC10 editor limits.
 func Validate(code string) error {
 	if len(code) > MaxBytes {
-		return fmt.Errorf("script is %d bytes, exceeding the %d byte limit", len(code), MaxBytes)
+		return fmt.Errorf("script is %d bytes, exceeding the %d byte limit (see `ic10c stats` for the budget)", len(code), MaxBytes)
 	}
 	trimmed := strings.TrimSuffix(code, "\n")
 	if trimmed == "" {
@@ -137,7 +137,7 @@ func Validate(code string) error {
 	}
 	lines := strings.Split(trimmed, "\n")
 	if len(lines) > MaxLines {
-		return fmt.Errorf("script has %d lines, exceeding the %d line limit", len(lines), MaxLines)
+		return fmt.Errorf("script has %d lines, exceeding the %d line limit (see `ic10c stats`; split the logic, use batch IO, or `ic10c minify` for existing IC10)", len(lines), MaxLines)
 	}
 	for i, ln := range lines {
 		if len(ln) > MaxLineLen {

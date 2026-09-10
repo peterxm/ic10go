@@ -33,3 +33,10 @@ func TestValidateTooManyBytes(t *testing.T) {
 		t.Fatal("expected a byte size error")
 	}
 }
+
+func TestValidateLineLimitMentionsBudget(t *testing.T) {
+	err := Validate(strings.Repeat("move r0 1\n", MaxLines+1))
+	if err == nil || !strings.Contains(err.Error(), "stats") {
+		t.Fatalf("line limit error should hint at `ic10c stats`, got: %v", err)
+	}
+}
