@@ -124,15 +124,23 @@ func TestDecompileStructuredSmoke(t *testing.T) {
 			}
 			compiled, diags, err := ic10.Compile(f, []byte(code))
 			if diags.HasErrors() || err != nil {
-				t.Skip("structured form is not valid here; the CLI falls back to goto")
+				t.Fatalf("structured source failed to compile: diags=%v err=%v\n%s", diags.Diags, err, code)
 			}
-			m := vm.New()
-			if err := m.Load(compiled); err != nil {
+			orig := vm.New()
+			if err := orig.Load(string(src)); err != nil {
 				t.Fatal(err)
 			}
-			if err := m.Run(300); err != nil && err != vm.ErrStepLimit {
+			if err := orig.Run(3000); err != nil && err != vm.ErrStepLimit {
+				t.Fatalf("original run: %v", err)
+			}
+			dec := vm.New()
+			if err := dec.Load(compiled); err != nil {
+				t.Fatal(err)
+			}
+			if err := dec.Run(3000); err != nil && err != vm.ErrStepLimit {
 				t.Fatalf("structured run: %v", err)
 			}
+			compareDevices(t, orig, dec)
 		})
 	}
 }

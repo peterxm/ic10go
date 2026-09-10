@@ -115,6 +115,21 @@ func TestDecompileReadFirstDeclaration(t *testing.T) {
 	}
 }
 
+func TestDecompileStructuredSplitsAtTarget(t *testing.T) {
+	// brnez r0 2 jumps into the middle of what would otherwise be one block.
+	src := "move r0 0\nbrnez r0 2\nmove r1 1\nmove r2 2\ns d0 Setting r2\n"
+	code, warns, err := DecompileStructured(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	if !strings.Contains(code, "label L3:") {
+		t.Errorf("branch target label was not emitted:\n%s", code)
+	}
+}
+
 func TestDecompileComputedJump(t *testing.T) {
 	code, warns, err := Decompile("brnez r0 r0\n")
 	if err != nil {

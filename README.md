@@ -84,7 +84,7 @@ sh editors/vscode/install.sh   # 安装到 ~/.vscode/extensions
 >
 > 寄存器压力超过 16 时，编译器会自动把多余的值**溢出到 IC10 栈**（固定高地址槽 + 暂存寄存器），而不是报错。未知 logic type 会给出**警告**（可用 `IC10C_NO_CHECK=1` 关闭）。
 >
-> 反编译：`ic10c decompile` 会替换 `alias`/`define`、用 `:=` 声明首次写入的寄存器、用 `label`/`goto`/`call`/`ret` 表达控制流；配合寄存器拷贝合并，`ic10code/` 下的 17 个真实脚本都能反编译并在 128 行内重新编译（含最复杂的 Furnace，148→121 行）。加 `-s/--structured` 可进一步尝试还原 `if`/`else`/`for`（尽力而为，复杂控制流自动回退到 goto）。
+> 反编译：`ic10c decompile` 会替换 `alias`/`define`、用 `:=` 声明首次写入的寄存器、用 `label`/`goto`/`call`/`ret` 表达控制流；配合寄存器拷贝合并，`ic10code/` 下的 17 个真实脚本都能反编译并在 128 行内重新编译（含最复杂的 Furnace，148→121 行）。加 `-s/--structured` 会基于后支配树还原 `if`/`else`/`for`；17 个脚本都能结构化，并与原脚本做 VM 等价性验证。结构化失败时自动回退到 goto 形式。
 
 ## 测试
 

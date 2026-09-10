@@ -180,13 +180,12 @@ var Commands = []Command{
 				"are substituted, registers become variables r0..r15, and control\n" +
 				"flow becomes label/goto/call/ret. Unsupported instructions are\n" +
 				"reported on stderr and emitted as comments.\n\n" +
-				"With --structured the decompiler also tries to recover if/else/for;\n" +
-				"this is best-effort and falls back to goto for complex flow.",
+				"With --structured the decompiler recovers if/else/for using the\n" +
+				"post-dominator tree, and falls back to goto where it cannot.",
 			ZH: "将 IC10 程序翻译为 .icg 源码。alias 与 define 会被替换，寄存器变为\n" +
 				"变量 r0..r15，控制流变为 label/goto/call/ret。不支持的指令会在\n" +
 				"stderr 报告，并在源码中作为注释保留。\n\n" +
-				"加 --structured 时还会尝试还原 if/else/for；这是尽力而为，复杂控制流\n" +
-				"会回退为 goto。",
+				"加 --structured 时用后支配树还原 if/else/for；无法还原的部分回退为 goto。",
 		},
 		Flags: []Flag{
 			{Short: "-s", Long: "--structured", Desc: text{

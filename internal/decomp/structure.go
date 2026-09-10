@@ -253,6 +253,11 @@ func (s *structurer) buildBlocks(lines []icLine) {
 		if cur.term != nil {
 			flush()
 		}
+		// Split at branch targets so generated labels land on the right
+		// instruction.
+		if _, isTarget := s.d.labelAt[l.num]; isTarget {
+			flush()
+		}
 		if cur.entryLine < 0 {
 			cur.entryLine = l.num
 		}
