@@ -262,6 +262,7 @@ Ret
 | 子命令 | 功能 |
 |--------|------|
 | `ic10c build <file.icg>` | 编译并输出 IC10 到 stdout |
+| `ic10c run <file.icg>` | 编译并在内置 VM 中运行（`--steps`/`--set`/`--trace`） |
 | `ic10c stats <file.icg>` | 行/字节/寄存器预算报告 |
 | `ic10c fmt [-w] <file.icg>` | 格式化源码（保留注释；`-w` 原地写回） |
 | `ic10c disasm <file.ic>` | 反汇编旧 `.ic`（解析跳转目标为标签） |
@@ -356,10 +357,11 @@ ic10go/
 ### M4 工具链 ✅
 - `fmt`（保留注释）、`stats`、`disasm`
 - `decompile`（IC10 → `.icg`，含 `-s` 结构化）
-- LSP（诊断 / 补全）、VSCode 扩展
+- `run`（编译后在内置 VM 中执行，`--steps`/`--set`/`--trace`）
+- LSP（诊断 / 补全 / 格式化 / hover / 定义）、VSCode 扩展
 
 ### M5 测试用最小解释器（VM）✅
-- 仅用于测试与开发验证，不作为用户可见模拟器
+- 主要用途是测试与开发验证，并经 `ic10c run` 暴露给用户调试
 - 实现 IC10 指令解释、寄存器、栈、标签/行号
 - mock 设备模型（可脚本化读写逻辑类型）
 - 端到端测试：`.icg` → 编译 → VM 执行 → 断言设备状态

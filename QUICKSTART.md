@@ -79,6 +79,14 @@ ic10c -L zh --help      # 强制中文
 ./ic10c build blink.icg > blink.ic
 ```
 
+在内置 VM 中运行（无需进游戏）：
+
+```bash
+./ic10c run blink.icg
+# 用 --set 预置设备值，--steps 限定步数，--trace 打印每条执行的指令
+./ic10c run --steps 500 --set d0.Temperature=350 --trace ctrl.icg
+```
+
 检查是否超出 IC10 限制：
 
 ```bash

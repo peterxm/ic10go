@@ -13,7 +13,7 @@
 - **面向 128 行 / 4 KiB 约束**：不生成 `alias` / `define` / 注释 / 空行 / 标签，跳转用绝对行号。
 - **现代语法**：`:=`、`if/for/switch`、函数（编译期全内联）、设备属性 `d0.On`、槽位 `d0.slot[i].X`、批量 IO、通道。
 - **编译期求值**：常量折叠、`hash()` 的 CRC-32、逻辑类型校验。
-- **快速开发工具链**：`build` / `fmt` / `disasm` / `stats` / `lsp`，以及测试用最小解释器。
+- **快速开发工具链**：`build` / `run` / `fmt` / `disasm` / `decompile` / `stats` / `lsp`，以及内置最小解释器。
 
 ## 示例
 
@@ -51,10 +51,10 @@ j 1
 
 **M0 已完成**：lexer / parser / AST / 诊断 / CLI 骨架。
 **M1 已完成**：sema（名字解析、常量求值）、lower（AST→三地址 IR、全内联）、regalloc（活跃性 + 图着色 + 拷贝合并 + 溢出，寄存器复用）、codegen（指令选择、空块消除、逆后序布局、绝对行号、限额校验）。
-**M2 已完成**：IR 优化器（块内拷贝/常量传播、全局常量传播、常量折叠、代数化简、局部 CSE、select 转换、冗余设备/槽位/批量读消除、常量分支折叠、循环不变量外提、活跃性死代码消除、不可达块删除）、比较-分支融合、`&&`/`||`→`min`/`max`（纯操作数）。
+**M2 已完成**：IR 优化器（块内拷贝/常量传播、全局常量传播、常量折叠、代数化简、全局 CSE（可用表达式）、select 转换、冗余设备/槽位/批量读消除、常量分支折叠、循环不变量外提、活跃性死代码消除、不可达块删除）、比较-分支融合、`&&`/`||`→`min`/`max`（纯操作数）。
 **M3 已完成**：批量 IO（`batch.read/readName/readSlot/readNameSlot/write/writeName/writeSlot`）、网络通道 `d.channel[conn][ch]`、栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr`、`isSet/isUnset/rmap`、`approx/approxZero`、`str("...")` 显示字符串、补充 logic type。
-**M5 已完成**：测试用最小 IC10 解释器 `internal/vm`（寄存器 / 栈 / 设备 / 槽位 / 通道 / 批量 / 分支 / 标签与绝对行号），配套端到端语义测试与常量折叠差分测试。
-**M4 已完成**：`ic10c stats`（行/字节/寄存器预算）、`ic10c fmt`（格式化，支持 `-w`）、`ic10c disasm`（旧 IC10 反汇编注释）、`ic10c lsp`（诊断 + 补全）、VSCode TextMate 语法高亮。
+**M5 已完成**：测试用最小 IC10 解释器 `internal/vm`（寄存器 / 栈 / 设备 / 槽位 / 通道 / 批量 / 分支 / 标签与绝对行号），配套端到端语义测试与常量折叠差分测试；并经 `ic10c run` 暴露给用户调试。
+**M4 已完成**：`ic10c stats`（行/字节/寄存器预算）、`ic10c fmt`（格式化，支持 `-w`）、`ic10c disasm`（旧 IC10 反汇编注释）、`ic10c decompile`（IC10 → `.icg`，支持 `-s` 结构化）、`ic10c run`（内置 VM 执行）、`ic10c lsp`（诊断 / 补全 / 格式化 / hover / 定义）、VSCode 扩展（语法高亮 + LSP）。
 
 当前可用：
 
@@ -113,5 +113,5 @@ go test ./...
 - **M1** 单函数编译：寄存器分配 + 代码生成 + 限额校验
 - **M2** 优化器：常量折叠 / DCE / CSE / 内联 / 分支融合
 - **M3** 领域特性：槽位 / 批量 / 通道 / 栈
-- **M4** 工具链：`fmt` / `disasm` / `stats` / LSP / 语法高亮
+- **M4** 工具链：`fmt` / `disasm` / `decompile` / `run` / `stats` / LSP / VSCode 扩展
 - **M5** 测试用最小解释器（VM）
