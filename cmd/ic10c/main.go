@@ -19,11 +19,10 @@ import (
 	"ic10go/internal/minify"
 	"ic10go/internal/parser"
 	"ic10go/internal/source"
+	"ic10go/internal/version"
 	"ic10go/internal/vm"
 	"ic10go/pkg/ic10"
 )
-
-const version = "0.6.0"
 
 // lang is the resolved output language for the current invocation.
 var lang = cli.EN
@@ -88,7 +87,7 @@ parse:
 		fmt.Print(cli.Usage(lang))
 		return 0
 	case "-v", "--version", "version":
-		fmt.Println("ic10c " + version)
+		fmt.Println("ic10c " + version.Version)
 		return 0
 	}
 
@@ -184,6 +183,7 @@ func cmdBuild(args []string) int {
 func cmdRun(args []string) int {
 	steps := 1000
 	trace := false
+	stableIns := false
 	var sets []string
 	var file string
 	for i := 0; i < len(args); i++ {
@@ -198,6 +198,8 @@ func cmdRun(args []string) int {
 				sets = append(sets, args[i+1])
 				i++
 			}
+		case "--stable-ins":
+			stableIns = true
 		case "--trace":
 			trace = true
 		default:
@@ -214,7 +216,7 @@ func cmdRun(args []string) int {
 		return 1
 	}
 	ic10Hint(file)
-	code, diags, err := ic10.Compile(file, data)
+	code, diags, err := ic10.CompileWithOptions(file, data, ic10.Options{StableInsOrder: stableIns})
 	if rc := report(source.NewFile(file, data), diags); rc != 0 {
 		return rc
 	}

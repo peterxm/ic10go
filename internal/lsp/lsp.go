@@ -7,10 +7,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
+	"ic10go/internal/ast"
 	"ic10go/internal/builtin"
+	"ic10go/internal/diag"
+	"ic10go/internal/lexer"
+	"ic10go/internal/parser"
+	"ic10go/internal/source"
+	"ic10go/internal/version"
 	"ic10go/pkg/ic10"
 )
 
@@ -69,7 +77,10 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 		case "initialize":
 			reply(writer, msg.ID, map[string]any{
 				"capabilities": map[string]any{
-					"textDocumentSync": 1, // full
+					"textDocumentSync": map[string]any{
+						"openClose": true,
+						"change":    2, // incremental
+					},
 					"completionProvider": map[string]any{
 						"triggerCharacters": []string{"."},
 					},
@@ -77,7 +88,7 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 					"hoverProvider":              true,
 					"definitionProvider":         true,
 				},
-				"serverInfo": map[string]any{"name": "ic10c", "version": "0.1.0"},
+				"serverInfo": map[string]any{"name": "ic10c", "version": version.Version},
 			})
 		case "initialized":
 			// no-op
@@ -89,8 +100,10 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 			s.didOpen(writer, msg.Params)
 		case "textDocument/didChange":
 			s.didChange(writer, msg.Params)
+		case "textDocument/didClose":
+			s.didClose(writer, msg.Params)
 		case "textDocument/completion":
-			reply(writer, msg.ID, completionItems())
+			s.completion(writer, msg.ID, msg.Params)
 		case "textDocument/formatting":
 			s.formatting(writer, msg.ID, msg.Params)
 		case "textDocument/hover":
@@ -116,9 +129,18 @@ type didChangeParams struct {
 	TextDocument struct {
 		URI string `json:"uri"`
 	} `json:"textDocument"`
-	ContentChanges []struct {
-		Text string `json:"text"`
-	} `json:"contentChanges"`
+	ContentChanges []contentChange `json:"contentChanges"`
+}
+
+type contentChange struct {
+	Range *lspRange `json:"range"`
+	Text  string    `json:"text"`
+}
+
+type textDocumentOnlyParams struct {
+	TextDocument struct {
+		URI string `json:"uri"`
+	} `json:"textDocument"`
 }
 
 func (s *Server) didOpen(w *bufio.Writer, params json.RawMessage) {
@@ -135,10 +157,75 @@ func (s *Server) didChange(w *bufio.Writer, params json.RawMessage) {
 	if err := json.Unmarshal(params, &p); err != nil {
 		return
 	}
-	if len(p.ContentChanges) > 0 {
-		s.docs[p.TextDocument.URI] = p.ContentChanges[len(p.ContentChanges)-1].Text
+	uri := p.TextDocument.URI
+	text := s.docs[uri]
+	for _, c := range p.ContentChanges {
+		if c.Range == nil {
+			text = c.Text
+			continue
+		}
+		text = applyChange(text, *c.Range, c.Text)
 	}
-	s.publish(w, p.TextDocument.URI)
+	s.docs[uri] = text
+	s.publish(w, uri)
+}
+
+func (s *Server) didClose(w *bufio.Writer, params json.RawMessage) {
+	var p textDocumentOnlyParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return
+	}
+	delete(s.docs, p.TextDocument.URI)
+	notify(w, "textDocument/publishDiagnostics", map[string]any{
+		"uri":         p.TextDocument.URI,
+		"diagnostics": []any{},
+	})
+}
+
+// applyChange applies one LSP content change (incremental or full).
+func applyChange(text string, r lspRange, replacement string) string {
+	start := posToOffset(text, r.Start)
+	end := posToOffset(text, r.End)
+	if start < 0 || end > len(text) || start > end {
+		return text
+	}
+	return text[:start] + replacement + text[end:]
+}
+
+// posToOffset converts an LSP position (0-based line, UTF-16 code unit column)
+// to a byte offset in text.
+func posToOffset(text string, pos lspPosition) int {
+	offset := 0
+	for line := 0; line < pos.Line; line++ {
+		i := strings.IndexByte(text[offset:], '\n')
+		if i < 0 {
+			return len(text)
+		}
+		offset += i + 1
+	}
+	col := 0
+	for offset < len(text) && text[offset] != '\n' && col < pos.Character {
+		r, size := utf8.DecodeRuneInString(text[offset:])
+		if r > 0xFFFF {
+			col += 2
+		} else {
+			col++
+		}
+		offset += size
+	}
+	return offset
+}
+
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		if r > 0xFFFF {
+			n += 2
+		} else {
+			n++
+		}
+	}
+	return n
 }
 
 type lspPosition struct {
@@ -212,13 +299,64 @@ type completionItem struct {
 	Detail string `json:"detail,omitempty"`
 }
 
-func completionItems() []completionItem {
+// ---------------------------------------------------------------------------
+// Completion
+// ---------------------------------------------------------------------------
+
+func (s *Server) completion(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p textDocumentParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		reply(w, id, []any{})
+		return
+	}
+	reply(w, id, completionItemsFor(s.docs[p.TextDocument.URI], p.Position))
+}
+
+// completionItemsFor returns context-aware completion items: after a device
+// port it offers logic types, after "batch" the batch methods, after an enum
+// name its members, and elsewhere keywords plus the document's own symbols.
+func completionItemsFor(text string, pos lspPosition) []completionItem {
+	off := posToOffset(text, pos)
+	i := off
+	for i > 0 && isWordByte(text[i-1]) {
+		i--
+	}
+	if i > 0 && text[i-1] == '.' {
+		if i >= 2 && text[i-2] == ']' {
+			return slotTypeItems()
+		}
+		j := i - 1
+		for j > 0 && isWordByte(text[j-1]) {
+			j--
+		}
+		recv := text[j : i-1]
+		switch {
+		case recv == "batch":
+			return batchMethodItems()
+		case isDevicePort(recv):
+			return logicTypeItems()
+		case enumReceiver(recv):
+			return enumItems(recv)
+		default:
+			return logicTypeItems()
+		}
+	}
+	items := baseCompletionItems()
+	for _, r := range enumReceivers() {
+		items = append(items, completionItem{r, 9, "enum"})
+	}
+	items = append(items, batchMethodItems()...)
+	items = append(items, documentSymbols("", text)...)
+	return items
+}
+
+func baseCompletionItems() []completionItem {
 	items := []completionItem{
 		{"const", 14, "declaration"}, {"var", 14, "declaration"}, {"func", 3, "declaration"},
 		{"if", 14, ""}, {"else", 14, ""}, {"for", 14, ""}, {"switch", 14, ""},
 		{"case", 14, ""}, {"default", 14, ""}, {"break", 14, ""}, {"continue", 14, ""},
-		{"return", 14, ""}, {"true", 12, ""}, {"false", 12, ""},
-		{"nan", 12, ""}, {"pinf", 12, ""}, {"ninf", 12, ""},
+		{"return", 14, ""}, {"label", 14, ""}, {"goto", 14, ""}, {"call", 14, ""}, {"ret", 14, ""},
+		{"true", 12, ""}, {"false", 12, ""}, {"nan", 12, ""}, {"pinf", 12, ""}, {"ninf", 12, ""},
 		{"d0", 6, "device"}, {"d1", 6, "device"}, {"d2", 6, "device"},
 		{"d3", 6, "device"}, {"d4", 6, "device"}, {"d5", 6, "device"}, {"db", 6, "device"},
 		{"batch", 9, "batch IO"},
@@ -237,6 +375,157 @@ func completionItems() []completionItem {
 		items = append(items, completionItem{name, 21, "slot type"})
 	}
 	return items
+}
+
+func logicTypeItems() []completionItem {
+	var items []completionItem
+	for name := range builtin.LogicTypes {
+		items = append(items, completionItem{name, 21, "logic type"})
+	}
+	sortItems(items)
+	return items
+}
+
+func slotTypeItems() []completionItem {
+	var items []completionItem
+	for name := range builtin.SlotTypes {
+		items = append(items, completionItem{name, 21, "slot type"})
+	}
+	sortItems(items)
+	return items
+}
+
+func batchMethodItems() []completionItem {
+	names := []string{"read", "readName", "readSlot", "readNameSlot", "write", "writeName", "writeSlot"}
+	items := make([]completionItem, 0, len(names))
+	for _, n := range names {
+		items = append(items, completionItem{n, 3, "batch IO"})
+	}
+	return items
+}
+
+func enumReceivers() []string {
+	seen := map[string]bool{}
+	var out []string
+	for k := range builtin.EnumConstants {
+		if i := strings.IndexByte(k, '.'); i > 0 {
+			r := k[:i]
+			if !seen[r] {
+				seen[r] = true
+				out = append(out, r)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func enumReceiver(s string) bool {
+	for k := range builtin.EnumConstants {
+		if strings.HasPrefix(k, s+".") {
+			return true
+		}
+	}
+	return false
+}
+
+func enumItems(recv string) []completionItem {
+	var items []completionItem
+	for k := range builtin.EnumConstants {
+		if member, ok := strings.CutPrefix(k, recv+"."); ok {
+			items = append(items, completionItem{member, 21, "enum"})
+		}
+	}
+	sortItems(items)
+	return items
+}
+
+func isDevicePort(s string) bool {
+	if s == "db" {
+		return true
+	}
+	return len(s) == 2 && s[0] == 'd' && s[1] >= '0' && s[1] <= '5'
+}
+
+func sortItems(items []completionItem) {
+	sort.Slice(items, func(i, j int) bool { return items[i].Label < items[j].Label })
+}
+
+// documentSymbols collects the user-defined functions, constants, variables and
+// labels of a document for completion.
+func documentSymbols(name, text string) []completionItem {
+	file := source.NewFile(name, []byte(text))
+	diags := &diag.Bag{}
+	toks := lexer.Tokenize(file, diags)
+	tree := parser.Parse(file, toks, diags)
+	if tree == nil {
+		return nil
+	}
+	var items []completionItem
+	seen := map[string]bool{}
+	add := func(n string, kind int, detail string) {
+		if n == "" || seen[n] {
+			return
+		}
+		seen[n] = true
+		items = append(items, completionItem{n, kind, detail})
+	}
+	for _, d := range tree.Decls {
+		switch d := d.(type) {
+		case *ast.FuncDecl:
+			add(d.Name.Name, 3, "function")
+		case *ast.ConstDecl:
+			add(d.Name.Name, 21, "constant")
+		case *ast.VarDecl:
+			add(d.Name.Name, 6, "variable")
+		}
+	}
+	for _, d := range tree.Decls {
+		if f, ok := d.(*ast.FuncDecl); ok && f.Body != nil {
+			collectStmtSymbols(f.Body.List, add)
+		}
+	}
+	return items
+}
+
+func collectStmtSymbols(stmts []ast.Stmt, add func(string, int, string)) {
+	for _, s := range stmts {
+		switch s := s.(type) {
+		case *ast.DeclStmt:
+			switch d := s.Decl.(type) {
+			case *ast.VarDecl:
+				add(d.Name.Name, 6, "variable")
+			case *ast.ConstDecl:
+				add(d.Name.Name, 21, "constant")
+			}
+		case *ast.AssignStmt:
+			if id, ok := s.Lhs.(*ast.Ident); ok {
+				add(id.Name, 6, "variable")
+			}
+		case *ast.LabelStmt:
+			add(s.Name.Name, 2, "label")
+		case *ast.IfStmt:
+			if s.Then != nil {
+				collectStmtSymbols(s.Then.List, add)
+			}
+			switch e := s.Else.(type) {
+			case *ast.BlockStmt:
+				collectStmtSymbols(e.List, add)
+			case *ast.IfStmt:
+				collectStmtSymbols([]ast.Stmt{e}, add)
+			}
+		case *ast.ForStmt:
+			if s.Body != nil {
+				collectStmtSymbols(s.Body.List, add)
+			}
+		case *ast.SwitchStmt:
+			for _, c := range s.Cases {
+				collectStmtSymbols(c.Body, add)
+			}
+		case *ast.BlockStmt:
+			collectStmtSymbols(s.List, add)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -304,24 +593,16 @@ func endPosition(text string) lspPosition {
 }
 
 func wordAt(text string, pos lspPosition) string {
-	lines := strings.Split(text, "\n")
-	if pos.Line < 0 || pos.Line >= len(lines) {
-		return ""
-	}
-	line := lines[pos.Line]
-	i := pos.Character
-	if i > len(line) {
-		i = len(line)
-	}
-	start := i
-	for start > 0 && isWordByte(line[start-1]) {
+	off := posToOffset(text, pos)
+	start := off
+	for start > 0 && isWordByte(text[start-1]) {
 		start--
 	}
-	end := i
-	for end < len(line) && isWordByte(line[end]) {
+	end := off
+	for end < len(text) && isWordByte(text[end]) {
 		end++
 	}
-	return line[start:end]
+	return text[start:end]
 }
 
 func isWordByte(b byte) bool {
@@ -384,11 +665,12 @@ func location(uri string, lineIdx int, line, word string) any {
 	if col < 0 {
 		col = 0
 	}
+	start := utf16Len(line[:col])
 	return map[string]any{
 		"uri": uri,
 		"range": lspRange{
-			Start: lspPosition{lineIdx, col},
-			End:   lspPosition{lineIdx, col + len(word)},
+			Start: lspPosition{lineIdx, start},
+			End:   lspPosition{lineIdx, start + utf16Len(word)},
 		},
 	}
 }

@@ -1,6 +1,6 @@
 # IC10 Go — VSCode 扩展
 
-为 `.icg` 提供语法高亮、括号/注释配置、错误诊断与自动补全。
+为 `.icg` 提供语法高亮、括号/注释配置、错误诊断、上下文感知补全，以及"编译预览 / 内置 VM 运行"命令。
 
 扩展用**纯 JavaScript** 编写，无需 `npm install`，只要本机有 `ic10c` 可执行文件即可。
 
@@ -12,7 +12,7 @@
 sh editors/vscode/install.sh
 ```
 
-它会把这个扩展复制到 `~/.vscode/extensions/ic10go.icg-0.2.0`。
+它会把这个扩展复制到 `~/.vscode/extensions/ic10go.icg-<版本>/`（版本读取自 `package.json`）。
 
 然后**重启 VSCode**（或按 `Ctrl+Shift+P` 输入 `Developer: Reload Window`）。
 
@@ -58,17 +58,18 @@ go build -o ic10c ./cmd/ic10c
 
 2. 应看到语法高亮。
 3. 故意写错，例如 `x := foo`，编辑器应报 `undefined variable "foo"`。
-4. 输入 `batch.` 或 `Temperature` 时应有补全。
+4. 输入 `d0.` 应补全 logic type；输入 `batch.` 应补全批量方法；输入你定义的函数名也会被补全。
+5. 命令面板执行 `IC10 Go: Compile to IC10`，旁边会打开编译产物，输出面板显示行/字节预算。
 
 ## 四、手动安装（不使用脚本）
 
 把 `editors/vscode` 整个目录复制到：
 
 ```
-~/.vscode/extensions/ic10go.icg-0.2.0/
+~/.vscode/extensions/ic10go.icg-0.4.0/
 ```
 
-目录里必须包含 `package.json`、`extension.js`、`language-configuration.json` 和 `syntaxes/`，然后重启 VSCode。
+目录里必须包含 `package.json`、`extension.js`、`language-configuration.json`、`syntaxes/` 和 `snippets/`，然后重启 VSCode。
 
 ## 五、功能与命令
 
@@ -76,29 +77,38 @@ go build -o ic10c ./cmd/ic10c
 |------|------|
 | 语法高亮 | 关键字、字符串、数字、设备端口、逻辑类型、内建函数 |
 | 注释/括号 | `//`、`/* */`、自动闭合 |
-| 诊断 | 打开/编辑时实时显示编译错误 |
-| 补全 | 内建函数、逻辑类型、槽位类型、设备端口 |
+| 诊断 | 打开/编辑时实时显示编译错误（含 128 行 / 4KiB / 90 字符超限） |
+| 补全 | **上下文感知**：`d0.`→logic type、`batch.`→批量方法、`SorterInstruction.`→枚举成员；并补全当前文件的函数/常量/变量/标签、内建、设备端口 |
+| 片段 | `main`、`hyst`、`batchread`、`batchwrite`、`func`、`const`、`slotread` 等 |
 | 格式化 | `Shift+Alt+F`（或保存时）调用 `ic10c` 的格式化 |
 | 悬停 | 鼠标悬停在关键字/内建/逻辑类型/设备端口上显示说明 |
 | 跳转定义 | `F12` / `Ctrl+点击` 跳到函数、常量、变量、标签定义 |
-| 命令 | `IC10 Go: Restart Language Server`（重启语言服务器） |
+| 命令 | `IC10 Go: Compile to IC10`（编译产物预览 + 预算）、`IC10 Go: Run in VM`、`IC10 Go: Restart Language Server` |
 
-## 六、常见问题
+## 六、设置
+
+| 设置 | 默认 | 说明 |
+|------|------|------|
+| `icg.serverPath` | `""` | `ic10c` 可执行文件路径；留空则自动查找 |
+| `icg.stableIns` | `false` | 编译/运行时加 `--stable-ins`（稳定版 `ins` 参数顺序） |
+| `icg.noCheck` | `false` | 关闭设备 logic type 校验（`IC10C_NO_CHECK`） |
+
+## 七、常见问题
 
 - **没有高亮**：确认文件扩展名是 `.icg`，且已重启 VSCode；检查扩展是否出现在扩展列表（搜索 `IC10 Go`）。
 - **没有诊断/补全**：多半是找不到 `ic10c`。按上面第二节设置 `icg.serverPath`，或在工作区根目录构建 `ic10c`。
 - **改了编译器后行为没变**：运行命令面板里的 `IC10 Go: Restart Language Server`。
 - **查看日志**：输出面板（`Ctrl+Shift+U`）选择 `IC10 Go`。
 
-## 七、打包成 .vsix（可选）
+## 八、打包成 .vsix（可选）
 
 如果要用 `code --install-extension` 或分发给别人：
 
 ```bash
 cd editors/vscode
 npx @vscode/vsce package --allow-missing-repository
-# 生成 icg-0.2.0.vsix
-code --install-extension icg-0.2.0.vsix
+# 生成 icg-0.4.0.vsix
+code --install-extension icg-0.4.0.vsix
 ```
 
 `vsce` 需要联网下载，首次使用会慢一些。

@@ -132,7 +132,7 @@ var Commands = []Command{
 		},
 	},
 	{
-		Name: "run", Args: "<file.icg> [--steps N] [--set name.logic=v] [--trace]",
+		Name: "run", Args: "<file.icg> [--steps N] [--set name.logic=v] [--trace] [--stable-ins]",
 		Summary: text{EN: "compile and run in the built-in VM", ZH: "编译并在内置 VM 中运行"},
 		Long: text{
 			EN: "Compile the file and run it in the built-in IC10 VM, then print\n" +
@@ -154,6 +154,10 @@ var Commands = []Command{
 			{Long: "--trace", Desc: text{
 				EN: "print every executed instruction",
 				ZH: "打印每条执行的指令",
+			}},
+			{Long: "--stable-ins", Desc: text{
+				EN: "compile with the stable branch's ins argument order",
+				ZH: "用稳定版的 ins 参数顺序编译",
 			}},
 			commonHelp,
 		},

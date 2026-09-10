@@ -776,7 +776,7 @@ ic10c lsp                    # 语言服务器
 - IC10 指令与约束：[`docs/target-ic10.md`](docs/target-ic10.md)
 - 编译器架构：[`docs/architecture.md`](docs/architecture.md)
 - 真实脚本示例：[`ic10code/`](ic10code/)（17 个手工改写并测试过的 `.icg`）
-- 编辑器支持：[`editors/vscode/`](editors/vscode/)（语法高亮 + 诊断 + 补全）
+- 编辑器支持：[`editors/vscode/`](editors/vscode/)（语法高亮 + 片段 + 诊断 + 上下文补全 + 编译预览 + VM 运行）
 
 最好的学习方式：打开 `ic10code/` 里一个真实脚本，对照它同目录的原始 `.ic`，
 再用 `./ic10c build` 看编译结果。

@@ -19,6 +19,12 @@ function activate(context) {
     context.subscriptions.push(
         vscode.commands.registerCommand('icg.restartServer', () => client.restart())
     );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('icg.compile', () => client.compile())
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('icg.run', () => client.run())
+    );
     client.start();
 }
 
@@ -38,6 +44,8 @@ class LspClient {
         this.initialized = false;
         this.output = vscode.window.createOutputChannel('IC10 Go');
         this.diags = vscode.languages.createDiagnosticCollection('icg');
+        this.pendingChanges = new Map();
+        this.changeTimer = undefined;
 
         this.disposables = [this.output, this.diags];
         this.disposables.push(
@@ -76,7 +84,9 @@ class LspClient {
         this.output.appendLine(`starting language server: ${serverPath}`);
 
         try {
-            this.proc = cp.spawn(serverPath, ['lsp'], { stdio: ['pipe', 'pipe', 'pipe'] });
+            const env = Object.assign({}, process.env);
+            if (this.config().noCheck) env.IC10C_NO_CHECK = '1';
+            this.proc = cp.spawn(serverPath, ['lsp'], { stdio: ['pipe', 'pipe', 'pipe'], env });
         } catch (err) {
             this.reportMissingServer(err);
             return;
@@ -148,6 +158,95 @@ class LspClient {
         return 'ic10c'; // rely on PATH
     }
 
+    config() {
+        const c = vscode.workspace.getConfiguration('icg');
+        return {
+            stableIns: c.get('stableIns'),
+            noCheck: c.get('noCheck'),
+        };
+    }
+
+    // execCli runs the ic10c binary with the given arguments.
+    execCli(args) {
+        const serverPath = this.resolveServer();
+        const env = Object.assign({}, process.env);
+        if (this.config().noCheck) env.IC10C_NO_CHECK = '1';
+        return new Promise((resolve) => {
+            cp.execFile(serverPath, args, { env, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+                resolve({ code: err ? err.code || 1 : 0, stdout: stdout || '', stderr: stderr || '' });
+            });
+        });
+    }
+
+    // activeICG returns the active .icg document or undefined.
+    activeICG() {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor || editor.document.languageId !== 'icg') {
+            vscode.window.showWarningMessage('IC10 Go: open a .icg file first.');
+            return undefined;
+        }
+        return editor.document;
+    }
+
+    // withTempFile writes the document to a temp .icg file and calls fn(path).
+    async withTempFile(doc, fn) {
+        const tmp = path.join(os.tmpdir(), `icg-${process.pid}-${Date.now()}.icg`);
+        fs.writeFileSync(tmp, doc.getText(), 'utf8');
+        try {
+            return await fn(tmp);
+        } finally {
+            try {
+                fs.unlinkSync(tmp);
+            } catch (err) {
+                // ignore
+            }
+        }
+    }
+
+    // compile runs `ic10c build` + `ic10c stats` and previews the result.
+    async compile() {
+        const doc = this.activeICG();
+        if (!doc) return;
+        await this.withTempFile(doc, async (tmp) => {
+            const buildArgs = ['build'];
+            if (this.config().stableIns) buildArgs.push('--stable-ins');
+            buildArgs.push(tmp);
+            const build = await this.execCli(buildArgs);
+            if (build.code !== 0) {
+                this.output.appendLine(`=== compile failed: ${path.basename(doc.fileName)} ===\n${build.stderr}`);
+                this.output.show(true);
+                vscode.window.showErrorMessage('IC10 Go: compilation failed. See the "IC10 Go" output.');
+                return;
+            }
+            const stats = await this.execCli(['stats', tmp]);
+            const preview = await vscode.workspace.openTextDocument({
+                content: build.stdout,
+                language: 'plaintext',
+            });
+            await vscode.window.showTextDocument(preview, {
+                viewColumn: vscode.ViewColumn.Beside,
+                preview: true,
+            });
+            this.output.appendLine(`=== ${path.basename(doc.fileName)} ===\n${stats.stdout.trim()}`);
+            const lines = stats.stdout.split('\n').find((l) => l.trim().startsWith('lines'));
+            vscode.window.setStatusBarMessage(`IC10 Go: ${lines ? lines.trim() : 'compiled'}`, 5000);
+        });
+    }
+
+    // run compiles and executes the document in the built-in VM.
+    async run() {
+        const doc = this.activeICG();
+        if (!doc) return;
+        await this.withTempFile(doc, async (tmp) => {
+            const args = ['run'];
+            if (this.config().stableIns) args.push('--stable-ins');
+            args.push(tmp);
+            const res = await this.execCli(args);
+            this.output.appendLine(`=== run: ${path.basename(doc.fileName)} ===\n${res.stdout}${res.stderr}`);
+            this.output.show(true);
+        });
+    }
+
     reportMissingServer(err) {
         this.output.appendLine(`cannot start ic10c: ${err.message}`);
         this.output.appendLine('searched: icg.serverPath, workspace folders, parent directories, ~/go/bin, $GOPATH/bin, PATH');
@@ -171,14 +270,37 @@ class LspClient {
 
     onChange(e) {
         if (e.document.languageId !== 'icg' || !this.initialized) return;
-        this.notify('textDocument/didChange', {
-            textDocument: { uri: e.document.uri.toString() },
-            contentChanges: [{ text: e.document.getText() }],
-        });
+        const uri = e.document.uri.toString();
+        const changes = e.contentChanges.map((c) => ({
+            range: {
+                start: { line: c.range.start.line, character: c.range.start.character },
+                end: { line: c.range.end.line, character: c.range.end.character },
+            },
+            text: c.text,
+        }));
+        const queued = this.pendingChanges.get(uri) || [];
+        this.pendingChanges.set(uri, queued.concat(changes));
+        // Debounce so a burst of keystrokes triggers a single recompile.
+        clearTimeout(this.changeTimer);
+        this.changeTimer = setTimeout(() => this.flushChanges(), 150);
+    }
+
+    flushChanges() {
+        clearTimeout(this.changeTimer);
+        this.changeTimer = undefined;
+        if (!this.pendingChanges || this.pendingChanges.size === 0) return;
+        for (const [uri, changes] of this.pendingChanges) {
+            this.notify('textDocument/didChange', {
+                textDocument: { uri },
+                contentChanges: changes,
+            });
+        }
+        this.pendingChanges.clear();
     }
 
     onClose(doc) {
         if (doc.languageId !== 'icg') return;
+        this.pendingChanges.delete(doc.uri.toString());
         this.diags.delete(doc.uri);
         if (this.initialized) {
             this.notify('textDocument/didClose', {
@@ -280,6 +402,8 @@ class LspClient {
     // -- JSON-RPC -----------------------------------------------------------
 
     request(method, params) {
+        // Make sure the server has the latest edits before it answers.
+        this.flushChanges();
         const id = this.nextId++;
         return new Promise((resolve, reject) => {
             this.pending.set(id, { resolve, reject });

@@ -1,0 +1,85 @@
+{
+  "Main loop": {
+    "prefix": "main",
+    "body": [
+      "func main() {",
+      "    for {",
+      "        yield()",
+      "        $0",
+      "    }",
+      "}"
+    ],
+    "description": "main function with a per-tick loop"
+  },
+  "Function": {
+    "prefix": "func",
+    "body": [
+      "func ${1:name}(${2:x num}) num {",
+      "    $0",
+      "    return ${3:x}",
+      "}"
+    ],
+    "description": "function (inlined, no recursion)"
+  },
+  "Const block": {
+    "prefix": "const",
+    "body": [
+      "const (",
+      "    ${1:Name} = ${2:0}",
+      ")"
+    ],
+    "description": "constant block"
+  },
+  "Device read": {
+    "prefix": "read",
+    "body": ["${1:d0}.${2:On} = ${3:1}"],
+    "description": "write a device logic type"
+  },
+  "Hysteresis control": {
+    "prefix": "hyst",
+    "body": [
+      "const (",
+      "    Max${1:Temp} = ${2:296.15}",
+      "    Min${1:Temp} = ${3:283.15}",
+      ")",
+      "",
+      "func main() {",
+      "    var on = 0",
+      "    for {",
+      "        yield()",
+      "        v := ${4:d1}.${5:Temperature}",
+      "        if v < Min${1:Temp} { on = 1 }",
+      "        if v > Max${1:Temp} { on = 0 }",
+      "        ${6:d0}.On = on",
+      "    }",
+      "}"
+    ],
+    "description": "hysteresis on/off control loop"
+  },
+  "Batch read": {
+    "prefix": "batchread",
+    "body": ["batch.read(hash(\"${1:StructureBattery}\"), \"${2:Ratio}\", \"${3:Average}\")"],
+    "description": "batch read from devices of one type"
+  },
+  "Batch write": {
+    "prefix": "batchwrite",
+    "body": ["batch.write(hash(\"${1:StructureBattery}\"), \"${2:On}\", ${3:1})"],
+    "description": "batch write to devices of one type"
+  },
+  "Slot read": {
+    "prefix": "slotread",
+    "body": ["${1:d2}.slot[${2:0}].${3:Mature}"],
+    "description": "read a machine slot property"
+  },
+  "If / else": {
+    "prefix": "ifelse",
+    "body": [
+      "if ${1:cond} {",
+      "    $2",
+      "} else {",
+      "    $3",
+      "}"
+    ],
+    "description": "if / else"
+  }
+}
