@@ -159,6 +159,30 @@ type Select struct {
 	Cond, Then, Else Value
 }
 
+// LoadSpecial reads a special register (ra or sp).
+type LoadSpecial struct {
+	Dst  *Reg
+	Name string
+}
+
+// StoreSpecial writes a special register (ra or sp).
+type StoreSpecial struct {
+	Name string
+	Src  Value
+}
+
+// LoadIndirect reads the register pointed to by Ptr (IC10 rrN).
+type LoadIndirect struct {
+	Dst *Reg
+	Ptr Value
+}
+
+// StoreIndirect writes the register pointed to by Ptr (IC10 rrN).
+type StoreIndirect struct {
+	Ptr Value
+	Src Value
+}
+
 type Load struct {
 	Dst   *Reg
 	Dev   string
@@ -217,17 +241,21 @@ type Batch struct {
 	Src    Value  // value to store (stores)
 }
 
-func (*Assign) isInstr()    {}
-func (*Bin) isInstr()       {}
-func (*Un) isInstr()        {}
-func (*Cmp) isInstr()       {}
-func (*Select) isInstr()    {}
-func (*Load) isInstr()      {}
-func (*Store) isInstr()     {}
-func (*LoadSlot) isInstr()  {}
-func (*StoreSlot) isInstr() {}
-func (*Builtin) isInstr()   {}
-func (*Batch) isInstr()     {}
+func (*Assign) isInstr()        {}
+func (*Bin) isInstr()           {}
+func (*Un) isInstr()            {}
+func (*Cmp) isInstr()           {}
+func (*Select) isInstr()        {}
+func (*Load) isInstr()          {}
+func (*Store) isInstr()         {}
+func (*LoadSlot) isInstr()      {}
+func (*StoreSlot) isInstr()     {}
+func (*Builtin) isInstr()       {}
+func (*Batch) isInstr()         {}
+func (*LoadSpecial) isInstr()   {}
+func (*StoreSpecial) isInstr()  {}
+func (*LoadIndirect) isInstr()  {}
+func (*StoreIndirect) isInstr() {}
 
 // ---------------------------------------------------------------------------
 // Terminators
@@ -303,9 +331,26 @@ type Br struct {
 
 type Ret struct{ Value Value }
 
-func (*Jmp) isTerm() {}
-func (*Br) isTerm()  {}
-func (*Ret) isTerm() {}
+// Goto is an unconditional low-level jump to a label block.
+type Goto struct{ Target *Block }
+
+// Call sets the return address register and jumps to a label block. Return is
+// the block execution continues at after the callee returns; it is laid out
+// immediately after the call so that the IC10 return address (pc+1) is correct.
+type Call struct {
+	Target *Block
+	Return *Block
+}
+
+// JmpRA jumps to the return address register (IC10 "j ra").
+type JmpRA struct{}
+
+func (*Jmp) isTerm()   {}
+func (*Br) isTerm()    {}
+func (*Ret) isTerm()   {}
+func (*Goto) isTerm()  {}
+func (*Call) isTerm()  {}
+func (*JmpRA) isTerm() {}
 
 // ---------------------------------------------------------------------------
 // Blocks and functions
@@ -336,6 +381,13 @@ func (f *Function) BuildCFG() {
 		switch t := b.Term.(type) {
 		case *Jmp:
 			b.Succs = append(b.Succs, t.Target)
+		case *Goto:
+			b.Succs = append(b.Succs, t.Target)
+		case *Call:
+			b.Succs = append(b.Succs, t.Target)
+			if t.Return != nil {
+				b.Succs = append(b.Succs, t.Return)
+			}
 		case *Br:
 			b.Succs = append(b.Succs, t.Then, t.Else)
 		}

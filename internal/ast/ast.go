@@ -136,6 +136,27 @@ type DeclStmt struct {
 	Decl Decl
 }
 
+// LabelStmt marks a jump target.
+type LabelStmt struct {
+	NodeBase
+	Name *Ident
+}
+
+// GotoStmt jumps to a label.
+type GotoStmt struct {
+	NodeBase
+	Name *Ident
+}
+
+// CallStmt sets the return address and jumps to a label.
+type CallStmt struct {
+	NodeBase
+	Name *Ident
+}
+
+// RetStmt jumps to the return address register.
+type RetStmt struct{ NodeBase }
+
 type ReturnStmt struct {
 	NodeBase
 	Result Expr // may be nil
@@ -152,6 +173,10 @@ func (*BreakStmt) stmtNode()    {}
 func (*ContinueStmt) stmtNode() {}
 func (*ReturnStmt) stmtNode()   {}
 func (*DeclStmt) stmtNode()     {}
+func (*LabelStmt) stmtNode()    {}
+func (*GotoStmt) stmtNode()     {}
+func (*CallStmt) stmtNode()     {}
+func (*RetStmt) stmtNode()      {}
 
 // ---------------------------------------------------------------------------
 // Expressions

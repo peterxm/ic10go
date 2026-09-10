@@ -17,9 +17,10 @@ import (
 // Lower compiles the program's main function into an IR function.
 func Lower(info *sema.Info, diags *diag.Bag) *ir.Function {
 	l := &lowerer{
-		b:     ir.NewBuilder("main"),
-		info:  info,
-		diags: diags,
+		b:      ir.NewBuilder("main"),
+		info:   info,
+		diags:  diags,
+		labels: map[string]*ir.Block{},
 	}
 	scope := map[string]ir.Value{}
 	for name, v := range info.Consts {
@@ -97,6 +98,7 @@ type lowerer struct {
 	inline []inlineCtx
 	loops  []loopCtx
 	stack  []string // names of functions currently being inlined
+	labels map[string]*ir.Block
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +156,52 @@ func (l *lowerer) lowerStmt(s ast.Stmt) {
 		l.b.SetTerm(&ir.Jmp{Target: l.loops[len(l.loops)-1].continueB})
 	case *ast.ReturnStmt:
 		l.lowerReturn(s)
+	case *ast.LabelStmt:
+		l.lowerLabel(s)
+	case *ast.GotoStmt:
+		l.b.SetTerm(&ir.Goto{Target: l.labelBlock(s.Name.Name)})
+	case *ast.CallStmt:
+		target := l.labelBlock(s.Name.Name)
+		ret := l.b.NewBlock()
+		l.b.SetTerm(&ir.Call{Target: target, Return: ret})
+		l.b.SetBlock(ret)
+	case *ast.RetStmt:
+		l.b.SetTerm(&ir.JmpRA{})
 	}
+}
+
+// labelBlock returns (creating if needed) the block associated with a label.
+func (l *lowerer) labelBlock(name string) *ir.Block {
+	if b, ok := l.labels[name]; ok {
+		return b
+	}
+	b := l.b.NewBlock()
+	l.labels[name] = b
+	return b
+}
+
+func (l *lowerer) lowerLabel(s *ast.LabelStmt) {
+	cur := l.b.Cur()
+	if b, ok := l.labels[s.Name.Name]; ok {
+		if b == cur {
+			return
+		}
+		if cur.Term == nil {
+			l.b.SetTerm(&ir.Jmp{Target: b})
+		}
+		l.b.SetBlock(b)
+		return
+	}
+	if cur.Term == nil && len(cur.Instrs) == 0 {
+		l.labels[s.Name.Name] = cur
+		return
+	}
+	b := l.b.NewBlock()
+	if cur.Term == nil {
+		l.b.SetTerm(&ir.Jmp{Target: b})
+	}
+	l.labels[s.Name.Name] = b
+	l.b.SetBlock(b)
 }
 
 func (l *lowerer) lowerDecl(d ast.Decl) {
@@ -209,6 +256,10 @@ func (l *lowerer) lowerAssign(s *ast.AssignStmt) {
 	if id, ok := s.Lhs.(*ast.Ident); ok {
 		v, ok := l.lookup(id.Name)
 		if !ok {
+			if isSpecialReg(id.Name) {
+				l.b.Emit(&ir.StoreSpecial{Name: id.Name, Src: l.lowerExpr(s.Rhs)})
+				return
+			}
 			l.diags.Errorf(id.Pos(), "undefined variable %q", id.Name)
 			return
 		}
@@ -240,6 +291,10 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 	case *ast.Ident:
 		v, ok := l.lookup(t.Name)
 		if !ok {
+			if isSpecialReg(t.Name) {
+				l.b.Emit(&ir.StoreSpecial{Name: t.Name, Src: val})
+				return
+			}
 			l.diags.Errorf(t.Pos(), "undefined variable %q", t.Name)
 			return
 		}
@@ -434,6 +489,11 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 	case *ast.Ident:
 		v, ok := l.lookup(e.Name)
 		if !ok {
+			if isSpecialReg(e.Name) {
+				r := l.b.NewReg(e.Name)
+				l.b.Emit(&ir.LoadSpecial{Dst: r, Name: e.Name})
+				return r
+			}
 			l.diags.Errorf(e.Pos(), "undefined variable %q", e.Name)
 			return &ir.Const{V: 0}
 		}
@@ -678,6 +738,27 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			return &ir.Const{V: 0}
 		}
 		return &ir.Const{Raw: "STR(" + strconv.Quote(s.Value) + ")"}
+	}
+
+	// ireg(ptr) / setIreg(ptr, v) access indirect registers (IC10 rrN).
+	if id.Name == "ireg" {
+		if len(call.Args) != 1 {
+			l.diags.Errorf(call.Pos(), "ireg expects one argument")
+			return &ir.Const{V: 0}
+		}
+		dst := l.b.NewReg("ireg")
+		l.b.Emit(&ir.LoadIndirect{Dst: dst, Ptr: l.lowerExpr(call.Args[0])})
+		return dst
+	}
+	if id.Name == "setIreg" {
+		if len(call.Args) != 2 {
+			l.diags.Errorf(call.Pos(), "setIreg expects two arguments")
+			return &ir.Const{V: 0}
+		}
+		ptr := l.lowerExpr(call.Args[0])
+		src := l.lowerExpr(call.Args[1])
+		l.b.Emit(&ir.StoreIndirect{Ptr: ptr, Src: src})
+		return &ir.Const{V: 0}
 	}
 
 	// User-defined functions take precedence over built-ins.
@@ -953,6 +1034,9 @@ func (l *lowerer) constEnv() map[string]float64 {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// isSpecialReg reports whether a name is a special IC10 register.
+func isSpecialReg(name string) bool { return name == "ra" || name == "sp" }
 
 func deviceOf(e ast.Expr) (string, bool) {
 	if d, ok := e.(*ast.DeviceLit); ok {

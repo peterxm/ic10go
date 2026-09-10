@@ -2,6 +2,8 @@
 package ic10
 
 import (
+	"os"
+
 	"ic10go/internal/codegen"
 	"ic10go/internal/diag"
 	"ic10go/internal/lexer"
@@ -45,8 +47,9 @@ func Compile(name string, src []byte) (string, *diag.Bag, error) {
 		return "", diags, nil
 	}
 
-	opt.Optimize(fn)
-
+	if os.Getenv("IC10C_NO_OPT") == "" {
+		opt.Optimize(fn)
+	}
 	colors, err := regalloc.Allocate(fn, NumRegs)
 	if err != nil {
 		return "", diags, err

@@ -57,6 +57,7 @@ ic10c build  <file.icg>        # 编译并输出 IC10 到 stdout
 ic10c stats  <file.icg>        # 行/字节/寄存器预算报告
 ic10c fmt    [-w] <file.icg>   # 格式化源码（-w 原地写回）
 ic10c disasm <file.ic>         # 反汇编注释旧 IC10
+ic10c decompile <file.ic>      # 将 IC10 反编译为 .icg（-o 输出到文件）
 ic10c lsp                      # 启动语言服务器
 ic10c lex / ast <file.icg>     # 调试：打印词法单元 / AST
 ```
@@ -211,7 +212,31 @@ s d0 On r0
 j 1
 ```
 
-## 7. 测试（无需进游戏）
+## 7. 反编译旧 IC10 脚本
+
+把已有的 `.ic` 脚本转成可编辑的 `.icg`：
+
+```bash
+ic10c decompile old.ic             # 输出到 stdout
+ic10c decompile -o old.icg old.ic  # 输出到文件
+```
+
+反编译会：
+
+- 替换 `alias` 与 `define`
+- 把 `r0..r15` 变成同名变量
+- 用 `label` / `goto` / `call` / `ret` 表达控制流
+- 把算术、设备、槽位、批量、栈等映射为对应语法
+
+产物可直接编译回 IC10：
+
+```bash
+ic10c build old.icg > old.ic
+```
+
+不支持的指令会在 stderr 提示，并在源码里保留为 `// unsupported:` 注释。反编译产物通常行数偏多（含变量声明与标签），可作为迁移起点再手工整理。
+
+## 8. 测试（无需进游戏）
 
 项目自带最小 IC10 解释器，可在测试中执行编译产物并断言设备状态：
 
@@ -221,7 +246,7 @@ go test ./...
 
 例如 `pkg/ic10/vm_test.go` 会编译 `.icg`、在 `internal/vm` 中运行，再检查 `d0.On` 等值。
 
-## 8. 编辑器支持（VSCode）
+## 9. 编辑器支持（VSCode）
 
 一键安装扩展（语法高亮 + 错误诊断 + 自动补全）：
 
@@ -236,14 +261,14 @@ sh editors/vscode/install.sh      # 2. 安装扩展
 
 详细说明与常见问题见 [`editors/vscode/README.md`](editors/vscode/README.md)。
 
-## 9. 注意事项
+## 10. 注意事项
 
 - **128 行 / 4 KiB / 90 字符** 是硬限制，`ic10c build` 会在超限时报错，`stats` 可提前查看。
 - 输出**不可读**：不生成 `alias`/`define`/注释/空行/标签，跳转使用绝对行号。
 - IC10 常见的**尾调用状态机**（如 `gasHeaters` 循环后 `j greenhouseGasCheck`）请改写为结构化循环，因为函数全内联且不支持递归。
 - 寄存器 `r0..r15` 由编译器按活跃区间自动复用，尽量不落栈。
 
-## 10. 下一步
+## 11. 下一步
 
 - 语言规范：[`docs/spec.md`](docs/spec.md)
 - 编译器架构与里程碑：[`docs/architecture.md`](docs/architecture.md)

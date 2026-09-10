@@ -8,6 +8,7 @@ import (
 	"ic10go/internal/ast"
 	"ic10go/internal/cli"
 	"ic10go/internal/codegen"
+	"ic10go/internal/decomp"
 	"ic10go/internal/diag"
 	"ic10go/internal/disasm"
 	"ic10go/internal/lexer"
@@ -102,6 +103,8 @@ parse:
 		return cmdFmt(args)
 	case "disasm":
 		return cmdDisasm(args)
+	case "decompile":
+		return cmdDecompile(args)
 	case "lsp":
 		return cmdLSP()
 	case "lex":
@@ -231,6 +234,47 @@ func cmdDisasm(args []string) int {
 		return 1
 	}
 	fmt.Print(disasm.Disassemble(string(data)))
+	return 0
+}
+
+func cmdDecompile(args []string) int {
+	in, out := "", ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-o", "--output":
+			if i+1 < len(args) {
+				out = args[i+1]
+				i++
+			}
+		default:
+			in = args[i]
+		}
+	}
+	if in == "" {
+		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "decompile"))
+		return 2
+	}
+	data, err := os.ReadFile(in)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	code, warns, err := decomp.Decompile(string(data))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	for _, w := range warns {
+		fmt.Fprintf(os.Stderr, "ic10c: %s:%d: unsupported instruction: %s\n", in, w.Line+1, w.Text)
+	}
+	if out != "" {
+		if err := os.WriteFile(out, []byte(code), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		return 0
+	}
+	fmt.Print(code)
 	return 0
 }
 

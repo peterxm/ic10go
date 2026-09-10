@@ -8,6 +8,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"ic10go/internal/ic10asm"
 )
 
 const (
@@ -41,8 +43,9 @@ func newDevice(name string) *Device {
 
 // Program is a parsed IC10 program. Instrs is indexed by line number.
 type Program struct {
-	Instrs []*Instr
-	Labels map[string]int
+	Instrs  []*Instr
+	Labels  map[string]int
+	Symbols map[string]string
 }
 
 // Instr is a single parsed instruction.
@@ -153,34 +156,46 @@ var ErrStepLimit = fmt.Errorf("vm: step limit reached")
 // Parse parses IC10 source into a Program.
 func Parse(src string) (*Program, error) {
 	lines := strings.Split(src, "\n")
-	prog := &Program{Instrs: make([]*Instr, len(lines)), Labels: map[string]int{}}
+	prog := &Program{
+		Instrs:  make([]*Instr, len(lines)),
+		Labels:  map[string]int{},
+		Symbols: map[string]string{},
+	}
+	resolve := func(s string) string {
+		for i := 0; i < 10; i++ {
+			v, ok := prog.Symbols[s]
+			if !ok {
+				return s
+			}
+			s = v
+		}
+		return s
+	}
 	for i, raw := range lines {
-		line := strings.TrimSpace(stripComment(raw))
+		line := strings.TrimSpace(ic10asm.StripComment(raw))
 		if line == "" {
 			continue
 		}
-		if isLabel(line) {
+		if ic10asm.IsLabel(line) {
 			prog.Labels[strings.TrimSuffix(line, ":")] = i
 			continue
 		}
-		fields := strings.Fields(line)
-		prog.Instrs[i] = &Instr{Op: strings.ToLower(fields[0]), Args: fields[1:], Line: i}
+		fields := ic10asm.Tokenize(line)
+		op := strings.ToLower(fields[0])
+		switch op {
+		case "alias", "define":
+			if len(fields) >= 3 {
+				prog.Symbols[fields[1]] = strings.Join(fields[2:], " ")
+			}
+			continue
+		}
+		args := make([]string, 0, len(fields)-1)
+		for _, f := range fields[1:] {
+			args = append(args, resolve(f))
+		}
+		prog.Instrs[i] = &Instr{Op: op, Args: args, Line: i}
 	}
 	return prog, nil
-}
-
-func stripComment(line string) string {
-	if i := strings.IndexByte(line, '#'); i >= 0 {
-		return line[:i]
-	}
-	return line
-}
-
-func isLabel(line string) bool {
-	if !strings.HasSuffix(line, ":") {
-		return false
-	}
-	return !strings.ContainsAny(line[:len(line)-1], " \t")
 }
 
 // ---------------------------------------------------------------------------
@@ -247,6 +262,9 @@ func (m *Machine) reg(s string) (int, error) {
 func (m *Machine) target(s string) (int, error) {
 	if line, ok := m.Program.Labels[s]; ok {
 		return line, nil
+	}
+	if i, ok := regIndex(s); ok {
+		return int(m.Regs[i]), nil
 	}
 	if v, ok := parseNum(s); ok {
 		return int(v), nil
@@ -637,53 +655,46 @@ func ic10Mod(x, y float64) float64 {
 // Branching
 // ---------------------------------------------------------------------------
 
-var branchConds = map[string]bool{
-	"eq": true, "ne": true, "lt": true, "le": true, "gt": true, "ge": true,
-	"eqz": true, "nez": true, "ltz": true, "lez": true, "gtz": true, "gez": true,
-	"nan": true,
-}
-
-// branchInfo splits a branch mnemonic into its condition, relative and ra flags.
-func branchInfo(op string) (cond string, relative, withRA bool, ok bool) {
-	s := op
-	if strings.HasSuffix(s, "al") {
-		withRA = true
-		s = strings.TrimSuffix(s, "al")
-	}
-	if strings.HasPrefix(s, "br") {
-		relative = true
-		s = strings.TrimPrefix(s, "br")
-	}
-	if !strings.HasPrefix(s, "b") {
-		return "", false, false, false
-	}
-	cond = strings.TrimPrefix(s, "b")
-	return cond, relative, withRA, branchConds[cond]
-}
-
 func isBranch(op string) bool {
-	_, _, _, ok := branchInfo(op)
+	_, _, _, ok := ic10asm.BranchInfo(op)
 	return ok
 }
 
 func (m *Machine) execBranch(ins *Instr, next *int) error {
-	cond, relative, withRA, ok := branchInfo(ins.Op)
+	cond, relative, withRA, ok := ic10asm.BranchInfo(ins.Op)
 	if !ok {
 		return fmt.Errorf("unsupported branch %q", ins.Op)
 	}
 	args := ins.Args
 	var targetArg string
 	var take bool
-	switch cond {
-	case "eq", "ne", "lt", "le", "gt", "ge":
-		x := mustNum(m, args[0])
-		y := mustNum(m, args[1])
+	switch {
+	case ic10asm.IsBinaryCond(cond):
+		take = branchTake(cond, mustNum(m, args[0]), mustNum(m, args[1]))
 		targetArg = args[2]
-		take = branchTake(cond, x, y)
-	default: // unary
-		x := mustNum(m, args[0])
+	case cond == "ap" || cond == "na":
+		x, y, tol := mustNum(m, args[0]), mustNum(m, args[1]), mustNum(m, args[2])
+		take = math.Abs(x-y) <= math.Max(tol*math.Max(math.Abs(x), math.Abs(y)), eps*8)
+		if cond == "na" {
+			take = !take
+		}
+		targetArg = args[3]
+	case cond == "apz" || cond == "naz":
+		x, tol := mustNum(m, args[0]), mustNum(m, args[1])
+		take = math.Abs(x) <= math.Max(tol*math.Abs(x), eps*8)
+		if cond == "naz" {
+			take = !take
+		}
+		targetArg = args[2]
+	case cond == "dns" || cond == "dse":
+		take = !m.Device(args[0]).Set
+		if cond == "dse" {
+			take = !take
+		}
 		targetArg = args[1]
-		take = branchTake(cond, x, 0)
+	default: // unary comparison
+		take = branchTake(cond, mustNum(m, args[0]), 0)
+		targetArg = args[1]
 	}
 	if !take {
 		return nil

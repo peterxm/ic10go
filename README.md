@@ -63,6 +63,7 @@ ic10c build  <file.icg>       # 编译为 IC10 并输出到 stdout
 ic10c stats  <file.icg>       # 行 / 字节 / 寄存器预算报告
 ic10c fmt    [-w] <file.icg>  # 格式化源码
 ic10c disasm <file.ic>        # 反汇编注释旧 IC10
+ic10c decompile <file.ic>     # 将 IC10 反编译为 .icg 源码（-o 输出到文件）
 ic10c lsp                     # 启动语言服务器（stdio）
 ic10c lex    <file.icg>       # 打印词法单元
 ic10c ast    <file.icg>       # 打印 AST

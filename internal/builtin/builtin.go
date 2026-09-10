@@ -81,6 +81,13 @@ func init() {
 	add("atan2", 2, true, "atan2")
 	add("min", 2, true, "min")
 	add("max", 2, true, "max")
+	add("sla", 2, true, "sla")
+	add("srl", 2, true, "srl")
+	add("rol", 2, true, "rol")
+	add("ror", 2, true, "ror")
+
+	add("ext", 3, true, "ext")
+	add("ins", 3, true, "ins")
 
 	add("clamp", 3, true, "clamp")
 	add("lerp", 3, true, "lerp")

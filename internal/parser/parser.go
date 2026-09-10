@@ -257,6 +257,20 @@ func (p *parser) parseStmt() ast.Stmt {
 		return &ast.ContinueStmt{NodeBase: base(t.Pos)}
 	case token.Return:
 		return p.parseReturn()
+	case token.Label:
+		t := p.advance()
+		name := p.parseIdent()
+		p.expect(token.Colon)
+		return &ast.LabelStmt{NodeBase: base(t.Pos), Name: name}
+	case token.Goto:
+		t := p.advance()
+		return &ast.GotoStmt{NodeBase: base(t.Pos), Name: p.parseIdent()}
+	case token.Call:
+		t := p.advance()
+		return &ast.CallStmt{NodeBase: base(t.Pos), Name: p.parseIdent()}
+	case token.Ret:
+		t := p.advance()
+		return &ast.RetStmt{NodeBase: base(t.Pos)}
 	default:
 		return p.parseSimpleStmt()
 	}

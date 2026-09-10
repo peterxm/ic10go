@@ -69,6 +69,15 @@ func useDefInstr(i ir.Instr) (use, def []*ir.Reg) {
 		if v.Dst != nil {
 			def = []*ir.Reg{v.Dst}
 		}
+	case *ir.LoadSpecial:
+		def = []*ir.Reg{v.Dst}
+	case *ir.StoreSpecial:
+		use = valuesRegs(v.Src)
+	case *ir.LoadIndirect:
+		use = valuesRegs(v.Ptr)
+		def = []*ir.Reg{v.Dst}
+	case *ir.StoreIndirect:
+		use = append(valuesRegs(v.Ptr), valuesRegs(v.Src)...)
 	}
 	return use, def
 }

@@ -50,6 +50,10 @@ func defOf(i ir.Instr) *ir.Reg {
 		return v.Dst
 	case *ir.Batch:
 		return v.Dst
+	case *ir.LoadSpecial:
+		return v.Dst
+	case *ir.LoadIndirect:
+		return v.Dst
 	}
 	return nil
 }
@@ -86,6 +90,12 @@ func usesOf(i ir.Instr) []ir.Value {
 		}
 	case *ir.Batch:
 		add(v.Device, v.Name, v.Slot, v.Mode, v.Src)
+	case *ir.StoreSpecial:
+		add(v.Src)
+	case *ir.LoadIndirect:
+		add(v.Ptr)
+	case *ir.StoreIndirect:
+		add(v.Ptr, v.Src)
 	}
 	return u
 }
@@ -105,6 +115,8 @@ func termUses(t ir.Term) []ir.Value {
 func hasSideEffect(i ir.Instr) bool {
 	switch v := i.(type) {
 	case *ir.Store, *ir.StoreSlot:
+		return true
+	case *ir.StoreSpecial, *ir.StoreIndirect:
 		return true
 	case *ir.Batch:
 		switch v.Kind {

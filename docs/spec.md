@@ -178,6 +178,25 @@ return
 return expr
 ```
 
+### 5.6 底层控制流（反编译用）
+
+高层语法（`if`/`for`/函数）之外，`.icg` 还提供一组底层原语，用于表达任意 IC10 控制流，主要由 `ic10c decompile` 生成：
+
+```go
+label start:            // 跳转目标（编译为位置，不占额外行）
+    ...
+    goto start          // 无条件跳转
+    call routine        // 设置 ra 并跳转（IC10 jal）
+    ret                 // 跳转到 ra（IC10 j ra）
+```
+
+- `label Name:` 只是标记一个位置，不生成标签行。
+- `goto Name` / `call Name` 解析为绝对行号。
+- `ra` 与 `sp` 是预定义的特殊寄存器，可直接读写：`ra = 0`、`x := ra`。
+- `ireg(ptr)` 读取 `ptr` 指向的寄存器，`setIreg(ptr, v)` 写入（对应 IC10 的 `rrN`）。
+
+> 这些原语会让产物更难优化，建议仅在迁移旧脚本时使用；正常开发请用高层语法。
+
 ---
 
 ## 6. 表达式
@@ -351,6 +370,15 @@ approxZero(a, tol)     // sapz
 hash("StructureBattery")   // CRC-32，编译期常量
 str("Ready!")              // 显示字符串，输出为 STR("Ready!")
 ```
+
+### 8.7 底层
+
+| 函数 | 说明 |
+|------|------|
+| `ireg(ptr)` | 读取 `ptr` 指向的寄存器（IC10 `rrN`） |
+| `setIreg(ptr, v)` | 写入 `ptr` 指向的寄存器 |
+| `sla/srl/rol/ror(a,b)` | 移位/旋转 |
+| `ext(src,off,len)` / `ins(field,off,len)` | 位域提取/插入 |
 
 ---
 

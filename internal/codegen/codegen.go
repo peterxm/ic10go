@@ -45,6 +45,14 @@ func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
 			if t.Target != next {
 				lines = append(lines, line{text: "j ", target: t.Target})
 			}
+		case *ir.Goto:
+			if t.Target != next {
+				lines = append(lines, line{text: "j ", target: t.Target})
+			}
+		case *ir.Call:
+			lines = append(lines, line{text: "jal ", target: t.Target})
+		case *ir.JmpRA:
+			lines = append(lines, line{text: "j ra"})
 		case *ir.Br:
 			thenNext := t.Then == next
 			elseNext := t.Else == next
@@ -141,6 +149,14 @@ func rpo(fn *ir.Function) []*ir.Block {
 		switch t := b.Term.(type) {
 		case *ir.Jmp:
 			dfs(t.Target)
+		case *ir.Goto:
+			dfs(t.Target)
+		case *ir.Call:
+			// Visit the callee first so that the return block ends up laid out
+			// immediately after the call; the IC10 return address (pc+1) then
+			// points at it.
+			dfs(t.Target)
+			dfs(t.Return)
 		case *ir.Br:
 			// Visit the false edge first so that the true target ends up as the
 			// fall-through block after reversing.
@@ -199,8 +215,24 @@ func renderInstr(ins ir.Instr, colors map[*ir.Reg]int) (string, bool) {
 		return renderBuiltin(v, colors), true
 	case *ir.Batch:
 		return renderBatch(v, colors), true
+	case *ir.LoadSpecial:
+		return "move " + regName(v.Dst, colors) + " " + v.Name, true
+	case *ir.StoreSpecial:
+		return "move " + v.Name + " " + valueText(v.Src, colors), true
+	case *ir.LoadIndirect:
+		return "move " + regName(v.Dst, colors) + " " + indirectName(v.Ptr, colors), true
+	case *ir.StoreIndirect:
+		return "move " + indirectName(v.Ptr, colors) + " " + valueText(v.Src, colors), true
 	}
 	return "", false
+}
+
+// indirectName renders the IC10 indirect register operand rrN.
+func indirectName(ptr ir.Value, colors map[*ir.Reg]int) string {
+	if r, ok := ptr.(*ir.Reg); ok {
+		return "r" + regName(r, colors)
+	}
+	return "r0"
 }
 
 func renderBatch(v *ir.Batch, colors map[*ir.Reg]int) string {

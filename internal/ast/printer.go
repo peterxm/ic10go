@@ -175,6 +175,18 @@ func (p *printer) stmt(s Stmt) {
 		p.write("break")
 	case *ContinueStmt:
 		p.write("continue")
+	case *LabelStmt:
+		p.write("label ")
+		p.write(s.Name.Name)
+		p.write(":")
+	case *GotoStmt:
+		p.write("goto ")
+		p.write(s.Name.Name)
+	case *CallStmt:
+		p.write("call ")
+		p.write(s.Name.Name)
+	case *RetStmt:
+		p.write("ret")
 	case *ReturnStmt:
 		p.write("return")
 		if s.Result != nil {

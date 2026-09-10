@@ -24,6 +24,10 @@ const (
 	Switch
 	Case
 	Default
+	Label
+	Goto
+	Call
+	Ret
 	True
 	False
 	NaN
@@ -91,6 +95,10 @@ var keywords = map[string]Kind{
 	"switch":   Switch,
 	"case":     Case,
 	"default":  Default,
+	"label":    Label,
+	"goto":     Goto,
+	"call":     Call,
+	"ret":      Ret,
 	"true":     True,
 	"false":    False,
 	"nan":      NaN,
@@ -130,6 +138,10 @@ var kindNames = map[Kind]string{
 	Switch:        "switch",
 	Case:          "case",
 	Default:       "default",
+	Label:         "label",
+	Goto:          "goto",
+	Call:          "call",
+	Ret:           "ret",
 	True:          "true",
 	False:         "false",
 	NaN:           "nan",
