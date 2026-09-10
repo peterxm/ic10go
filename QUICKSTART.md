@@ -221,12 +221,20 @@ go test ./...
 
 例如 `pkg/ic10/vm_test.go` 会编译 `.icg`、在 `internal/vm` 中运行，再检查 `d0.On` 等值。
 
-## 8. 编辑器支持
+## 8. 编辑器支持（VSCode）
 
-- 语法高亮：`editors/vscode`（可直接加载的 VSCode 扩展）
-- LSP：`ic10c lsp` 提供诊断与补全
+一键安装扩展（语法高亮 + 错误诊断 + 自动补全）：
 
-VSCode 中安装 `editors/vscode` 后，打开 `.icg` 文件即可获得高亮；把 `ic10c lsp` 配置为语言服务器即可获得诊断。
+```bash
+go build -o ic10c ./cmd/ic10c     # 1. 准备编译器
+sh editors/vscode/install.sh      # 2. 安装扩展
+```
+
+然后按 `Ctrl+Shift+P` → `Developer: Reload Window` 重启 VSCode，用 VSCode 打开本仓库目录并编辑 `.icg` 文件即可。
+
+扩展是纯 JavaScript、无需 npm；它通过 `ic10c lsp` 提供诊断与补全。若找不到 `ic10c`，在设置里填 `icg.serverPath`。
+
+详细说明与常见问题见 [`editors/vscode/README.md`](editors/vscode/README.md)。
 
 ## 9. 注意事项
 

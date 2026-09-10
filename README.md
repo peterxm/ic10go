@@ -71,7 +71,13 @@ ic10c help   [command]        # 帮助（中英双语，-L en|zh 切换）
 
 帮助默认跟随 `$LANG`，可用 `IC10C_LANG` 或全局选项 `-L/--lang en|zh` 覆盖。
 
-编辑器：`editors/vscode` 为可直接加载的语法高亮扩展。
+编辑器：安装 VSCode 扩展获得语法高亮、诊断与补全：
+
+```bash
+sh editors/vscode/install.sh   # 安装到 ~/.vscode/extensions
+```
+
+详见 [`editors/vscode/README.md`](editors/vscode/README.md)。
 
 > 提示：IC10 里常见的「尾调用跳转」状态机（如 `gasHeaters` 循环后 `j greenhouseGasCheck`）在 `.icg` 中请改写为结构化循环，因为函数是全内联且不支持递归。
 
