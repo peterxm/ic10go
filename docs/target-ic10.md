@@ -113,13 +113,11 @@
 
 ### 5.1 CRC-32 哈希
 
-IC10 的 `HASH()` 与所有 `deviceHash` / `nameHash` 均为字符串的 **CRC-32**（IEEE，反射）。编译器在编译期计算，直接内联为十进制常量，不生成运行期 `HASH()` 调用。
+IC10 的 `HASH()` 与所有 `deviceHash` / `nameHash` 均为字符串的 **CRC-32（IEEE，反射多项式 `0xEDB88320`）**，按**有符号 32 位整数**解释。编译器在编译期计算，直接内联为十进制常量，不生成运行期 `HASH()` 调用。
 
-```
-hash("StructureBattery")  →  编译期常量
-```
-
-> 需与游戏实现逐字节核对（大小写、编码、反射多项式），VM 测试中固定几个已知值做回归。
+> **已与游戏核对**（见 `internal/builtin/hash_test.go`）：`"a"`、`"A"`、`"a b"`、`"café"`、`"温度"`、`"Hello, World!"`、`"!@#$%^&*()"` 以及 `StructureSolarPanelDual` / `StructureBattery` 均逐字节吻合，含 UTF-8 非 ASCII。
+>
+> 注意：游戏内 `HASH("")` 不允许空字符串；`deviceHash` 是游戏内置的（玩家不可改），`nameHash` 才是玩家自定义的。
 
 ### 5.2 逻辑类型表
 
