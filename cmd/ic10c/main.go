@@ -18,7 +18,7 @@ import (
 	"ic10go/pkg/ic10"
 )
 
-const version = "0.5.0"
+const version = "0.6.0"
 
 // lang is the resolved output language for the current invocation.
 var lang = cli.EN
