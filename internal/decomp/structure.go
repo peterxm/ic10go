@@ -597,6 +597,7 @@ var inverseCond = map[string]string{
 	"eqz": "nez", "nez": "eqz", "ltz": "gez", "gez": "ltz",
 	"lez": "gtz", "gtz": "lez", "ap": "na", "na": "ap", "apz": "naz", "naz": "apz",
 	"dns": "dse", "dse": "dns",
+	"dnvl": "dvl", "dvl": "dnvl", "dnvs": "dvs", "dvs": "dnvs",
 }
 
 func invertCond(cond string) (string, bool) {

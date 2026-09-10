@@ -104,6 +104,8 @@ func TargetIndex(cond string) int {
 		return 3
 	case "apz", "naz":
 		return 2
+	case "dnvl", "dnvs":
+		return 2
 	default:
 		return 1
 	}

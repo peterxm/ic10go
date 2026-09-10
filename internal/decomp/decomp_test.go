@@ -130,6 +130,19 @@ func TestDecompileStructuredSplitsAtTarget(t *testing.T) {
 	}
 }
 
+func TestDecompileDeviceValidity(t *testing.T) {
+	code, warns, err := Decompile("bdnvl d0 Temperature L1\ns d0 On 1\nL1:\ns d0 On 0\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	if !strings.Contains(code, `!isLoadValid(d0, "Temperature")`) {
+		t.Errorf("bdnvl not translated:\n%s", code)
+	}
+}
+
 func TestDecompileDynamicLogic(t *testing.T) {
 	code, warns, err := Decompile("l r0 d0 r1\ns d0 r1 r0\n")
 	if err != nil {

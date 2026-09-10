@@ -74,6 +74,15 @@ func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
 			lines = append(lines, line{text: "j ra"})
 		case *ir.JmpDyn:
 			lines = append(lines, line{text: "j " + valueText(t.Target, colors)})
+		case *ir.BrValid:
+			m := "bdnvl"
+			if t.Store {
+				m = "bdnvs"
+			}
+			lines = append(lines, line{text: m + " " + t.Dev + " " + t.Logic + " ", target: t.Invalid})
+			if t.Valid != next {
+				lines = append(lines, line{text: "j ", target: t.Valid})
+			}
 		case *ir.Br:
 			thenNext := t.Then == next
 			elseNext := t.Else == next
@@ -178,6 +187,10 @@ func rpo(fn *ir.Function) []*ir.Block {
 			// points at it.
 			dfs(t.Target)
 			dfs(t.Return)
+		case *ir.BrValid:
+			// Branch on invalid to Invalid, so lay out Valid as the fall-through.
+			dfs(t.Invalid)
+			dfs(t.Valid)
 		case *ir.Br:
 			// Visit the false edge first so that the true target ends up as the
 			// fall-through block after reversing.

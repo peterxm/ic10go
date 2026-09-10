@@ -379,13 +379,23 @@ type JmpRA struct{}
 // JmpDyn jumps to a computed line number (IC10 "j r0").
 type JmpDyn struct{ Target Value }
 
-func (*Jmp) isTerm()    {}
-func (*Br) isTerm()     {}
-func (*Ret) isTerm()    {}
-func (*Goto) isTerm()   {}
-func (*Call) isTerm()   {}
-func (*JmpRA) isTerm()  {}
-func (*JmpDyn) isTerm() {}
+// BrValid branches when a device load/store is invalid (IC10 bdnvl/bdnvs).
+type BrValid struct {
+	Dev     string
+	Logic   string
+	Store   bool // true = store validity (bdnvs), false = load (bdnvl)
+	Valid   *Block
+	Invalid *Block
+}
+
+func (*Jmp) isTerm()     {}
+func (*Br) isTerm()      {}
+func (*Ret) isTerm()     {}
+func (*Goto) isTerm()    {}
+func (*Call) isTerm()    {}
+func (*JmpRA) isTerm()   {}
+func (*JmpDyn) isTerm()  {}
+func (*BrValid) isTerm() {}
 
 // ---------------------------------------------------------------------------
 // Blocks and functions
@@ -425,6 +435,8 @@ func (f *Function) BuildCFG() {
 			}
 		case *Br:
 			b.Succs = append(b.Succs, t.Then, t.Else)
+		case *BrValid:
+			b.Succs = append(b.Succs, t.Valid, t.Invalid)
 		}
 	}
 	// A ret (JmpRA) can return to any call site, so it may transfer control to

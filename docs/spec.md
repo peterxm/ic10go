@@ -297,7 +297,11 @@ write(d0, lt, v)                // s d0 (r_lt) v
 ```go
 if isSet(d0) { ... }            // sdse
 if isUnset(d0) { ... }          // sdns
+if isLoadValid(d0, "Temperature") { ... }   // 设备支持读取该 logicType（bdnvl 取反）
+if isStoreValid(d0, "On") { ... }           // 设备支持写入该 logicType（bdnvs 取反）
 ```
+
+> `isLoadValid` / `isStoreValid` 只能在 `if` / `for` 条件中使用（IC10 无对应的置寄存器指令）。
 
 ### 7.6 批量 IO
 

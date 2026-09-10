@@ -129,6 +129,17 @@ func TestDynamicLogicType(t *testing.T) {
 	}
 }
 
+func TestDeviceValidityBranch(t *testing.T) {
+	code := mustCompile(t, "func main() { if !isLoadValid(d0, \"Temperature\") { d1.On = 0 } else { d1.On = 1 } }\n")
+	if !strings.Contains(code, "bdnvl d0 Temperature") {
+		t.Errorf("bdnvl not emitted:\n%s", code)
+	}
+	code = mustCompile(t, "func main() { if isStoreValid(d0, \"On\") { d1.On = 1 } }\n")
+	if !strings.Contains(code, "bdnvs d0 On") {
+		t.Errorf("bdnvs not emitted:\n%s", code)
+	}
+}
+
 func TestUnknownLogicTypeWarns(t *testing.T) {
 	_, diags, _ := ic10.Compile("test.icg", []byte("func main() { d0.Temperatur = 1 }\n"))
 	if diags.HasErrors() {

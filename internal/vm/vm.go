@@ -30,14 +30,17 @@ type Device struct {
 	Values   map[string]float64
 	Slots    map[int]map[string]float64
 	Stack    []float64
+	// NoStore lists logic types the device refuses to store (bdnvs).
+	NoStore map[string]bool
 }
 
 func newDevice(name string) *Device {
 	return &Device{
-		Name:   name,
-		Values: map[string]float64{},
-		Slots:  map[int]map[string]float64{},
-		Stack:  make([]float64, stackSize),
+		Name:    name,
+		Values:  map[string]float64{},
+		Slots:   map[int]map[string]float64{},
+		Stack:   make([]float64, stackSize),
+		NoStore: map[string]bool{},
 	}
 }
 
@@ -760,6 +763,15 @@ func (m *Machine) execBranch(ins *Instr, next *int) error {
 			take = !take
 		}
 		targetArg = args[1]
+	case cond == "dnvl" || cond == "dnvs":
+		dev := m.Device(args[0])
+		if cond == "dnvl" {
+			_, ok := dev.Values[args[1]]
+			take = !ok
+		} else {
+			take = dev.NoStore[args[1]]
+		}
+		targetArg = args[2]
 	default: // unary comparison
 		take = branchTake(cond, mustNum(m, args[0]), 0)
 		targetArg = args[1]

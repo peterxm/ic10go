@@ -277,6 +277,31 @@ func TestVMDynamicLogic(t *testing.T) {
 	}
 }
 
+func TestVMDeviceValidity(t *testing.T) {
+	code := mustCompile(t, "func main() { if !isLoadValid(d1, \"Temperature\") { d0.On = 0 } else { d0.On = 1 } }\n")
+	valid := vm.New()
+	valid.Set("d1", "Temperature", 1)
+	if err := valid.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	if err := valid.Run(20); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	if got := valid.Get("d0", "On"); got != 1 {
+		t.Errorf("valid load -> On = %v, want 1", got)
+	}
+	invalid := vm.New()
+	if err := invalid.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	if err := invalid.Run(20); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	if got := invalid.Get("d0", "On"); got != 0 {
+		t.Errorf("invalid load -> On = %v, want 0", got)
+	}
+}
+
 func TestVMConstantFolding(t *testing.T) {
 	cases := []struct {
 		expr string

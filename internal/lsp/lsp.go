@@ -215,6 +215,8 @@ func completionItems() []completionItem {
 		{"batch", 9, "batch IO"},
 		{"read", 3, "runtime logic type"},
 		{"write", 3, "runtime logic type"},
+		{"isLoadValid", 3, "condition only"},
+		{"isStoreValid", 3, "condition only"},
 	}
 	for name := range builtin.Funcs {
 		items = append(items, completionItem{name, 3, "builtin"})

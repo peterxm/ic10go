@@ -378,11 +378,10 @@ func (l *lowerer) lowerReturn(s *ast.ReturnStmt) {
 }
 
 func (l *lowerer) lowerIf(s *ast.IfStmt) {
-	cond, a, b := l.lowerCond(s.Cond)
 	thenB := l.b.NewBlock()
 	elseB := l.b.NewBlock()
 	endB := l.b.NewBlock()
-	l.b.SetTerm(&ir.Br{Cond: cond, A: a, B: b, Then: thenB, Else: elseB})
+	l.branchCond(s.Cond, thenB, elseB)
 
 	l.b.SetBlock(thenB)
 	l.lowerBlock(s.Then)
@@ -415,8 +414,7 @@ func (l *lowerer) lowerFor(s *ast.ForStmt) {
 
 	l.b.SetBlock(condB)
 	if s.Cond != nil {
-		c, a, b := l.lowerCond(s.Cond)
-		l.b.SetTerm(&ir.Br{Cond: c, A: a, B: b, Then: bodyB, Else: endB})
+		l.branchCond(s.Cond, bodyB, endB)
 	} else {
 		l.b.SetTerm(&ir.Jmp{Target: bodyB})
 	}
@@ -566,6 +564,58 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 
 // lowerCond lowers a condition into a branch condition, fusing comparisons so
 // that a separate comparison instruction is not materialised.
+// branchCond emits a branch for a condition, recognising the device load/store
+// validity builtins (isLoadValid / isStoreValid).
+func (l *lowerer) branchCond(e ast.Expr, thenB, elseB *ir.Block) {
+	neg := false
+	inner := e
+	if un, ok := e.(*ast.UnaryExpr); ok && un.Op == token.Not {
+		neg = true
+		inner = un.X
+	}
+	if call, ok := inner.(*ast.CallExpr); ok {
+		if id, ok := call.Fun.(*ast.Ident); ok && (id.Name == "isLoadValid" || id.Name == "isStoreValid") {
+			dev, logic, ok := l.validArgs(call)
+			if !ok {
+				return
+			}
+			valid, invalid := thenB, elseB
+			if neg {
+				valid, invalid = elseB, thenB
+			}
+			l.b.SetTerm(&ir.BrValid{
+				Dev:     dev,
+				Logic:   logic,
+				Store:   id.Name == "isStoreValid",
+				Valid:   valid,
+				Invalid: invalid,
+			})
+			return
+		}
+	}
+	cond, a, b := l.lowerCond(e)
+	l.b.SetTerm(&ir.Br{Cond: cond, A: a, B: b, Then: thenB, Else: elseB})
+}
+
+// validArgs parses (device, "logicType") for the validity builtins.
+func (l *lowerer) validArgs(call *ast.CallExpr) (string, string, bool) {
+	if len(call.Args) != 2 {
+		l.diags.Errorf(call.Pos(), "expected a device and a logic type")
+		return "", "", false
+	}
+	dev, ok := call.Args[0].(*ast.DeviceLit)
+	if !ok {
+		l.diags.Errorf(call.Args[0].Pos(), "expected a device as the first argument")
+		return "", "", false
+	}
+	logic, ok := call.Args[1].(*ast.StringLit)
+	if !ok {
+		l.diags.Errorf(call.Args[1].Pos(), "expected a logic type string as the second argument")
+		return "", "", false
+	}
+	return dev.Name, logic.Value, true
+}
+
 func (l *lowerer) lowerCond(e ast.Expr) (ir.Cond, ir.Value, ir.Value) {
 	if bin, ok := e.(*ast.BinaryExpr); ok {
 		if c, ok := condOf(bin.Op); ok {
@@ -795,6 +845,12 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			return &ir.Const{V: 0}
 		}
 		return &ir.Const{Raw: "STR(" + strconv.Quote(s.Value) + ")"}
+	}
+
+	// isLoadValid / isStoreValid are condition-only builtins.
+	if id.Name == "isLoadValid" || id.Name == "isStoreValid" {
+		l.diags.Errorf(call.Pos(), "%s can only be used in an if/for condition", id.Name)
+		return &ir.Const{V: 0}
 	}
 
 	// read(dev, lt) / write(dev, lt, v) use a runtime logic type (IC10 "l r? d? rN").

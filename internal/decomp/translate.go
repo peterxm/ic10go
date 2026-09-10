@@ -239,6 +239,14 @@ func (d *decompiler) branchExpr(cond string, l icLine) (string, bool) {
 		return "isUnset(" + d.resolve(l.args[0]) + ")", true
 	case "dse":
 		return "isSet(" + d.resolve(l.args[0]) + ")", true
+	case "dnvl":
+		return fmt.Sprintf("!isLoadValid(%s, %q)", d.resolve(l.args[0]), l.args[1]), true
+	case "dvl":
+		return fmt.Sprintf("isLoadValid(%s, %q)", d.resolve(l.args[0]), l.args[1]), true
+	case "dnvs":
+		return fmt.Sprintf("!isStoreValid(%s, %q)", d.resolve(l.args[0]), l.args[1]), true
+	case "dvs":
+		return fmt.Sprintf("isStoreValid(%s, %q)", d.resolve(l.args[0]), l.args[1]), true
 	}
 	return "", false
 }
