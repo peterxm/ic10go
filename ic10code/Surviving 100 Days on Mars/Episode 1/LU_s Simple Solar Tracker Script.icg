@@ -1,14 +1,12 @@
 // 简易太阳能追踪（Episode 1）。
 // 日光传感器（d0）数据口朝 90°，双轴太阳能板（Solar Panel Dual）电源口也朝 90°。
-
 const solarPanel = -539224550
-
 func main() {
     for {
         yield()
         // 垂直角 = 90 - 传感器垂直角
-        batch.write(solarPanel, "Vertical", 90-d0.Vertical)
+        batch.write(solarPanel, "Vertical", 90 - d0.Vertical)
         // 水平角 = 传感器水平角 - 90
-        batch.write(solarPanel, "Horizontal", d0.Horizontal-90)
+        batch.write(solarPanel, "Horizontal", d0.Horizontal - 90)
     }
 }

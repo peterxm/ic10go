@@ -1,50 +1,43 @@
 // 温室管理（Episode 4）。
 // 冰破碎机（d0）与水瓶灌装机（d1）；废液管路用两个泵排空。
-
-const (
-    wasteTank      = 1632165346
-    waterAnalyzer  = 435685051
-    wastePump      = -321403609
-    wasteWaterPump = -454028979
-)
-
+const wasteTank = 1632165346
+const waterAnalyzer = 435685051
+const wastePump = -321403609
+const wasteWaterPump = -454028979
 func main() {
     for {
         yield()
         crushIce()
         fillBottles()
-
         // 检查废液管路的压力与液体体积
         pressure := batch.readName(wasteTank, hash("Waste Tank"), "Pressure", "Sum")
         volume := batch.readName(waterAnalyzer, hash("Ice Crusher Water Analyzer"), "VolumeOfLiquid", "Sum")
-
         // 有气体或液体时清空管路
         if (pressure > 10) || (volume > 0.5) {
             clearWaste()
         }
     }
 }
-
 // 冰破碎机：槽位有东西就开机。
+
 func crushIce() {
     d0.On = d0.slot[0].Occupied
     yield()
 }
-
 // 水瓶灌装机：任一槽位有未满（<1.5L）的瓶子就开机。
+
 func fillBottles() {
     left := d1.slot[0].Occupied && (d1.slot[0].Quantity < 1.5)
     right := d1.slot[1].Occupied && (d1.slot[1].Quantity < 1.5)
     d1.On = left || right
     yield()
 }
-
 // 排空废液：开启所有泵，直到压力与体积都降到 0.1 以下。
+
 func clearWaste() {
     d0.On = 1
     batch.writeName(wastePump, hash("Waste Pump"), "On", 1)
     batch.writeName(wasteWaterPump, hash("Waste Water Pump"), "On", 1)
-
     for {
         yield()
         pressure := batch.readName(wasteTank, hash("Waste Tank"), "Pressure", "Sum")
@@ -53,7 +46,6 @@ func clearWaste() {
             break
         }
     }
-
     batch.writeName(wastePump, hash("Waste Pump"), "On", 0)
     batch.writeName(wasteWaterPump, hash("Waste Water Pump"), "On", 0)
 }
