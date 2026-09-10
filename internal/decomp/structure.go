@@ -31,15 +31,192 @@ type structurer struct {
 	out           strings.Builder
 	indent        int
 	emittedLabels map[string]bool
+
+	succ [][]int
+	pred [][]int
+	pdom []map[int]bool
+
+	jalTargets map[int]bool
 }
 
 // structure rewrites the flat instruction list into structured .icg source.
 func (d *decompiler) structure(lines []icLine) string {
 	st := &structurer{d: d, lineBlk: map[int]int{}, loops: map[int]*sLoop{}, indent: 1, emittedLabels: map[string]bool{}}
 	st.buildBlocks(lines)
+	st.buildCFG()
+	st.computePdom()
 	st.findLoops()
 	st.emitRegion(0, len(st.blocks), -1)
 	return st.out.String()
+}
+
+// buildCFG computes successors and predecessors for structuring.
+func (s *structurer) buildCFG() {
+	n := len(s.blocks)
+	s.succ = make([][]int, n)
+	s.pred = make([][]int, n)
+	s.jalTargets = map[int]bool{}
+	for _, b := range s.blocks {
+		if b.term != nil && b.term.op == "jal" {
+			if t, ok := s.labelIndex(*b.term); ok {
+				s.jalTargets[t] = true
+			}
+		}
+	}
+	for i, b := range s.blocks {
+		var ss []int
+		add := func(v int) {
+			if v >= 0 && v < n {
+				ss = append(ss, v)
+			}
+		}
+		if b.term == nil {
+			if i+1 < n {
+				ss = append(ss, i+1)
+			}
+		} else {
+			term := *b.term
+			switch term.op {
+			case "j", "jr":
+				if t, ok := s.labelIndex(term); ok {
+					add(t)
+				}
+			case "jal":
+				if i+1 < n {
+					ss = append(ss, i+1)
+				}
+			case "ret":
+				// no successor
+			default:
+				if t, ok := s.labelIndex(term); ok {
+					add(t)
+				}
+				if i+1 < n {
+					ss = append(ss, i+1)
+				}
+			}
+		}
+		s.succ[i] = ss
+	}
+	for i, ss := range s.succ {
+		for _, v := range ss {
+			s.pred[v] = append(s.pred[v], i)
+		}
+	}
+}
+
+// computePdom computes post-dominator sets (from the virtual exit).
+func (s *structurer) computePdom() {
+	n := len(s.blocks)
+	exit := n // virtual exit
+	all := map[int]bool{}
+	for i := 0; i <= n; i++ {
+		all[i] = true
+	}
+	pdom := make([]map[int]bool, n+1)
+	for i := 0; i <= n; i++ {
+		pdom[i] = copyIntSet(all)
+	}
+	pdom[exit] = map[int]bool{exit: true}
+	// Blocks with no successor reach the exit.
+	succ := make([][]int, n+1)
+	for i := 0; i < n; i++ {
+		succ[i] = s.succ[i]
+		if len(succ[i]) == 0 {
+			succ[i] = []int{exit}
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for i := n - 1; i >= 0; i-- {
+			var nd map[int]bool
+			if len(succ[i]) == 0 {
+				nd = map[int]bool{i: true}
+			} else {
+				nd = copyIntSet(pdom[succ[i][0]])
+				for _, t := range succ[i][1:] {
+					nd = intersectIntSet(nd, pdom[t])
+				}
+			}
+			nd[i] = true
+			if !intSetEqual(nd, pdom[i]) {
+				pdom[i] = nd
+				changed = true
+			}
+		}
+	}
+	s.pdom = pdom
+}
+
+// lca returns the closest common post-dominator of a and b.
+func (s *structurer) lca(a, b int) int {
+	best := -1
+	bestSize := 1 << 30
+	for n := range s.pdom[a] {
+		if !s.pdom[b][n] {
+			continue
+		}
+		size := len(s.pdom[n])
+		if size < bestSize || (size == bestSize && n < best) {
+			bestSize = size
+			best = n
+		}
+	}
+	return best
+}
+
+// regionClosed reports whether blocks [start, end) form a single-entry region
+// that only leaves to exit.
+func (s *structurer) regionClosed(start, end, exit int) bool {
+	if start >= end {
+		return true
+	}
+	for k := start; k < end; k++ {
+		for _, su := range s.succ[k] {
+			if su != exit && (su < start || su >= end) {
+				return false
+			}
+		}
+		if k == start {
+			continue
+		}
+		for _, pr := range s.pred[k] {
+			if pr < start || pr >= end {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func copyIntSet(m map[int]bool) map[int]bool {
+	c := make(map[int]bool, len(m))
+	for k := range m {
+		c[k] = true
+	}
+	return c
+}
+
+func intersectIntSet(a, b map[int]bool) map[int]bool {
+	c := map[int]bool{}
+	for k := range a {
+		if b[k] {
+			c[k] = true
+		}
+	}
+	return c
+}
+
+func intSetEqual(a, b map[int]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if !b[k] {
+			return false
+		}
+	}
+	return true
 }
 
 func isTransferOp(op string) bool {
@@ -118,12 +295,49 @@ func (s *structurer) findLoops() {
 		if b.term == nil {
 			continue
 		}
-		if t, ok := s.labelIndex(*b.term); ok && t <= j {
-			if lp, exists := s.loops[t]; !exists || j > lp.end {
-				s.loops[t] = &sLoop{header: t, end: j}
+		t, ok := s.labelIndex(*b.term)
+		if !ok || t > j {
+			continue
+		}
+		// Function entries are not loop headers: tail-call state machines
+		// look like loops but should stay as gotos.
+		if s.jalTargets[t] {
+			continue
+		}
+		if lp, exists := s.loops[t]; exists && j <= lp.end {
+			continue
+		}
+		// Loops whose body contains a ret are usually tail-call state
+		// machines; leave them as gotos.
+		if s.loopHasRet(t, j) {
+			continue
+		}
+		s.loops[t] = &sLoop{header: t, end: j}
+	}
+}
+
+func (s *structurer) loopHasRet(header, latch int) bool {
+	body := map[int]bool{header: true}
+	stack := []int{latch}
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if body[n] {
+			continue
+		}
+		body[n] = true
+		for _, p := range s.pred[n] {
+			if !body[p] {
+				stack = append(stack, p)
 			}
 		}
 	}
+	for n := range body {
+		if b := s.blocks[n]; b.term != nil && b.term.op == "ret" {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *structurer) line(text string) {
@@ -250,49 +464,48 @@ func (s *structurer) emitBlock(i, end, suppress int) int {
 }
 
 func (s *structurer) emitIf(i, t, end int, term icLine, cond string) int {
-	inv, ok := invertCond(cond)
-	if !ok {
-		if expr, ok := s.d.branchExpr(cond, term); ok {
+	expr, exprOK := s.d.branchExpr(cond, term)
+	inv, invOK := invertCond(cond)
+	var invExpr string
+	if invOK {
+		invExpr, invOK = s.d.branchExpr(inv, term)
+	}
+	fallback := func() int {
+		if exprOK {
 			s.line(fmt.Sprintf("if %s { goto %s }", expr, s.target(term)))
 		}
 		return i + 1
 	}
-	invExpr, ok := s.d.branchExpr(inv, term)
-	if !ok {
-		if expr, ok := s.d.branchExpr(cond, term); ok {
-			s.line(fmt.Sprintf("if %s { goto %s }", expr, s.target(term)))
-		}
-		return i + 1
+	if !exprOK || !invOK {
+		return fallback()
 	}
 
-	// Else detection: the last block before the target jumps past it.
-	elseStart := -1
-	merge := t
-	if t-1 >= i+1 {
-		last := s.blocks[t-1]
-		if last.term != nil && last.term.op == "j" {
-			if m, ok := s.labelIndex(*last.term); ok && m > t {
-				elseStart = t
-				merge = m
-			}
-		}
+	merge := s.lca(t, i+1)
+	if merge < 0 || merge < t || t <= i+1 {
+		return fallback()
+	}
+	if !s.regionClosed(i+1, t, merge) || !s.regionClosed(t, merge, merge) {
+		return fallback()
 	}
 
-	s.line(fmt.Sprintf("if %s {", invExpr))
-	s.indent++
-	thenSuppress := -1
-	if elseStart >= 0 {
-		thenSuppress = merge
-	}
-	s.emitRegion(i+1, t, thenSuppress)
-	s.indent--
-	if elseStart >= 0 {
+	switch {
+	case merge == t:
+		s.line("if " + invExpr + " {")
+		s.indent++
+		s.emitRegion(i+1, t, -1)
+		s.indent--
+		s.line("}")
+	default:
+		s.line("if " + expr + " {")
+		s.indent++
+		s.emitRegion(t, merge, -1)
+		s.indent--
 		s.line("} else {")
 		s.indent++
-		s.emitRegion(elseStart, merge, -1)
+		s.emitRegion(i+1, t, -1)
 		s.indent--
+		s.line("}")
 	}
-	s.line("}")
 	return merge
 }
 

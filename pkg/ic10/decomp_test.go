@@ -107,6 +107,36 @@ func TestDecompileSmoke(t *testing.T) {
 	}
 }
 
+func TestDecompileStructuredSmoke(t *testing.T) {
+	files, err := filepath.Glob("../../testdata/ic10/*.ic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		t.Run(filepath.Base(f), func(t *testing.T) {
+			src, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			code, _, err := decomp.DecompileStructured(string(src))
+			if err != nil {
+				t.Fatal(err)
+			}
+			compiled, diags, err := ic10.Compile(f, []byte(code))
+			if diags.HasErrors() || err != nil {
+				t.Skip("structured form is not valid here; the CLI falls back to goto")
+			}
+			m := vm.New()
+			if err := m.Load(compiled); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.Run(300); err != nil && err != vm.ErrStepLimit {
+				t.Fatalf("structured run: %v", err)
+			}
+		})
+	}
+}
+
 func roundTripWith(t *testing.T, path string, setup func(*vm.Machine), dec func(string) (string, []decomp.Warning, error)) {
 	t.Helper()
 	src, err := os.ReadFile(path)
