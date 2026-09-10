@@ -24,15 +24,24 @@ sh editors/vscode/install.sh
 go build -o ic10c ./cmd/ic10c
 ```
 
-扩展按以下顺序查找 `ic10c`：
+扩展按以下顺序查找 `ic10c`（找到即用）：
 
 1. VSCode 设置 `icg.serverPath`（绝对路径）
-2. 当前工作区根目录下的 `ic10c`
-3. 系统 `PATH` 里的 `ic10c`
+2. 工作区文件夹，及其**各级父目录**里的 `ic10c`
+3. 当前打开文件所在目录，及其**各级父目录**里的 `ic10c`
+4. `$GOPATH/bin`、`~/go/bin`、`~/bin`、`/usr/local/bin`
+5. 系统 `PATH`
 
-所以最简单的方式是：**用 VSCode 打开本仓库目录**，并在根目录构建 `ic10c`（默认就是上面那条命令）。
+所以最省事的做法（任选其一）：
 
-如果没找到，会弹出提示，点 **Open Settings** 填入路径即可。
+- 用 VSCode 打开本仓库目录，并在根目录构建 `ic10c`；或
+- 把 `ic10c` 放进 `PATH` 上的目录，例如：
+
+  ```bash
+  go build -o ~/.local/bin/ic10c ./cmd/ic10c
+  ```
+
+如果还是找不到，会弹出提示，点 **Open Settings** 在 `icg.serverPath` 填入绝对路径即可。
 
 ## 三、验证
 

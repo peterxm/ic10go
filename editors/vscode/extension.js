@@ -7,6 +7,7 @@
 const vscode = require('vscode');
 const cp = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 /** @type {LspClient|undefined} */
@@ -105,20 +106,36 @@ class LspClient {
 
     resolveServer() {
         const configured = vscode.workspace.getConfiguration('icg').get('serverPath');
-        if (configured && fs.existsSync(configured)) {
-            return configured;
+        if (configured) {
+            if (fs.existsSync(configured)) return configured;
+            this.output.appendLine(`configured icg.serverPath does not exist: ${configured}`);
         }
+
+        // Walk up from every workspace folder and from the active file.
+        const starts = [];
         for (const folder of vscode.workspace.workspaceFolders || []) {
-            for (const name of ['ic10c', 'ic10c.exe']) {
-                const p = path.join(folder.uri.fsPath, name);
-                if (fs.existsSync(p)) return p;
-            }
+            starts.push(folder.uri.fsPath);
         }
+        const active = vscode.window.activeTextEditor;
+        if (active && active.document.uri.scheme === 'file') {
+            starts.push(path.dirname(active.document.uri.fsPath));
+        }
+        for (const start of starts) {
+            const found = findUp(start);
+            if (found) return found;
+        }
+
+        // Common install locations.
+        for (const p of commonServerPaths()) {
+            if (fs.existsSync(p)) return p;
+        }
+
         return 'ic10c'; // rely on PATH
     }
 
     reportMissingServer(err) {
         this.output.appendLine(`cannot start ic10c: ${err.message}`);
+        this.output.appendLine('searched: icg.serverPath, workspace folders, parent directories, ~/go/bin, $GOPATH/bin, PATH');
         vscode.window
             .showWarningMessage(
                 'IC10 Go: cannot find the ic10c executable. Build it with "go build -o ic10c ./cmd/ic10c" or set "icg.serverPath".',
@@ -277,3 +294,29 @@ class LspClient {
 }
 
 module.exports = { activate, deactivate };
+
+// findUp looks for an ic10c binary in start and its parent directories.
+function findUp(start) {
+    let dir = start;
+    for (let i = 0; i < 8; i++) {
+        for (const name of ['ic10c', 'ic10c.exe']) {
+            const p = path.join(dir, name);
+            if (fs.existsSync(p)) return p;
+        }
+        const parent = path.dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+    }
+    return undefined;
+}
+
+// commonServerPaths lists likely install locations for the ic10c binary.
+function commonServerPaths() {
+    const home = os.homedir();
+    const paths = [];
+    if (process.env.GOPATH) paths.push(path.join(process.env.GOPATH, 'bin', 'ic10c'));
+    paths.push(path.join(home, 'go', 'bin', 'ic10c'));
+    paths.push(path.join(home, 'bin', 'ic10c'));
+    paths.push('/usr/local/bin/ic10c');
+    return paths;
+}
