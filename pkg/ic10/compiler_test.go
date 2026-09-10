@@ -132,6 +132,35 @@ func TestUnknownLogicTypeWarns(t *testing.T) {
 	}
 }
 
+func TestRedundantLoadEliminated(t *testing.T) {
+	code := mustCompile(t, "func main() { x := d0.Temperature; y := d0.Temperature; d1.Setting = x + y }\n")
+	if n := strings.Count(code, "l r"); n != 1 {
+		t.Errorf("expected one load, got %d:\n%s", n, code)
+	}
+}
+
+func TestAlgebraicSimplification(t *testing.T) {
+	code := mustCompile(t, "func main() { x := d0.Temperature; d1.Setting = x * 1; d2.Setting = x + 0; d3.Setting = x / 1 }\n")
+	if strings.Contains(code, "mul") || strings.Contains(code, "div") || strings.Contains(code, "add") {
+		t.Errorf("identities not simplified:\n%s", code)
+	}
+}
+
+func TestConstantBranchFolding(t *testing.T) {
+	code := mustCompile(t, "func main() { if 1 > 0 { d0.On = 1 } else { d0.On = 0 } }\n")
+	if code != "s d0 On 1\n" {
+		t.Errorf("constant branch not folded:\n%s", code)
+	}
+}
+
+func TestGlobalConstantPropagation(t *testing.T) {
+	src := "func main() { x := 7\n if d0.On > 0 { d1.Setting = x } else { d2.Setting = x } }\n"
+	code := mustCompile(t, src)
+	if !strings.Contains(code, "s d1 Setting 7") || !strings.Contains(code, "s d2 Setting 7") {
+		t.Errorf("constant not propagated across blocks:\n%s", code)
+	}
+}
+
 func mustCompile(t *testing.T, src string) string {
 	t.Helper()
 	code, diags, err := ic10.Compile("test.icg", []byte(src))

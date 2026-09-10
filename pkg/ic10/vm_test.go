@@ -237,6 +237,27 @@ func TestVMRegisterSpilling(t *testing.T) {
 	}
 }
 
+func TestVMLoopInvariant(t *testing.T) {
+	src := `func main() {
+    a := d0.Temperature
+    b := d1.Temperature
+    var s = 0
+    for i := 0; i < 5; i++ {
+        x := a + b
+        s += x + i
+    }
+    d2.Setting = s
+}`
+	m := runProgram(t, src, 500, func(m *vm.Machine) {
+		m.Set("d0", "Temperature", 10)
+		m.Set("d1", "Temperature", 20)
+	})
+	// x = 30 every iteration; s = sum(30+i) for i=0..4 = 150 + 10 = 160.
+	if got := m.Get("d2", "Setting"); got != 160 {
+		t.Errorf("loop-invariant result = %v, want 160", got)
+	}
+}
+
 func TestVMConstantFolding(t *testing.T) {
 	cases := []struct {
 		expr string

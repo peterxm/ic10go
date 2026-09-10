@@ -1,20 +1,20 @@
-move r3 0
+move r2 0
 move r1 0
 bge r1 10 8
-add r0 r3 r1
-move r3 r0
+add r0 r2 r1
+move r2 r0
 add r0 r1 1
 move r1 r0
 j 2
-move r2 r3
+move r1 r2
 move r0 0
-move r1 100
-bge r2 r0 13
+bge r1 r0 13
+move r0 0
 j 15
-sgt r0 r2 r1
-select r0 r0 r1 r2
+sgt r0 r1 100
+select r0 r0 100 r1
 s d0 Setting r0
-sgt r1 r3 20
+sgt r1 r2 20
 l r0 d0 Open
 seq r0 r0 1
 min r0 r1 r0

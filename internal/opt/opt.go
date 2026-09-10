@@ -3,6 +3,7 @@
 package opt
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 
@@ -14,13 +15,18 @@ func Optimize(fn *ir.Function) {
 	fn.BuildCFG()
 	for i := 0; i < 16; i++ {
 		c1 := propagate(fn)
-		c2 := foldAll(fn)
-		c3 := cse(fn)
-		c4 := selectConvert(fn)
-		c5 := dce(fn)
-		c6 := removeUnreachable(fn)
+		c2 := constProp(fn)
+		c3 := foldAll(fn)
+		c4 := simplify(fn)
+		c5 := redundantLoads(fn)
+		c6 := cse(fn)
+		c7 := selectConvert(fn)
+		c8 := foldBranches(fn)
+		c9 := licm(fn)
+		c10 := dce(fn)
+		c11 := removeUnreachable(fn)
 		fn.BuildCFG()
-		if !c1 && !c2 && !c3 && !c4 && !c5 && !c6 {
+		if !c1 && !c2 && !c3 && !c4 && !c5 && !c6 && !c7 && !c8 && !c9 && !c10 && !c11 {
 			break
 		}
 	}
@@ -182,6 +188,223 @@ func propagate(fn *ir.Function) bool {
 	return changed
 }
 
+// ---------------------------------------------------------------------------
+// Global constant propagation (must analysis)
+// ---------------------------------------------------------------------------
+
+// constProp propagates constants across basic blocks. A register is known to
+// hold a constant at a block entry only if it holds the same constant on every
+// incoming path.
+func constProp(fn *ir.Function) bool {
+	fn.BuildCFG()
+	in := map[*ir.Block]map[*ir.Reg]*ir.Const{}
+	out := map[*ir.Block]map[*ir.Reg]*ir.Const{}
+	for _, b := range fn.Blocks {
+		in[b] = map[*ir.Reg]*ir.Const{}
+		out[b] = map[*ir.Reg]*ir.Const{}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, b := range fn.Blocks {
+			ni := meetPreds(b, out)
+			if !constMapEqual(ni, in[b]) {
+				in[b] = ni
+				changed = true
+			}
+			no := transfer(b, in[b])
+			if !constMapEqual(no, out[b]) {
+				out[b] = no
+				changed = true
+			}
+		}
+	}
+
+	rewritten := false
+	for _, b := range fn.Blocks {
+		state := copyConstMap(in[b])
+		for idx, ins := range b.Instrs {
+			if replaceConstUses(ins, state) {
+				rewritten = true
+			}
+			if f, ok := foldConst(ins); ok {
+				ins = f
+				b.Instrs[idx] = f
+				rewritten = true
+			}
+			d := defOf(ins)
+			if d == nil {
+				continue
+			}
+			delete(state, d)
+			if c := evalConst(ins, state); c != nil {
+				state[d] = c
+			}
+		}
+	}
+	return rewritten
+}
+
+func meetPreds(b *ir.Block, out map[*ir.Block]map[*ir.Reg]*ir.Const) map[*ir.Reg]*ir.Const {
+	result := map[*ir.Reg]*ir.Const{}
+	if len(b.Preds) == 0 {
+		return result
+	}
+	for r, c := range out[b.Preds[0]] {
+		result[r] = c
+	}
+	for _, p := range b.Preds[1:] {
+		for r, c := range result {
+			oc, ok := out[p][r]
+			if !ok || !constEqual(c, oc) {
+				delete(result, r)
+			}
+		}
+	}
+	return result
+}
+
+func transfer(b *ir.Block, in map[*ir.Reg]*ir.Const) map[*ir.Reg]*ir.Const {
+	state := copyConstMap(in)
+	for _, ins := range b.Instrs {
+		d := defOf(ins)
+		if d == nil {
+			continue
+		}
+		delete(state, d)
+		if c := evalConst(ins, state); c != nil {
+			state[d] = c
+		}
+	}
+	return state
+}
+
+// evalConst returns the constant a pure instruction evaluates to, or nil.
+func evalConst(i ir.Instr, state map[*ir.Reg]*ir.Const) *ir.Const {
+	resolve := func(v ir.Value) ir.Value {
+		if r, ok := v.(*ir.Reg); ok {
+			if c, ok := state[r]; ok {
+				return c
+			}
+		}
+		return v
+	}
+	switch v := i.(type) {
+	case *ir.Assign:
+		if c, ok := resolve(v.Src).(*ir.Const); ok {
+			return c
+		}
+	case *ir.Bin:
+		a, ok1 := resolve(v.A).(*ir.Const)
+		b, ok2 := resolve(v.B).(*ir.Const)
+		if ok1 && ok2 {
+			if c, ok := foldBin(v.Op, a, b); ok {
+				return c
+			}
+		}
+	case *ir.Un:
+		if a, ok := resolve(v.A).(*ir.Const); ok {
+			if c, ok := foldUn(v.Op, a); ok {
+				return c
+			}
+		}
+	case *ir.Cmp:
+		if v.B == nil {
+			if a, ok := resolve(v.A).(*ir.Const); ok {
+				if c, ok := foldCmpUn(v.Cond, a); ok {
+					return c
+				}
+			}
+		} else if a, ok1 := resolve(v.A).(*ir.Const); ok1 {
+			if b, ok2 := resolve(v.B).(*ir.Const); ok2 {
+				if c, ok := foldCmp(v.Cond, a, b); ok {
+					return c
+				}
+			}
+		}
+	case *ir.Select:
+		if c, ok := resolve(v.Cond).(*ir.Const); ok {
+			if c.V != 0 {
+				if r, ok := resolve(v.Then).(*ir.Const); ok {
+					return r
+				}
+			} else if r, ok := resolve(v.Else).(*ir.Const); ok {
+				return r
+			}
+		}
+	}
+	return nil
+}
+
+func replaceConstUses(i ir.Instr, state map[*ir.Reg]*ir.Const) bool {
+	changed := false
+	rw := func(v ir.Value) ir.Value {
+		if r, ok := v.(*ir.Reg); ok {
+			if c, ok := state[r]; ok {
+				changed = true
+				return c
+			}
+		}
+		return v
+	}
+	switch v := i.(type) {
+	case *ir.Assign:
+		v.Src = rw(v.Src)
+	case *ir.Bin:
+		v.A = rw(v.A)
+		v.B = rw(v.B)
+	case *ir.Un:
+		v.A = rw(v.A)
+	case *ir.Cmp:
+		v.A = rw(v.A)
+		if v.B != nil {
+			v.B = rw(v.B)
+		}
+	case *ir.Select:
+		v.Cond = rw(v.Cond)
+		v.Then = rw(v.Then)
+		v.Else = rw(v.Else)
+	case *ir.Store:
+		v.Src = rw(v.Src)
+	case *ir.LoadSlot:
+		v.Index = rw(v.Index)
+	case *ir.StoreSlot:
+		v.Index = rw(v.Index)
+		v.Src = rw(v.Src)
+	case *ir.Builtin:
+		for j := range v.Args {
+			v.Args[j] = rw(v.Args[j])
+		}
+	}
+	return changed
+}
+
+func constEqual(a, b *ir.Const) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Special == b.Special && a.Raw == b.Raw && a.V == b.V
+}
+
+func copyConstMap(m map[*ir.Reg]*ir.Const) map[*ir.Reg]*ir.Const {
+	c := make(map[*ir.Reg]*ir.Const, len(m))
+	for k, v := range m {
+		c[k] = v
+	}
+	return c
+}
+
+func constMapEqual(a, b map[*ir.Reg]*ir.Const) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if !constEqual(v, b[k]) {
+			return false
+		}
+	}
+	return true
+}
+
 func rewriteUses(i ir.Instr, val map[*ir.Reg]ir.Value) bool {
 	changed := false
 	rw := func(v ir.Value) ir.Value {
@@ -283,6 +506,195 @@ func foldConst(i ir.Instr) (ir.Instr, bool) {
 		}
 	}
 	return i, false
+}
+
+// ---------------------------------------------------------------------------
+// Algebraic simplification (peephole)
+// ---------------------------------------------------------------------------
+
+func isConstVal(v ir.Value, x float64) bool {
+	c, ok := v.(*ir.Const)
+	return ok && c.Special == "" && c.Raw == "" && c.V == x
+}
+
+func sameValue(a, b ir.Value) bool {
+	ra, ok1 := a.(*ir.Reg)
+	rb, ok2 := b.(*ir.Reg)
+	if ok1 && ok2 {
+		return ra == rb
+	}
+	ca, ok1 := a.(*ir.Const)
+	cb, ok2 := b.(*ir.Const)
+	if ok1 && ok2 {
+		return ca.Special == cb.Special && ca.Raw == cb.Raw && ca.V == cb.V
+	}
+	return false
+}
+
+// simplify applies exact algebraic identities. nil with ok=true means the
+// instruction should be deleted.
+func simplify(fn *ir.Function) bool {
+	changed := false
+	for _, b := range fn.Blocks {
+		kept := b.Instrs[:0]
+		for _, ins := range b.Instrs {
+			ni, ok := simplifyInstr(ins)
+			if ok {
+				changed = true
+				if ni == nil {
+					continue
+				}
+				ins = ni
+			}
+			kept = append(kept, ins)
+		}
+		b.Instrs = kept
+	}
+	return changed
+}
+
+func simplifyInstr(i ir.Instr) (ir.Instr, bool) {
+	switch v := i.(type) {
+	case *ir.Assign:
+		if r, ok := v.Src.(*ir.Reg); ok && r == v.Dst {
+			return nil, true // self copy
+		}
+	case *ir.Bin:
+		switch v.Op {
+		case ir.Mul:
+			if isConstVal(v.B, 1) {
+				return &ir.Assign{Dst: v.Dst, Src: v.A}, true
+			}
+			if isConstVal(v.A, 1) {
+				return &ir.Assign{Dst: v.Dst, Src: v.B}, true
+			}
+		case ir.Div:
+			if isConstVal(v.B, 1) {
+				return &ir.Assign{Dst: v.Dst, Src: v.A}, true
+			}
+		case ir.Add:
+			if isConstVal(v.B, 0) {
+				return &ir.Assign{Dst: v.Dst, Src: v.A}, true
+			}
+			if isConstVal(v.A, 0) {
+				return &ir.Assign{Dst: v.Dst, Src: v.B}, true
+			}
+		case ir.Sub:
+			if isConstVal(v.B, 0) {
+				return &ir.Assign{Dst: v.Dst, Src: v.A}, true
+			}
+		case ir.BitAnd:
+			if isConstVal(v.A, 0) || isConstVal(v.B, 0) {
+				return &ir.Assign{Dst: v.Dst, Src: &ir.Const{V: 0}}, true
+			}
+		case ir.Min, ir.Max:
+			if sameValue(v.A, v.B) {
+				return &ir.Assign{Dst: v.Dst, Src: v.A}, true
+			}
+		}
+	case *ir.Select:
+		if sameValue(v.Then, v.Else) {
+			return &ir.Assign{Dst: v.Dst, Src: v.Then}, true
+		}
+	}
+	return i, false
+}
+
+// ---------------------------------------------------------------------------
+// Redundant device load elimination (block-local)
+// ---------------------------------------------------------------------------
+
+// redundantLoads reuses a previously loaded value when nothing between the two
+// loads can change it. It covers device loads, constant-index slot loads and
+// batch loads whose operands are all constant.
+func redundantLoads(fn *ir.Function) bool {
+	changed := false
+	for _, b := range fn.Blocks {
+		seen := map[string]*ir.Reg{}
+		byDevice := map[string][]string{}
+		invalidate := func(dev string) {
+			for _, k := range byDevice[dev] {
+				delete(seen, k)
+			}
+			delete(byDevice, dev)
+		}
+		clearAll := func() {
+			clear(seen)
+			clear(byDevice)
+		}
+		add := func(key, dev string, r *ir.Reg) {
+			seen[key] = r
+			byDevice[dev] = append(byDevice[dev], key)
+		}
+		for idx, ins := range b.Instrs {
+			if key, dev, dst, ok := loadKey(ins); ok {
+				if r, found := seen[key]; found {
+					b.Instrs[idx] = &ir.Assign{Dst: dst, Src: r}
+					changed = true
+				} else {
+					add(key, dev, dst)
+				}
+				continue
+			}
+			switch v := ins.(type) {
+			case *ir.Store:
+				invalidate(v.Dev)
+			case *ir.StoreSlot:
+				invalidate(v.Dev)
+			case *ir.Batch:
+				switch v.Kind {
+				case ir.BatchStore, ir.BatchStoreName, ir.BatchStoreSlot:
+					clearAll()
+				}
+			case *ir.Builtin:
+				if hasSideEffect(v) {
+					clearAll()
+				}
+			}
+		}
+	}
+	return changed
+}
+
+// loadKey recognises a redundant-load candidate and returns a stable key, the
+// device it reads and its destination.
+func loadKey(i ir.Instr) (key, dev string, dst *ir.Reg, ok bool) {
+	switch v := i.(type) {
+	case *ir.Load:
+		return "l|" + v.Dev + "|" + v.Logic, v.Dev, v.Dst, true
+	case *ir.LoadSlot:
+		c, isC := v.Index.(*ir.Const)
+		if !isC {
+			return "", "", nil, false
+		}
+		return "ls|" + v.Dev + "|" + c.String() + "|" + v.Logic, v.Dev, v.Dst, true
+	case *ir.Batch:
+		if v.Dst == nil {
+			return "", "", nil, false
+		}
+		dev, ok := constText(v.Device)
+		if !ok {
+			return "", "", nil, false
+		}
+		name, ok1 := constText(v.Name)
+		slot, ok2 := constText(v.Slot)
+		mode, ok3 := constText(v.Mode)
+		if !ok1 || !ok2 || !ok3 {
+			return "", "", nil, false
+		}
+		return fmt.Sprintf("b%d|%s|%s|%s|%s|%s", v.Kind, dev, name, slot, v.Logic, mode), dev, v.Dst, true
+	}
+	return "", "", nil, false
+}
+
+func constText(v ir.Value) (string, bool) {
+	if v == nil {
+		return "", true
+	}
+	if c, ok := v.(*ir.Const); ok {
+		return c.String(), true
+	}
+	return "", false
 }
 
 // ---------------------------------------------------------------------------
@@ -576,6 +988,347 @@ func liveness(fn *ir.Function) (in, out map[*ir.Block]map[*ir.Reg]bool) {
 }
 
 func sameSet(a, b map[*ir.Reg]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if !b[k] {
+			return false
+		}
+	}
+	return true
+}
+
+// ---------------------------------------------------------------------------
+// Branch folding
+// ---------------------------------------------------------------------------
+
+// foldBranches turns branches with a constant or identical condition into an
+// unconditional jump, which lets the untaken block be removed.
+func foldBranches(fn *ir.Function) bool {
+	changed := false
+	for _, b := range fn.Blocks {
+		br, ok := b.Term.(*ir.Br)
+		if !ok {
+			continue
+		}
+		if br.Then == br.Else {
+			b.Term = &ir.Jmp{Target: br.Then}
+			changed = true
+			continue
+		}
+		if take, ok := constCond(br); ok {
+			target := br.Else
+			if take {
+				target = br.Then
+			}
+			b.Term = &ir.Jmp{Target: target}
+			changed = true
+		}
+	}
+	return changed
+}
+
+// constCond evaluates a branch condition when both operands are constants.
+func constCond(br *ir.Br) (bool, bool) {
+	if br.B == nil {
+		c, ok := br.A.(*ir.Const)
+		if !ok {
+			return false, false
+		}
+		res, ok := foldCmpUn(br.Cond, c)
+		if !ok {
+			return false, false
+		}
+		return res.V != 0, true
+	}
+	a, ok1 := br.A.(*ir.Const)
+	b, ok2 := br.B.(*ir.Const)
+	if !ok1 || !ok2 {
+		return false, false
+	}
+	res, ok := foldCmp(br.Cond, a, b)
+	if !ok {
+		return false, false
+	}
+	return res.V != 0, true
+}
+
+// ---------------------------------------------------------------------------
+// Loop-invariant code motion
+// ---------------------------------------------------------------------------
+
+type loop struct {
+	header *ir.Block
+	blocks map[*ir.Block]bool
+}
+
+// licm hoists pure, loop-invariant computations out of natural loops.
+func licm(fn *ir.Function) bool {
+	fn.BuildCFG()
+	liveIn, _ := liveness(fn)
+	succs := realSuccs(fn)
+	preds := buildPreds(fn, succs)
+	dom := dominators(fn, preds)
+	loops := findLoops(fn, succs, dom, preds)
+	changed := false
+	for _, lp := range loops {
+		pre := ensurePreheader(fn, lp, preds)
+		if pre == nil {
+			continue
+		}
+		if hoistLoop(fn, lp, pre, liveIn[lp.header]) {
+			changed = true
+		}
+	}
+	if changed {
+		fn.BuildCFG()
+	}
+	return changed
+}
+
+// realSuccs returns control-flow successors, ignoring the conservative
+// JmpRA-to-return edges used only for liveness.
+func realSuccs(fn *ir.Function) map[*ir.Block][]*ir.Block {
+	succs := map[*ir.Block][]*ir.Block{}
+	for _, b := range fn.Blocks {
+		switch t := b.Term.(type) {
+		case *ir.Jmp:
+			succs[b] = []*ir.Block{t.Target}
+		case *ir.Goto:
+			succs[b] = []*ir.Block{t.Target}
+		case *ir.Call:
+			if t.Return != nil {
+				succs[b] = []*ir.Block{t.Target, t.Return}
+			} else {
+				succs[b] = []*ir.Block{t.Target}
+			}
+		case *ir.Br:
+			succs[b] = []*ir.Block{t.Then, t.Else}
+		}
+	}
+	return succs
+}
+
+func buildPreds(fn *ir.Function, succs map[*ir.Block][]*ir.Block) map[*ir.Block][]*ir.Block {
+	preds := map[*ir.Block][]*ir.Block{}
+	for _, b := range fn.Blocks {
+		for _, s := range succs[b] {
+			preds[s] = append(preds[s], b)
+		}
+	}
+	return preds
+}
+
+func dominators(fn *ir.Function, preds map[*ir.Block][]*ir.Block) map[*ir.Block]map[*ir.Block]bool {
+	all := map[*ir.Block]bool{}
+	for _, b := range fn.Blocks {
+		all[b] = true
+	}
+	dom := map[*ir.Block]map[*ir.Block]bool{}
+	for _, b := range fn.Blocks {
+		if b == fn.Entry {
+			dom[b] = map[*ir.Block]bool{b: true}
+		} else {
+			dom[b] = copySet(all)
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, b := range fn.Blocks {
+			if b == fn.Entry {
+				continue
+			}
+			ps := preds[b]
+			var nd map[*ir.Block]bool
+			if len(ps) == 0 {
+				nd = map[*ir.Block]bool{}
+			} else {
+				nd = copySet(dom[ps[0]])
+				for _, p := range ps[1:] {
+					nd = intersectSet(nd, dom[p])
+				}
+			}
+			nd[b] = true
+			if !setEqual(nd, dom[b]) {
+				dom[b] = nd
+				changed = true
+			}
+		}
+	}
+	return dom
+}
+
+func findLoops(fn *ir.Function, succs map[*ir.Block][]*ir.Block, dom map[*ir.Block]map[*ir.Block]bool, preds map[*ir.Block][]*ir.Block) []*loop {
+	var loops []*loop
+	for _, b := range fn.Blocks {
+		for _, s := range succs[b] {
+			if dom[b][s] { // back edge b -> s
+				blocks := map[*ir.Block]bool{s: true}
+				stack := []*ir.Block{b}
+				for len(stack) > 0 {
+					n := stack[len(stack)-1]
+					stack = stack[:len(stack)-1]
+					if blocks[n] {
+						continue
+					}
+					blocks[n] = true
+					stack = append(stack, preds[n]...)
+				}
+				loops = append(loops, &loop{header: s, blocks: blocks})
+			}
+		}
+	}
+	return loops
+}
+
+// ensurePreheader returns a block that dominates the loop header and is the
+// only entry to it, creating one if needed.
+func ensurePreheader(fn *ir.Function, lp *loop, preds map[*ir.Block][]*ir.Block) *ir.Block {
+	h := lp.header
+	var outside []*ir.Block
+	for _, p := range preds[h] {
+		if !lp.blocks[p] {
+			outside = append(outside, p)
+		}
+	}
+	if len(outside) == 1 && len(realTermSuccs(outside[0])) == 1 {
+		return outside[0]
+	}
+	if len(outside) == 0 {
+		return nil
+	}
+	pre := fn.NewBlock()
+	pre.Term = &ir.Jmp{Target: h}
+	for _, p := range outside {
+		redirect(p, h, pre)
+	}
+	return pre
+}
+
+func realTermSuccs(b *ir.Block) []*ir.Block {
+	switch t := b.Term.(type) {
+	case *ir.Jmp:
+		return []*ir.Block{t.Target}
+	case *ir.Goto:
+		return []*ir.Block{t.Target}
+	case *ir.Call:
+		return []*ir.Block{t.Target, t.Return}
+	case *ir.Br:
+		return []*ir.Block{t.Then, t.Else}
+	}
+	return nil
+}
+
+func redirect(b *ir.Block, from, to *ir.Block) {
+	switch t := b.Term.(type) {
+	case *ir.Jmp:
+		if t.Target == from {
+			t.Target = to
+		}
+	case *ir.Goto:
+		if t.Target == from {
+			t.Target = to
+		}
+	case *ir.Call:
+		if t.Target == from {
+			t.Target = to
+		}
+		if t.Return == from {
+			t.Return = to
+		}
+	case *ir.Br:
+		if t.Then == from {
+			t.Then = to
+		}
+		if t.Else == from {
+			t.Else = to
+		}
+	}
+}
+
+func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool) bool {
+	changed := false
+	for {
+		defined := map[*ir.Reg]bool{}
+		for _, b := range fn.Blocks {
+			if !lp.blocks[b] {
+				continue
+			}
+			for _, ins := range b.Instrs {
+				if d := defOf(ins); d != nil {
+					defined[d] = true
+				}
+			}
+		}
+		moved := false
+		for _, b := range fn.Blocks {
+			if !lp.blocks[b] {
+				continue
+			}
+			kept := b.Instrs[:0]
+			for _, ins := range b.Instrs {
+				if hoistable(ins) && !usesAny(ins, defined) && !definesLiveIn(ins, liveIn) {
+					pre.Instrs = append(pre.Instrs, ins)
+					moved = true
+					changed = true
+					continue
+				}
+				kept = append(kept, ins)
+			}
+			b.Instrs = kept
+		}
+		if !moved {
+			break
+		}
+	}
+	return changed
+}
+
+// definesLiveIn reports whether an instruction defines a register that is live
+// at the loop header. Hoisting such a definition would change its value on
+// iterations that did not originally execute it.
+func definesLiveIn(i ir.Instr, liveIn map[*ir.Reg]bool) bool {
+	d := defOf(i)
+	return d != nil && liveIn[d]
+}
+
+func hoistable(i ir.Instr) bool {
+	switch i.(type) {
+	case *ir.Assign, *ir.Bin, *ir.Un, *ir.Cmp, *ir.Select:
+		return true
+	}
+	return false
+}
+
+func usesAny(i ir.Instr, defined map[*ir.Reg]bool) bool {
+	for _, v := range usesOf(i) {
+		if r, ok := v.(*ir.Reg); ok && defined[r] {
+			return true
+		}
+	}
+	return false
+}
+
+func copySet(s map[*ir.Block]bool) map[*ir.Block]bool {
+	c := make(map[*ir.Block]bool, len(s))
+	for k := range s {
+		c[k] = true
+	}
+	return c
+}
+
+func intersectSet(a, b map[*ir.Block]bool) map[*ir.Block]bool {
+	c := map[*ir.Block]bool{}
+	for k := range a {
+		if b[k] {
+			c[k] = true
+		}
+	}
+	return c
+}
+
+func setEqual(a, b map[*ir.Block]bool) bool {
 	if len(a) != len(b) {
 		return false
 	}
