@@ -16,8 +16,15 @@ import (
 	"ic10go/internal/token"
 )
 
+// Options controls lowering.
+type Options struct {
+	// StableInsOrder emits IC10 "ins" with the stable branch's argument order
+	// (offset length field) instead of the documented (field offset length).
+	StableInsOrder bool
+}
+
 // Lower compiles the program's main function into an IR function.
-func Lower(info *sema.Info, diags *diag.Bag) *ir.Function {
+func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 	l := &lowerer{
 		b:        ir.NewBuilder("main"),
 		info:     info,
@@ -26,6 +33,7 @@ func Lower(info *sema.Info, diags *diag.Bag) *ir.Function {
 		labelDef: map[string]source.Pos{},
 		labelUse: map[string]source.Pos{},
 		noCheck:  os.Getenv("IC10C_NO_CHECK") != "",
+		opts:     opts,
 	}
 	scope := map[string]ir.Value{}
 	for name, v := range info.Consts {
@@ -117,6 +125,7 @@ type lowerer struct {
 	labelDef map[string]source.Pos
 	labelUse map[string]source.Pos
 	noCheck  bool
+	opts     Options
 }
 
 // ---------------------------------------------------------------------------
@@ -943,6 +952,10 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 				continue
 			}
 			args[i] = l.lowerExpr(a)
+		}
+		// The stable game branch emits "ins" as offset-length-field.
+		if id.Name == "ins" && l.opts.StableInsOrder && len(args) == 3 {
+			args = []ir.Value{args[1], args[2], args[0]}
 		}
 		b := &ir.Builtin{Name: id.Name, Args: args}
 		if f.Result {

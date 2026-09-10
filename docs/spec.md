@@ -385,6 +385,8 @@ str("Ready!")              // 显示字符串，输出为 STR("Ready!")
 | `sla/srl/rol/ror(a,b)` | 移位/旋转 |
 | `ext(src,off,len)` / `ins(field,off,len)` | 位域提取/插入 |
 
+> `ins` 在**稳定版**游戏里参数顺序有 bug（实际为 `offset length field`）；用 `ic10c build --stable-ins` 生成稳定版顺序（默认是文档顺序，即 beta 版）。
+
 ---
 
 ## 9. 编译期求值

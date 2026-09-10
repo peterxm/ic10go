@@ -18,6 +18,14 @@ import (
 // NumRegs is the number of general-purpose IC10 CPU registers.
 const NumRegs = 16
 
+// Options controls compilation.
+type Options struct {
+	// StableInsOrder emits IC10 "ins" with the argument order used by the
+	// stable game branch (offset length field) instead of the documented
+	// (field offset length). The beta branch uses the documented order.
+	StableInsOrder bool
+}
+
 // Compile compiles .icg source into IC10 code.
 //
 // On success it returns the generated code and a (possibly non-empty) bag of
@@ -25,6 +33,11 @@ const NumRegs = 16
 // code is empty. A non-nil error indicates a backend failure such as exceeding
 // the IC10 limits.
 func Compile(name string, src []byte) (string, *diag.Bag, error) {
+	return CompileWithOptions(name, src, Options{})
+}
+
+// CompileWithOptions is Compile with explicit options.
+func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Bag, error) {
 	file := source.NewFile(name, src)
 	diags := &diag.Bag{}
 
@@ -42,7 +55,7 @@ func Compile(name string, src []byte) (string, *diag.Bag, error) {
 		return "", diags, nil
 	}
 
-	fn := lower.Lower(info, diags)
+	fn := lower.Lower(info, diags, lower.Options{StableInsOrder: opts.StableInsOrder})
 	if diags.HasErrors() {
 		return "", diags, nil
 	}

@@ -119,7 +119,13 @@ var Commands = []Command{
 				"按活跃区间复用。编译前会校验 IC10 编辑器限制\n" +
 				"（128 行 / 4096 字节 / 每行 90 字符）。",
 		},
-		Flags: []Flag{commonHelp},
+		Flags: []Flag{
+			{Long: "--stable-ins", Desc: text{
+				EN: "emit 'ins' with the stable branch's argument order",
+				ZH: "按稳定版的参数顺序生成 `ins`",
+			}},
+			commonHelp,
+		},
 		Examples: []string{
 			"ic10c build blink.icg",
 			"ic10c build blink.icg > blink.ic",

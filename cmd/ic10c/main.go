@@ -140,18 +140,28 @@ func missingLang() string {
 }
 
 func cmdBuild(args []string) int {
-	if len(args) != 1 {
+	stableIns := false
+	var files []string
+	for _, a := range args {
+		switch a {
+		case "--stable-ins":
+			stableIns = true
+		default:
+			files = append(files, a)
+		}
+	}
+	if len(files) != 1 {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "build"))
 		return 2
 	}
-	data, err := os.ReadFile(args[0])
+	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	ic10Hint(args[0])
-	code, diags, err := ic10.Compile(args[0], data)
-	file := source.NewFile(args[0], data)
+	ic10Hint(files[0])
+	code, diags, err := ic10.CompileWithOptions(files[0], data, ic10.Options{StableInsOrder: stableIns})
+	file := source.NewFile(files[0], data)
 	if rc := report(file, diags); rc != 0 {
 		return rc
 	}

@@ -129,6 +129,24 @@ func TestDynamicLogicType(t *testing.T) {
 	}
 }
 
+func TestStableInsOrder(t *testing.T) {
+	src := []byte("func main() { x := ins(1, 8, 8)\n d0.Setting = x }\n")
+	code, diags, err := ic10.Compile("t.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(code, "ins r0 1 8 8") {
+		t.Errorf("documented ins order not emitted:\n%s", code)
+	}
+	stable, diags, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{StableInsOrder: true})
+	if diags.HasErrors() || err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stable, "ins r0 8 8 1") {
+		t.Errorf("stable ins order not emitted:\n%s", stable)
+	}
+}
+
 func TestDeviceValidityBranch(t *testing.T) {
 	code := mustCompile(t, "func main() { if !isLoadValid(d0, \"Temperature\") { d1.On = 0 } else { d1.On = 1 } }\n")
 	if !strings.Contains(code, "bdnvl d0 Temperature") {
