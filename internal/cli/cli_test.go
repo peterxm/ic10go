@@ -71,3 +71,12 @@ func TestUsageLine(t *testing.T) {
 		t.Errorf("ZH usage line = %q", got)
 	}
 }
+
+func TestUnknownOptionHint(t *testing.T) {
+	if got := UnknownOption(EN, "-s"); !strings.Contains(got, "unknown option") || !strings.Contains(got, "decompile -s") {
+		t.Errorf("EN unknown option = %q", got)
+	}
+	if got := UnknownOption(ZH, "-s"); !strings.Contains(got, "未知选项") || !strings.Contains(got, "decompile -s") {
+		t.Errorf("ZH unknown option = %q", got)
+	}
+}

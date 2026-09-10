@@ -407,6 +407,14 @@ func UnknownCommand(l Lang, name string) string {
 	return fmt.Sprintf("ic10c: unknown command %q", name)
 }
 
+// UnknownOption formats an unknown-option error (a token starting with '-').
+func UnknownOption(l Lang, name string) string {
+	if l == ZH {
+		return fmt.Sprintf("ic10c: 未知选项 %q（选项要放在命令之后，例如 `ic10c decompile -s <file.ic>`）", name)
+	}
+	return fmt.Sprintf("ic10c: unknown option %q (options go after the command, e.g. `ic10c decompile -s <file.ic>`)", name)
+}
+
 func writeFlag(b *strings.Builder, label, arg, desc string) {
 	l := label
 	if arg != "" {

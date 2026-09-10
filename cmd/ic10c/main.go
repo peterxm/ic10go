@@ -112,7 +112,11 @@ parse:
 	case "ast":
 		return cmdAST(args)
 	default:
-		fmt.Fprintln(os.Stderr, cli.UnknownCommand(lang, cmd))
+		if strings.HasPrefix(cmd, "-") {
+			fmt.Fprintln(os.Stderr, cli.UnknownOption(lang, cmd))
+		} else {
+			fmt.Fprintln(os.Stderr, cli.UnknownCommand(lang, cmd))
+		}
 		fmt.Fprint(os.Stderr, cli.Usage(lang))
 		return 2
 	}
