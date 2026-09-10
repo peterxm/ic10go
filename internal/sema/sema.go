@@ -19,6 +19,7 @@ type FuncInfo struct {
 type Info struct {
 	Consts    map[string]float64
 	RawConsts map[string]string
+	Devices   map[string]string // const NAME = dN (device alias)
 	Funcs     map[string]*FuncInfo
 	Main      *ast.FuncDecl
 }
@@ -28,6 +29,7 @@ func Check(file *ast.File, diags *diag.Bag) *Info {
 	info := &Info{
 		Consts:    map[string]float64{},
 		RawConsts: map[string]string{},
+		Devices:   map[string]string{},
 		Funcs:     map[string]*FuncInfo{},
 	}
 
@@ -42,8 +44,18 @@ func Check(file *ast.File, diags *diag.Bag) *Info {
 				diags.Errorf(d.Name.Pos(), "constant %q redeclared", d.Name.Name)
 				continue
 			}
+			if _, exists := info.Devices[d.Name.Name]; exists {
+				diags.Errorf(d.Name.Pos(), "constant %q redeclared", d.Name.Name)
+				continue
+			}
 			if _, exists := info.Funcs[d.Name.Name]; exists {
 				diags.Errorf(d.Name.Pos(), "constant %q conflicts with a function", d.Name.Name)
+				continue
+			}
+			// const NAME = dN / db aliases a device port; const NAME = other
+			// aliases a previously declared device alias.
+			if dev, ok := deviceAlias(d.Value, info.Devices); ok {
+				info.Devices[d.Name.Name] = dev
 				continue
 			}
 			if raw, ok := EvalRaw(d.Value); ok {
@@ -62,6 +74,10 @@ func Check(file *ast.File, diags *diag.Bag) *Info {
 				continue
 			}
 			if _, exists := info.Consts[d.Name.Name]; exists {
+				diags.Errorf(d.Name.Pos(), "function %q conflicts with a constant", d.Name.Name)
+				continue
+			}
+			if _, exists := info.Devices[d.Name.Name]; exists {
 				diags.Errorf(d.Name.Pos(), "function %q conflicts with a constant", d.Name.Name)
 				continue
 			}
@@ -296,4 +312,18 @@ func ic10Mod(x, y float64) float64 {
 		r += y
 	}
 	return r
+}
+
+// deviceAlias reports whether e is a device literal (d0..d5, db) or a name that
+// already aliases one, and returns the device name.
+func deviceAlias(e ast.Expr, devices map[string]string) (string, bool) {
+	if d, ok := e.(*ast.DeviceLit); ok {
+		return d.Name, true
+	}
+	if id, ok := e.(*ast.Ident); ok {
+		if dev, ok := devices[id.Name]; ok {
+			return dev, true
+		}
+	}
+	return "", false
 }

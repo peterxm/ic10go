@@ -98,6 +98,23 @@ const (
 
 常量在编译期内联并折叠，不生成 `define`。
 
+也可以给**设备端口**起别名（同样是编译期消解，不占寄存器）：
+
+```go
+const (
+    sensor  = d0
+    battery = d1
+    host    = db
+)
+
+func main() {
+    battery.Setting = sensor.Temperature
+    host.Setting = battery.Ratio
+}
+```
+
+`const NAME = dN`（或 `db`）把 `NAME` 绑定到端口；别名可以再指向别名（`const a = sensor`）。之后 `NAME.Temperature`、`NAME.On = 1`、`NAME.slot[0].X`、`put(NAME, ...)`、`isSet(NAME)` 等都与直接写端口等价。
+
 ### 4.2 变量
 
 ```go

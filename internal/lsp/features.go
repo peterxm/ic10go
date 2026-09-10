@@ -12,6 +12,7 @@ import (
 	"ic10go/internal/diag"
 	"ic10go/internal/lexer"
 	"ic10go/internal/parser"
+	"ic10go/internal/sema"
 	"ic10go/internal/source"
 	"ic10go/internal/token"
 	"ic10go/pkg/ic10"
@@ -674,4 +675,14 @@ func (s *Server) publishStats(w *bufio.Writer, uri, code string, err error, diag
 		"maxLineMax": codegen.MaxLineLen,
 		"maxRegs":    16,
 	})
+}
+
+// deviceAliasOf returns the device port a name aliases via `const NAME = dN`.
+func deviceAliasOf(text, word string) string {
+	tree := parseText(text)
+	if tree == nil {
+		return ""
+	}
+	info := sema.Check(tree, &diag.Bag{})
+	return info.Devices[word]
 }

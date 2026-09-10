@@ -645,7 +645,8 @@ func (s *Server) hover(w *bufio.Writer, id json.RawMessage, params json.RawMessa
 		reply(w, id, nil)
 		return
 	}
-	content := s.hoverFor(wordAt(s.docs[p.TextDocument.URI], p.Position))
+	text := s.docs[p.TextDocument.URI]
+	content := s.hoverFor(text, wordAt(text, p.Position))
 	if content == "" {
 		reply(w, id, nil)
 		return
@@ -699,7 +700,13 @@ func docText(d builtin.Doc, zh bool) string {
 	return desc
 }
 
-func (s *Server) hoverFor(word string) string {
+func (s *Server) hoverFor(text, word string) string {
+	if dev := deviceAliasOf(text, word); dev != "" {
+		if s.zh {
+			return "设备别名 `" + word + "` = `" + dev + "`"
+		}
+		return "device alias `" + word + "` = `" + dev + "`"
+	}
 	if d, ok := builtin.Docs[word]; ok {
 		return docText(d, s.zh)
 	}

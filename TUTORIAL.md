@@ -252,6 +252,21 @@ const (
 
 顶层只允许 `const`（v0.1 没有可变全局变量）。
 
+也可以给**设备端口**起别名，方便记住 7 个端口各接了什么（编译期消解，不占寄存器）：
+
+```go
+const (
+    sensor  = d0
+    battery = d1
+    host    = db
+)
+
+func main() {
+    battery.Setting = sensor.Temperature
+    host.Setting = battery.Ratio
+}
+```
+
 ### 6.3 变量 `var` / `:=`
 
 ```go

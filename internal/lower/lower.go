@@ -30,6 +30,7 @@ func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 		info:     info,
 		diags:    diags,
 		labels:   map[string]*ir.Block{},
+		devices:  info.Devices,
 		labelDef: map[string]source.Pos{},
 		labelUse: map[string]source.Pos{},
 		noCheck:  os.Getenv("IC10C_NO_CHECK") != "",
@@ -121,6 +122,8 @@ type lowerer struct {
 	loops  []loopCtx
 	stack  []string // names of functions currently being inlined
 	labels map[string]*ir.Block
+	// devices maps a const device alias to its port (d0..d5 / db).
+	devices map[string]string
 	// labelDef and labelUse track low-level label definitions and references.
 	labelDef map[string]source.Pos
 	labelUse map[string]source.Pos
@@ -351,12 +354,12 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 		}
 		l.b.Emit(&ir.Assign{Dst: r, Src: val})
 	case *ast.SelectorExpr:
-		if dev, ok := deviceOf(t.X); ok {
+		if dev, ok := l.deviceName(t.X); ok {
 			l.checkLogic(t.Sel.Pos(), t.Sel.Name)
 			l.b.Emit(&ir.Store{Dev: dev, Logic: t.Sel.Name, Src: val})
 			return
 		}
-		if dev, idx, ok := slotOf(t.X); ok {
+		if dev, idx, ok := l.slotOf(t.X); ok {
 			l.checkSlot(t.Sel.Pos(), t.Sel.Name)
 			l.b.Emit(&ir.StoreSlot{Dev: dev, Index: l.lowerExpr(idx), Logic: t.Sel.Name, Src: val})
 			return
@@ -612,7 +615,7 @@ func (l *lowerer) validArgs(call *ast.CallExpr) (string, string, bool) {
 		l.diags.Errorf(call.Pos(), "expected a device and a logic type")
 		return "", "", false
 	}
-	dev, ok := call.Args[0].(*ast.DeviceLit)
+	dev, ok := l.deviceName(call.Args[0])
 	if !ok {
 		l.diags.Errorf(call.Args[0].Pos(), "expected a device as the first argument")
 		return "", "", false
@@ -622,7 +625,7 @@ func (l *lowerer) validArgs(call *ast.CallExpr) (string, string, bool) {
 		l.diags.Errorf(call.Args[1].Pos(), "expected a logic type string as the second argument")
 		return "", "", false
 	}
-	return dev.Name, logic.Value, true
+	return dev, logic.Value, true
 }
 
 func (l *lowerer) lowerCond(e ast.Expr) (ir.Cond, ir.Value, ir.Value) {
@@ -769,13 +772,13 @@ func (l *lowerer) lowerTernary(e *ast.TernaryExpr) ir.Value {
 }
 
 func (l *lowerer) lowerDeviceRead(e *ast.SelectorExpr) ir.Value {
-	if dev, ok := deviceOf(e.X); ok {
+	if dev, ok := l.deviceName(e.X); ok {
 		l.checkLogic(e.Sel.Pos(), e.Sel.Name)
 		r := l.b.NewReg(e.Sel.Name)
 		l.b.Emit(&ir.Load{Dst: r, Dev: dev, Logic: e.Sel.Name})
 		return r
 	}
-	if dev, idx, ok := slotOf(e.X); ok {
+	if dev, idx, ok := l.slotOf(e.X); ok {
 		l.checkSlot(e.Sel.Pos(), e.Sel.Name)
 		r := l.b.NewReg(e.Sel.Name)
 		l.b.Emit(&ir.LoadSlot{Dst: r, Dev: dev, Index: l.lowerExpr(idx), Logic: e.Sel.Name})
@@ -874,14 +877,14 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			l.diags.Errorf(call.Pos(), "read expects a device and a logic type")
 			return &ir.Const{V: 0}
 		}
-		dev, ok := call.Args[0].(*ast.DeviceLit)
+		dev, ok := l.deviceName(call.Args[0])
 		if !ok {
 			l.diags.Errorf(call.Args[0].Pos(), "read expects a device as its first argument")
 			return &ir.Const{V: 0}
 		}
 		logic := l.lowerExpr(call.Args[1])
 		r := l.b.NewReg("read")
-		l.b.Emit(&ir.LoadDyn{Dst: r, Dev: dev.Name, Logic: logic})
+		l.b.Emit(&ir.LoadDyn{Dst: r, Dev: dev, Logic: logic})
 		return r
 	}
 	if id.Name == "write" {
@@ -889,14 +892,14 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			l.diags.Errorf(call.Pos(), "write expects a device, a logic type and a value")
 			return &ir.Const{V: 0}
 		}
-		dev, ok := call.Args[0].(*ast.DeviceLit)
+		dev, ok := l.deviceName(call.Args[0])
 		if !ok {
 			l.diags.Errorf(call.Args[0].Pos(), "write expects a device as its first argument")
 			return &ir.Const{V: 0}
 		}
 		logic := l.lowerExpr(call.Args[1])
 		src := l.lowerExpr(call.Args[2])
-		l.b.Emit(&ir.StoreDyn{Dev: dev.Name, Logic: logic, Src: src})
+		l.b.Emit(&ir.StoreDyn{Dev: dev, Logic: logic, Src: src})
 		return &ir.Const{V: 0}
 	}
 
@@ -949,12 +952,12 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		args := make([]ir.Value, len(call.Args))
 		for i, a := range call.Args {
 			if i == 0 && deviceFirstArg[id.Name] {
-				d, ok := a.(*ast.DeviceLit)
+				d, ok := l.deviceName(a)
 				if !ok {
 					l.diags.Errorf(a.Pos(), "%s expects a device as its first argument", id.Name)
 					return &ir.Const{V: 0}
 				}
-				args[i] = &ir.Device{Name: d.Name}
+				args[i] = &ir.Device{Name: d}
 				continue
 			}
 			args[i] = l.lowerExpr(a)
@@ -1213,9 +1216,16 @@ func (l *lowerer) constEnv() map[string]float64 {
 // isSpecialReg reports whether a name is a special IC10 register.
 func isSpecialReg(name string) bool { return name == "ra" || name == "sp" }
 
-func deviceOf(e ast.Expr) (string, bool) {
+// deviceName resolves an expression to a device port: a device literal
+// (d0..d5 / db) or a const device alias.
+func (l *lowerer) deviceName(e ast.Expr) (string, bool) {
 	if d, ok := e.(*ast.DeviceLit); ok {
 		return d.Name, true
+	}
+	if id, ok := e.(*ast.Ident); ok {
+		if dev, ok := l.devices[id.Name]; ok {
+			return dev, true
+		}
 	}
 	return "", false
 }
@@ -1262,7 +1272,7 @@ func isPure(e ast.Expr) bool {
 }
 
 // slotOf recognises d.slot[i] and returns the device and index expression.
-func slotOf(e ast.Expr) (dev string, index ast.Expr, ok bool) {
+func (l *lowerer) slotOf(e ast.Expr) (dev string, index ast.Expr, ok bool) {
 	idx, isIdx := e.(*ast.IndexExpr)
 	if !isIdx {
 		return "", nil, false
@@ -1271,11 +1281,11 @@ func slotOf(e ast.Expr) (dev string, index ast.Expr, ok bool) {
 	if !isSel || sel.Sel.Name != "slot" {
 		return "", nil, false
 	}
-	d, isDev := sel.X.(*ast.DeviceLit)
+	d, isDev := l.deviceName(sel.X)
 	if !isDev {
 		return "", nil, false
 	}
-	return d.Name, idx.Index, true
+	return d, idx.Index, true
 }
 
 // channelOf recognises d.channel[conn][ch] where both indices are compile-time
@@ -1293,7 +1303,7 @@ func (l *lowerer) channelOf(e ast.Expr) (dev string, conn, ch float64, ok bool) 
 	if !isSel || sel.Sel.Name != "channel" {
 		return "", 0, 0, false
 	}
-	d, isDev := sel.X.(*ast.DeviceLit)
+	d, isDev := l.deviceName(sel.X)
 	if !isDev {
 		return "", 0, 0, false
 	}
@@ -1306,7 +1316,7 @@ func (l *lowerer) channelOf(e ast.Expr) (dev string, conn, ch float64, ok bool) 
 	if !ok {
 		return "", 0, 0, false
 	}
-	return d.Name, conn, ch, true
+	return d, conn, ch, true
 }
 
 func channelDev(dev string, conn float64) string {

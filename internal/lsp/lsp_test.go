@@ -289,3 +289,15 @@ func TestStatsNotification(t *testing.T) {
 		t.Errorf("expected an icg/stats notification with the budget:\n%s", out)
 	}
 }
+
+func TestHoverDeviceAlias(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"da.icg","text":"const sensor = d0\nfunc main() { d1.Setting = sensor.Temperature }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"da.icg"},"position":{"line":1,"character":29}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "device alias") {
+		t.Errorf("hover should describe the device alias:\n%s", out)
+	}
+}

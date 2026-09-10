@@ -306,3 +306,23 @@ func TestEnumConstants(t *testing.T) {
 		t.Errorf("enum constants not resolved:\n%s", code)
 	}
 }
+
+func TestDeviceAlias(t *testing.T) {
+	src := []byte("const sensor = d0\nconst pump = sensor\nconst host = db\nfunc main() {\n    d1.Setting = sensor.Temperature\n    pump.On = 1\n    d2.Setting = sensor.slot[0].Occupied\n    put(host, 0, 1)\n    d0.On = isSet(sensor)\n}\n")
+	code, diags, err := ic10.Compile("test.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("compile: diags=%v err=%v", diags.Diags, err)
+	}
+	for _, want := range []string{"l r0 d0 Temperature", "s d0 On 1", "ls r0 d0 0 Occupied", "put db 0 1", "sdse r0 d0"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("device alias not resolved (%q missing):\n%s", want, code)
+		}
+	}
+}
+
+func TestDeviceAliasRedeclared(t *testing.T) {
+	_, diags, _ := ic10.Compile("test.icg", []byte("const a = d0\nconst a = d1\nfunc main() {}\n"))
+	if !diags.HasErrors() {
+		t.Fatal("expected a redeclaration error")
+	}
+}
