@@ -66,7 +66,7 @@ go build -o ic10c ./cmd/ic10c
 把 `editors/vscode` 整个目录复制到：
 
 ```
-~/.vscode/extensions/ic10go.icg-0.4.0/
+~/.vscode/extensions/ic10go.icg-0.5.0/
 ```
 
 目录里必须包含 `package.json`、`extension.js`、`language-configuration.json`、`syntaxes/` 和 `snippets/`，然后重启 VSCode。
@@ -75,15 +75,32 @@ go build -o ic10c ./cmd/ic10c
 
 | 功能 | 说明 |
 |------|------|
-| 语法高亮 | 关键字、字符串、数字、设备端口、逻辑类型、内建函数 |
+| 语法高亮 | `.icg` 用专用语法；`.ic`/`.ic10` 有 IC10 汇编高亮 |
+| 语义高亮 | 语义 token（函数/变量/设备/logic type/内建/枚举），比 TextMate 更准 |
 | 注释/括号 | `//`、`/* */`、自动闭合 |
 | 诊断 | 打开/编辑时实时显示编译错误（含 128 行 / 4KiB / 90 字符超限） |
 | 补全 | **上下文感知**：`d0.`→logic type、`batch.`→批量方法、`SorterInstruction.`→枚举成员；并补全当前文件的函数/常量/变量/标签、内建、设备端口 |
 | 片段 | `main`、`hyst`、`batchread`、`batchwrite`、`func`、`const`、`slotread` 等 |
+| 大纲 / 折叠 | 文档符号（函数、常量、变量、标签）+ 代码折叠 |
+| 查找引用 / 重命名 | `Shift+F12` 查找引用；`F2` 重命名（单文件内所有引用） |
+| 参数提示 | 函数调用时显示参数签名，并高亮当前参数 |
+| 快速修复 | 未知 logic/slot type 的"你是不是想写…"；缺少 `main` 时一键补上 |
+| 预算内联 | 文件末尾显示 `IC10: 行/字节/寄存器` 预算（inlay hint） |
 | 格式化 | `Shift+Alt+F`（或保存时）调用 `ic10c` 的格式化 |
 | 悬停 | 鼠标悬停在关键字/内建/逻辑类型/设备端口上显示说明 |
 | 跳转定义 | `F12` / `Ctrl+点击` 跳到函数、常量、变量、标签定义 |
-| 命令 | `IC10 Go: Compile to IC10`（编译产物预览 + 预算）、`IC10 Go: Run in VM`、`IC10 Go: Restart Language Server` |
+| 命令 | 见下 |
+
+命令（命令面板 / 右键菜单）：
+
+| 命令 | 说明 |
+|------|------|
+| `IC10 Go: Compile to IC10` | 编译 `.icg`，旁边预览 IC10 产物 + 行/字节预算 |
+| `IC10 Go: Run in VM` | 在内置 VM 中运行 `.icg` 并显示设备状态 |
+| `IC10 Go: Decompile IC10 to .icg` | 把 `.ic`/`.ic10` 反编译为 `.icg`（结构化） |
+| `IC10 Go: Minify IC10` | 压缩 `.ic`/`.ic10` 行数 |
+| `IC10 Go: Annotate IC10 (disasm)` | 给 `.ic`/`.ic10` 加跳转目标注释 |
+| `IC10 Go: Restart Language Server` | 重启语言服务器 |
 
 ## 六、设置
 
@@ -107,8 +124,8 @@ go build -o ic10c ./cmd/ic10c
 ```bash
 cd editors/vscode
 npx @vscode/vsce package --allow-missing-repository
-# 生成 icg-0.4.0.vsix
-code --install-extension icg-0.4.0.vsix
+# 生成 icg-0.5.0.vsix
+code --install-extension icg-0.5.0.vsix
 ```
 
 `vsce` 需要联网下载，首次使用会慢一些。

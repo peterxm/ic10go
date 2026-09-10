@@ -25,6 +25,15 @@ function activate(context) {
     context.subscriptions.push(
         vscode.commands.registerCommand('icg.run', () => client.run())
     );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('icg.decompile', () => client.decompile())
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('icg.minify', () => client.minify())
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('icg.disasm', () => client.disasm())
+    );
     client.start();
 }
 
@@ -77,6 +86,44 @@ class LspClient {
                 provideDefinition: (doc, pos) => this.definition(doc, pos),
             })
         );
+        this.disposables.push(
+            vscode.languages.registerDocumentSymbolProvider('icg', {
+                provideDocumentSymbols: (doc) => this.documentSymbols(doc),
+            })
+        );
+        this.disposables.push(
+            vscode.languages.registerFoldingRangeProvider('icg', {
+                provideFoldingRanges: (doc) => this.foldingRanges(doc),
+            })
+        );
+        this.disposables.push(
+            vscode.languages.registerReferenceProvider('icg', {
+                provideReferences: (doc, pos) => this.references(doc, pos),
+            })
+        );
+        this.disposables.push(
+            vscode.languages.registerRenameProvider('icg', {
+                provideRenameEdits: (doc, pos, newName) => this.rename(doc, pos, newName),
+            })
+        );
+        this.disposables.push(
+            vscode.languages.registerSignatureHelpProvider(
+                'icg',
+                { provideSignatureHelp: (doc, pos) => this.signatureHelp(doc, pos) },
+                '(',
+                ','
+            )
+        );
+        this.disposables.push(
+            vscode.languages.registerCodeActionsProvider('icg', {
+                provideCodeActions: (doc, range, context) => this.codeActions(doc, range, context),
+            })
+        );
+        this.disposables.push(
+            vscode.languages.registerInlayHintsProvider('icg', {
+                provideInlayHints: (doc) => this.inlayHints(doc),
+            })
+        );
     }
 
     start() {
@@ -108,9 +155,10 @@ class LspClient {
                 textDocument: { completion: { completionItem: { snippetSupport: false } } },
             },
         })
-            .then(() => {
+            .then((result) => {
                 this.initialized = true;
                 this.notify('initialized', {});
+                this.registerSemanticTokens(result);
                 for (const doc of vscode.workspace.textDocuments) {
                     if (doc.languageId === 'icg') this.sendDidOpen(doc);
                 }
@@ -245,6 +293,53 @@ class LspClient {
             this.output.appendLine(`=== run: ${path.basename(doc.fileName)} ===\n${res.stdout}${res.stderr}`);
             this.output.show(true);
         });
+    }
+
+    // activeDoc returns the active document whose language is in langs.
+    activeDoc(langs) {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor || !langs.includes(editor.document.languageId)) {
+            vscode.window.showWarningMessage('IC10 Go: open a ' + langs.map((l) => '.' + l).join(' / ') + ' file first.');
+            return undefined;
+        }
+        return editor.document;
+    }
+
+    // runTool runs a CLI subcommand on a temp copy of the document and opens
+    // the result in a new editor.
+    async runTool(doc, args, outputLanguage) {
+        await this.withTempFile(doc, async (tmp) => {
+            const res = await this.execCli(args.concat(tmp));
+            if (res.code !== 0) {
+                this.output.appendLine(`=== ${args[0]} failed ===\n${res.stderr}`);
+                this.output.show(true);
+                vscode.window.showErrorMessage('IC10 Go: ' + args[0] + ' failed. See the "IC10 Go" output.');
+                return;
+            }
+            const preview = await vscode.workspace.openTextDocument({
+                content: res.stdout,
+                language: outputLanguage,
+            });
+            await vscode.window.showTextDocument(preview, {
+                viewColumn: vscode.ViewColumn.Beside,
+                preview: false,
+            });
+        });
+    }
+
+    async decompile() {
+        const doc = this.activeDoc(['ic10']);
+        if (doc) await this.runTool(doc, ['decompile', '-s'], 'icg');
+    }
+
+    async minify() {
+        const doc = this.activeDoc(['ic10']);
+        if (doc) await this.runTool(doc, ['minify'], 'ic10');
+    }
+
+    async disasm() {
+        const doc = this.activeDoc(['ic10']);
+        if (doc) await this.runTool(doc, ['disasm'], 'ic10');
     }
 
     reportMissingServer(err) {
@@ -399,6 +494,157 @@ class LspClient {
         }
     }
 
+    // -- navigation / symbols / actions ------------------------------------
+
+    registerSemanticTokens(result) {
+        const caps = (result && result.capabilities) || {};
+        const provider = caps.semanticTokensProvider || {};
+        const legend = provider.legend || { tokenTypes: [], tokenModifiers: [] };
+        if (!legend.tokenTypes || legend.tokenTypes.length === 0) return;
+        const legendObj = new vscode.SemanticTokensLegend(legend.tokenTypes, legend.tokenModifiers);
+        this.disposables.push(
+            vscode.languages.registerDocumentSemanticTokensProvider(
+                'icg',
+                { provideDocumentSemanticTokens: (doc) => this.semanticTokens(doc) },
+                legendObj
+            )
+        );
+    }
+
+    async semanticTokens(doc) {
+        try {
+            const res = await this.request('textDocument/semanticTokens/full', {
+                textDocument: { uri: doc.uri.toString() },
+            });
+            return new vscode.SemanticTokens(new Uint32Array((res && res.data) || []));
+        } catch (err) {
+            return undefined;
+        }
+    }
+
+    async documentSymbols(doc) {
+        try {
+            const res = await this.request('textDocument/documentSymbol', {
+                textDocument: { uri: doc.uri.toString() },
+            });
+            return (res || []).map(toDocumentSymbol);
+        } catch (err) {
+            return [];
+        }
+    }
+
+    async foldingRanges(doc) {
+        try {
+            const res = await this.request('textDocument/foldingRange', {
+                textDocument: { uri: doc.uri.toString() },
+            });
+            return (res || []).map(
+                (r) =>
+                    new vscode.FoldingRange(
+                        r.startLine,
+                        r.endLine,
+                        r.kind === 'region' ? vscode.FoldingRangeKind.Region : undefined
+                    )
+            );
+        } catch (err) {
+            return [];
+        }
+    }
+
+    async references(doc, pos) {
+        try {
+            const res = await this.request('textDocument/references', {
+                textDocument: { uri: doc.uri.toString() },
+                position: { line: pos.line, character: pos.character },
+            });
+            return (res || []).map(
+                (l) => new vscode.Location(vscode.Uri.parse(l.uri), toRange(l.range))
+            );
+        } catch (err) {
+            return [];
+        }
+    }
+
+    async rename(doc, pos, newName) {
+        const res = await this.request('textDocument/rename', {
+            textDocument: { uri: doc.uri.toString() },
+            position: { line: pos.line, character: pos.character },
+            newName,
+        });
+        const edit = new vscode.WorkspaceEdit();
+        const changes = (res && res.changes) || {};
+        for (const [uri, edits] of Object.entries(changes)) {
+            for (const e of edits) {
+                edit.replace(vscode.Uri.parse(uri), toRange(e.range), e.newText);
+            }
+        }
+        return edit;
+    }
+
+    async signatureHelp(doc, pos) {
+        try {
+            const res = await this.request('textDocument/signatureHelp', {
+                textDocument: { uri: doc.uri.toString() },
+                position: { line: pos.line, character: pos.character },
+            });
+            if (!res || !res.signatures) return undefined;
+            const help = new vscode.SignatureHelp();
+            help.signatures = res.signatures.map((s) => new vscode.SignatureInformation(s.label));
+            help.activeSignature = res.activeSignature || 0;
+            help.activeParameter = res.activeParameter || 0;
+            return help;
+        } catch (err) {
+            return undefined;
+        }
+    }
+
+    async codeActions(doc, range, context) {
+        try {
+            const diagnostics = (context.diagnostics || []).map((d) => ({
+                range: fromRange(d.range),
+                message: d.message,
+                severity: d.severity,
+                source: d.source,
+            }));
+            const res = await this.request('textDocument/codeAction', {
+                textDocument: { uri: doc.uri.toString() },
+                range: fromRange(range),
+                context: { diagnostics },
+            });
+            return (res || []).map((a) => {
+                const action = new vscode.CodeAction(a.title, vscode.CodeActionKind.QuickFix);
+                const edit = new vscode.WorkspaceEdit();
+                const changes = (a.edit && a.edit.changes) || {};
+                for (const [uri, edits] of Object.entries(changes)) {
+                    for (const e of edits) {
+                        edit.replace(vscode.Uri.parse(uri), toRange(e.range), e.newText);
+                    }
+                }
+                action.edit = edit;
+                return action;
+            });
+        } catch (err) {
+            return [];
+        }
+    }
+
+    async inlayHints(doc) {
+        try {
+            const res = await this.request('textDocument/inlayHint', {
+                textDocument: { uri: doc.uri.toString() },
+            });
+            return (res || []).map(
+                (h) =>
+                    new vscode.InlayHint(
+                        new vscode.Position(h.position.line, h.position.character),
+                        h.label
+                    )
+            );
+        } catch (err) {
+            return [];
+        }
+    }
+
     // -- JSON-RPC -----------------------------------------------------------
 
     request(method, params) {
@@ -517,4 +763,21 @@ function commonServerPaths() {
     paths.push(path.join(home, 'bin', 'ic10c'));
     paths.push('/usr/local/bin/ic10c');
     return paths;
+}
+
+function toRange(r) {
+    return new vscode.Range(r.start.line, r.start.character, r.end.line, r.end.character);
+}
+
+function fromRange(r) {
+    return {
+        start: { line: r.start.line, character: r.start.character },
+        end: { line: r.end.line, character: r.end.character },
+    };
+}
+
+function toDocumentSymbol(s) {
+    const sym = new vscode.DocumentSymbol(s.name, '', s.kind, toRange(s.range), toRange(s.selectionRange));
+    if (s.children) sym.children = s.children.map(toDocumentSymbol);
+    return sym;
 }

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "IC10",
+  "scopeName": "source.ic10",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#label" },
+    { "include": "#directive" },
+    { "include": "#enum" },
+    { "include": "#mnemonic" },
+    { "include": "#register" },
+    { "include": "#device" },
+    { "include": "#string" },
+    { "include": "#number" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        { "name": "comment.line.number-sign.ic10", "match": "#.*$" }
+      ]
+    },
+    "label": {
+      "patterns": [
+        { "name": "entity.name.label.ic10", "match": "^\\s*[A-Za-z_][A-Za-z0-9_]*:" }
+      ]
+    },
+    "directive": {
+      "patterns": [
+        {
+          "name": "keyword.control.directive.ic10",
+          "match": "\\b(alias|define)\\b"
+        }
+      ]
+    },
+    "enum": {
+      "patterns": [
+        {
+          "name": "constant.other.enum.ic10",
+          "match": "\\b(SorterInstruction|PrinterInstruction|ReagentMode|SlotClass|SortingClass|LogicType)\\.[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
+    },
+    "mnemonic": {
+      "patterns": [
+        {
+          "name": "keyword.instruction.ic10",
+          "match": "\\b(b?eqz|b?nez|b?ltz|b?lez|b?gtz|b?gez|b?eq|b?ne|b?lt|b?le|b?gt|b?ge|bnan|b?apz|b?naz|b?ap|b?na|b?dns|b?dse|bdnvl|bdnvs|br?[a-z]+al?|j|jal|jr|yield|sleep|hcf|lbn?s?|sbn?s?|ls|ss|lb|sb|add|sub|mul|div|mod|pow|abs|sgn|sqrt|exp|log|max|min|clamp|lerp|ceil|floor|round|trunc|rand|sin|cos|tan|asin|acos|atan2?|and|or|xor|not|nor|sll|sra|srl|sla|rol|ror|ext|ins|push|pop|peek|poke|getd?|putd?|clr|rmap|select|move|sdse|sdns)\\b"
+        }
+      ]
+    },
+    "register": {
+      "patterns": [
+        {
+          "name": "variable.language.register.ic10",
+          "match": "\\b(r1[0-5]|r[0-9]|rr1[0-5]|rr[0-9]|ra|sp)\\b"
+        }
+      ]
+    },
+    "device": {
+      "patterns": [
+        { "name": "variable.other.device.ic10", "match": "\\b(d[0-5]|db)\\b" }
+      ]
+    },
+    "string": {
+      "patterns": [
+        { "name": "string.quoted.double.ic10", "begin": "\"", "end": "\"" }
+      ]
+    },
+    "number": {
+      "patterns": [
+        {
+          "name": "constant.numeric.ic10",
+          "match": "[-+]?(\\$[0-9A-Fa-f]+|%[01]+|0x[0-9A-Fa-f]+|0b[01]+|\\d+\\.?\\d*([eE][-+]?\\d+)?)"
+        }
+      ]
+    }
+  }
+}

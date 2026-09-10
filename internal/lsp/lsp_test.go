@@ -104,10 +104,10 @@ func TestCompletionContext(t *testing.T) {
 		want    string
 		notWant string
 	}{
-		{"device logic type", "d0.", `{"line":0,"character":3}`, "Temperature", "func"},
+		{"device logic type", "d0.", `{"line":0,"character":3}`, "Temperature", `"label":"func"`},
 		{"batch method", "batch.", `{"line":0,"character":6}`, "readName", "Temperature"},
-		{"enum member", "SorterInstruction.", `{"line":0,"character":18}`, "FilterPrefabHashEquals", "func"},
-		{"slot type", "d0.slot[0].", `{"line":0,"character":11}`, "Occupied", "func"},
+		{"enum member", "SorterInstruction.", `{"line":0,"character":18}`, "FilterPrefabHashEquals", `"label":"func"`},
+		{"slot type", "d0.slot[0].", `{"line":0,"character":11}`, "Occupied", `"label":"func"`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -160,4 +160,73 @@ func jsonString(s string) string {
 
 func jsonMarshal(v any) ([]byte, error) {
 	return json.Marshal(v)
+}
+
+func openAndRequest(t *testing.T, uri, text, method, extra string) string {
+	t.Helper()
+	return runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"`+uri+`","text":`+jsonString(text)+`}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"`+method+`","params":{"textDocument":{"uri":"`+uri+`"}`+extra+`}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+}
+
+func TestDocumentSymbol(t *testing.T) {
+	out := openAndRequest(t, "s.icg", "func main() {\n    x := 1\n}\nconst A = 2", "textDocument/documentSymbol", "")
+	for _, want := range []string{`"name":"main"`, `"name":"x"`, `"name":"A"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("documentSymbol missing %s:\n%s", want, out)
+		}
+	}
+}
+
+func TestFoldingRange(t *testing.T) {
+	out := openAndRequest(t, "f.icg", "func main() {\n    x := 1\n    y := 2\n}", "textDocument/foldingRange", "")
+	if !strings.Contains(out, `"startLine":0`) || !strings.Contains(out, `"endLine":3`) {
+		t.Errorf("foldingRange missing function body:\n%s", out)
+	}
+}
+
+func TestReferencesAndRename(t *testing.T) {
+	text := "func main() {\n    x := 1\n    y := x\n}"
+	pos := `"position":{"line":1,"character":4}`
+	refs := openAndRequest(t, "r.icg", text, "textDocument/references", ","+pos)
+	if strings.Count(refs, `"range"`) < 2 {
+		t.Errorf("references should find both x uses:\n%s", refs)
+	}
+	ren := openAndRequest(t, "r.icg", text, "textDocument/rename", ","+pos+`,"newName":"total"`)
+	if !strings.Contains(ren, `"newText":"total"`) {
+		t.Errorf("rename did not produce edits:\n%s", ren)
+	}
+}
+
+func TestSignatureHelp(t *testing.T) {
+	text := "func add(a num, b num) num { return a + b }\nfunc main() { add( }"
+	out := openAndRequest(t, "sig.icg", text, "textDocument/signatureHelp", `,"position":{"line":1,"character":18}`)
+	if !strings.Contains(out, "add(a num, b num)") {
+		t.Errorf("signature help missing function signature:\n%s", out)
+	}
+}
+
+func TestCodeActionDidYouMean(t *testing.T) {
+	diag := `"context":{"diagnostics":[{"range":{"start":{"line":0,"character":13},"end":{"line":0,"character":23}},"message":"unknown logic type \"Temperatur\"","severity":2,"source":"ic10c"}]}`
+	out := openAndRequest(t, "ca.icg", "func main() { d0.Temperatur = 1 }", "textDocument/codeAction", ","+diag)
+	if !strings.Contains(out, "Temperature") {
+		t.Errorf("code action did not suggest the closest logic type:\n%s", out)
+	}
+}
+
+func TestSemanticTokens(t *testing.T) {
+	out := openAndRequest(t, "st.icg", "func main() { d0.On = 1 }", "textDocument/semanticTokens/full", "")
+	if !strings.Contains(out, `"data":[`) || strings.Contains(out, `"data":[]`) {
+		t.Errorf("semantic tokens should be non-empty:\n%s", out)
+	}
+}
+
+func TestInlayHintBudget(t *testing.T) {
+	out := openAndRequest(t, "ih.icg", "func main() { d0.On = 1 }", "textDocument/inlayHint", "")
+	if !strings.Contains(out, "IC10:") {
+		t.Errorf("inlay hint should show the budget:\n%s", out)
+	}
 }

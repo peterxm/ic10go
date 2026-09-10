@@ -272,7 +272,7 @@ go test ./...
 
 ## 9. 编辑器支持（VSCode）
 
-一键安装扩展（语法高亮 + 片段 + 错误诊断 + 上下文补全 + 编译预览）：
+一键安装扩展（语法高亮 + 片段 + 诊断 + 上下文补全 + 大纲/折叠/引用/重命名/参数提示/快速修复 + 编译预览）：
 
 ```bash
 go build -o ic10c ./cmd/ic10c     # 1. 准备编译器
@@ -281,7 +281,7 @@ sh editors/vscode/install.sh      # 2. 安装扩展
 
 然后按 `Ctrl+Shift+P` → `Developer: Reload Window` 重启 VSCode，用 VSCode 打开本仓库目录并编辑 `.icg` 文件即可。
 
-扩展是纯 JavaScript、无需 npm；它通过 `ic10c lsp` 提供诊断与补全。若找不到 `ic10c`，在设置里填 `icg.serverPath`。命令面板里还有 `IC10 Go: Compile to IC10`（旁边预览产物 + 预算）和 `IC10 Go: Run in VM`。
+扩展是纯 JavaScript、无需 npm；它通过 `ic10c lsp` 提供诊断与补全。若找不到 `ic10c`，在设置里填 `icg.serverPath`。命令面板里还有 `IC10 Go: Compile to IC10`（旁边预览产物 + 预算）、`IC10 Go: Run in VM`，以及对 `.ic`/`.ic10` 的 `Decompile` / `Minify` / `Annotate` 命令。
 
 详细说明与常见问题见 [`editors/vscode/README.md`](editors/vscode/README.md)。
 

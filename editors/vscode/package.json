@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "IC10 Go (.icg)",
   "description": "Syntax highlighting, language server, compile preview and VM run for the .icg language compiled by ic10c",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "ic10go",
   "license": "MIT",
   "engines": {
@@ -12,8 +12,12 @@
   "main": "./extension.js",
   "activationEvents": [
     "onLanguage:icg",
+    "onLanguage:ic10",
     "onCommand:icg.compile",
     "onCommand:icg.run",
+    "onCommand:icg.decompile",
+    "onCommand:icg.minify",
+    "onCommand:icg.disasm",
     "onCommand:icg.restartServer"
   ],
   "contributes": {
@@ -23,6 +27,12 @@
         "aliases": ["IC10 Go", "icg"],
         "extensions": [".icg"],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "ic10",
+        "aliases": ["IC10", "ic10"],
+        "extensions": [".ic", ".ic10"],
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
@@ -30,6 +40,11 @@
         "language": "icg",
         "scopeName": "source.icg",
         "path": "./syntaxes/icg.tmLanguage.json"
+      },
+      {
+        "language": "ic10",
+        "scopeName": "source.ic10",
+        "path": "./syntaxes/ic10.tmLanguage.json"
       }
     ],
     "snippets": [
@@ -69,6 +84,18 @@
         "title": "IC10 Go: Run in VM"
       },
       {
+        "command": "icg.decompile",
+        "title": "IC10 Go: Decompile IC10 to .icg"
+      },
+      {
+        "command": "icg.minify",
+        "title": "IC10 Go: Minify IC10"
+      },
+      {
+        "command": "icg.disasm",
+        "title": "IC10 Go: Annotate IC10 (disasm)"
+      },
+      {
         "command": "icg.restartServer",
         "title": "IC10 Go: Restart Language Server"
       }
@@ -83,6 +110,21 @@
         {
           "command": "icg.run",
           "when": "editorLangId == icg",
+          "group": "navigation"
+        },
+        {
+          "command": "icg.decompile",
+          "when": "editorLangId == ic10",
+          "group": "navigation"
+        },
+        {
+          "command": "icg.minify",
+          "when": "editorLangId == ic10",
+          "group": "navigation"
+        },
+        {
+          "command": "icg.disasm",
+          "when": "editorLangId == ic10",
           "group": "navigation"
         }
       ]

@@ -87,6 +87,22 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 					"documentFormattingProvider": true,
 					"hoverProvider":              true,
 					"definitionProvider":         true,
+					"documentSymbolProvider":     true,
+					"foldingRangeProvider":       true,
+					"referencesProvider":         true,
+					"renameProvider":             true,
+					"codeActionProvider":         true,
+					"inlayHintProvider":          true,
+					"signatureHelpProvider": map[string]any{
+						"triggerCharacters": []string{"(", ","},
+					},
+					"semanticTokensProvider": map[string]any{
+						"legend": map[string]any{
+							"tokenTypes":     semanticTokenTypes,
+							"tokenModifiers": []string{},
+						},
+						"full": true,
+					},
 				},
 				"serverInfo": map[string]any{"name": "ic10c", "version": version.Version},
 			})
@@ -110,6 +126,22 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 			s.hover(writer, msg.ID, msg.Params)
 		case "textDocument/definition":
 			s.definition(writer, msg.ID, msg.Params)
+		case "textDocument/documentSymbol":
+			s.documentSymbol(writer, msg.ID, msg.Params)
+		case "textDocument/foldingRange":
+			s.foldingRange(writer, msg.ID, msg.Params)
+		case "textDocument/references":
+			s.references(writer, msg.ID, msg.Params)
+		case "textDocument/rename":
+			s.rename(writer, msg.ID, msg.Params)
+		case "textDocument/signatureHelp":
+			s.signatureHelp(writer, msg.ID, msg.Params)
+		case "textDocument/codeAction":
+			s.codeAction(writer, msg.ID, msg.Params)
+		case "textDocument/semanticTokens/full":
+			s.semanticTokens(writer, msg.ID, msg.Params)
+		case "textDocument/inlayHint":
+			s.inlayHint(writer, msg.ID, msg.Params)
 		default:
 			if len(msg.ID) > 0 && string(msg.ID) != "null" {
 				replyError(writer, msg.ID, -32601, "method not found: "+msg.Method)
