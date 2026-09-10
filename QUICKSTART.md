@@ -59,6 +59,7 @@ ic10c stats  <file.icg>        # 行/字节/寄存器预算报告
 ic10c fmt    [-w] <file.icg>   # 格式化源码（-w 原地写回）
 ic10c disasm <file.ic>         # 反汇编注释旧 IC10
 ic10c decompile <file.ic>      # 将 IC10 反编译为 .icg（-o 输出到文件）
+ic10c minify <file.ic>         # 压缩现有 IC10 的行数（去注释/内联/去不可达）
 ic10c lsp                      # 启动语言服务器
 ic10c lex / ast <file.icg>     # 调试：打印词法单元 / AST
 ```
@@ -85,6 +86,14 @@ ic10c -L zh --help      # 强制中文
 ./ic10c run blink.icg
 # 用 --set 预置设备值，--steps 限定步数，--trace 打印每条执行的指令
 ./ic10c run --steps 500 --set d0.Temperature=350 --trace ctrl.icg
+```
+
+压缩已有 IC10 脚本的行数（语义不变）：
+
+```bash
+./ic10c minify old.ic            # 输出到 stdout
+./ic10c minify -w old.ic         # 原地写回
+./ic10c minify --keep-defines -o small.ic big.ic
 ```
 
 检查是否超出 IC10 限制：

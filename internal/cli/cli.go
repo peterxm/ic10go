@@ -163,6 +163,34 @@ var Commands = []Command{
 		},
 	},
 	{
+		Name: "minify", Args: "[--keep-defines] [--keep-labels] [--no-dead-code] [-w|-o out] <file.ic>",
+		Summary: text{EN: "shrink an IC10 script's line count", ZH: "压缩 IC10 脚本的行数"},
+		Long: text{
+			EN: "Rewrite an existing IC10 program with fewer lines while preserving\n" +
+				"its behaviour: comments and blank lines are dropped, alias/define\n" +
+				"symbols are inlined, labels are converted to absolute line numbers\n" +
+				"and unreachable instructions are removed.\n\n" +
+				"Use --keep-defines/--keep-labels to retain those lines and\n" +
+				"--no-dead-code to keep unreachable code.",
+			ZH: "在保持行为不变的前提下，用更少的行重写现有 IC10 程序：删除注释与\n" +
+				"空行、内联 alias/define 符号、把标签改写为绝对行号、删除不可达指令。\n\n" +
+				"--keep-defines/--keep-labels 保留对应行；--no-dead-code 保留不可达代码。",
+		},
+		Flags: []Flag{
+			{Long: "--keep-defines", Desc: text{EN: "keep alias/define lines", ZH: "保留 alias/define 行"}},
+			{Long: "--keep-labels", Desc: text{EN: "keep label lines", ZH: "保留标签行"}},
+			{Long: "--no-dead-code", Desc: text{EN: "keep unreachable instructions", ZH: "保留不可达指令"}},
+			{Short: "-w", Long: "--write", Desc: text{EN: "write the result back to the file", ZH: "将结果写回文件"}},
+			{Short: "-o", Long: "--output", Arg: "file", Desc: text{EN: "write the result to a file", ZH: "将结果写入文件"}},
+			commonHelp,
+		},
+		Examples: []string{
+			"ic10c minify old.ic",
+			"ic10c minify -w old.ic",
+			"ic10c minify --keep-defines -o small.ic big.ic",
+		},
+	},
+	{
 		Name: "stats", Args: "<file.icg>",
 		Summary: text{EN: "report the line/byte/register budget", ZH: "报告行/字节/寄存器预算"},
 		Long: text{

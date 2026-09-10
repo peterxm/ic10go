@@ -16,6 +16,7 @@ import (
 	"ic10go/internal/disasm"
 	"ic10go/internal/lexer"
 	"ic10go/internal/lsp"
+	"ic10go/internal/minify"
 	"ic10go/internal/parser"
 	"ic10go/internal/source"
 	"ic10go/internal/vm"
@@ -103,6 +104,8 @@ parse:
 		return cmdBuild(args)
 	case "run":
 		return cmdRun(args)
+	case "minify":
+		return cmdMinify(args)
 	case "stats":
 		return cmdStats(args)
 	case "fmt":
@@ -279,6 +282,61 @@ func printDevices(m *vm.Machine) {
 			fmt.Printf("%s.%s = %v\n", n, k, d.Values[k])
 		}
 	}
+}
+
+func cmdMinify(args []string) int {
+	opt := minify.Options{DeadCode: true}
+	write := false
+	outFile := ""
+	var file string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--keep-defines":
+			opt.KeepDefines = true
+		case "--keep-labels":
+			opt.KeepLabels = true
+		case "--no-dead-code":
+			opt.DeadCode = false
+		case "-w", "--write":
+			write = true
+		case "-o", "--output":
+			if i+1 < len(args) {
+				outFile = args[i+1]
+				i++
+			}
+		default:
+			file = args[i]
+		}
+	}
+	if file == "" {
+		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "minify"))
+		return 2
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	out, err := minify.Minify(string(data), opt)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	switch {
+	case write:
+		if err := os.WriteFile(file, []byte(out), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+	case outFile != "":
+		if err := os.WriteFile(outFile, []byte(out), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+	default:
+		fmt.Print(out)
+	}
+	return 0
 }
 
 func cmdStats(args []string) int {
