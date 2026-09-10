@@ -103,6 +103,8 @@ go test ./...
 
 | 文档 | 内容 |
 |------|------|
+| [`TUTORIAL.md`](TUTORIAL.md) | 新手详细教程（从零到部署） |
+| [`QUICKSTART.md`](QUICKSTART.md) | 5 分钟上手 |
 | [`docs/spec.md`](docs/spec.md) | `.icg` 语言规范 |
 | [`docs/architecture.md`](docs/architecture.md) | 编译器架构与里程碑 M0–M5 |
 | [`docs/target-ic10.md`](docs/target-ic10.md) | IC10 目标约束、指令映射与内建数据 |
