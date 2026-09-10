@@ -68,8 +68,32 @@ func TestHover(t *testing.T) {
 		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"h.icg"},"position":{"line":0,"character":25}}}`),
 		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
 	)
-	if !strings.Contains(out, "logic type") {
+	if !strings.Contains(out, "Kelvin") {
 		t.Errorf("hover did not describe the logic type:\n%s", out)
+	}
+}
+
+func TestHoverBuiltin(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"hb.icg","text":"func main() { d0.Setting = sqrt(2) }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"hb.icg"},"position":{"line":0,"character":27}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "sqrt(x)") || !strings.Contains(out, "Square root") {
+		t.Errorf("hover did not document the builtin:\n%s", out)
+	}
+}
+
+func TestCompletionDocs(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"cd.icg","text":"func main() { d0.Setting = sq"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":"cd.icg"},"position":{"line":0,"character":29}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"documentation"`) || !strings.Contains(out, "Square root") {
+		t.Errorf("completion did not include documentation:\n%s", out)
 	}
 }
 

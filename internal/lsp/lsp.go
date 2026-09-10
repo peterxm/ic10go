@@ -50,6 +50,7 @@ type notification struct {
 // Server is a single-connection LSP server.
 type Server struct {
 	docs map[string]string
+	zh   bool // documentation language
 }
 
 // New returns a Server.
@@ -75,6 +76,11 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 		}
 		switch msg.Method {
 		case "initialize":
+			var init struct {
+				Locale string `json:"locale"`
+			}
+			_ = json.Unmarshal(msg.Params, &init)
+			s.zh = strings.HasPrefix(strings.ToLower(init.Locale), "zh")
 			reply(writer, msg.ID, map[string]any{
 				"capabilities": map[string]any{
 					"textDocumentSync": map[string]any{
@@ -326,9 +332,44 @@ func severity(s int) int {
 }
 
 type completionItem struct {
-	Label  string `json:"label"`
-	Kind   int    `json:"kind"`
-	Detail string `json:"detail,omitempty"`
+	Label         string         `json:"label"`
+	Kind          int            `json:"kind"`
+	Detail        string         `json:"detail,omitempty"`
+	Documentation *markupContent `json:"documentation,omitempty"`
+}
+
+// ci builds a completion item (positional literals no longer compile with the
+// documentation field).
+func ci(label string, kind int, detail string) completionItem {
+	return completionItem{Label: label, Kind: kind, Detail: detail}
+}
+
+type markupContent struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+}
+
+// attachDocs adds signature/detail and markdown documentation to completion
+// items that match a known builtin or logic type.
+func attachDocs(items []completionItem, zh bool) []completionItem {
+	for i := range items {
+		if items[i].Detail == "batch IO" {
+			if d, ok := builtin.BatchDocs[items[i].Label]; ok {
+				items[i].Detail = d.Signature
+				items[i].Documentation = &markupContent{Kind: "markdown", Value: docText(d, zh)}
+			}
+			continue
+		}
+		if d, ok := builtin.Docs[items[i].Label]; ok {
+			items[i].Detail = d.Signature
+			items[i].Documentation = &markupContent{Kind: "markdown", Value: docText(d, zh)}
+			continue
+		}
+		if d, ok := builtin.LogicTypeDocs[items[i].Label]; ok {
+			items[i].Documentation = &markupContent{Kind: "markdown", Value: docText(d, zh)}
+		}
+	}
+	return items
 }
 
 // ---------------------------------------------------------------------------
@@ -341,7 +382,7 @@ func (s *Server) completion(w *bufio.Writer, id json.RawMessage, params json.Raw
 		reply(w, id, []any{})
 		return
 	}
-	reply(w, id, completionItemsFor(s.docs[p.TextDocument.URI], p.Position))
+	reply(w, id, attachDocs(completionItemsFor(s.docs[p.TextDocument.URI], p.Position), s.zh))
 }
 
 // completionItemsFor returns context-aware completion items: after a device
@@ -375,7 +416,7 @@ func completionItemsFor(text string, pos lspPosition) []completionItem {
 	}
 	items := baseCompletionItems()
 	for _, r := range enumReceivers() {
-		items = append(items, completionItem{r, 9, "enum"})
+		items = append(items, completionItem{Label: r, Kind: 9, Detail: "enum"})
 	}
 	items = append(items, batchMethodItems()...)
 	items = append(items, documentSymbols("", text)...)
@@ -384,27 +425,27 @@ func completionItemsFor(text string, pos lspPosition) []completionItem {
 
 func baseCompletionItems() []completionItem {
 	items := []completionItem{
-		{"const", 14, "declaration"}, {"var", 14, "declaration"}, {"func", 3, "declaration"},
-		{"if", 14, ""}, {"else", 14, ""}, {"for", 14, ""}, {"switch", 14, ""},
-		{"case", 14, ""}, {"default", 14, ""}, {"break", 14, ""}, {"continue", 14, ""},
-		{"return", 14, ""}, {"label", 14, ""}, {"goto", 14, ""}, {"call", 14, ""}, {"ret", 14, ""},
-		{"true", 12, ""}, {"false", 12, ""}, {"nan", 12, ""}, {"pinf", 12, ""}, {"ninf", 12, ""},
-		{"d0", 6, "device"}, {"d1", 6, "device"}, {"d2", 6, "device"},
-		{"d3", 6, "device"}, {"d4", 6, "device"}, {"d5", 6, "device"}, {"db", 6, "device"},
-		{"batch", 9, "batch IO"},
-		{"read", 3, "runtime logic type"},
-		{"write", 3, "runtime logic type"},
-		{"isLoadValid", 3, "condition only"},
-		{"isStoreValid", 3, "condition only"},
+		ci("const", 14, "declaration"), ci("var", 14, "declaration"), ci("func", 3, "declaration"),
+		ci("if", 14, ""), ci("else", 14, ""), ci("for", 14, ""), ci("switch", 14, ""),
+		ci("case", 14, ""), ci("default", 14, ""), ci("break", 14, ""), ci("continue", 14, ""),
+		ci("return", 14, ""), ci("label", 14, ""), ci("goto", 14, ""), ci("call", 14, ""), ci("ret", 14, ""),
+		ci("true", 12, ""), ci("false", 12, ""), ci("nan", 12, ""), ci("pinf", 12, ""), ci("ninf", 12, ""),
+		ci("d0", 6, "device"), ci("d1", 6, "device"), ci("d2", 6, "device"),
+		ci("d3", 6, "device"), ci("d4", 6, "device"), ci("d5", 6, "device"), ci("db", 6, "device"),
+		ci("batch", 9, "batch IO"),
+		ci("read", 3, "runtime logic type"),
+		ci("write", 3, "runtime logic type"),
+		ci("isLoadValid", 3, "condition only"),
+		ci("isStoreValid", 3, "condition only"),
 	}
 	for name := range builtin.Funcs {
-		items = append(items, completionItem{name, 3, "builtin"})
+		items = append(items, completionItem{Label: name, Kind: 3, Detail: "builtin"})
 	}
 	for name := range builtin.LogicTypes {
-		items = append(items, completionItem{name, 21, "logic type"})
+		items = append(items, completionItem{Label: name, Kind: 21, Detail: "logic type"})
 	}
 	for name := range builtin.SlotTypes {
-		items = append(items, completionItem{name, 21, "slot type"})
+		items = append(items, completionItem{Label: name, Kind: 21, Detail: "slot type"})
 	}
 	return items
 }
@@ -412,7 +453,7 @@ func baseCompletionItems() []completionItem {
 func logicTypeItems() []completionItem {
 	var items []completionItem
 	for name := range builtin.LogicTypes {
-		items = append(items, completionItem{name, 21, "logic type"})
+		items = append(items, completionItem{Label: name, Kind: 21, Detail: "logic type"})
 	}
 	sortItems(items)
 	return items
@@ -421,7 +462,7 @@ func logicTypeItems() []completionItem {
 func slotTypeItems() []completionItem {
 	var items []completionItem
 	for name := range builtin.SlotTypes {
-		items = append(items, completionItem{name, 21, "slot type"})
+		items = append(items, completionItem{Label: name, Kind: 21, Detail: "slot type"})
 	}
 	sortItems(items)
 	return items
@@ -431,7 +472,7 @@ func batchMethodItems() []completionItem {
 	names := []string{"read", "readName", "readSlot", "readNameSlot", "write", "writeName", "writeSlot"}
 	items := make([]completionItem, 0, len(names))
 	for _, n := range names {
-		items = append(items, completionItem{n, 3, "batch IO"})
+		items = append(items, completionItem{Label: n, Kind: 3, Detail: "batch IO"})
 	}
 	return items
 }
@@ -465,7 +506,7 @@ func enumItems(recv string) []completionItem {
 	var items []completionItem
 	for k := range builtin.EnumConstants {
 		if member, ok := strings.CutPrefix(k, recv+"."); ok {
-			items = append(items, completionItem{member, 21, "enum"})
+			items = append(items, completionItem{Label: member, Kind: 21, Detail: "enum"})
 		}
 	}
 	sortItems(items)
@@ -500,7 +541,7 @@ func documentSymbols(name, text string) []completionItem {
 			return
 		}
 		seen[n] = true
-		items = append(items, completionItem{n, kind, detail})
+		items = append(items, completionItem{Label: n, Kind: kind, Detail: detail})
 	}
 	for _, d := range tree.Decls {
 		switch d := d.(type) {
@@ -599,7 +640,7 @@ func (s *Server) hover(w *bufio.Writer, id json.RawMessage, params json.RawMessa
 		reply(w, id, nil)
 		return
 	}
-	content := hoverFor(wordAt(s.docs[p.TextDocument.URI], p.Position))
+	content := s.hoverFor(wordAt(s.docs[p.TextDocument.URI], p.Position))
 	if content == "" {
 		reply(w, id, nil)
 		return
@@ -641,25 +682,49 @@ func isWordByte(b byte) bool {
 	return b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
 }
 
-func hoverFor(word string) string {
+// docText renders a Doc as markdown in the requested language.
+func docText(d builtin.Doc, zh bool) string {
+	desc := d.EN
+	if zh {
+		desc = d.ZH
+	}
+	if d.Signature != "" {
+		return "```icg\n" + d.Signature + "\n```\n\n" + desc
+	}
+	return desc
+}
+
+func (s *Server) hoverFor(word string) string {
+	if d, ok := builtin.Docs[word]; ok {
+		return docText(d, s.zh)
+	}
+	if d, ok := builtin.KeywordDocs[word]; ok {
+		return docText(d, s.zh)
+	}
+	if d, ok := builtin.LogicTypeDocs[word]; ok {
+		return docText(d, s.zh)
+	}
 	switch word {
-	case "func", "const", "var", "if", "else", "for", "switch", "case", "default",
-		"break", "continue", "return", "label", "goto", "call", "ret":
-		return "keyword `" + word + "`"
 	case "true", "false", "nan", "pinf", "ninf":
 		return "literal `" + word + "`"
 	}
-	if word == "db" || (len(word) == 2 && word[0] == 'd' && word[1] >= '0' && word[1] <= '5') {
+	if word == "db" || isDevicePort(word) {
+		if s.zh {
+			return "设备端口 `" + word + "`"
+		}
 		return "device port `" + word + "`"
 	}
-	if f, ok := builtin.Funcs[word]; ok {
-		return "builtin `" + f.Mnemonic + "`"
-	}
 	if builtin.LogicTypes[word] {
-		return "logic type `" + word + "`"
+		if s.zh {
+			return "logic type `" + word + "`（设备逻辑属性）"
+		}
+		return "logic type `" + word + "` (device property)"
 	}
 	if builtin.SlotTypes[word] {
-		return "slot type `" + word + "`"
+		if s.zh {
+			return "slot type `" + word + "`（槽位属性）"
+		}
+		return "slot type `" + word + "` (slot property)"
 	}
 	return ""
 }

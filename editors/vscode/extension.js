@@ -151,6 +151,7 @@ class LspClient {
         this.request('initialize', {
             processId: process.pid,
             rootUri: null,
+            locale: vscode.env.language,
             capabilities: {
                 textDocument: { completion: { completionItem: { snippetSupport: false } } },
             },
@@ -424,6 +425,9 @@ class LspClient {
             return items.map((i) => {
                 const item = new vscode.CompletionItem(i.label, i.kind || 1);
                 if (i.detail) item.detail = i.detail;
+                if (i.documentation) {
+                    item.documentation = new vscode.MarkdownString(i.documentation.value || '');
+                }
                 return item;
             });
         } catch (err) {
