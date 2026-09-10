@@ -81,6 +81,8 @@ sh editors/vscode/install.sh   # 安装到 ~/.vscode/extensions
 详见 [`editors/vscode/README.md`](editors/vscode/README.md)。
 
 > 提示：IC10 里常见的「尾调用跳转」状态机（如 `gasHeaters` 循环后 `j greenhouseGasCheck`）在 `.icg` 中请改写为结构化循环，因为函数是全内联且不支持递归。
+>
+> 寄存器压力超过 16 时，编译器会自动把多余的值**溢出到 IC10 栈**（固定高地址槽 + 暂存寄存器），而不是报错。未知 logic type 会给出**警告**（可用 `IC10C_NO_CHECK=1` 关闭）。
 
 ## 测试
 

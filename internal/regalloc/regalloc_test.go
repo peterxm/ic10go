@@ -25,7 +25,7 @@ func TestReuseNonOverlapping(t *testing.T) {
 	}
 }
 
-func TestPressureOverflow(t *testing.T) {
+func TestPressureSpills(t *testing.T) {
 	b := ir.NewBuilder("f")
 	regs := make([]*ir.Reg, 20)
 	for i := range regs {
@@ -37,7 +37,7 @@ func TestPressureOverflow(t *testing.T) {
 	}
 	b.SetTerm(&ir.Ret{})
 
-	if _, err := Allocate(b.Fn(), 16); err == nil {
-		t.Fatal("expected a register pressure error")
+	if _, err := Allocate(b.Fn(), 16); err != nil {
+		t.Fatalf("expected spilling to succeed, got %v", err)
 	}
 }

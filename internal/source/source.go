@@ -10,6 +10,13 @@ type Pos struct {
 	Offset int
 }
 
+// Comment is a source comment, used by the formatter to preserve them.
+type Comment struct {
+	Line     int
+	Text     string
+	Trailing bool // true when code precedes the comment on the same line
+}
+
 func (p Pos) IsValid() bool { return p.Line > 0 }
 
 func (p Pos) String() string {

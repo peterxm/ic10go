@@ -1,9 +1,9 @@
-move r0 0
+move r1 0
 yield
-l r1 d1 Temperature
-bge r1 283.15 5
-move r0 1
-ble r1 296.15 7
-move r0 0
-s d0 On r0
+l r0 d1 Temperature
+bge r0 283.15 5
+move r1 1
+ble r0 296.15 7
+move r1 0
+s d0 On r1
 j 1

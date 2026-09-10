@@ -342,6 +342,22 @@ func (m *Machine) execOp(ins *Instr) error {
 		return m.bitOp(ins.Op, a[0], a[1], a[2])
 	case "not":
 		return m.setDst(a[0], float64(^int64(mustNum(m, a[1]))))
+	case "ext":
+		dst, _ := m.reg(a[0])
+		src := int64(mustNum(m, a[1]))
+		off := uint(mustNum(m, a[2]))
+		length := uint(mustNum(m, a[3]))
+		m.Regs[dst] = float64((src >> off) & bitMask(length))
+		return nil
+	case "ins":
+		dst, _ := m.reg(a[0])
+		base := int64(m.Regs[dst])
+		field := int64(mustNum(m, a[1]))
+		off := uint(mustNum(m, a[2]))
+		length := uint(mustNum(m, a[3]))
+		mask := bitMask(length) << off
+		m.Regs[dst] = float64((base & ^mask) | ((field << off) & mask))
+		return nil
 	case "neg":
 		return m.setDst(a[0], -mustNum(m, a[1]))
 	case "abs", "sgn", "sqrt", "exp", "log", "floor", "ceil", "round", "trunc",
@@ -649,6 +665,13 @@ func ic10Mod(x, y float64) float64 {
 		r += y
 	}
 	return r
+}
+
+func bitMask(length uint) int64 {
+	if length >= 64 {
+		return -1
+	}
+	return (int64(1) << length) - 1
 }
 
 // ---------------------------------------------------------------------------

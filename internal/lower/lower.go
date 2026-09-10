@@ -4,6 +4,7 @@ package lower
 
 import (
 	"math"
+	"os"
 	"strconv"
 
 	"ic10go/internal/ast"
@@ -11,20 +12,27 @@ import (
 	"ic10go/internal/diag"
 	"ic10go/internal/ir"
 	"ic10go/internal/sema"
+	"ic10go/internal/source"
 	"ic10go/internal/token"
 )
 
 // Lower compiles the program's main function into an IR function.
 func Lower(info *sema.Info, diags *diag.Bag) *ir.Function {
 	l := &lowerer{
-		b:      ir.NewBuilder("main"),
-		info:   info,
-		diags:  diags,
-		labels: map[string]*ir.Block{},
+		b:        ir.NewBuilder("main"),
+		info:     info,
+		diags:    diags,
+		labels:   map[string]*ir.Block{},
+		labelDef: map[string]source.Pos{},
+		labelUse: map[string]source.Pos{},
+		noCheck:  os.Getenv("IC10C_NO_CHECK") != "",
 	}
 	scope := map[string]ir.Value{}
 	for name, v := range info.Consts {
 		scope[name] = &ir.Const{V: v}
+	}
+	for name, raw := range info.RawConsts {
+		scope[name] = &ir.Const{Raw: raw}
 	}
 	l.scopes = append(l.scopes, scope)
 
@@ -37,6 +45,12 @@ func Lower(info *sema.Info, diags *diag.Bag) *ir.Function {
 	}
 	l.b.SetBlock(end)
 	l.b.SetTerm(&ir.Ret{})
+
+	for name, pos := range l.labelUse {
+		if _, ok := l.labelDef[name]; !ok {
+			l.diags.Errorf(pos, "undefined label %q", name)
+		}
+	}
 
 	fn := l.b.Fn()
 	for _, blk := range fn.Blocks {
@@ -99,6 +113,10 @@ type lowerer struct {
 	loops  []loopCtx
 	stack  []string // names of functions currently being inlined
 	labels map[string]*ir.Block
+	// labelDef and labelUse track low-level label definitions and references.
+	labelDef map[string]source.Pos
+	labelUse map[string]source.Pos
+	noCheck  bool
 }
 
 // ---------------------------------------------------------------------------
@@ -159,15 +177,23 @@ func (l *lowerer) lowerStmt(s ast.Stmt) {
 	case *ast.LabelStmt:
 		l.lowerLabel(s)
 	case *ast.GotoStmt:
-		l.b.SetTerm(&ir.Goto{Target: l.labelBlock(s.Name.Name)})
+		l.b.SetTerm(&ir.Goto{Target: l.useLabel(s.Name.Name, s.Name.Pos())})
 	case *ast.CallStmt:
-		target := l.labelBlock(s.Name.Name)
+		target := l.useLabel(s.Name.Name, s.Name.Pos())
 		ret := l.b.NewBlock()
 		l.b.SetTerm(&ir.Call{Target: target, Return: ret})
 		l.b.SetBlock(ret)
 	case *ast.RetStmt:
 		l.b.SetTerm(&ir.JmpRA{})
 	}
+}
+
+// useLabel records a reference to a label and returns its block.
+func (l *lowerer) useLabel(name string, pos source.Pos) *ir.Block {
+	if _, ok := l.labelUse[name]; !ok {
+		l.labelUse[name] = pos
+	}
+	return l.labelBlock(name)
 }
 
 // labelBlock returns (creating if needed) the block associated with a label.
@@ -181,8 +207,15 @@ func (l *lowerer) labelBlock(name string) *ir.Block {
 }
 
 func (l *lowerer) lowerLabel(s *ast.LabelStmt) {
+	name := s.Name.Name
+	if prev, ok := l.labelDef[name]; ok {
+		l.diags.Errorf(s.Name.Pos(), "label %q already defined at %s", name, prev)
+		return
+	}
+	l.labelDef[name] = s.Name.Pos()
+
 	cur := l.b.Cur()
-	if b, ok := l.labels[s.Name.Name]; ok {
+	if b, ok := l.labels[name]; ok {
 		if b == cur {
 			return
 		}
@@ -193,20 +226,24 @@ func (l *lowerer) lowerLabel(s *ast.LabelStmt) {
 		return
 	}
 	if cur.Term == nil && len(cur.Instrs) == 0 {
-		l.labels[s.Name.Name] = cur
+		l.labels[name] = cur
 		return
 	}
 	b := l.b.NewBlock()
 	if cur.Term == nil {
 		l.b.SetTerm(&ir.Jmp{Target: b})
 	}
-	l.labels[s.Name.Name] = b
+	l.labels[name] = b
 	l.b.SetBlock(b)
 }
 
 func (l *lowerer) lowerDecl(d ast.Decl) {
 	switch d := d.(type) {
 	case *ast.ConstDecl:
+		if raw, ok := sema.EvalRaw(d.Value); ok {
+			l.bind(d.Name.Name, &ir.Const{Raw: raw})
+			return
+		}
 		v, ok := sema.Eval(d.Value, l.constEnv())
 		if !ok {
 			l.diags.Errorf(d.Value.Pos(), "constant %q is not a compile-time expression", d.Name.Name)
@@ -306,10 +343,12 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 		l.b.Emit(&ir.Assign{Dst: r, Src: val})
 	case *ast.SelectorExpr:
 		if dev, ok := deviceOf(t.X); ok {
+			l.checkLogic(t.Sel.Pos(), t.Sel.Name)
 			l.b.Emit(&ir.Store{Dev: dev, Logic: t.Sel.Name, Src: val})
 			return
 		}
 		if dev, idx, ok := slotOf(t.X); ok {
+			l.checkSlot(t.Sel.Pos(), t.Sel.Name)
 			l.b.Emit(&ir.StoreSlot{Dev: dev, Index: l.lowerExpr(idx), Logic: t.Sel.Name, Src: val})
 			return
 		}
@@ -672,17 +711,35 @@ func (l *lowerer) lowerTernary(e *ast.TernaryExpr) ir.Value {
 
 func (l *lowerer) lowerDeviceRead(e *ast.SelectorExpr) ir.Value {
 	if dev, ok := deviceOf(e.X); ok {
+		l.checkLogic(e.Sel.Pos(), e.Sel.Name)
 		r := l.b.NewReg(e.Sel.Name)
 		l.b.Emit(&ir.Load{Dst: r, Dev: dev, Logic: e.Sel.Name})
 		return r
 	}
 	if dev, idx, ok := slotOf(e.X); ok {
+		l.checkSlot(e.Sel.Pos(), e.Sel.Name)
 		r := l.b.NewReg(e.Sel.Name)
 		l.b.Emit(&ir.LoadSlot{Dst: r, Dev: dev, Index: l.lowerExpr(idx), Logic: e.Sel.Name})
 		return r
 	}
 	l.diags.Errorf(e.Pos(), "unsupported device access")
 	return &ir.Const{V: 0}
+}
+
+// checkLogic warns about a logic type that is not in the built-in table.
+func (l *lowerer) checkLogic(pos source.Pos, name string) {
+	if l.noCheck || builtin.LogicTypes[name] {
+		return
+	}
+	l.diags.Warnf(pos, "unknown logic type %q", name)
+}
+
+// checkSlot warns about a slot type that is not in the built-in table.
+func (l *lowerer) checkSlot(pos source.Pos, name string) {
+	if l.noCheck || builtin.SlotTypes[name] {
+		return
+	}
+	l.diags.Warnf(pos, "unknown slot type %q", name)
 }
 
 // ---------------------------------------------------------------------------
@@ -738,6 +795,17 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			return &ir.Const{V: 0}
 		}
 		return &ir.Const{Raw: "STR(" + strconv.Quote(s.Value) + ")"}
+	}
+
+	// jump(expr) performs a computed jump (IC10 "j r0").
+	if id.Name == "jump" {
+		if len(call.Args) != 1 {
+			l.diags.Errorf(call.Pos(), "jump expects one argument")
+			return &ir.Const{V: 0}
+		}
+		v := l.lowerExpr(call.Args[0])
+		l.b.SetTerm(&ir.JmpDyn{Target: v})
+		return &ir.Const{V: 0}
 	}
 
 	// ireg(ptr) / setIreg(ptr, v) access indirect registers (IC10 rrN).

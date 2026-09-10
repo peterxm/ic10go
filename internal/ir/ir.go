@@ -183,6 +183,18 @@ type StoreIndirect struct {
 	Src Value
 }
 
+// LoadSpill loads a spilled value from a fixed stack slot.
+type LoadSpill struct {
+	Dst  *Reg
+	Slot int
+}
+
+// StoreSpill stores a value to a fixed stack slot.
+type StoreSpill struct {
+	Slot int
+	Src  Value
+}
+
 type Load struct {
 	Dst   *Reg
 	Dev   string
@@ -256,6 +268,8 @@ func (*LoadSpecial) isInstr()   {}
 func (*StoreSpecial) isInstr()  {}
 func (*LoadIndirect) isInstr()  {}
 func (*StoreIndirect) isInstr() {}
+func (*LoadSpill) isInstr()     {}
+func (*StoreSpill) isInstr()    {}
 
 // ---------------------------------------------------------------------------
 // Terminators
@@ -345,12 +359,16 @@ type Call struct {
 // JmpRA jumps to the return address register (IC10 "j ra").
 type JmpRA struct{}
 
-func (*Jmp) isTerm()   {}
-func (*Br) isTerm()    {}
-func (*Ret) isTerm()   {}
-func (*Goto) isTerm()  {}
-func (*Call) isTerm()  {}
-func (*JmpRA) isTerm() {}
+// JmpDyn jumps to a computed line number (IC10 "j r0").
+type JmpDyn struct{ Target Value }
+
+func (*Jmp) isTerm()    {}
+func (*Br) isTerm()     {}
+func (*Ret) isTerm()    {}
+func (*Goto) isTerm()   {}
+func (*Call) isTerm()   {}
+func (*JmpRA) isTerm()  {}
+func (*JmpDyn) isTerm() {}
 
 // ---------------------------------------------------------------------------
 // Blocks and functions
@@ -390,6 +408,22 @@ func (f *Function) BuildCFG() {
 			}
 		case *Br:
 			b.Succs = append(b.Succs, t.Then, t.Else)
+		}
+	}
+	// A ret (JmpRA) can return to any call site, so it may transfer control to
+	// any call's return block. Modelling this keeps values written by a callee
+	// live after the call.
+	var returns []*Block
+	for _, b := range f.Blocks {
+		if c, ok := b.Term.(*Call); ok && c.Return != nil {
+			returns = append(returns, c.Return)
+		}
+	}
+	if len(returns) > 0 {
+		for _, b := range f.Blocks {
+			if _, ok := b.Term.(*JmpRA); ok {
+				b.Succs = append(b.Succs, returns...)
+			}
 		}
 	}
 	for _, b := range f.Blocks {

@@ -9,10 +9,11 @@ import (
 )
 
 type Lexer struct {
-	file  *source.File
-	src   []byte
-	off   int
-	diags *diag.Bag
+	file     *source.File
+	src      []byte
+	off      int
+	diags    *diag.Bag
+	comments []source.Comment
 }
 
 func New(file *source.File, diags *diag.Bag) *Lexer {
@@ -21,8 +22,15 @@ func New(file *source.File, diags *diag.Bag) *Lexer {
 
 // Tokenize scans the whole file and returns tokens with semicolons inserted.
 func Tokenize(file *source.File, diags *diag.Bag) []token.Token {
+	toks, _ := TokenizeWithComments(file, diags)
+	return toks
+}
+
+// TokenizeWithComments also returns the comments found in the file.
+func TokenizeWithComments(file *source.File, diags *diag.Bag) ([]token.Token, []source.Comment) {
 	l := New(file, diags)
-	return l.run()
+	toks := l.run()
+	return toks, l.comments
 }
 
 func (l *Lexer) pos() source.Pos { return l.file.PosAt(l.off) }
@@ -62,9 +70,9 @@ func (l *Lexer) run() []token.Token {
 			}
 			l.off++
 		case c == '/' && l.peekAt(1) == '/':
-			l.skipLineComment()
+			l.recordLineComment()
 		case c == '/' && l.peekAt(1) == '*':
-			l.skipBlockComment()
+			l.recordBlockComment()
 		default:
 			tok := l.scan()
 			toks = append(toks, tok)
@@ -78,23 +86,46 @@ func (l *Lexer) run() []token.Token {
 	return toks
 }
 
-func (l *Lexer) skipLineComment() {
+func (l *Lexer) recordLineComment() {
+	start := l.off
+	line := l.pos().Line
 	for l.off < len(l.src) && l.src[l.off] != '\n' {
 		l.off++
 	}
+	trailing := false
+	for j := start - 1; j >= 0 && l.src[j] != '\n'; j-- {
+		if c := l.src[j]; c != ' ' && c != '\t' && c != '\r' {
+			trailing = true
+			break
+		}
+	}
+	l.comments = append(l.comments, source.Comment{
+		Line:     line,
+		Text:     string(l.src[start:l.off]),
+		Trailing: trailing,
+	})
 }
 
-func (l *Lexer) skipBlockComment() {
-	start := l.pos()
+func (l *Lexer) recordBlockComment() {
+	start := l.off
+	pos := l.pos()
 	l.off += 2
+	closed := false
 	for l.off < len(l.src) {
 		if l.peek() == '*' && l.peekAt(1) == '/' {
 			l.off += 2
-			return
+			closed = true
+			break
 		}
 		l.off++
 	}
-	l.diags.Errorf(start, "unterminated block comment")
+	if !closed {
+		l.diags.Errorf(pos, "unterminated block comment")
+	}
+	l.comments = append(l.comments, source.Comment{
+		Line: pos.Line,
+		Text: string(l.src[start:l.off]),
+	})
 }
 
 func (l *Lexer) scan() token.Token {

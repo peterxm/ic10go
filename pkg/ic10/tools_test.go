@@ -3,6 +3,7 @@ package ic10_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"ic10go/pkg/ic10"
@@ -28,6 +29,19 @@ func TestFormatIdempotent(t *testing.T) {
 		}
 		if once != twice {
 			t.Errorf("%s: formatting is not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", p, once, twice)
+		}
+	}
+}
+
+func TestFormatPreservesComments(t *testing.T) {
+	src := []byte("// header\nfunc main() {\n    d0.On = 1 // on\n    // before\n    d0.Open = 0\n}\n")
+	out, diags, err := ic10.Format("t.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("diags=%v err=%v", diags.Diags, err)
+	}
+	for _, want := range []string{"// header", "// on", "// before"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("comment %q not preserved:\n%s", want, out)
 		}
 	}
 }

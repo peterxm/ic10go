@@ -1,6 +1,7 @@
 package ic10_test
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -211,6 +212,31 @@ func TestVMAllPrograms(t *testing.T) {
 }
 
 // TestVMConstantFolding cross-checks compile-time folding against the VM.
+func TestVMRegisterSpilling(t *testing.T) {
+	src := "func main() {"
+	for i := 0; i < 17; i++ {
+		src += fmt.Sprintf(" x%d := d%d.Temperature", i, i%6)
+	}
+	src += " d0.Setting ="
+	for i := 0; i < 17; i++ {
+		if i > 0 {
+			src += " +"
+		}
+		src += fmt.Sprintf(" x%d", i)
+	}
+	src += " }\n"
+
+	m := runProgram(t, src, 500, func(m *vm.Machine) {
+		for i := 0; i < 6; i++ {
+			m.Set(fmt.Sprintf("d%d", i), "Temperature", float64(i+1))
+		}
+	})
+	// x0..x5 = 1..6, x6..x11 = 1..6, x12..x16 = 1..5 => 42 + 15 = 57.
+	if got := m.Get("d0", "Setting"); got != 57 {
+		t.Errorf("spilled sum = %v, want 57", got)
+	}
+}
+
 func TestVMConstantFolding(t *testing.T) {
 	cases := []struct {
 		expr string

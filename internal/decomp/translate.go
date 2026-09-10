@@ -139,15 +139,14 @@ func (d *decompiler) translate(l icLine) []string {
 	// Control flow.
 	switch l.op {
 	case "j":
-		target := d.resolve(l.args[0])
-		if target == "ra" {
+		if d.resolve(l.args[0]) == "ra" {
 			return []string{"ret"}
 		}
-		return []string{"goto " + d.targetLabel(l, 0)}
+		return []string{d.jumpStatement(l, 0, false)}
 	case "jal":
-		return []string{"call " + d.targetLabel(l, 0)}
+		return []string{d.jumpStatement(l, 0, true)}
 	case "jr":
-		return []string{"goto " + d.targetLabel(l, 0)}
+		return []string{d.jumpStatement(l, 0, false)}
 	}
 
 	if cond, _, withRA, ok := ic10asm.BranchInfo(l.op); ok {
@@ -155,14 +154,35 @@ func (d *decompiler) translate(l icLine) []string {
 		if !ok {
 			return d.unsupported(l)
 		}
-		action := "goto "
-		if withRA {
-			action = "call "
-		}
-		return []string{fmt.Sprintf("if %s { %s%s }", expr, action, d.targetLabel(l, ic10asm.TargetIndex(cond)))}
+		stmt := d.jumpStatement(l, ic10asm.TargetIndex(cond), withRA)
+		return []string{fmt.Sprintf("if %s { %s }", expr, stmt)}
 	}
 
 	return d.unsupported(l)
+}
+
+// jumpStatement renders the jump performed by an instruction: a label goto/call
+// for constant targets, or a computed jump(expr) for register targets.
+func (d *decompiler) jumpStatement(l icLine, idx int, withRA bool) string {
+	_, relative, _, _ := ic10asm.BranchInfo(l.op)
+	if l.op == "jr" {
+		relative = true
+	}
+	if relative {
+		if off, err := strconv.Atoi(d.resolve(l.args[idx])); err == nil {
+			line := l.num + off
+			if withRA {
+				return "call " + d.labelOf(line)
+			}
+			return "goto " + d.labelOf(line)
+		}
+	} else if t, ok := d.absolute(l, idx); ok {
+		if withRA {
+			return "call " + d.labelOf(t)
+		}
+		return "goto " + d.labelOf(t)
+	}
+	return "jump(" + d.operand(l.args[idx]) + ")"
 }
 
 func (d *decompiler) argList(l icLine, start int) string {

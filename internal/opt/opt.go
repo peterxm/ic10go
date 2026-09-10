@@ -108,6 +108,8 @@ func termUses(t ir.Term) []ir.Value {
 		if v.Value != nil {
 			return []ir.Value{v.Value}
 		}
+	case *ir.JmpDyn:
+		return []ir.Value{v.Target}
 	}
 	return nil
 }

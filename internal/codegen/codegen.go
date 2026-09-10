@@ -17,6 +17,10 @@ const (
 	MaxLineLen = 90
 )
 
+// spillScratch is the physical register reserved for spill loads when the
+// allocator had to spill (the allocator then uses one fewer register).
+const spillScratch = "r15"
+
 type line struct {
 	text   string
 	target *ir.Block
@@ -32,6 +36,21 @@ func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
 	for i, b := range blocks {
 		start[b] = len(lines)
 		for _, ins := range b.Instrs {
+			if ls, ok := ins.(*ir.LoadSpill); ok {
+				dst := regName(ls.Dst, colors)
+				lines = append(lines,
+					line{text: "move " + spillScratch + " sp"},
+					line{text: "move sp " + strconv.Itoa(ls.Slot)},
+					line{text: "add sp sp 1"},
+					line{text: "peek " + dst},
+					line{text: "move sp " + spillScratch},
+				)
+				continue
+			}
+			if ss, ok := ins.(*ir.StoreSpill); ok {
+				lines = append(lines, line{text: "poke " + strconv.Itoa(ss.Slot) + " " + valueText(ss.Src, colors)})
+				continue
+			}
 			if text, ok := renderInstr(ins, colors); ok {
 				lines = append(lines, line{text: text})
 			}
@@ -53,6 +72,8 @@ func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
 			lines = append(lines, line{text: "jal ", target: t.Target})
 		case *ir.JmpRA:
 			lines = append(lines, line{text: "j ra"})
+		case *ir.JmpDyn:
+			lines = append(lines, line{text: "j " + valueText(t.Target, colors)})
 		case *ir.Br:
 			thenNext := t.Then == next
 			elseNext := t.Else == next

@@ -3,36 +3,86 @@ package ast
 import (
 	"strconv"
 	"strings"
+
+	"ic10go/internal/source"
 )
 
 // Format renders a file back to .icg source. It is intended for debugging.
 func Format(f *File) string {
-	p := &printer{}
+	return FormatComments(f, nil)
+}
+
+// FormatComments renders a file and interleaves the given comments.
+func FormatComments(f *File, comments []source.Comment) string {
+	p := &printer{comments: comments}
 	p.file(f)
 	return p.b.String()
 }
 
 type printer struct {
-	b      strings.Builder
-	indent int
+	b        strings.Builder
+	indent   int
+	comments []source.Comment
+	ci       int
 }
 
 func (p *printer) write(s string) { p.b.WriteString(s) }
 
 func (p *printer) nl() {
+	if p.b.Len() == 0 {
+		return
+	}
 	p.b.WriteByte('\n')
 	for i := 0; i < p.indent; i++ {
 		p.b.WriteString("    ")
 	}
 }
 
+// leading emits comments that appear before the given source line and reports
+// whether any were written.
+func (p *printer) leading(line int) bool {
+	wrote := false
+	for p.ci < len(p.comments) && p.comments[p.ci].Line < line {
+		c := p.comments[p.ci]
+		p.ci++
+		p.nl()
+		p.write(c.Text)
+		wrote = true
+	}
+	return wrote
+}
+
+// trailing appends trailing comments from the given source line.
+func (p *printer) trailing(line int) {
+	for p.ci < len(p.comments) && p.comments[p.ci].Line == line && p.comments[p.ci].Trailing {
+		c := p.comments[p.ci]
+		p.ci++
+		p.write("  " + c.Text)
+	}
+}
+
+func (p *printer) flushComments() {
+	for p.ci < len(p.comments) {
+		c := p.comments[p.ci]
+		p.ci++
+		p.nl()
+		p.write(c.Text)
+	}
+}
+
 func (p *printer) file(f *File) {
 	for i, d := range f.Decls {
+		had := p.leading(d.Pos().Line)
 		if i > 0 {
 			p.b.WriteByte('\n')
 		}
+		if had {
+			p.nl()
+		}
 		p.decl(d)
+		p.trailing(d.Pos().Line)
 	}
+	p.flushComments()
 	p.b.WriteByte('\n')
 }
 
@@ -78,8 +128,10 @@ func (p *printer) block(b *BlockStmt) {
 	p.write("{")
 	p.indent++
 	for _, s := range b.List {
+		p.leading(s.Pos().Line)
 		p.nl()
 		p.stmt(s)
+		p.trailing(s.Pos().Line)
 	}
 	p.indent--
 	p.nl()

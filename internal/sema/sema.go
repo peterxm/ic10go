@@ -3,8 +3,10 @@ package sema
 
 import (
 	"math"
+	"strconv"
 
 	"ic10go/internal/ast"
+	"ic10go/internal/builtin"
 	"ic10go/internal/diag"
 	"ic10go/internal/token"
 )
@@ -15,16 +17,18 @@ type FuncInfo struct {
 }
 
 type Info struct {
-	Consts map[string]float64
-	Funcs  map[string]*FuncInfo
-	Main   *ast.FuncDecl
+	Consts    map[string]float64
+	RawConsts map[string]string
+	Funcs     map[string]*FuncInfo
+	Main      *ast.FuncDecl
 }
 
 // Check resolves declarations and evaluates constants.
 func Check(file *ast.File, diags *diag.Bag) *Info {
 	info := &Info{
-		Consts: map[string]float64{},
-		Funcs:  map[string]*FuncInfo{},
+		Consts:    map[string]float64{},
+		RawConsts: map[string]string{},
+		Funcs:     map[string]*FuncInfo{},
 	}
 
 	for _, d := range file.Decls {
@@ -34,8 +38,16 @@ func Check(file *ast.File, diags *diag.Bag) *Info {
 				diags.Errorf(d.Name.Pos(), "constant %q redeclared", d.Name.Name)
 				continue
 			}
+			if _, exists := info.RawConsts[d.Name.Name]; exists {
+				diags.Errorf(d.Name.Pos(), "constant %q redeclared", d.Name.Name)
+				continue
+			}
 			if _, exists := info.Funcs[d.Name.Name]; exists {
 				diags.Errorf(d.Name.Pos(), "constant %q conflicts with a function", d.Name.Name)
+				continue
+			}
+			if raw, ok := EvalRaw(d.Value); ok {
+				info.RawConsts[d.Name.Name] = raw
 				continue
 			}
 			v, ok := Eval(d.Value, info.Consts)
@@ -141,6 +153,23 @@ func Eval(e ast.Expr, consts map[string]float64) (float64, bool) {
 	return 0, false
 }
 
+// EvalRaw evaluates an expression to a raw IC10 constant such as STR("...").
+func EvalRaw(e ast.Expr) (string, bool) {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return "", false
+	}
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok || id.Name != "str" || len(call.Args) != 1 {
+		return "", false
+	}
+	s, ok := call.Args[0].(*ast.StringLit)
+	if !ok {
+		return "", false
+	}
+	return "STR(" + strconv.Quote(s.Value) + ")", true
+}
+
 func evalBinary(e *ast.BinaryExpr, consts map[string]float64) (float64, bool) {
 	x, ok := Eval(e.X, consts)
 	if !ok {
@@ -211,6 +240,15 @@ func evalBinary(e *ast.BinaryExpr, consts map[string]float64) (float64, bool) {
 func evalCall(e *ast.CallExpr, consts map[string]float64) (float64, bool) {
 	id, ok := e.Fun.(*ast.Ident)
 	if !ok {
+		return 0, false
+	}
+	// hash("...") is a compile-time CRC-32; handle before evaluating args.
+	if id.Name == "hash" {
+		if len(e.Args) == 1 {
+			if s, ok := e.Args[0].(*ast.StringLit); ok {
+				return float64(builtin.Hash(s.Value)), true
+			}
+		}
 		return 0, false
 	}
 	args := make([]float64, len(e.Args))

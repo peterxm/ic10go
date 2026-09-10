@@ -87,6 +87,51 @@ func TestMainWithParamsRejected(t *testing.T) {
 	}
 }
 
+func TestUndefinedLabelRejected(t *testing.T) {
+	_, diags, _ := ic10.Compile("test.icg", []byte("func main() { goto nope; d0.On = 1 }\n"))
+	if !diags.HasErrors() {
+		t.Fatal("expected an undefined label error")
+	}
+}
+
+func TestDuplicateLabelRejected(t *testing.T) {
+	src := "func main() { label a:; d0.On = 1; label a:; d0.Open = 1 }\n"
+	_, diags, _ := ic10.Compile("test.icg", []byte(src))
+	if !diags.HasErrors() {
+		t.Fatal("expected a duplicate label error")
+	}
+}
+
+func TestConstHashAndStr(t *testing.T) {
+	code := mustCompile(t, "const H = hash(\"StructureBattery\")\nconst M = str(\"Ready!\")\nfunc main() { d0.Setting = H; d1.Setting = M }\n")
+	if !strings.Contains(code, "s d0 Setting ") {
+		t.Errorf("const hash not folded:\n%s", code)
+	}
+	if !strings.Contains(code, `STR("Ready!")`) {
+		t.Errorf("const str not emitted:\n%s", code)
+	}
+}
+
+func TestJumpBuiltin(t *testing.T) {
+	code := mustCompile(t, "func main() { x := 3\n jump(x)\n d0.On = 1 }\n")
+	if !strings.Contains(code, "j r") {
+		t.Errorf("computed jump not emitted:\n%s", code)
+	}
+}
+
+func TestUnknownLogicTypeWarns(t *testing.T) {
+	_, diags, _ := ic10.Compile("test.icg", []byte("func main() { d0.Temperatur = 1 }\n"))
+	if diags.HasErrors() {
+		t.Fatal("a typo should warn, not error")
+	}
+	if len(diags.Diags) == 0 {
+		t.Fatal("expected a warning for an unknown logic type")
+	}
+	if !strings.Contains(diags.Diags[0].Msg, "unknown logic type") {
+		t.Errorf("unexpected diagnostic: %s", diags.Diags[0].Msg)
+	}
+}
+
 func mustCompile(t *testing.T, src string) string {
 	t.Helper()
 	code, diags, err := ic10.Compile("test.icg", []byte(src))

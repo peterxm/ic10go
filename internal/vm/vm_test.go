@@ -81,3 +81,14 @@ func TestEmptyBatchAverageIsNaN(t *testing.T) {
 		t.Errorf("empty average = %v, want NaN", m.Get("d0", "A"))
 	}
 }
+
+func TestExtIns(t *testing.T) {
+	m := run(t, "move r0 4660\next r1 r0 8 8\ns d0 A r1", 10)
+	if got := m.Get("d0", "A"); got != 18 {
+		t.Errorf("ext = %v, want 18", got)
+	}
+	m = run(t, "move r0 0\nins r0 171 8 8\ns d0 B r0", 10)
+	if got := m.Get("d0", "B"); got != 171*256 {
+		t.Errorf("ins = %v, want %v", got, 171*256)
+	}
+}

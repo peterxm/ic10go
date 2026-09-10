@@ -1,23 +1,23 @@
 l r0 d0 Activate
-select r0 r0 1 2
-seq r1 r0 1
-beqz r1 6
+select r2 r0 1 2
+seq r0 r2 1
+beqz r0 6
 s d1 On 1
 j 13
-seq r1 r0 2
-bnez r1 10
-seq r1 r0 3
-beqz r1 12
+seq r0 r2 2
+bnez r0 10
+seq r0 r2 3
+beqz r0 12
 s d1 On 0
 j 13
 s d1 On -1
-abs r1 -16
-sqrt r1 r1
-min r2 3 5
-mul r2 r2 2
-add r1 r1 r2
-s d2 Setting r1
-and r0 r0 3
+abs r0 -16
+sqrt r1 r0
+min r0 3 5
+mul r0 r0 2
+add r0 r1 r0
+s d2 Setting r0
+and r0 r2 3
 or r0 r0 1
 s d2 Mode r0
 sleep 0.5
