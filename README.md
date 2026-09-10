@@ -98,6 +98,7 @@ go test ./...
 - VM 端到端：编译后在 `internal/vm` 中执行并断言设备状态
 - 覆盖：寄存器复用、比较融合、select、死代码消除、批量聚合、栈、通道、槽位、真实脚本 `solar_tracker`
 - 工具：`fmt` 幂等性、`stats`、`disasm`、LSP 诊断与补全
+- 真实脚本：`ic10code/` 下每个 `.ic`/`.ic10` 都做**反编译→重编译→设备写入序列对比**（`TestIc10CodeRoundTrip`）与 **minify 等价性**（`TestMinifyIc10Code`）
 
 ## 文档
 

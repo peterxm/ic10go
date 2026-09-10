@@ -72,6 +72,8 @@ type Machine struct {
 	order   []*Device
 	// Trace, when non-nil, receives one line per executed instruction.
 	Trace io.Writer
+	// OnWrite, when non-nil, is called for every device logic write.
+	OnWrite func(dev, logic string, v float64)
 	// LogicByID maps IC10 logicType enum values to names, used to resolve
 	// runtime (register) logic type operands.
 	LogicByID map[int]string
@@ -443,7 +445,12 @@ func (m *Machine) execOp(ins *Instr) error {
 		m.Regs[dst] = m.Device(a[1]).Values[m.logicName(a[2])]
 		return nil
 	case "s":
-		m.Device(a[0]).Values[m.logicName(a[1])] = mustNum(m, a[2])
+		logic := m.logicName(a[1])
+		v := mustNum(m, a[2])
+		m.Device(a[0]).Values[logic] = v
+		if m.OnWrite != nil {
+			m.OnWrite(a[0], logic, v)
+		}
 		return nil
 	case "ls":
 		dst, _ := m.reg(a[0])
@@ -873,20 +880,20 @@ func (m *Machine) batchLoad(op string, a []string) error {
 	switch op {
 	case "lb":
 		logic = a[2]
-		mode = mustNum(m, a[3])
+		mode = m.batchMode(a[3])
 	case "lbn":
 		nameHash = mustNum(m, a[2])
 		logic = a[3]
-		mode = mustNum(m, a[4])
+		mode = m.batchMode(a[4])
 	case "lbs":
 		slot = mustNum(m, a[2])
 		logic = a[3]
-		mode = mustNum(m, a[4])
+		mode = m.batchMode(a[4])
 	case "lbns":
 		nameHash = mustNum(m, a[2])
 		slot = mustNum(m, a[3])
 		logic = a[4]
-		mode = mustNum(m, a[5])
+		mode = m.batchMode(a[5])
 	}
 	devs := m.matching(hash, nameHash)
 	var vals []float64
@@ -901,6 +908,22 @@ func (m *Machine) batchLoad(op string, a []string) error {
 	}
 	m.Regs[dst] = aggregate(int(mode), vals)
 	return nil
+}
+
+// batchMode resolves a batch aggregation mode, which may be a name
+// (Average/Sum/Minimum/Maximum) or a numeric expression.
+func (m *Machine) batchMode(s string) float64 {
+	switch s {
+	case "Average":
+		return 0
+	case "Sum":
+		return 1
+	case "Minimum":
+		return 2
+	case "Maximum":
+		return 3
+	}
+	return mustNum(m, s)
 }
 
 func aggregate(mode int, vals []float64) float64 {
@@ -969,6 +992,9 @@ func (m *Machine) batchStore(op string, a []string) error {
 			d.Slots[int(slot)][logic] = value
 		} else {
 			d.Values[logic] = value
+			if m.OnWrite != nil {
+				m.OnWrite(d.Name, logic, value)
+			}
 		}
 	}
 	return nil
