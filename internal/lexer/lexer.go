@@ -314,9 +314,30 @@ func (l *Lexer) scanNumber(start source.Pos) token.Token {
 				}
 			}
 		}
+		// Optional unit suffix on a decimal literal: 20c, 20.1MPa, 101.3kPa.
+		if n := l.unitSuffix(); n > 0 {
+			l.off += n
+		}
 	}
 	text := string(l.src[start.Offset:l.off])
 	return token.Token{Kind: token.Number, Text: text, Pos: start}
+}
+
+// unitSuffix returns the length of a recognized unit suffix at the current
+// position, or 0. The suffix must be followed by a non-identifier byte so that
+// e.g. "20count" is not read as "20c" + "ount".
+func (l *Lexer) unitSuffix() int {
+	for _, u := range token.Units {
+		n := len(u.Name)
+		if l.off+n > len(l.src) || string(l.src[l.off:l.off+n]) != u.Name {
+			continue
+		}
+		if c := l.peekAt(n); isLetter(c) || isDigit(c) || c == '_' {
+			continue
+		}
+		return n
+	}
+	return 0
 }
 
 func (l *Lexer) scanString(start source.Pos) token.Token {

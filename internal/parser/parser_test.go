@@ -95,3 +95,33 @@ func TestParseErrors(t *testing.T) {
 		t.Fatal("expected errors")
 	}
 }
+
+func TestParseUnits(t *testing.T) {
+	cases := []struct {
+		in   string
+		want float64
+	}{
+		// temperature -> K
+		{"20c", 293.15},
+		{"68f", 293.15},
+		{"300k", 300},
+		{"0c", 273.15},
+		{"32F", 273.15},
+		{"1.5C", 274.65},
+		// pressure -> kPa
+		{"20.1MPa", 20100},
+		{"101.3kPa", 101.3},
+		{"101325Pa", 101.325},
+		{"1bar", 100},
+		{"1MPa", 1000},
+		// plain numbers
+		{"42", 42},
+		{"0x1f", 31},
+		{"0b10", 2},
+	}
+	for _, c := range cases {
+		if got := parseNumber(c.in); got != c.want {
+			t.Errorf("parseNumber(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}

@@ -576,6 +576,9 @@ func base(pos source.Pos) ast.NodeBase { return ast.NodeBase{Pos_: pos} }
 
 func parseNumber(text string) float64 {
 	s := strings.ReplaceAll(text, "_", "")
+	if v, ok := token.ConvertUnit(s); ok {
+		return v
+	}
 	switch {
 	case strings.HasPrefix(s, "0x"), strings.HasPrefix(s, "0X"):
 		if v, err := strconv.ParseUint(s[2:], 16, 64); err == nil {

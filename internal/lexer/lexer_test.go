@@ -111,3 +111,42 @@ func TestOperators(t *testing.T) {
 		}
 	}
 }
+
+func TestUnitSuffix(t *testing.T) {
+	toks, diags := lex(t, "20c 68f 300k 1.5C 20.1MPa 101.3kPa 101325Pa 1bar 0x1f 0b10")
+	if diags.HasErrors() {
+		t.Fatalf("unexpected errors: %v", diags.Diags)
+	}
+	var texts []string
+	for _, tk := range toks {
+		if tk.Kind == token.Number {
+			texts = append(texts, tk.Text)
+		}
+	}
+	want := []string{"20c", "68f", "300k", "1.5C", "20.1MPa", "101.3kPa", "101325Pa", "1bar", "0x1f", "0b10"}
+	if len(texts) != len(want) {
+		t.Fatalf("number texts = %v, want %v", texts, want)
+	}
+	for i := range want {
+		if texts[i] != want[i] {
+			t.Fatalf("number texts = %v, want %v", texts, want)
+		}
+	}
+}
+
+func TestUnitSuffixBoundary(t *testing.T) {
+	// A suffix must not swallow the start of a following identifier.
+	toks, _ := lex(t, "20count 5price")
+	want := []token.Kind{
+		token.Number, token.Ident, token.Number, token.Ident, token.Semicolon, token.EOF,
+	}
+	got := kinds(toks)
+	if len(got) != len(want) {
+		t.Fatalf("kinds = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("kinds = %v, want %v", got, want)
+		}
+	}
+}

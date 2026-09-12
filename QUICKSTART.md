@@ -111,7 +111,8 @@ ic10c -L zh --help      # 强制中文
 ### 常量与变量
 
 ```go
-const MaxTemp = 296.15
+const MaxTemp = 23c       // 摄氏；编译期换算为开尔文 296.15
+const MaxPre  = 20.1MPa   // 兆帕；编译期换算为千帕 20100
 const (
     PreMax = 45000
     PreMin = 40000
@@ -124,6 +125,8 @@ func main() {
     d0.On = on
 }
 ```
+
+> 单位后缀：温度 `c`（摄氏）、`f`（华氏）、`k`（开尔文，默认单位）→ 开尔文；压力 `Pa` / `kPa`（默认单位）/ `MPa` / `bar` / `psi` → 千帕。编译期换算。
 
 ### 设备读写
 
