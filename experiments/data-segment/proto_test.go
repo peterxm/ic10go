@@ -40,6 +40,11 @@ func run(t *testing.T, m *vm.Machine, steps int) {
 // TestBarsielDataSegment verifies the two-program workflow: the loader fills
 // the persistent stack, then a separate runtime reads it via get(db, addr).
 func TestBarsielDataSegment(t *testing.T) {
+	// The Barsiel prototype is derived from a third-party community script and
+	// is not distributed with the repository.
+	if _, err := os.Stat("barsiel_loader.icg"); err != nil {
+		t.Skip("barsiel prototype files not present (third-party, not in this repo)")
+	}
 	// 1. Run the loader once.
 	loader := compileAndLoad(t, "barsiel_loader.icg")
 	run(t, loader, 200)

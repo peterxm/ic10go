@@ -511,8 +511,7 @@ func main() {
   （本地 `poke`/`peek`）。
 - `ic10c stats` 会显示 `data slots a..b` 与 `push`/`poke` 冲突警告。
 
-完整细节见 [`docs/data-segment.md`](docs/data-segment.md) 与
-[`ic10code/Adv_Airlock_Smol.icg`](ic10code/Adv_Airlock_Smol.icg)（用数据段存逻辑类型的例子）。
+完整细节见 [`docs/data-segment.md`](docs/data-segment.md)；本地 `ic10code/` 语料里有一个用数据段存逻辑类型的 airlock 端口示例（第三方，未随仓库分发）。
 
 ---
 
@@ -839,8 +838,7 @@ ic10c lsp                    # 语言服务器
 - 语言细节：[`docs/spec.md`](docs/spec.md)
 - IC10 指令与约束：[`docs/target-ic10.md`](docs/target-ic10.md)
 - 编译器架构：[`docs/architecture.md`](docs/architecture.md)
-- 真实脚本示例：[`ic10code/`](ic10code/)（手工改写并测试过的 `.icg`，与原 `.ic` 做 VM 等价性验证）
+- 真实脚本示例：本地 `ic10code/` 语料（第三方，未随仓库分发；手工改写并测试过的 `.icg`，与原 `.ic` 做 VM 等价性验证）
 - 编辑器支持：[`editors/vscode/`](editors/vscode/)（语法/语义高亮 + 片段 + 诊断 + 上下文补全 + 大纲/折叠/引用/重命名/参数提示/快速修复 + 编译预览 + VM 运行）
 
-最好的学习方式：打开 `ic10code/` 里一个真实脚本，对照它同目录的原始 `.ic`，
-再用 `./ic10c build` 看编译结果。
+最好的学习方式：如果你本地有 `ic10code/` 语料，打开一个真实脚本，对照它同目录的原始 `.ic`，再用 `./ic10c build` 看编译结果。

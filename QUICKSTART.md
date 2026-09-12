@@ -319,4 +319,4 @@ sh editors/vscode/install.sh      # 2. 安装扩展
 - 语言规范：[`docs/spec.md`](docs/spec.md)
 - 编译器架构与里程碑：[`docs/architecture.md`](docs/architecture.md)
 - IC10 目标约束与指令映射：[`docs/target-ic10.md`](docs/target-ic10.md)
-- IC10 指令参考：[`Stationeers_IC10_参考文档.md`](Stationeers_IC10_参考文档.md)
+- IC10 指令参考：`Stationeers_IC10_参考文档.md`（第三方资料，仅本地保留、未随仓库分发）

@@ -41,6 +41,7 @@ func portSetup(m *vm.Machine) {
 // TestIc10CodePorts runs every hand-written port next to its original .ic
 // script and checks that they leave the devices in the same state.
 func TestIc10CodePorts(t *testing.T) {
+	requireIc10Code(t)
 	var ports []string
 	err := filepath.Walk("../../ic10code", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -55,7 +56,7 @@ func TestIc10CodePorts(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(ports) == 0 {
-		t.Fatal("no .icg ports found")
+		t.Skip("no .icg ports found")
 	}
 	for _, port := range ports {
 		t.Run(filepath.Base(port), func(t *testing.T) {

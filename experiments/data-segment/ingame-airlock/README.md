@@ -5,9 +5,9 @@ runtime 不再 `poke` 逻辑类型，而是用 `LogicTable[i]` 读。请按下�
 
 ## 0. 被测对象
 
-- 端口源码：`ic10code/Adv_Airlock_Smol.icg`（63 行，数据段 `503..511`）
-- 原始脚本：`ic10code/Adv_Airlock_Smol.ic`
-- 生成命令（本目录两份 `.ic` 已生成好）：
+- 端口源码：本地 `ic10code/Adv_Airlock_Smol.icg`（63 行，数据段 `503..511`；第三方端口，未随仓库分发）
+- 原始脚本：本地 `ic10code/Adv_Airlock_Smol.ic`
+- 生成命令（两份 `.ic` 在本地生成，未随仓库分发）：
 
   ```bash
   ic10c build --data-only "ic10code/Adv_Airlock_Smol.icg" > 1_loader.ic
@@ -133,7 +133,7 @@ j 5
 | 覆盖成 runtime 后 | **不停机**（版本校验通过），气闸状态机运行 |
 | 状态机运行 | 根据门/通风控制位与 `d4.Pressure` 切换相位，写 `d0/d3.Mode`、`d1/d2.Mode`，并把相位位写回 `d3.Setting`、`d0.Setting`、`d3.Open`、`d2.On`、`d1.On`、`d0.Open` |
 
-对照原脚本 `ic10code/Adv_Airlock_Smol.ic`（或旧端口）应得到相同的设备写入行为。
+对照本地原脚本 `ic10code/Adv_Airlock_Smol.ic`（或旧端口）应得到相同的设备写入行为。
 
 ## 5. 如何单独确认数据段生效
 

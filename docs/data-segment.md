@@ -12,11 +12,11 @@ IC10 的程序上限是 **128 行 / 4 KiB**，这是 `.icg` 编译器设计的�
 当前编译器已经做了很多行数优化（寄存器复用、常量内联、CSE、分支融合、
 寄存器溢出到栈等），但仍有两类内容天然占行数：
 
-1. **大查表**：例如 `Barsiel_s HASH IC Script` 的 17 路 `switch`
+1. **大查表**：例如一个 17 路 `switch` 查表脚本
    （矿石编号 → 显示哈希 + 比热），展开成比较链要 ~85 行。
 2. **大块常量数据**：hash 表、字符串表、配置表等。
 
-而 IC10 有一条被低估的特性：**栈是持久的**。参考文档（第 168 行）明确写道：
+而 IC10 有一条被低估的特性：**栈是持久的**。游戏参考文档（第三方资料，仅本地，第 168 行）明确写道：
 
 > 栈内存在逻辑芯片上是**持久**的：即使推送值的代码被移除，栈仍保留那些值。
 
@@ -241,10 +241,9 @@ ic10c build --split-data main.icg
 ## 8. 最小验证原型
 
 已在 [`experiments/data-segment/`](../experiments/data-segment/) 完成手工验证
-（不改语言），用现成的 `Barsiel_s HASH IC Script`（17 路查表）：
+（不改语言），用一个现成的 17 路查表脚本（第三方，本地原型文件未随仓库分发）：
 
-1. 手工拆成 `barsiel_loader.icg`（写表 + 哨兵）与 `barsiel_runtime.icg`
-   （`get(db, base+idx)`）。
+1. 手工拆成 loader（写表 + 哨兵）与 runtime（`get(db, base+idx)`）。
 2. 量化结果：
 
    | 产物 | 行数 |
@@ -372,8 +371,8 @@ func main() {
 - ✅ `--auto-table`（默认关闭）：自动表化满足条件的普通 `switch`（密集整数、
   ≥5 个 case、纯常量赋值、表 ≤64），并对每处表化给出“需先安装 loader”的警告。
 - ✅ `data` 表元素支持游戏枚举名（如 `LogicType.Open`），loader 原样写入。
-  示例：`ic10code/Adv_Airlock_Smol.icg` 用 `data LogicTable` 存逻辑类型，
-  省去运行时 `poke`。
+  示例：本地的 airlock 端口用 `data LogicTable` 存逻辑类型（该第三方端口未随
+  仓库分发），省去运行时 `poke`。
 
 真机验证：标准 IC host 下 loader → runtime 读表成功；设备 host（空调）
 `put db` 报 `MemoryNotWriteable`（见 §11）。
@@ -442,8 +441,8 @@ VSCode 扩展：
 
 ## 12. 参考
 
-- `Stationeers_IC10_参考文档.md`：栈内存（第 152–168 行）、栈遍历、
-  内部栈编程。
+- `Stationeers_IC10_参考文档.md`（第三方资料，仅本地）：栈内存（第 152–168 行）、
+  栈遍历、内部栈编程。
 - `docs/spec.md` 7.7 设备栈 / 按 id、8.3 栈。
 - `internal/regalloc/regalloc.go:20`：溢出槽从 511 向下。
 - `internal/builtin/builtin.go:158-165`：`get/put/getd/putd/clr`。

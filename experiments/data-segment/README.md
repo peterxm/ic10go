@@ -1,16 +1,18 @@
 # 持久栈数据段 — 最小验证原型
 
 对应 [`docs/data-segment.md`](../../docs/data-segment.md) 第 8 节的验证。
-用现成的 `Barsiel_s HASH IC Script`（17 路查表）手工拆成 loader + runtime，
-量行数、跑通两段流程，并确认 VM 能预置栈、`get(db, addr)` 可跨程序读取。
+用一个现成的第三方 17 路查表脚本（`Barsiel_s HASH IC Script`，仅本地保留、
+未随仓库分发）手工拆成 loader + runtime，量行数、跑通两段流程，并确认 VM 能
+预置栈、`get(db, addr)` 可跨程序读取。
 
 ## 文件
 
 | 文件 | 作用 |
 |------|------|
-| `barsiel_loader.icg` | 装载器：把 `ore -> (显示哈希, 比热)` 表 + 版本哨兵写入 `db` 栈，运行一次 |
-| `barsiel_runtime.icg` | 运行时：原 Barsiel 端口去掉 `loadTable()`，用 `get(db, ...)` 读表 |
-| `proto_test.go` | 闭环测试：先跑 loader，再把栈交给 runtime，验证查表结果 |
+| `barsiel_loader.icg`（本地，未入库） | 装载器：把 `ore -> (显示哈希, 比热)` 表 + 版本哨兵写入 `db` 栈，运行一次 |
+| `barsiel_runtime.icg`（本地，未入库） | 运行时：原 Barsiel 端口去掉 `loadTable()`，用 `get(db, ...)` 读表 |
+| `barsiel_datatable.icg`（本地，未入库） | 新 `data` 语法版 runtime |
+| `proto_test.go` | 闭环测试：先跑 loader，再把栈交给 runtime，验证查表结果（文件缺失时自动跳过） |
 
 槽位约定：`0..16` 显示哈希，`17..33` 比热，`34` 版本哨兵。
 
@@ -21,11 +23,11 @@
 | 原来的合并端口（loader 内联） | 94 |
 | 拆出的 **runtime**（手写 loader/runtime） | **60** |
 | 拆出的 **loader**（只跑一次，不计入 runtime 预算） | 35 |
-| `data` 语法版 runtime（`barsiel_datatable.icg`，含版本校验） | **65** |
+| `data` 语法版 runtime（本地 `barsiel_datatable.icg`，含版本校验） | **65** |
 
 runtime 从 94 → 60/65 行，**省下约 30 行**，剩余预算从 34 行涨到 63 行。
 
-`barsiel_datatable.icg` 演示了新语法：两个 `data` 表，runtime 用
+本地的 `barsiel_datatable.icg`（未入库）演示了新语法：两个 `data` 表，runtime 用
 `RecipeDisplay[ore-1]` / `RecipeHeat[ore-1]` 读表，loader 由
 `ic10c build --split-data` 生成（35 行，含版本哨兵）。
 

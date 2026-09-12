@@ -13,6 +13,7 @@ import (
 // TestMinifyIc10Code minifies every real IC10 script and checks that it leaves
 // the devices in the same state as the original.
 func TestMinifyIc10Code(t *testing.T) {
+	requireIc10Code(t)
 	var files []string
 	err := filepath.Walk("../../ic10code", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -30,7 +31,7 @@ func TestMinifyIc10Code(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(files) == 0 {
-		t.Fatal("no IC10 scripts found")
+		t.Skip("no IC10 scripts found")
 	}
 	for _, f := range files {
 		t.Run(filepath.Base(f), func(t *testing.T) {
