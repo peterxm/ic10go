@@ -1,0 +1,95 @@
+// 气闸控制（按截图版结构重写）：配置预置，无 prep，状态机式 step。
+// 每个气闸一个状态槽 + 一个方向槽；方向 0 = 出去（目标 0），1 = 进来（目标 50）。
+const (
+    AIRLOCKS = 2
+    IDLE = 0
+    DEPRESSURIZE = 1
+    PRESSURIZE = 2
+
+    TargetIn = 50
+    TargetOut = 0
+
+    Door = -793837322
+    ActiveVent = -1129453144
+    FlashingLight = 797794350
+    GasSensor = -1252983604
+)
+
+data DoorIn = [
+    hash("Power Station"),
+    hash("DoorInEast"),
+]
+data DoorOut = [
+    hash("Airlock West"),
+    hash("DoorOutEast"),
+]
+data VentIn = [
+    hash("VentInWest"),
+    hash("VentInEast"),
+]
+data VentOut = [
+    hash("VentOutWest"),
+    hash("VentOutEast"),
+]
+data Light = [
+    hash("LightWest"),
+    hash("LightEast"),
+]
+data Sensor = [
+    hash("SensorWest"),
+    hash("SensorEast"),
+]
+
+func main() {
+    for {
+        yield()
+        for i := 0; i < AIRLOCKS; i++ {
+            step(i)
+        }
+    }
+}
+
+func step(i num) {
+    state := get(db, i)
+    if state == IDLE {
+        if batch.readName(Door, DoorIn[i], "Setting", "Maximum") != batch.readName(Door, DoorOut[i], "Setting", "Maximum") {
+            return
+        }
+        out := batch.readName(Door, DoorIn[i], "Open", "Maximum") != 0
+        put(db, AIRLOCKS + i, out ? 0 : 1)
+        put(db, i, DEPRESSURIZE)
+        return
+    }
+    dir := get(db, AIRLOCKS + i)
+    closeDoor := dir == 0 ? DoorIn[i] : DoorOut[i]
+    closeVent := dir == 0 ? VentIn[i] : VentOut[i]
+    openDoor := dir == 0 ? DoorOut[i] : DoorIn[i]
+    openVent := dir == 0 ? VentOut[i] : VentIn[i]
+    target := dir == 0 ? TargetOut : TargetIn
+    if state == DEPRESSURIZE {
+        batch.writeName(Door, closeDoor, "Open", 0)
+        batch.writeName(ActiveVent, closeVent, "Mode", 1)
+        batch.writeName(ActiveVent, closeVent, "On", 1)
+        batch.writeName(FlashingLight, Light[i], "On", 1)
+        if batch.readName(GasSensor, Sensor[i], "Pressure", "Maximum") != 0 {
+            return
+        }
+        batch.writeName(ActiveVent, closeVent, "On", 0)
+        if target == TargetOut {
+            batch.writeName(Door, openDoor, "Open", 1)
+            batch.writeName(FlashingLight, Light[i], "On", 0)
+            put(db, i, IDLE)
+        } else {
+            batch.writeName(ActiveVent, openVent, "Mode", 0)
+            batch.writeName(ActiveVent, openVent, "On", 1)
+            put(db, i, PRESSURIZE)
+        }
+        return
+    }
+    if batch.readName(GasSensor, Sensor[i], "Pressure", "Maximum") >= target {
+        batch.writeName(Door, openDoor, "Open", 1)
+        batch.writeName(ActiveVent, openVent, "On", 0)
+        batch.writeName(FlashingLight, Light[i], "On", 0)
+        put(db, i, IDLE)
+    }
+}
