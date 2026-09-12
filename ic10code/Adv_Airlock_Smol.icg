@@ -8,76 +8,86 @@
 //
 // d0=exterior door, d1=exterior vent, d2=interior vent, d3=interior door,
 // d4=pressure sensor.
-
-const (
-    pressureIn = 100
-    pressureEx = 0
-
-    doorEx = d0
-    ventEx = d1
-    ventIn = d2
-    doorIn = d3
-    sensor = d4
-)
-
+const pressureIn = 100
+const pressureEx = 0
+const doorEx = d0
+const ventEx = d1
+const ventIn = d2
+const doorIn = d3
+const sensor = d4
 // Logic type read/written for each device, in stack order (0 = no-op slot).
-data LogicTable = [
-    LogicType.Open,    // 0
-    LogicType.On,      // 1
-    LogicType.On,      // 2
-    LogicType.Open,    // 3
-    LogicType.Setting, // 4
-    0,                 // 5
-    0,                 // 6
-    LogicType.Setting, // 7
-]
+
+data LogicTable = [LogicType.Open, LogicType.On, LogicType.On, LogicType.Open, LogicType.Setting, 0, 0, LogicType.Setting]
+// 0
+// 1
+// 2
+// 3
+// 4
+// 5
+// 6
+// 7
 
 func main() {
     var state = 0
     var inVentMode = 0
     var pressure = 0
     var doorTriggered = 0
-
     label main:
     yield()
     inVentMode = ventIn.Mode
     pressure = sensor.Pressure
-
     // Build the phase bits from the devices.
     var i = 8
     label load:
     i = i - 1
     logicType := LogicTable[i]
-    if logicType == 0 { goto loaded }
+    if logicType == 0 {
+        goto loaded
+    }
     device := i % 4
     state = ins(readDev(device, logicType), i, 1)
     label loaded:
-    if i > 0 { goto load }
-
+    if i > 0 {
+        goto load
+    }
     doorTriggered = ((state >> 4) ^ state) & 9
     state = state & 15
-
     // Rotate until exactly one valid phase bit is set.
     label loop:
     temp := state & 8
     temp = (temp != 0 ? 14 : 15)
     state = state & temp
-    if state == 0 { goto main }
+    if state == 0 {
+        goto main
+    }
     temp = (state - 1) & state
-    if temp != 0 { goto main }
+    if temp != 0 {
+        goto main
+    }
     temp = state & 9
     device = state >> 3
     inVentMode = (temp != 0 ? device : inVentMode)
-    if doorTriggered != 0 { goto trigger }
-    if temp != 0 { goto end }
+    if doorTriggered != 0 {
+        goto trigger
+    }
+    if temp != 0 {
+        goto end
+    }
     temp = 2 << inVentMode
-    if state != temp { goto checkPressure }
-    if pressure == 0 { goto trigger }
+    if state != temp {
+        goto checkPressure
+    }
+    if pressure == 0 {
+        goto trigger
+    }
     label checkPressure:
-    if state == temp { goto end }
+    if state == temp {
+        goto end
+    }
     temp = (inVentMode != 0 ? pressureEx : pressureIn)
-    if pressure >= temp { goto trigger }
-
+    if pressure >= temp {
+        goto trigger
+    }
     // Apply the phase and publish the bits back to the devices.
     label end:
     state = ins(state, 4, 4)
@@ -89,13 +99,16 @@ func main() {
     label store:
     i = i - 1
     logicType = LogicTable[i]
-    if logicType == 0 { goto stored }
+    if logicType == 0 {
+        goto stored
+    }
     device = i % 4
     writeDev(device, logicType, (state >> i) & 1)
     label stored:
-    if i > 0 { goto store }
+    if i > 0 {
+        goto store
+    }
     goto main
-
     // Shift the active phase and re-check.
     label trigger:
     doorTriggered = 0

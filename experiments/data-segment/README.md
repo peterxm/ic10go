@@ -55,9 +55,18 @@ runtime 从 94 → 60/65 行，**省下约 30 行**，剩余预算从 34 行涨�
 - **地址分区**：数据段与本地栈共享同一空间，要避开 `sp` 增长区与寄存器
   溢出槽（511 向下，见 `internal/regalloc/regalloc.go:20`）。
 
+## 真机测试目录
+
+| 目录 | 内容 |
+|------|------|
+| `ingame/` | 栈持久性、`poke`↔`get db` 语义（6 段） |
+| `ingame-data/` | `data` 表 loader/runtime 两段流程 |
+| `ingame-switch/` | `switch ... table` 自动表化 |
+| `ingame-stack/` | `--data-access stack`（兼容设备 host） |
+| `ingame-airlock/` | **Adv_Airlock_Smol 数据段端口**（详细步骤见该目录 README） |
+
 ## 下一步
 
-确认真机语义后，再定：
-1. `.icg` 的数据声明语法（`data` 表 / 标注 `switch` 自动表化）；
-2. CLI 输出（`--split-data` / `--data-file`）与 VSCode “安装数据段”命令；
-3. 地址分区与版本哨兵约定。
+已全部落地：`.icg` 的 `data` 表语法、`switch ... table`、`--split-data`/
+`--data-only`/`--data-access`/`--data-layout`/`--unsafe`/`--auto-table`、
+VSCode “安装数据段”命令、地址分区与版本哨兵约定。
