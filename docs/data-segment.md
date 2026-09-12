@@ -224,15 +224,28 @@ ic10c build --split-data main.icg
 
 ## 8. 最小验证原型
 
-在不改语言的前提下，先手工验证收益与流程：
+已在 [`experiments/data-segment/`](../experiments/data-segment/) 完成手工验证
+（不改语言），用现成的 `Barsiel_s HASH IC Script`（17 路查表）：
 
-1. 取 `Barsiel_s HASH IC Script`（现成的 17 路查表）。
-2. 手工拆成 loader（写表 + 哨兵）与 runtime（`get(db, base+idx)`）。
-3. 量化：
-   - runtime 行数相对现状（~85 行查表）的下降；
-   - 安装流程是否顺畅；
-   - VM 能否预置栈并跑通两段流程。
-4. 若收益与流程都成立，再定语法、CLI 与地址分区。
+1. 手工拆成 `barsiel_loader.icg`（写表 + 哨兵）与 `barsiel_runtime.icg`
+   （`get(db, base+idx)`）。
+2. 量化结果：
+
+   | 产物 | 行数 |
+   |------|------|
+   | 原合并端口（loader 内联） | 94 |
+   | 拆出的 **runtime** | **60** |
+   | 拆出的 **loader**（只跑一次） | 35 |
+
+   runtime **省下 34 行**，剩余预算 34 → 68 行。
+
+3. 闭环测试（`go test ./experiments/data-segment/`）确认：loader 写入后
+   `db.Stack[0]` 为 Iron 哈希、哨兵为 1；runtime 在预置栈上读到 Gold 哈希并
+   写出 `db.Setting == 226410516`；不跑 loader 时读到 0。
+
+结论：**VM 能预置栈、跨程序 `get(db, addr)` 读取可行、行数收益明显。**
+仍待真机确认 `db` 栈与本地栈是否同一块、以及换代码后栈是否保留。
+
 
 ---
 
