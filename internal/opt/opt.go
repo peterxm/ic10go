@@ -27,9 +27,10 @@ func Optimize(fn *ir.Function) {
 		c10 := dce(fn)
 		c11 := removeUnreachable(fn)
 		c12 := deadStores(fn)
-		c13 := false && mergeTails(fn)
+		c13 := threadJumps(fn)
+		c14 := false && mergeTails(fn)
 		fn.BuildCFG()
-		if !c1 && !c2 && !c3 && !c4 && !c5 && !c6 && !c7 && !c8 && !c9 && !c10 && !c11 && !c12 && !c13 {
+		if !c1 && !c2 && !c3 && !c4 && !c5 && !c6 && !c7 && !c8 && !c9 && !c10 && !c11 && !c12 && !c13 && !c14 {
 			break
 		}
 	}
@@ -2138,6 +2139,36 @@ func stackReadKey(i ir.Instr) (string, bool) {
 // Tail merging
 // ---------------------------------------------------------------------------
 
+// threadJumps redirects a jump whose target is an empty block to that block's
+// own target. Inlined calls and if/else chains leave chains of empty join
+// blocks; collapsing them lets tail merging see that branches share a
+// terminator (and removes a redundant jump).
+func threadJumps(fn *ir.Function) bool {
+	changed := false
+	for _, b := range fn.Blocks {
+		if b == fn.Entry {
+			continue
+		}
+		for {
+			j, ok := b.Term.(*ir.Jmp)
+			if !ok {
+				break
+			}
+			t := j.Target
+			if t == nil || t == b || t == fn.Entry || len(t.Instrs) != 0 {
+				break
+			}
+			u, ok := t.Term.(*ir.Jmp)
+			if !ok || u.Target == t {
+				break
+			}
+			b.Term = &ir.Jmp{Target: u.Target}
+			changed = true
+		}
+	}
+	return changed
+}
+
 // mergeTails factors identical instruction suffixes of blocks that share the
 // same terminator into one shared block, replacing each duplicate with a jump.
 // It merges one pair at a time and re-scans, which keeps the bookkeeping simple
@@ -2179,39 +2210,65 @@ func idRegKey(r *ir.Reg) string {
 	return strconv.Itoa(r.ID)
 }
 
+// mergeOneTail finds, among all blocks, the shared instruction suffix that
+// yields the greatest line saving and factors it into a single block reached by
+// jumps. Merging a suffix of length n across k blocks replaces k*n instructions
+// with n + k (the shared body plus one jump per block), so it only pays off
+// when n*(k-1) > k. Choosing the globally best group each round (rather than
+// the first pair found) avoids the greedy choices that leave some copies
+// unshared.
 func mergeOneTail(fn *ir.Function, reg func(*ir.Reg) string) bool {
-	type entry struct {
-		block *ir.Block
-		n     int
+	type group struct {
+		n        int
+		term     ir.Term
+		funcName string
+		blocks   []*ir.Block
 	}
-	seen := map[string]entry{}
+	groups := map[string]*group{}
 	for _, b := range fn.Blocks {
-		if len(b.Instrs) == 0 {
+		if len(b.Instrs) == 0 || b == fn.Entry {
 			continue
 		}
 		tk := termKey(b.Term)
-		for n := 1; n < len(b.Instrs); n++ {
+		for n := 1; n <= len(b.Instrs); n++ {
 			key := tk + "\x00" + suffixKey(b.Instrs, n, reg)
-			e, ok := seen[key]
-			if !ok || e.block == b || e.n != n || e.block == fn.Entry {
-				continue
+			g := groups[key]
+			if g == nil {
+				g = &group{n: n, term: b.Term, funcName: b.Func}
+				groups[key] = g
 			}
-			shared := fn.NewBlock()
-			shared.Instrs = append(shared.Instrs, b.Instrs[len(b.Instrs)-n:]...)
-			shared.Term = b.Term
-			shared.Func = b.Func
-			trimBlock(b, n, shared)
-			trimBlock(e.block, n, shared)
-			return true
-		}
-		for n := 1; n < len(b.Instrs); n++ {
-			key := tk + "\x00" + suffixKey(b.Instrs, n, reg)
-			if _, ok := seen[key]; !ok {
-				seen[key] = entry{b, n}
-			}
+			g.blocks = append(g.blocks, b)
 		}
 	}
-	return false
+
+	// Prefer the group that saves the most lines; if none saves lines, still
+	// factor the largest suffix, which saves bytes at worst.
+	bestSaving := 0
+	bestWeight := 0
+	var best *group
+	for _, g := range groups {
+		if len(g.blocks) < 2 {
+			continue
+		}
+		saving := g.n*(len(g.blocks)-1) - len(g.blocks)
+		weight := g.n * (len(g.blocks) - 1)
+		if best == nil || saving > bestSaving || (saving == bestSaving && weight > bestWeight) {
+			best, bestSaving, bestWeight = g, saving, weight
+		}
+	}
+	if best == nil {
+		return false
+	}
+
+	first := best.blocks[0]
+	shared := fn.NewBlock()
+	shared.Instrs = append(shared.Instrs, first.Instrs[len(first.Instrs)-best.n:]...)
+	shared.Term = best.term
+	shared.Func = best.funcName
+	for _, b := range best.blocks {
+		trimBlock(b, best.n, shared)
+	}
+	return true
 }
 
 // trimBlock removes the last n instructions of b and makes it jump to shared.

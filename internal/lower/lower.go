@@ -241,6 +241,40 @@ func (l *lowerer) lowerBlock(b *ast.BlockStmt) {
 	l.popScope()
 }
 
+// lowerStmtsCont lowers a statement list whose fall-through continuation is
+// cont. Only the final statement can diverge (an if/else or a nested block).
+func (l *lowerer) lowerStmtsCont(list []ast.Stmt, cont *ir.Block) {
+	for i, s := range list {
+		l.ensure()
+		if i == len(list)-1 {
+			l.lowerStmtCont(s, cont)
+			return
+		}
+		l.lowerStmt(s)
+	}
+	if l.b.Cur().Term == nil {
+		l.b.SetTerm(&ir.Jmp{Target: cont})
+	}
+}
+
+// lowerStmtCont lowers a statement whose fall-through target is cont. Plain
+// statements simply fall through; only control-flow statements need cont.
+func (l *lowerer) lowerStmtCont(s ast.Stmt, cont *ir.Block) {
+	switch v := s.(type) {
+	case *ast.BlockStmt:
+		l.pushScope()
+		l.lowerStmtsCont(v.List, cont)
+		l.popScope()
+	case *ast.IfStmt:
+		l.lowerIfCont(v, cont)
+	default:
+		l.lowerStmt(s)
+		if l.b.Cur().Term == nil {
+			l.b.SetTerm(&ir.Jmp{Target: cont})
+		}
+	}
+}
+
 func (l *lowerer) lowerStmt(s ast.Stmt) {
 	switch s := s.(type) {
 	case *ast.BlockStmt:
@@ -513,26 +547,35 @@ func (l *lowerer) lowerReturn(s *ast.ReturnStmt) {
 }
 
 func (l *lowerer) lowerIf(s *ast.IfStmt) {
+	endB := l.newBlock()
+	l.lowerIfCont(s, endB)
+	l.b.SetBlock(endB)
+}
+
+// lowerIfCont lowers an if/else-if chain so that every branch converges on the
+// shared endB rather than each nested if allocating its own join. Flattening the
+// chain lets identical branch tails (such as a call inlined into several
+// branches) share one terminator, which tail merging can then factor.
+func (l *lowerer) lowerIfCont(s *ast.IfStmt, endB *ir.Block) {
 	thenB := l.newBlock()
 	elseB := l.newBlock()
-	endB := l.newBlock()
 	l.branchCond(s.Cond, thenB, elseB)
 
 	l.b.SetBlock(thenB)
-	l.lowerBlock(s.Then)
-	if l.b.Cur().Term == nil {
-		l.b.SetTerm(&ir.Jmp{Target: endB})
-	}
+	l.pushScope()
+	l.lowerStmtsCont(s.Then.List, endB)
+	l.popScope()
 
 	l.b.SetBlock(elseB)
-	if s.Else != nil {
-		l.lowerStmt(s.Else)
-	}
-	if l.b.Cur().Term == nil {
+	if s.Else == nil {
 		l.b.SetTerm(&ir.Jmp{Target: endB})
+		return
 	}
-
-	l.b.SetBlock(endB)
+	if nested, ok := s.Else.(*ast.IfStmt); ok {
+		l.lowerIfCont(nested, endB)
+		return
+	}
+	l.lowerStmtCont(s.Else, endB)
 }
 
 // tryUnrollFor unrolls a small constant `for i := lo; i < hi; i++` loop whose
@@ -1624,10 +1667,7 @@ func (l *lowerer) inlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr, 
 	}
 	l.scopes = append(l.scopes, scope)
 
-	l.lowerStmts(fi.Decl.Body.List)
-	if l.b.Cur().Term == nil {
-		l.b.SetTerm(&ir.Jmp{Target: end})
-	}
+	l.lowerStmtsCont(fi.Decl.Body.List, end)
 
 	l.scopes = l.scopes[:len(l.scopes)-1]
 	l.stack = l.stack[:len(l.stack)-1]
