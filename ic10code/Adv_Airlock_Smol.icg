@@ -1,8 +1,9 @@
-// Adv Airlock (Smol) port: a compact two-door airlock state machine.
+// Adv Airlock (Smol) port.
 //
-// The original packs the door/vent control bits into one number and rotates
-// the active phase until exactly one door bit is set, then applies the phase
-// to the doors and vents and writes the bits back for the logic network.
+// The original packs the door/vent control bits into one number. To stay as
+// compact as the hand-minified IC10, this port keeps the same bit-packing
+// approach: it pokes the logic types onto the stack, builds the phase by
+// reading each device, rotates the active bit, then writes the result back.
 //
 // d0=exterior door, d1=exterior vent, d2=interior vent, d3=interior door,
 // d4=pressure sensor.
@@ -19,68 +20,79 @@ const (
 )
 
 func main() {
-    for {
-        yield()
-        inVentMode := ventIn.Mode
-        pressure := sensor.Pressure
+    // Logic type read/written for each device, in stack order.
+    poke(0, LogicType.Open)
+    poke(1, LogicType.On)
+    poke(2, LogicType.On)
+    poke(3, LogicType.Open)
+    poke(4, LogicType.Setting)
+    poke(7, LogicType.Setting)
 
-        // Assemble the phase bits from the door/vent control values.
-        state := ((doorIn.Setting & 1) << 7) | ((doorEx.Setting & 1) << 4) |
-            ((doorIn.Open & 1) << 3) | ((ventIn.On & 1) << 2) |
-            ((ventEx.On & 1) << 1) | (doorEx.Open & 1)
+    var state = 0
+    var inVentMode = 0
+    var pressure = 0
+    var doorTriggered = 0
 
-        doorTriggered := ((state >> 4) ^ state) & 9
-        state &= 15
+    label main:
+    yield()
+    inVentMode = ventIn.Mode
+    pressure = sensor.Pressure
 
-        // Rotate until a single, valid phase is selected. If the state is
-        // empty or has more than one bit set, wait for the next cycle.
-        doEnd := false
-        retry := true
-        for retry {
-            retry = false
-            t := state & 8
-            if t != 0 { t = 14 } else { t = 15 }
-            state &= t
-            if state != 0 && ((state-1)&state) == 0 {
-                t = state & 9
-                if t != 0 { inVentMode = state >> 3 }
+    // Build the phase bits from the devices.
+    sp = 8
+    label load:
+    logicType := pop()
+    if logicType == 0 { goto loaded }
+    device := sp % 4
+    state = ins(readDev(device, logicType), sp, 1)
+    label loaded:
+    if sp > 0 { goto load }
 
-                trig := doorTriggered != 0
-                if !trig {
-                    doEnd = true
-                    if t == 0 {
-                        t2 := 2 << inVentMode
-                        if state == t2 {
-                            trig = pressure == 0
-                        } else {
-                            t3 := pressureIn
-                            if inVentMode != 0 { t3 = pressureEx }
-                            trig = pressure >= t3
-                        }
-                    }
-                }
-                if trig {
-                    doEnd = false
-                    doorTriggered = 0
-                    if inVentMode != 0 { state = state * 0.5 } else { state = state * 2 }
-                    retry = true
-                }
-            }
-        }
-        if !doEnd { continue }
+    doorTriggered = ((state >> 4) ^ state) & 9
+    state = state & 15
 
-        // Apply the phase and publish the bits back to the devices.
-        state = (state & 15) | ((state & 15) << 4)
-        doorEx.Mode = 1
-        doorIn.Mode = 1
-        ventIn.Mode = inVentMode
-        ventEx.Mode = inVentMode == 0
+    // Rotate until exactly one valid phase bit is set.
+    label loop:
+    temp := state & 8
+    temp = (temp != 0 ? 14 : 15)
+    state = state & temp
+    if state == 0 { goto main }
+    temp = (state - 1) & state
+    if temp != 0 { goto main }
+    temp = state & 9
+    device = state >> 3
+    inVentMode = (temp != 0 ? device : inVentMode)
+    if doorTriggered != 0 { goto trigger }
+    if temp != 0 { goto end }
+    temp = 2 << inVentMode
+    if state != temp { goto checkPressure }
+    if pressure == 0 { goto trigger }
+    label checkPressure:
+    if state == temp { goto end }
+    temp = (inVentMode != 0 ? pressureEx : pressureIn)
+    if pressure >= temp { goto trigger }
 
-        doorIn.Setting = (state >> 7) & 1
-        doorEx.Setting = (state >> 4) & 1
-        doorIn.Open = (state >> 3) & 1
-        ventIn.On = (state >> 2) & 1
-        ventEx.On = (state >> 1) & 1
-        doorEx.Open = state & 1
-    }
+    // Apply the phase and publish the bits back to the devices.
+    label end:
+    state = ins(state, 4, 4)
+    doorEx.Mode = 1
+    doorIn.Mode = 1
+    ventIn.Mode = inVentMode
+    ventEx.Mode = inVentMode == 0
+    sp = 8
+    label store:
+    logicType = pop()
+    if logicType == 0 { goto stored }
+    device = sp % 4
+    writeDev(device, logicType, (state >> sp) & 1)
+    label stored:
+    if sp > 0 { goto store }
+    goto main
+
+    // Shift the active phase and re-check.
+    label trigger:
+    doorTriggered = 0
+    temp = (inVentMode != 0 ? 0.5 : 2)
+    state = state * temp
+    goto loop
 }

@@ -1,0 +1,48 @@
+define pressureIn 100
+	define pressureEx 0
+	poke 0 LogicType.Open
+	poke 1 LogicType.On
+	poke 2 LogicType.On
+	poke 3 LogicType.Open
+	poke 4 LogicType.Setting
+	poke 7 LogicType.Setting
+	yield
+	l r1 d2 Mode
+	l r2 d4 Pressure
+	move sp 8              # Load values from stack
+	pop r13
+	breqz r13 4
+	mod r15 sp 4
+	l r15 dr15 r13
+	ins r0 r15 sp 1
+	brgtz sp -5
+	srl r15 r0 4           # Determine door trigger state, Setting vs Open
+	xor r15 r15 r0
+	and r12 r15 9
+	and r0 r0 15
+	bnez r12 49
+	sll r15 2 r1           # Pressure checks
+	brne r0 r15 2
+	beqz r2 49
+	breq r0 r15 3
+	select r15 r1 pressureEx pressureIn
+		bge r2 r15 49
+		ins r0 r0 4 4          # Copy current phase nibble into Setting nibble for bits 4/7
+		s d0 Mode 1
+		s d3 Mode 1
+		s d2 Mode r1
+		seqz r15 r1
+		s d1 Mode r15
+		move sp 8              # Iterate stack to write
+		pop r13
+		breqz r13 5
+		mod r14 sp 4
+		srl r15 r0 sp
+		and r15 r15 1
+		s dr14 r13 r15
+		brgtz sp -6
+	j 0                    # Shifts the active value around
+	move r12 0             # IN -> EX: 1000 -> 0100 -> 0010 -> 0001
+	select r15 r1 0.5 2    # EX -> IN: 0001 -> 0010 -> 0100 -> 1000
+	mul r0 r0 r15
+j 27                   # And loop in case we meet further conditions

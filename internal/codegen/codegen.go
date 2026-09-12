@@ -110,6 +110,8 @@ func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
 		lines = append(lines, line{text: "move r0 r0"})
 	}
 
+	lines, start = removeRedundantJumps(lines, start)
+
 	var sb strings.Builder
 	for _, ln := range lines {
 		sb.WriteString(ln.text)
@@ -124,6 +126,76 @@ func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
 		return "", err
 	}
 	return code, nil
+}
+
+// removeRedundantJumps rewrites "b<cond> ... T" followed by "j J" into the
+// inverted branch "b<!cond> ... J" when T is the instruction after the jump.
+// Both paths then reach the same line, so the unconditional jump is dead.
+func removeRedundantJumps(lines []line, start map[*ir.Block]int) ([]line, map[*ir.Block]int) {
+	removed := make([]bool, len(lines))
+	for i := 0; i+1 < len(lines); i++ {
+		if removed[i] {
+			continue
+		}
+		br, j := lines[i], lines[i+1]
+		if br.target == nil || j.target == nil || !strings.HasPrefix(j.text, "j ") {
+			continue
+		}
+		inv, ok := invertBranch(br.text)
+		if !ok {
+			continue
+		}
+		if start[br.target] != i+2 {
+			continue
+		}
+		lines[i] = line{text: inv, target: j.target}
+		removed[i+1] = true
+		i++
+	}
+	kept := make([]line, 0, len(lines))
+	index := make([]int, len(lines))
+	for i, ln := range lines {
+		if removed[i] {
+			index[i] = -1
+			continue
+		}
+		index[i] = len(kept)
+		kept = append(kept, ln)
+	}
+	for b, s := range start {
+		ns := s
+		for ns < len(index) && index[ns] < 0 {
+			ns++
+		}
+		if ns < len(index) {
+			start[b] = index[ns]
+		} else {
+			start[b] = len(kept)
+		}
+	}
+	return kept, start
+}
+
+var invertedBranch = map[string]string{
+	"beq": "bne", "bne": "beq",
+	"blt": "bge", "bge": "blt",
+	"ble": "bgt", "bgt": "ble",
+	"bnez": "beqz", "beqz": "bnez",
+}
+
+// invertBranch returns the text with the branch mnemonic negated, or false if
+// the text is not a conditional branch.
+func invertBranch(text string) (string, bool) {
+	sp := strings.IndexByte(text, ' ')
+	mnemonic := text
+	if sp >= 0 {
+		mnemonic = text[:sp]
+	}
+	inv, ok := invertedBranch[mnemonic]
+	if !ok {
+		return "", false
+	}
+	return inv + text[len(mnemonic):], true
 }
 
 // Validate checks the IC10 editor limits.

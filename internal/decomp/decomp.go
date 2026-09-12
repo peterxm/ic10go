@@ -34,6 +34,7 @@ type decompiler struct {
 	labelsAt   map[int][]string
 	nameToLine map[string]int
 	labelAt    map[int]string
+	endLabels  []string
 	declared   map[string]bool
 	tmpN       int
 	warnings   []Warning
@@ -102,9 +103,20 @@ func decompile(src string, structured bool) (string, []Warning, error) {
 	for t := range targets {
 		if names := d.labelsAt[t]; len(names) > 0 {
 			d.labelAt[t] = names[0]
-		} else {
-			d.labelAt[t] = fmt.Sprintf("L%d", t)
+			continue
 		}
+		name := fmt.Sprintf("L%d", t)
+		if next, ok := d.nextLine(lines, t); ok && next == t {
+			d.labelAt[t] = name
+			continue
+		} else if ok {
+			// The target does not land on an emitted instruction (a directive
+			// or blank line): attach the label to the next instruction.
+			d.labelsAt[next] = append(d.labelsAt[next], name)
+			continue
+		}
+		// Past the last instruction: a jump here ends the program.
+		d.endLabels = append(d.endLabels, name)
 	}
 
 	var b strings.Builder
@@ -123,6 +135,13 @@ func decompile(src string, structured bool) (string, []Warning, error) {
 		b.WriteString(d.structure(lines))
 	} else {
 		d.flat(&b, lines)
+	}
+	for _, n := range d.endLabels {
+		fmt.Fprintf(&b, "    label %s:\n", n)
+	}
+	if len(d.endLabels) > 0 {
+		// A jump past the last instruction halts the IC.
+		b.WriteString("    jump(9999)\n")
 	}
 	b.WriteString("}\n")
 	return b.String(), d.warnings, nil
@@ -346,4 +365,15 @@ func (d *decompiler) labelOf(line int) string {
 		return name
 	}
 	return fmt.Sprintf("L%d", line)
+}
+
+// nextLine returns the smallest emitted instruction line at or after t.
+func (d *decompiler) nextLine(lines []icLine, t int) (int, bool) {
+	best := -1
+	for _, l := range lines {
+		if l.num >= t && (best == -1 || l.num < best) {
+			best = l.num
+		}
+	}
+	return best, best != -1
 }

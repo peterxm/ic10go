@@ -653,6 +653,8 @@ func redundantLoads(fn *ir.Function) bool {
 				invalidate(v.Dev)
 			case *ir.StoreSlot:
 				invalidate(v.Dev)
+			case *ir.StoreSpecial:
+				invalidate(v.Name)
 			case *ir.Batch:
 				switch v.Kind {
 				case ir.BatchStore, ir.BatchStoreName, ir.BatchStoreSlot:
@@ -661,6 +663,9 @@ func redundantLoads(fn *ir.Function) bool {
 			case *ir.Builtin:
 				if hasSideEffect(v) {
 					clearAll()
+				} else if v.Name == "pop" || v.Name == "push" {
+					// These mutate the stack pointer.
+					invalidate("sp")
 				}
 			}
 		}
@@ -695,6 +700,8 @@ func loadKey(i ir.Instr) (key, dev string, dst *ir.Reg, ok bool) {
 			return "", "", nil, false
 		}
 		return fmt.Sprintf("b%d|%s|%s|%s|%s|%s", v.Kind, dev, name, slot, v.Logic, mode), dev, v.Dst, true
+	case *ir.LoadSpecial:
+		return "sp|" + v.Name, v.Name, v.Dst, true
 	}
 	return "", "", nil, false
 }
