@@ -6,6 +6,7 @@ import (
 
 	"ic10go/internal/codegen"
 	"ic10go/internal/diag"
+	"ic10go/internal/ir"
 	"ic10go/internal/lexer"
 	"ic10go/internal/lower"
 	"ic10go/internal/opt"
@@ -44,34 +45,9 @@ func Compile(name string, src []byte) (string, *diag.Bag, error) {
 
 // CompileWithOptions is Compile with explicit options.
 func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Bag, error) {
-	file := source.NewFile(name, src)
-	diags := &diag.Bag{}
-
-	toks := lexer.Tokenize(file, diags)
-	tree := parser.Parse(file, toks, diags)
-	if diags.HasErrors() {
+	fn, info, diags := compileIR(name, src, opts)
+	if fn == nil {
 		return "", diags, nil
-	}
-
-	info := sema.Check(tree, diags)
-	if info.Main == nil {
-		diags.Errorf(source.Pos{File: name, Line: 1, Col: 1}, "no main function found")
-	}
-	if diags.HasErrors() {
-		return "", diags, nil
-	}
-
-	fn := lower.Lower(info, diags, lower.Options{
-		StableInsOrder:  opts.StableInsOrder,
-		DataCheck:       !opts.NoDataCheck,
-		DataAccessStack: opts.DataAccessStack,
-	})
-	if diags.HasErrors() {
-		return "", diags, nil
-	}
-
-	if os.Getenv("IC10C_NO_OPT") == "" {
-		opt.Optimize(fn)
 	}
 	colors, err := regalloc.AllocateReserved(fn, NumRegs, info.DataSize)
 	if err != nil {
@@ -83,4 +59,39 @@ func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Ba
 		return "", diags, err
 	}
 	return code, diags, nil
+}
+
+// compileIR parses, checks and lowers the source to IR. When diags.HasErrors()
+// the returned function is nil.
+func compileIR(name string, src []byte, opts Options) (*ir.Function, *sema.Info, *diag.Bag) {
+	file := source.NewFile(name, src)
+	diags := &diag.Bag{}
+
+	toks := lexer.Tokenize(file, diags)
+	tree := parser.Parse(file, toks, diags)
+	if diags.HasErrors() {
+		return nil, nil, diags
+	}
+
+	info := sema.Check(tree, diags)
+	if info.Main == nil {
+		diags.Errorf(source.Pos{File: name, Line: 1, Col: 1}, "no main function found")
+	}
+	if diags.HasErrors() {
+		return nil, nil, diags
+	}
+
+	fn := lower.Lower(info, diags, lower.Options{
+		StableInsOrder:  opts.StableInsOrder,
+		DataCheck:       !opts.NoDataCheck,
+		DataAccessStack: opts.DataAccessStack,
+	})
+	if diags.HasErrors() {
+		return nil, info, diags
+	}
+
+	if os.Getenv("IC10C_NO_OPT") == "" {
+		opt.Optimize(fn)
+	}
+	return fn, info, diags
 }

@@ -145,7 +145,9 @@ func hasSideEffect(i ir.Instr) bool {
 		}
 	case *ir.Builtin:
 		switch v.Name {
-		case "yield", "sleep", "hcf":
+		case "yield", "sleep", "hcf",
+			// Stack and device-stack writes are observable side effects.
+			"push", "pop", "poke", "put", "putd", "clr":
 			return true
 		}
 	}

@@ -67,27 +67,28 @@ func HasData(name string, src []byte) bool {
 // DataStats returns the data-segment layout (first slot and size) and a
 // potential-conflict warning. base is -1 when the source has no data segment.
 //
-// The data segment sits at the top of the stack; push grows sp upward and poke
-// writes arbitrary addresses, so a program that uses either may clobber it.
+// The data segment sits at the top of the stack; poke writes arbitrary
+// addresses, so a program that uses it may clobber the segment. (push is
+// checked precisely by MaxStackDepth.)
 func DataStats(name string, src []byte) (base, size int, warn string) {
 	info, err := analyze(name, src)
 	if err != nil || len(info.Data) == 0 {
 		return -1, 0, ""
 	}
-	if sourceUsesPushPoke(src) {
-		warn = fmt.Sprintf("data segment occupies stack slots [%d..%d]; push/poke must stay below %d",
+	if sourceUsesPoke(src) {
+		warn = fmt.Sprintf("data segment occupies stack slots [%d..%d]; poke must stay below %d",
 			info.Sentinel, sema.StackSize-1, info.Sentinel)
 	}
 	return info.Sentinel, info.DataSize, warn
 }
 
-// sourceUsesPushPoke reports whether the source calls push or poke.
-func sourceUsesPushPoke(src []byte) bool {
+// sourceUsesPoke reports whether the source calls poke.
+func sourceUsesPoke(src []byte) bool {
 	file := source.NewFile("", src)
 	diags := &diag.Bag{}
 	toks := lexer.Tokenize(file, diags)
 	for i, t := range toks {
-		if t.Kind == token.Ident && (t.Text == "push" || t.Text == "poke") {
+		if t.Kind == token.Ident && t.Text == "poke" {
 			if i+1 < len(toks) && toks[i+1].Kind == token.LParen {
 				return true
 			}

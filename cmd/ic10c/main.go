@@ -440,6 +440,14 @@ func cmdStats(args []string) int {
 		if warn != "" {
 			fmt.Printf("warning    %s\n", warn)
 		}
+		if depth, unbounded, err := ic10.MaxStackDepth(args[0], data, ic10.Options{}); err == nil {
+			switch {
+			case unbounded:
+				fmt.Printf("warning    push depth is unbounded (a loop grows the stack); keep the data segment clear\n")
+			case depth > base:
+				fmt.Printf("warning    max push depth %d reaches the data segment (base %d)\n", depth, base)
+			}
+		}
 	}
 	return 0
 }

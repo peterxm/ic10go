@@ -189,3 +189,19 @@ func TestDataStatsWarning(t *testing.T) {
 		t.Error("expected a data-segment conflict warning")
 	}
 }
+
+func TestMaxStackDepth(t *testing.T) {
+	src := []byte("func main() { for { yield()\n push(1); push(2); pop(); pop() } }\n")
+	d, unbounded, err := ic10.MaxStackDepth("x.icg", src, ic10.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unbounded || d != 2 {
+		t.Errorf("bounded push: depth=%d unbounded=%v, want 2/false", d, unbounded)
+	}
+
+	src = []byte("func main() { for { yield()\n push(1) } }\n")
+	if _, unbounded, _ := ic10.MaxStackDepth("x.icg", src, ic10.Options{}); !unbounded {
+		t.Error("push inside a loop should be unbounded")
+	}
+}

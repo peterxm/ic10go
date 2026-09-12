@@ -298,10 +298,10 @@ runtime（`peek` + `sp` 保存/恢复）都正常循环 `111/222/333`，宿主�
   与用户 `push` 增长区、寄存器溢出区共享同一 512 槽空间。寄存器溢出已由
   编译器避让（`AllocateReserved` 从 `base-1` 向下）；用户 `push`/`poke` 需要
   约定：
-  - ✅ **已做（方案 c）**：`ic10c stats` 在含数据段且源码用了 `push`/`poke` 时
-    打印警告：
-    `data segment occupies stack slots [base..511]; push/poke must stay below base`。
-  - ⏳ 方案 a：编译器统计 `push` 最大深度并静态校验；
+  - ✅ **已做（方案 c）**：`ic10c stats` 在含数据段且源码用了 `poke` 时打印警告；
+  - ✅ **已做（方案 a）**：`ic10.MaxStackDepth` 在 CFG 上静态求 `push`/`pop` 的
+    最大深度，`stats` 会警告「最大深度达到数据段」或「深度无界（循环内 push）」；
+    溢出（`AllocateReserved`）已自动避让。
   - ⏳ 方案 b：数据段改用固定中段并保留高地址给溢出。
 
 
