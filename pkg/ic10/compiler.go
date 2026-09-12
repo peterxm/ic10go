@@ -29,6 +29,10 @@ type Options struct {
 	// NoDataCheck disables the runtime check that the persistent data segment
 	// is installed before main runs.
 	NoDataCheck bool
+	// Unsafe enables risky size optimisations. Currently it implies
+	// NoDataCheck: the runtime no longer verifies the data segment, so the
+	// program must be paired with a loader that was run first.
+	Unsafe bool
 	// DataAccessStack reads/writes the data segment through the local stack
 	// (poke/peek) instead of get/put db, so it also works on a device host.
 	DataAccessStack bool
@@ -112,7 +116,7 @@ func compileIR(name string, src []byte, opts Options) (*ir.Function, *sema.Info,
 
 	fn := lower.Lower(info, diags, lower.Options{
 		StableInsOrder:  opts.StableInsOrder,
-		DataCheck:       !opts.NoDataCheck,
+		DataCheck:       !opts.NoDataCheck && !opts.Unsafe,
 		DataAccessStack: opts.DataAccessStack,
 	})
 	if diags.HasErrors() {

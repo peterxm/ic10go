@@ -382,6 +382,7 @@ ic10c build [flags] <file.icg>
   --data-out <file>      loader 输出路径（默认 <file>.data.ic）
   --data-only            只输出 loader（数据变更后重装用）
   --no-data-check        不在 runtime 插入版本校验
+  --unsafe               不安全：跳过运行时数据校验以进一步压缩代码（会打印警告）
   --data-access <mode>   读取方式：
                            get   （默认）get/put db，需标准 IC host
                            stack poke/peek + sp 保存/恢复，兼容设备 host，较慢

@@ -105,6 +105,11 @@ var dataLayoutFlag = Flag{Long: "--data-layout", Arg: "top|middle", Desc: text{
 	ZH: "数据段位置：栈顶（默认）或固定中段",
 }}
 
+var unsafeFlag = Flag{Long: "--unsafe", Desc: text{
+	EN: "unsafe: skip the data-segment runtime check to shrink the code",
+	ZH: "不安全：跳过数据段运行时校验以进一步压缩代码",
+}}
+
 // Commands is the ordered command table.
 var Commands = []Command{
 	{
@@ -145,6 +150,7 @@ var Commands = []Command{
 				EN: "do not verify the data segment at runtime",
 				ZH: "不在运行时校验数据段",
 			}},
+			unsafeFlag,
 			{Long: "--data-access", Arg: "get|stack", Desc: text{
 				EN: "read the data segment via get/put db (default, IC host) or poke/peek (device host)",
 				ZH: "数据段读写方式：get（默认，IC host）或 stack（poke/peek，兼容设备 host）",
@@ -239,7 +245,7 @@ var Commands = []Command{
 			ZH: "编译文件并打印它占用的 IC10 编辑器预算：行数、字节数、最长行\n" +
 				"以及引用到的 CPU 寄存器数量。",
 		},
-		Flags:    []Flag{dataLayoutFlag, commonHelp},
+		Flags:    []Flag{dataLayoutFlag, unsafeFlag, commonHelp},
 		Examples: []string{"ic10c stats blink.icg"},
 	},
 	{
@@ -538,6 +544,14 @@ func IC10Hint(l Lang, path string) string {
 		return fmt.Sprintf("提示：%s 看起来是原始 IC10 脚本；请先反编译为 .icg：ic10c decompile %s", path, path)
 	}
 	return fmt.Sprintf("hint: %s looks like a raw IC10 script; decompile it first: ic10c decompile %s", path, path)
+}
+
+// UnsafeHint warns that --unsafe skipped the data-segment runtime check.
+func UnsafeHint(l Lang) string {
+	if l == ZH {
+		return "警告：--unsafe 跳过数据段的运行时校验，代码更短但依赖外部数据；请确保先运行过 loader，否则读到的是旧数据或 0"
+	}
+	return "warning: --unsafe skips the data-segment runtime check; the code is smaller but trusts external data; make sure the loader was run, or stale/zero values are read"
 }
 
 func writeFlag(b *strings.Builder, label, arg, desc string) {

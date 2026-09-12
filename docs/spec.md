@@ -160,6 +160,8 @@ data RecipeHeat    = [ 0.009501, 0.009502, 0.009503 ]
   `push` 最大深度（无界或达到数据段时报错/警告），并在源码用了 `poke` 时提醒。
   默认 `--data-layout top`；`--data-layout middle` 把数据段放到固定槽 `256`、
   高地址留给寄存器溢出。
+- 默认 runtime 会校验数据段版本（缺失/过期则停机）；`--no-data-check` 或
+  `--unsafe` 可跳过校验以缩短代码（`--unsafe` 会在 CLI 打印警告）。
 
 ```go
 db.Setting = RecipeDisplay[ore-1]   // -> get(db, baseDisplay + ore - 1)

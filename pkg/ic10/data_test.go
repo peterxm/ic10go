@@ -216,3 +216,19 @@ func TestDataTableMiddleLayout(t *testing.T) {
 		t.Errorf("middle layout: base=%d size=%d, want 256/4", base, size)
 	}
 }
+
+func TestDataUnsafeSkipsCheck(t *testing.T) {
+	src := []byte(dataTableSrc)
+	code, diags, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{Unsafe: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if strings.Contains(code, "9999") {
+		t.Errorf("unsafe runtime still emits the halt check:\n%s", code)
+	}
+	// Without the loader it reads an empty slot (0) instead of halting.
+	m := runDataProgram(t, ic10.Options{Unsafe: true}, false, 300)
+	if got := m.Get("d0", "Setting"); got != 0 {
+		t.Errorf("unsafe without data: d0.Setting = %v, want 0", got)
+	}
+}
