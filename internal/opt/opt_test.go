@@ -280,3 +280,51 @@ func TestMergeTails(t *testing.T) {
 		t.Fatal("mergeTails did not factor the shared suffix")
 	}
 }
+
+func TestMergeTailsColored(t *testing.T) {
+	// Two branches whose tails differ only in virtual registers that map to
+	// the same physical register; the coloured merge should factor them.
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	b.Emit(&ir.Load{Dst: a, Dev: "d0", Logic: "Setting"})
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: a, Then: thenB, Else: elseB})
+
+	t1 := b.NewReg("t1")
+	b.SetBlock(thenB)
+	b.Emit(&ir.Bin{Op: ir.Add, Dst: t1, A: a, B: &ir.Const{V: 1}})
+	b.Emit(&ir.Store{Dev: "d3", Logic: "Setting", Src: t1})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	t2 := b.NewReg("t2")
+	b.SetBlock(elseB)
+	b.Emit(&ir.Bin{Op: ir.Add, Dst: t2, A: a, B: &ir.Const{V: 1}})
+	b.Emit(&ir.Store{Dev: "d3", Logic: "Setting", Src: t2})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+	colors := map[*ir.Reg]int{a: 0, t1: 1, t2: 1}
+	if !MergeTailsColored(b.Fn(), colors) {
+		t.Fatal("coloured tail merge did not factor the shared suffix")
+	}
+}
+
+func TestCommutativeCSE(t *testing.T) {
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	c := b.NewReg("b")
+	b.Emit(&ir.Load{Dst: a, Dev: "d0", Logic: "Setting"})
+	b.Emit(&ir.Load{Dst: c, Dev: "d1", Logic: "Setting"})
+	x := b.NewReg("x")
+	b.Emit(&ir.Bin{Op: ir.Add, Dst: x, A: a, B: c})
+	y := b.NewReg("y")
+	b.Emit(&ir.Bin{Op: ir.Add, Dst: y, A: c, B: a})
+	b.Emit(&ir.Builtin{Name: "sleep", Args: []ir.Value{x, y}})
+	b.SetTerm(&ir.Ret{})
+	if !globalCSE(b.Fn()) {
+		t.Fatal("globalCSE did not merge a+b and b+a")
+	}
+}

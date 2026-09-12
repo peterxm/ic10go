@@ -6,6 +6,7 @@ import (
 
 	"ic10go/internal/codegen"
 	"ic10go/internal/lower"
+	"ic10go/internal/opt"
 	"ic10go/internal/regalloc"
 )
 
@@ -43,6 +44,9 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 		colors, _, err := regalloc.AllocateReservedSpills(fn, NumRegs, reserved)
 		if err != nil {
 			return
+		}
+		if opt.MergeTailsColored(fn, colors) {
+			fn.BuildCFG()
 		}
 		_, rep, _ := codegen.GenerateReport(fn, colors)
 		if rep == nil {

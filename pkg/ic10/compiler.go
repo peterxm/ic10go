@@ -133,6 +133,9 @@ func generate(fn *ir.Function, info *sema.Info, opts Options) (string, error) {
 				spillCount, bottom, info.Sentinel, dataEnd)
 		}
 	}
+	if opt.MergeTailsColored(fn, colors) {
+		fn.BuildCFG()
+	}
 	return codegen.Generate(fn, colors)
 }
 

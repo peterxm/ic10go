@@ -1034,7 +1034,11 @@ func containsReg(vs []ir.Value, r *ir.Reg) bool {
 func exprKey(i ir.Instr) (key string, operands []ir.Value, dev string, ok bool) {
 	switch v := i.(type) {
 	case *ir.Bin:
-		return "b" + strconv.Itoa(int(v.Op)) + "|" + valKey(v.A) + "|" + valKey(v.B),
+		ka, kb := valKey(v.A), valKey(v.B)
+		if commutative(v.Op) && kb < ka {
+			ka, kb = kb, ka
+		}
+		return "b" + strconv.Itoa(int(v.Op)) + "|" + ka + "|" + kb,
 			[]ir.Value{v.A, v.B}, "", true
 	case *ir.Un:
 		return "u" + strconv.Itoa(int(v.Op)) + "|" + valKey(v.A),
@@ -1096,6 +1100,28 @@ func loadWrite(i ir.Instr) (dev string, all bool) {
 		return "", true
 	}
 	return "", false
+}
+
+// commutative reports whether a binary operation is order-independent, so
+// `op a b` and `op b a` can share a value number.
+func commutative(op ir.BinOp) bool {
+	switch op {
+	case ir.Add, ir.Mul, ir.BitAnd, ir.BitOr, ir.BitXor, ir.Min, ir.Max:
+		return true
+	}
+	return false
+}
+
+func valKeyWith(v ir.Value, reg func(*ir.Reg) string) string {
+	switch x := v.(type) {
+	case *ir.Reg:
+		return "r" + reg(x)
+	case *ir.Const:
+		return "c" + x.String()
+	case *ir.Device:
+		return "d" + x.Name
+	}
+	return "?"
 }
 
 func valKey(v ir.Value) string {
@@ -2015,15 +2041,43 @@ func stackReadKey(i ir.Instr) (string, bool) {
 // It merges one pair at a time and re-scans, which keeps the bookkeeping simple
 // on the small functions IC10 programs produce.
 func mergeTails(fn *ir.Function) bool {
+	return mergeTailsWith(fn, idRegKey)
+}
+
+// MergeTailsColored is mergeTails using physical register colours as the
+// register identity, so suffixes that differ only in virtual registers but map
+// to the same physical registers are merged. It must run after register
+// allocation; the colours stay valid because no registers are created.
+func MergeTailsColored(fn *ir.Function, colors map[*ir.Reg]int) bool {
+	ch := mergeTailsWith(fn, func(r *ir.Reg) string {
+		if r == nil {
+			return "-"
+		}
+		if c, ok := colors[r]; ok {
+			return strconv.Itoa(c)
+		}
+		return "?" + strconv.Itoa(r.ID)
+	})
+	return ch
+}
+
+func mergeTailsWith(fn *ir.Function, reg func(*ir.Reg) string) bool {
 	changed := false
-	for mergeOneTail(fn) {
+	for mergeOneTail(fn, reg) {
 		changed = true
 		fn.BuildCFG()
 	}
 	return changed
 }
 
-func mergeOneTail(fn *ir.Function) bool {
+func idRegKey(r *ir.Reg) string {
+	if r == nil {
+		return "-"
+	}
+	return strconv.Itoa(r.ID)
+}
+
+func mergeOneTail(fn *ir.Function, reg func(*ir.Reg) string) bool {
 	type entry struct {
 		block *ir.Block
 		n     int
@@ -2035,7 +2089,7 @@ func mergeOneTail(fn *ir.Function) bool {
 		}
 		tk := termKey(b.Term)
 		for n := 1; n < len(b.Instrs); n++ {
-			key := tk + "\x00" + suffixKey(b.Instrs, n)
+			key := tk + "\x00" + suffixKey(b.Instrs, n, reg)
 			e, ok := seen[key]
 			if !ok || e.block == b || e.n != n || e.block == fn.Entry {
 				continue
@@ -2049,7 +2103,7 @@ func mergeOneTail(fn *ir.Function) bool {
 			return true
 		}
 		for n := 1; n < len(b.Instrs); n++ {
-			key := tk + "\x00" + suffixKey(b.Instrs, n)
+			key := tk + "\x00" + suffixKey(b.Instrs, n, reg)
 			if _, ok := seen[key]; !ok {
 				seen[key] = entry{b, n}
 			}
@@ -2065,10 +2119,10 @@ func trimBlock(b *ir.Block, n int, shared *ir.Block) {
 }
 
 // suffixKey returns a structural key for the last n instructions.
-func suffixKey(instrs []ir.Instr, n int) string {
+func suffixKey(instrs []ir.Instr, n int, reg func(*ir.Reg) string) string {
 	var sb strings.Builder
 	for _, ins := range instrs[len(instrs)-n:] {
-		sb.WriteString(instrKey(ins))
+		sb.WriteString(instrKey(ins, reg))
 		sb.WriteByte('\n')
 	}
 	return sb.String()
@@ -2076,57 +2130,56 @@ func suffixKey(instrs []ir.Instr, n int) string {
 
 // instrKey renders an instruction structurally, using register IDs so that
 // equivalent instructions in different blocks compare equal.
-func instrKey(i ir.Instr) string {
-	reg := func(r *ir.Reg) string {
-		if r == nil {
-			return "-"
-		}
-		return strconv.Itoa(r.ID)
-	}
+func instrKey(i ir.Instr, reg func(*ir.Reg) string) string {
+	vk := func(v ir.Value) string { return valKeyWith(v, reg) }
 	switch v := i.(type) {
 	case *ir.Assign:
-		return "assign|" + reg(v.Dst) + "|" + valKey(v.Src)
+		return "assign|" + reg(v.Dst) + "|" + vk(v.Src)
 	case *ir.Bin:
-		return "bin|" + v.Op.IC10() + "|" + reg(v.Dst) + "|" + valKey(v.A) + "|" + valKey(v.B)
+		ka, kb := vk(v.A), vk(v.B)
+		if commutative(v.Op) && kb < ka {
+			ka, kb = kb, ka
+		}
+		return "bin|" + v.Op.IC10() + "|" + reg(v.Dst) + "|" + ka + "|" + kb
 	case *ir.Un:
-		return "un|" + strconv.Itoa(int(v.Op)) + "|" + reg(v.Dst) + "|" + valKey(v.A)
+		return "un|" + strconv.Itoa(int(v.Op)) + "|" + reg(v.Dst) + "|" + vk(v.A)
 	case *ir.Cmp:
-		return "cmp|" + strconv.Itoa(int(v.Cond)) + "|" + reg(v.Dst) + "|" + valKey(v.A) + "|" + valKey(v.B)
+		return "cmp|" + strconv.Itoa(int(v.Cond)) + "|" + reg(v.Dst) + "|" + vk(v.A) + "|" + vk(v.B)
 	case *ir.Select:
-		return "select|" + reg(v.Dst) + "|" + valKey(v.Cond) + "|" + valKey(v.Then) + "|" + valKey(v.Else)
+		return "select|" + reg(v.Dst) + "|" + vk(v.Cond) + "|" + vk(v.Then) + "|" + vk(v.Else)
 	case *ir.Load:
 		return "load|" + v.Dev + "|" + v.Logic + "|" + reg(v.Dst)
 	case *ir.Store:
-		return "store|" + v.Dev + "|" + v.Logic + "|" + valKey(v.Src)
+		return "store|" + v.Dev + "|" + v.Logic + "|" + vk(v.Src)
 	case *ir.LoadSlot:
-		return "loadslot|" + v.Dev + "|" + v.Logic + "|" + valKey(v.Index) + "|" + reg(v.Dst)
+		return "loadslot|" + v.Dev + "|" + v.Logic + "|" + vk(v.Index) + "|" + reg(v.Dst)
 	case *ir.StoreSlot:
-		return "storeslot|" + v.Dev + "|" + v.Logic + "|" + valKey(v.Index) + "|" + valKey(v.Src)
+		return "storeslot|" + v.Dev + "|" + v.Logic + "|" + vk(v.Index) + "|" + vk(v.Src)
 	case *ir.LoadDyn:
-		return "loaddyn|" + valKey(v.DevPtr) + "|" + valKey(v.Logic) + "|" + reg(v.Dst)
+		return "loaddyn|" + vk(v.DevPtr) + "|" + vk(v.Logic) + "|" + reg(v.Dst)
 	case *ir.StoreDyn:
-		return "storedyn|" + valKey(v.DevPtr) + "|" + valKey(v.Logic) + "|" + valKey(v.Src)
+		return "storedyn|" + vk(v.DevPtr) + "|" + vk(v.Logic) + "|" + vk(v.Src)
 	case *ir.LoadSpecial:
 		return "loadsp|" + v.Name + "|" + reg(v.Dst)
 	case *ir.StoreSpecial:
-		return "storesp|" + v.Name + "|" + valKey(v.Src)
+		return "storesp|" + v.Name + "|" + vk(v.Src)
 	case *ir.LoadIndirect:
-		return "loadind|" + valKey(v.Ptr) + "|" + reg(v.Dst)
+		return "loadind|" + vk(v.Ptr) + "|" + reg(v.Dst)
 	case *ir.StoreIndirect:
-		return "storeind|" + valKey(v.Ptr) + "|" + valKey(v.Src)
+		return "storeind|" + vk(v.Ptr) + "|" + vk(v.Src)
 	case *ir.LoadSpill:
 		return "loadspill|" + strconv.Itoa(v.Slot) + "|" + reg(v.Dst)
 	case *ir.StoreSpill:
-		return "storespill|" + strconv.Itoa(v.Slot) + "|" + valKey(v.Src)
+		return "storespill|" + strconv.Itoa(v.Slot) + "|" + vk(v.Src)
 	case *ir.Builtin:
 		s := "builtin|" + v.Name + "|" + reg(v.Dst)
 		for _, a := range v.Args {
-			s += "|" + valKey(a)
+			s += "|" + vk(a)
 		}
 		return s
 	case *ir.Batch:
-		return "batch|" + strconv.Itoa(int(v.Kind)) + "|" + valKey(v.Device) + "|" + valKey(v.Name) +
-			"|" + valKey(v.Slot) + "|" + v.Logic + "|" + valKey(v.Mode) + "|" + valKey(v.Src) + "|" + reg(v.Dst)
+		return "batch|" + strconv.Itoa(int(v.Kind)) + "|" + vk(v.Device) + "|" + vk(v.Name) +
+			"|" + vk(v.Slot) + "|" + v.Logic + "|" + vk(v.Mode) + "|" + vk(v.Src) + "|" + reg(v.Dst)
 	}
 	return "?"
 }
