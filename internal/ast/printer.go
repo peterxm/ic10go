@@ -96,13 +96,21 @@ func (p *printer) decl(d Decl) {
 	case *DataDecl:
 		p.write("data ")
 		p.write(d.Name.Name)
-		p.write(" = [")
-		for i, v := range d.Values {
-			if i > 0 {
-				p.write(", ")
-			}
-			p.expr(v)
+		if len(d.Values) == 0 {
+			p.write(" = []")
+			return
 		}
+		p.write(" = [")
+		p.indent++
+		for _, v := range d.Values {
+			p.leading(v.Pos().Line)
+			p.nl()
+			p.expr(v)
+			p.write(",")
+			p.trailing(v.Pos().Line)
+		}
+		p.indent--
+		p.nl()
 		p.write("]")
 	case *VarDecl:
 		p.write("var ")

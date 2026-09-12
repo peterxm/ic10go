@@ -58,3 +58,20 @@ func TestStatsOf(t *testing.T) {
 		t.Errorf("Bytes = %d", s.Bytes)
 	}
 }
+
+func TestFormatDataTable(t *testing.T) {
+	src := []byte("data T = [\n    1, // one\n    hash(\"Iron\"), // two\n    LogicType.Open, // three\n]\n")
+	out, diags, err := ic10.Format("t.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("diags=%v err=%v", diags.Diags, err)
+	}
+	for _, want := range []string{"// one", "// two", "// three"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("comment %q not preserved:\n%s", want, out)
+		}
+	}
+	twice, _, _ := ic10.Format("t.icg", []byte(out))
+	if out != twice {
+		t.Errorf("data table formatting is not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", out, twice)
+	}
+}
