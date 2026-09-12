@@ -27,3 +27,11 @@ ic10c build             demo.icg > 2_runtime.ic
 生成。数据段布局：槽 508 哨兵，509..511 = `T[0..2]`。
 
 > 仅标准 IC host 支持（设备 host 的 `put db` 报 `MemoryNotWriteable`）。
+
+## 实测结果
+
+真机通过 ✅：先跑 `1_loader.ic`，再覆盖成 `2_runtime.ic`，LED 循环
+`111 → 222 → 333`，版本校验正常。
+
+> 已知问题（暂不处理）：数据段在栈顶，可能与大量 `push`/`poke` 冲突，
+> 见 [`docs/data-segment.md`](../../../docs/data-segment.md) 的「已知问题 / 待办」。
