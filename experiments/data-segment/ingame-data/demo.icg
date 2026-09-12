@@ -1,0 +1,12 @@
+// 真机测试：data 表 + loader/runtime 两段流程。
+// d0 = LED Display（Setting）。
+data T = [111, 222, 333]
+
+func main() {
+    var i = 0
+    for {
+        yield()
+        d0.Setting = T[i]     // 变量索引，读 get(db, base+i)
+        i = (i + 1) % 3
+    }
+}

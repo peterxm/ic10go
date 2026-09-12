@@ -133,3 +133,40 @@ func TestLocalStackSharedWithDB(t *testing.T) {
 		t.Errorf("put db 60 -> peek 60 = %v, want 54321", got)
 	}
 }
+
+// TestIngameDataDemo runs the committed loader/runtime pair (generated from
+// demo.icg) and checks the table cycles through all values.
+func TestIngameDataDemo(t *testing.T) {
+	loader, err := os.ReadFile("ingame-data/1_loader.ic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := os.ReadFile("ingame-data/2_runtime.ic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lm := vm.New()
+	if err := lm.Load(string(loader)); err != nil {
+		t.Fatal(err)
+	}
+	if err := lm.Run(100); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	m := vm.New()
+	m.Device("db").Stack = lm.Device("db").Stack
+	if err := m.Load(string(runtime)); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[float64]bool{}
+	for i := 0; i < 400; i++ {
+		if err := m.Run(1); err != nil && err != vm.ErrStepLimit {
+			t.Fatal(err)
+		}
+		seen[m.Get("d0", "Setting")] = true
+	}
+	for _, want := range []float64{111, 222, 333} {
+		if !seen[want] {
+			t.Errorf("table value %v never displayed", want)
+		}
+	}
+}
