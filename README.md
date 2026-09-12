@@ -109,6 +109,7 @@ go test ./...
 | [`docs/spec.md`](docs/spec.md) | `.icg` 语言规范 |
 | [`docs/architecture.md`](docs/architecture.md) | 编译器架构与里程碑 M0–M5 |
 | [`docs/target-ic10.md`](docs/target-ic10.md) | IC10 目标约束、指令映射与内建数据 |
+| [`docs/data-segment.md`](docs/data-segment.md) | 持久栈数据段（草案）：用持久栈扩充行数预算 |
 | [`Stationeers_IC10_参考文档.md`](Stationeers_IC10_参考文档.md) | IC10 指令完整参考 |
 
 ## 路线图
