@@ -26,6 +26,9 @@ function activate(context) {
         vscode.commands.registerCommand('icg.run', () => client.run())
     );
     context.subscriptions.push(
+        vscode.commands.registerCommand('icg.installData', () => client.installData())
+    );
+    context.subscriptions.push(
         vscode.commands.registerCommand('icg.decompile', () => client.decompile())
     );
     context.subscriptions.push(
@@ -302,6 +305,48 @@ class LspClient {
             const res = await this.execCli(args);
             this.output.appendLine(`=== run: ${path.basename(doc.fileName)} ===\n${res.stdout}${res.stderr}`);
             this.output.show(true);
+        });
+    }
+
+    // installData compiles the one-time data-segment loader and opens it.
+    async installData() {
+        const doc = this.activeICG();
+        if (!doc) return;
+        await this.withTempFile(doc, async (tmp) => {
+            const out = tmp + '.data.ic';
+            const args = ['build', '--split-data', '--data-out', out];
+            if (this.config().stableIns) args.push('--stable-ins');
+            args.push(tmp);
+            const res = await this.execCli(args);
+            let loader = '';
+            try {
+                loader = fs.readFileSync(out, 'utf8');
+            } catch (err) {
+                // no data segment
+            }
+            try {
+                fs.unlinkSync(out);
+            } catch (err) {
+                // ignore
+            }
+            if (res.code !== 0) {
+                this.output.appendLine(`=== install data failed ===\n${res.stderr}`);
+                this.output.show(true);
+                vscode.window.showErrorMessage(t('IC10 Go: data loader failed. See the "IC10 Go" output.', 'IC10 Go: 生成数据装载器失败，详见 "IC10 Go" 输出面板。'));
+                return;
+            }
+            if (!loader) {
+                vscode.window.showInformationMessage(t('IC10 Go: this file has no data tables.', 'IC10 Go: 该文件没有 data 表。'));
+                return;
+            }
+            const preview = await vscode.workspace.openTextDocument({ content: loader, language: 'ic10' });
+            await vscode.window.showTextDocument(preview, {
+                viewColumn: vscode.ViewColumn.Beside,
+                preview: false,
+            });
+            vscode.window.showInformationMessage(t(
+                'IC10 Go: run this loader once, then replace it with the compiled runtime.',
+                'IC10 Go: 先运行这段 loader，再用编译后的 runtime 覆盖它。'));
         });
     }
 

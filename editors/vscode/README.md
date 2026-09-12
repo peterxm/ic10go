@@ -22,7 +22,8 @@
 | 快速修复 | 未知 logic/slot type 的"你是不是想写…"；缺 `main` 一键补上 |
 | 预算常驻 | **状态栏**实时显示当前 `.icg` 的 `行/字节/行长/寄存器` 预算（点击即编译）；文件末尾另有 inlay hint |
 | 格式化 | `Shift+Alt+F`（或保存时）调用 `ic10c fmt` |
-| 片段 | `main`、`hyst`、`batchread`、`batchwrite`、`readlt`、`writelt`、`readdev`、`writedev`、`func`、`const`、`slotread` 等 |
+| 数据段 | 命令 **“IC10 Go: Install data segment”** 生成一次性 loader 并在旁边打开；`data` 表 / `switch ... table` 有语法高亮与补全 |
+| 片段 | `main`、`hyst`、`batchread`、`batchwrite`、`readlt`、`writelt`、`readdev`、`writedev`、`data`、`switchtable`、`func`、`const`、`slotread` 等 |
 
 **上下文感知补全**：
 - `d0.` → 该端口的 logic type；`d0.slot[0].` → 槽位属性
@@ -98,6 +99,7 @@ func main() {
 |------|------|
 | `IC10 Go: Compile to IC10` | 编译 `.icg`，旁边预览 IC10 产物 + 行/字节预算 |
 | `IC10 Go: Run in VM` | 在内置 VM 中运行 `.icg` 并显示设备状态 |
+| `IC10 Go: Install data segment` | 为含 `data` 表的 `.icg` 生成一次性 loader 并在旁边打开（先运行它，再换回 runtime） |
 | `IC10 Go: Decompile IC10 to .icg` | 把 `.ic`/`.ic10` 反编译为 `.icg`（结构化） |
 | `IC10 Go: Minify IC10` | 压缩 `.ic`/`.ic10` 行数 |
 | `IC10 Go: Annotate IC10 (disasm)` | 给 `.ic`/`.ic10` 加跳转目标注释 |

@@ -7,6 +7,7 @@
   "icg.noCheck.desc": "Disable device logic-type checks (`IC10C_NO_CHECK`).",
   "cmd.compile": "IC10 Go: Compile to IC10",
   "cmd.run": "IC10 Go: Run in VM",
+  "cmd.installData": "IC10 Go: Install data segment",
   "cmd.decompile": "IC10 Go: Decompile IC10 to .icg",
   "cmd.minify": "IC10 Go: Minify IC10",
   "cmd.disasm": "IC10 Go: Annotate IC10 (disasm)",

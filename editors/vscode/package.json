@@ -15,6 +15,7 @@
     "onLanguage:ic10",
     "onCommand:icg.compile",
     "onCommand:icg.run",
+    "onCommand:icg.installData",
     "onCommand:icg.decompile",
     "onCommand:icg.minify",
     "onCommand:icg.disasm",
@@ -84,6 +85,10 @@
         "title": "%cmd.run%"
       },
       {
+        "command": "icg.installData",
+        "title": "%cmd.installData%"
+      },
+      {
         "command": "icg.decompile",
         "title": "%cmd.decompile%"
       },
@@ -109,6 +114,11 @@
         },
         {
           "command": "icg.run",
+          "when": "editorLangId == icg",
+          "group": "navigation"
+        },
+        {
+          "command": "icg.installData",
           "when": "editorLangId == icg",
           "group": "navigation"
         },

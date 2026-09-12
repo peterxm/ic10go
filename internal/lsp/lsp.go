@@ -434,6 +434,7 @@ func baseCompletionItems() []completionItem {
 		ci("if", 14, ""), ci("else", 14, ""), ci("for", 14, ""), ci("switch", 14, ""),
 		ci("case", 14, ""), ci("default", 14, ""), ci("break", 14, ""), ci("continue", 14, ""),
 		ci("return", 14, ""), ci("label", 14, ""), ci("goto", 14, ""), ci("call", 14, ""), ci("ret", 14, ""),
+		ci("table", 14, "switch modifier"),
 		ci("true", 12, ""), ci("false", 12, ""), ci("nan", 12, ""), ci("pinf", 12, ""), ci("ninf", 12, ""),
 		ci("d0", 6, "device"), ci("d1", 6, "device"), ci("d2", 6, "device"),
 		ci("d3", 6, "device"), ci("d4", 6, "device"), ci("d5", 6, "device"), ci("db", 6, "device"),
