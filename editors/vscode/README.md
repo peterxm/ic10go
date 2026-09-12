@@ -97,7 +97,7 @@ func main() {
 
 | 命令 | 说明 |
 |------|------|
-| `IC10 Go: Compile to IC10` | 编译 `.icg`，旁边预览 IC10 产物 + 行/字节预算。若程序含 `data` 表，自动把「安装代码」复制到剪贴板并提示两步操作（先运行安装代码，再用预览中的运行代码覆盖） |
+| `IC10 Go: Compile to IC10 (data loader included)` | 编译 `.icg`，旁边预览 IC10 产物 + 行/字节预算。若程序含 `data` 表，自动把「安装代码」复制到剪贴板并提示两步操作（先运行安装代码，再用预览中的运行代码覆盖） |
 | `IC10 Go: Run in VM` | 在内置 VM 中运行 `.icg` 并显示设备状态 |
 | `IC10 Go: Decompile IC10 to .icg` | 把 `.ic`/`.ic10` 反编译为 `.icg`（结构化） |
 | `IC10 Go: Minify IC10` | 压缩 `.ic`/`.ic10` 行数 |

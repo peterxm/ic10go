@@ -267,7 +267,7 @@ Ret
 | `ic10c build <file.icg>` | 编译并输出 IC10 到 stdout |
 | `ic10c run <file.icg>` | 编译并在内置 VM 中运行（`--steps`/`--set`/`--trace`） |
 | `ic10c stats <file.icg>` | 行/字节/寄存器预算报告 |
-| `ic10c fmt [-w] <file.icg>` | 格式化源码（保留注释；`-w` 原地写回） |
+| `ic10c fmt [-w] <file.icg>` | 格式化源码（保留注释、`const`/`var` 分组、空行、`data` 表与 `switch ... table`；`-w` 原地写回） |
 | `ic10c disasm <file.ic>` | 反汇编旧 `.ic`（解析跳转目标为标签） |
 | `ic10c decompile [-s] [-o out.icg] <file.ic>` | 反编译为 `.icg`；`-s` 尝试结构化 |
 | `ic10c minify [-w] [-o out] <file.ic>` | 压缩现有 IC10 行数（去注释/内联 define/去标签/去不可达） |
@@ -362,7 +362,7 @@ ic10go/
 - 动态设备寄存器：`readDev(idx, lt)` / `writeDev(idx, lt, v)`（IC10 `drN`）
 
 ### M4 工具链 ✅
-- `fmt`（保留注释）、`stats`、`disasm`
+- `fmt`（保留注释、分组、空行、`data` 表与 `switch ... table`）、`stats`、`disasm`
 - `decompile`（IC10 → `.icg`，含 `-s` 结构化）
 - `minify`（现有 IC10 → 更少行，语义不变：去注释/内联 define/去标签/去不可达）
 - `run`（编译后在内置 VM 中执行，`--steps`/`--set`/`--trace`）

@@ -152,7 +152,7 @@ ic10c build --split-data main.icg
 ...
 ```
 
-工具决定：CLI 新增 `--split-data` / `--data-file`，VSCode 的
+工具决定：CLI 新增 `--split-data` / `--data-out`，VSCode 的
 “编译为 IC10”命令自动处理数据段（复制安装代码 + 预览运行代码）。
 
 ### 5.3 寻址与代码生成
@@ -191,7 +191,7 @@ ic10c build --split-data main.icg
 ### 5.6 工具链
 
 - `ic10c build --split-data`
-- `ic10c data`（只生成 / 更新 loader）
+- `ic10c build --data-only`（只生成 / 更新 loader）
 - VSCode：“IC10 Go: 编译为 IC10” → 一个命令完成：把安装代码复制到
   剪贴板、在旁边预览运行代码，并提示“先跑安装代码、再用运行代码覆盖”。
 - 文档：安装步骤、版本升级、失败行为。

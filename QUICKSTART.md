@@ -213,7 +213,8 @@ ic10c build --data-only app.icg > app.data.ic    # 只生成 loader
 ```
 
 先在芯片里运行 loader，再用 runtime 覆盖它。`switch x table { ... }` 可把
-常量多路分支自动表化。详见 [`docs/data-segment.md`](docs/data-segment.md)。
+常量多路分支自动表化。在 VSCode 里不用管这些：右键「编译为 IC10」会自动把
+安装代码放进剪贴板、在旁边打开运行代码。详见 [`docs/data-segment.md`](docs/data-segment.md)。
 
 ## 6. 一个完整例子（滞回温控）
 
@@ -302,7 +303,7 @@ sh editors/vscode/install.sh      # 2. 安装扩展
 
 然后按 `Ctrl+Shift+P` → `Developer: Reload Window` 重启 VSCode，用 VSCode 打开本仓库目录并编辑 `.icg` 文件即可。
 
-扩展是纯 JavaScript、无需 npm；它通过 `ic10c lsp` 提供诊断与补全。若找不到 `ic10c`，在设置里填 `icg.serverPath`。命令面板里还有 `IC10 Go: Compile to IC10`（旁边预览产物 + 预算）、`IC10 Go: Run in VM`，以及对 `.ic`/`.ic10` 的 `Decompile` / `Minify` / `Annotate` 命令。
+扩展是纯 JavaScript、无需 npm；它通过 `ic10c lsp` 提供诊断与补全。若找不到 `ic10c`，在设置里填 `icg.serverPath`。命令面板里还有 `IC10 Go: Compile to IC10 (data loader included)`（旁边预览产物 + 预算；含 `data` 表时自动处理安装代码）、`IC10 Go: Run in VM`，以及对 `.ic`/`.ic10` 的 `Decompile` / `Minify` / `Annotate` 命令。
 
 详细说明与常见问题见 [`editors/vscode/README.md`](editors/vscode/README.md)。
 
