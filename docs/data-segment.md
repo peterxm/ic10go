@@ -58,8 +58,8 @@ IC10 的程序上限是 **128 行 / 4 KiB**，这是 `.icg` 编译器设计的�
 3. **免设备、免通道**：不占用设备的可写属性，也不受网络通道
    “每网络 8 个且易失”的限制。
 4. **容量大**：每芯片 512 个 float，足以容纳常见查表 / 配置 / hash 表。
-5. **与现有机制正交**：寄存器溢出使用 511 向下的固定槽，数据段可放在中段，
-   互不干扰。
+5. **与寄存器溢出正交**：溢出从数据段下方（`base-1`）向下增长，编译器自动避让
+   （`AllocateReserved`），互不干扰。
 6. **可测试**：VM 已有 `Device.Stack` 与 `deviceByID`，只需增加“预置栈”
    与“两段流程”的夹具。
 
@@ -75,20 +75,20 @@ IC10 的程序上限是 **128 行 / 4 KiB**，这是 `.icg` 编译器设计的�
    掉电、拔芯片、游戏版本 / 存档变更、手动清栈都会丢数据。runtime 必须能
    检测“数据缺失 / 版本不符”。
 
-3. **地址分区冲突**
+3. **地址分区冲突**（已解决，见 §5.5）
    同一块栈上有三方：
    - call stack：`sp` 从 0 向上涨（`push`/`pop`/`poke`/`peek`）；
-   - spill：编译器溢出用 **511 向下**（`internal/regalloc/regalloc.go:20`）；
-   - data 段：建议放中段，并用 `get(db, addr)` **直接寻址**（不经过 `sp`）。
+   - spill：编译器溢出从数据段下方 **向下**（`internal/regalloc/regalloc.go:34`）；
+   - data 段：默认放栈顶 `512-size`，用 `get(db, addr)` **直接寻址**（不经过 `sp`）。
 
-   若不做分区约定，`push` 增多会踩到数据。
+   `ic10c stats` 会静态求 `push` 最大深度并对 `poke` 告警。
 
 4. **收益只在大表**
    IC10 常量本来就能作为立即数内联，小常量不占行。只有**动态索引的表**
    （`get(db, base+idx)`）或大块数据才真正省行数。需要明确的适用边界。
 
 5. **loader 自身也受 128 行限制**
-   表很大时要分块 / 循环编码（紧凑编码 + 循环写栈），或拆到多张芯片。
+   当前 loader 超过 128 行直接报错，需手动拆表（尚未做分块 / 循环编码）。
 
 6. **编译器复杂度**
    需要：数据段 IR、地址分配、loader 代码生成、runtime 读取代码生成，
@@ -114,26 +114,23 @@ IC10 的程序上限是 **128 行 / 4 KiB**，这是 `.icg` 编译器设计的�
 
 ## 5. 设计
 
-### 5.1 语言层
+### 5.1 语言层（已实现，语法见 §9）
 
-新增顶层数据声明（名字与语法待定）：
+两种写法都已落地：
 
 ```go
-// 方案 A：显式 data 表
+// A：显式 data 表
 data Recipe = [ -1301215609, 0.0095, ... ]
 
-// 方案 B：给 switch 加标记，由编译器自动表化
+// B：给 switch 加 table 标记，由编译器自动表化
 switch ore table {
 case 1: db.Setting = -1301215609; heat = 0.0095
 ...
 }
 ```
 
-数据表应支持：
-
-- 常量元素（数字、`hash("...")` 编译期值）；
-- 固定长度、编译期可知；
-- 可作为只读索引用 `Recipe[i]` 读取。
+数据表支持：编译期常量元素（数字、`hash("...")`、游戏枚举名）、固定长度、
+只读索引 `Recipe[i]`。
 
 ### 5.2 编译输出
 
@@ -143,17 +140,8 @@ ic10c build --split-data main.icg
   -> main.data.ic     # loader（≤128 行，装一次）
 ```
 
-或在单文件输出中用分段标记：
-
-```
-#=== data (run once) ===
-...
-#=== program ===
-...
-```
-
-工具决定：CLI 新增 `--split-data` / `--data-out`，VSCode 的
-“编译为 IC10”命令自动处理数据段（复制安装代码 + 预览运行代码）。
+实现采用 `--split-data` / `--data-out`（runtime 到 stdout、loader 到文件），
+VSCode 的“编译为 IC10”命令自动处理（复制安装代码 + 预览运行代码）。
 
 ### 5.3 寻址与代码生成
 
@@ -161,32 +149,35 @@ ic10c build --split-data main.icg
 - runtime：优先 `get(db, base+idx)`（**单指令直接寻址**，不碰 `sp`）。
 - 固定常量索引可在编译期折叠为具体地址。
 
-### 5.4 版本哨兵
+### 5.4 版本哨兵（已实现）
 
-- loader 在固定槽（如 `stack[0]`）写入 `VERSION`。
-- runtime 启动时校验：
+- loader 在数据段首槽 `base` 写入版本号；版本由表内容派生（CRC-32，见
+  `sema.dataVersion`），所以表一变版本就变，无需手动维护。
+- runtime 启动时读该槽并比对，不符则 `jump(9999)` 停机：
 
-  ```go
-  if get(db, 0) != VERSION {
-      // 数据缺失或版本不符：halt / 报警
-  }
+  ```ic
+  get r0 db <base>
+  sne r0 r0 <version>
+  beqz r0 4
+  j 9999
   ```
 
-- 数据布局变化时递增 `VERSION`。
+- `--no-data-check` / `--unsafe` 跳过校验（哨兵仍写入）。
 
-### 5.5 地址分区（建议）
+### 5.5 地址分区（已实现）
 
 真机已确认本地栈与 `db` 栈是**同一块内存**，所以数据段与 `sp` 增长区、寄存器
-溢出区共享同一个 512 槽空间，必须分区：
+溢出区共享同一个 512 槽空间。实际布局：
 
-| 区域 | 地址 | 用途 |
-|------|------|------|
-| call stack | 0 → `maxSp` | 用户 `push`/`pop` 增长区；编译器可算出上限 |
-| data 段 | `maxSp` → 溢出区前 | 只读常量 / 查表 |
-| spill | 511 → 向下 | 寄存器溢出（现有，`internal/regalloc/regalloc.go:20`） |
-| 哨兵 | data 段首 | 版本校验 |
+| 布局 | data 段 | 寄存器溢出 | 说明 |
+|------|---------|------------|------|
+| `top`（默认） | `[512-size, 511]` | 从 `base-1` 向下 | 数据段与溢出不相交 |
+| `middle` | `[256, 256+size-1]` | 从 `511` 向下 | 溢出碰到数据段则编译报错 |
 
-具体边界在实现时确定，并写入 `docs/target-ic10.md`。
+- 数据段首槽是版本哨兵，其后各表依次排布。
+- 用户 `push`/`poke` 增长区须留在数据段下方：`stats` 静态求 `push` 最大深度
+  并对 `poke` 告警（见 §8「已知问题」）。
+- 布局细节见 `docs/target-ic10.md` §5.6。
 
 ### 5.6 工具链
 
@@ -311,7 +302,7 @@ runtime（`peek` + `sp` 保存/恢复）都正常循环 `111/222/333`，宿主�
 
 ---
 
-## 9. 语法草案（已实现）
+## 9. 语法（已实现）
 
 顶层新增 `data` 表（编译期常量数组），由编译器分配到持久栈：
 
@@ -350,8 +341,8 @@ func main() {
 - 可选：编译器自动保留一个哨兵槽存数据版本（默认由数据内容派生 CRC），
   runtime 启动时校验；可用 `--no-data-check` 关闭。
 
-> 后续可加：给 `switch` 加标记，让编译器把「常量 → 常量」的多路分支自动
-> 表化进数据段，进一步减少手写。
+> `switch ... table`（§9.1）已实现该自动表化；`--auto-table` 还能自动识别
+> 满足条件的普通 `switch`。
 
 ### 9.1 实现状态
 
@@ -379,7 +370,7 @@ func main() {
 
 ---
 
-## 10. CLI 草案（已实现）
+## 10. CLI（已实现）
 
 ```
 ic10c build [flags] <file.icg>
@@ -444,6 +435,6 @@ VSCode 扩展：
 - `Stationeers_IC10_参考文档.md`（第三方资料，仅本地）：栈内存（第 152–168 行）、
   栈遍历、内部栈编程。
 - `docs/spec.md` 7.7 设备栈 / 按 id、8.3 栈。
-- `internal/regalloc/regalloc.go:20`：溢出槽从 511 向下。
-- `internal/builtin/builtin.go:158-165`：`get/put/getd/putd/clr`。
-- `internal/opt/opt.go:133`：`hasSideEffect`（待补写栈指令）。
+- `internal/regalloc/regalloc.go:34`：溢出槽从 `511 - reserved` 向下。
+- `internal/builtin/builtin.go:161-165`：`get/put/getd/putd/clr`。
+- `internal/opt/opt.go:133`：`hasSideEffect`（含 `push/pop/poke/put/putd/clr`）。

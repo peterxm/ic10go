@@ -1,0 +1,24 @@
+// switch ... table：把「常量 -> 常量」的稠密多路分支自动放进数据段。
+//
+// 与手写 data 表等价，但保留普通 switch 写法。编译器为每个赋值目标生成
+// 一张表，runtime 做一次边界检查 + 一次 get，而不是展开成比较链。
+//
+// 要求：case 是稠密整数，每个 case 对相同目标赋编译期常量。
+// 编译/安装流程与 data 表相同（--split-data）。
+func main() {
+    for {
+        yield()
+        switch d0.Setting table {
+            case 0:
+                db.Setting = hash("Idle")
+            case 1:
+                db.Setting = hash("Mining")
+            case 2:
+                db.Setting = hash("Smelting")
+            case 3:
+                db.Setting = hash("Cooling")
+            case 4:
+                db.Setting = hash("Charging")
+        }
+    }
+}

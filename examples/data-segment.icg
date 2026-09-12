@@ -1,0 +1,42 @@
+// 持久栈数据段示例：把「矿石 -> 显示名 / 精炼温度」两张表放进芯片持久栈。
+//
+// 为什么：这两张表若展开成比较链会占掉几十行，而 IC10 只有 128 行。
+// 数据段把表存进芯片的持久栈，runtime 只留几次 get 读取。
+//
+// 编译与安装（详见 docs/data-segment.md）：
+//   ic10c build --split-data ore.icg > ore.ic   # runtime 到 ore.ic，安装代码到 ore.data.ic
+//   1) 把 ore.data.ic 贴进 IC 芯片并运行一次（写表 + 版本哨兵）
+//   2) 用 ore.ic 覆盖它（runtime 读栈，启动校验哨兵）
+//
+// 在 VSCode 里：右键「编译为 IC10」，扩展会自动把安装代码复制到剪贴板、
+// 在旁边打开 runtime。
+//
+// data OreName  = 矿石显示名，元素用编译期常量 hash("...")（与游戏 HASH() 一致）。
+// data SmeltTemp = 精炼目标温度，用温度字面量写摄氏，编译期换算为开尔文。
+data OreName = [
+    hash("ItemIronIngot"),  // 0 Iron
+    hash("ItemCopperIngot"),  // 1 Copper
+    hash("ItemGoldIngot"),  // 2 Gold
+    hash("ItemSilicon"),  // 3 Silicon
+]
+
+data SmeltTemp = [
+    900c,  // Iron
+    1085c,  // Copper
+    1064c,  // Gold
+    1414c,  // Silicon
+]
+
+const ORE_COUNT = 4
+
+func main() {
+    for {
+        yield()
+        ore := d0.Setting  // 选择器：0..3
+        if ore < 0 || ore >= ORE_COUNT {
+            continue
+        }
+        db.Setting = OreName[ore]  // -> get(db, baseName + ore)
+        d1.On = d2.Temperature < SmeltTemp[ore]  // -> get(db, baseTemp + ore)
+    }
+}

@@ -1,0 +1,49 @@
+// 矿石熔炼：每块矿石有一个熔炼温度区间 [min, max]，把炉温维持在其中。
+//
+// 演示：data 表 + 变量索引 + 区间（滞回）控制。
+// 编译/安装同 data-segment.icg：
+//   ic10c build --split-data ore-smelting.icg > smelt.ic   # 同时生成 smelt.data.ic
+//   先运行 smelt.data.ic 一次，再用 smelt.ic 覆盖。
+data OreName = [
+    hash("ItemIronIngot"),  // 0 Iron
+    hash("ItemCopperIngot"),  // 1 Copper
+    hash("ItemGoldIngot"),  // 2 Gold
+    hash("ItemSilicon"),  // 3 Silicon
+]
+
+// 熔炼区间（摄氏），编译期换算为开尔文。
+data SmeltMin = [
+    900c,  // Iron
+    1085c,  // Copper
+    1064c,  // Gold
+    1414c,  // Silicon
+]
+
+data SmeltMax = [
+    1000c,  // Iron
+    1200c,  // Copper
+    1150c,  // Gold
+    1500c,  // Silicon
+]
+
+const ORE_COUNT = 4
+
+func main() {
+    for {
+        yield()
+        ore := d0.Setting
+        if ore < 0 || ore >= ORE_COUNT {
+            continue
+        }
+        lo := SmeltMin[ore]  // 区间下限 -> get(db, baseMin + ore)
+        hi := SmeltMax[ore]  // 区间上限 -> get(db, baseMax + ore)
+        t := d1.Temperature
+        if t < lo {
+            d2.On = 1  // 低于区间：加热
+        }
+        if t > hi {
+            d2.On = 0  // 高于区间：停止（区间内保持上一次状态）
+        }
+        db.Setting = OreName[ore]
+    }
+}
