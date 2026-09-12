@@ -480,6 +480,39 @@ clr(d0)                     // 清空设备
 d2.Mode = rmap(d3, hash("Iron"))   // 反向映射试剂
 ```
 
+### 7.8 持久栈数据段（进阶）
+
+IC10 的栈是**持久**的：值跨 tick、跨换代码保留。`.icg` 用 `data` 表把大块
+常量 / 查表放进栈，绕开 128 行预算。
+
+```go
+data RecipeDisplay = [ -1301215609, -404336834, 226410516 ]
+data RecipeHeat    = [ 0.009501, 0.009502, 0.009503 ]
+
+func main() {
+    for {
+        yield()
+        ore := d1.Setting
+        db.Setting = RecipeDisplay[ore-1]   // -> get(db, base + ore - 1)
+        heat = RecipeHeat[ore-1]
+    }
+}
+```
+
+- `data` 元素是编译期常量：数字、`hash("...")`，或游戏枚举名（如
+  `LogicType.Open`）。
+- 数据由一次性 **loader** 写入：`ic10c build --split-data`（或 `--data-only`）
+  生成；先在芯片里跑 loader，再用编译出的 runtime 覆盖它。
+- runtime 启动时校验版本哨兵，缺失 / 过期则停机；`--unsafe` 可跳过以省几行。
+- `switch x table { ... }` 把「常量 → 常量」的多路分支自动表化；
+  `--auto-table` 可对符合条件的普通 `switch` 自动做（默认关闭）。
+- 默认用 `get/put db`，要求**标准 IC host**；设备 host 用 `--data-access stack`
+  （本地 `poke`/`peek`）。
+- `ic10c stats` 会显示 `data slots a..b` 与 `push`/`poke` 冲突警告。
+
+完整细节见 [`docs/data-segment.md`](docs/data-segment.md) 与
+[`ic10code/Adv_Airlock_Smol.icg`](ic10code/Adv_Airlock_Smol.icg)（用数据段存逻辑类型的例子）。
+
 ---
 
 ## 8. 常用配方
@@ -764,6 +797,11 @@ for { break }
 for cond { }
 for i := 0; i < 10; i++ { }
 switch x { case 1: ... default: ... }
+switch x table { case 0: y = 1 case 1: y = 2 }   // 自动表化（需 loader）
+
+// 数据段（持久栈）
+data T = [1, 2, hash("Iron"), LogicType.Open]
+x := T[i]                       // -> get(db, base + i)
 
 // 函数（内联，无递归）
 func f(a num, b num) num { return a + b }

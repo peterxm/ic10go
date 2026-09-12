@@ -1,6 +1,6 @@
-# 持久栈数据段（草案）
+# 持久栈数据段
 
-> 状态：草案，待评审
+> 状态：**已实现**（语法、CLI、VSCode、真机验证均完成）
 > 目标：利用 IC10 芯片**持久栈**，把大块常量 / 查表移出 128 行程序预算，
 > 让 `.icg` 在行数受限时仍能表达大数据。
 
@@ -107,12 +107,12 @@ IC10 的程序上限是 **128 行 / 4 KiB**，这是 `.icg` 编译器设计的�
 
 10. **优化器安全性**
     读数据走 `get`/`peek`，目前不在 `redundantLoads` 的 CSE 范围内；
-    写栈指令（`put`/`putd`/`clr`）也尚未在 `hasSideEffect` 中标注
-    （`internal/opt/opt.go:133`），需要补齐以免未来优化误删/重排。
+    写栈指令（`put`/`putd`/`clr`）已在 `hasSideEffect` 中标注
+    （`internal/opt/opt.go`），避免被误删/重排。
 
 ---
 
-## 5. 设计草案
+## 5. 设计
 
 ### 5.1 语言层
 
@@ -228,10 +228,13 @@ ic10c build --split-data main.icg
    `put db 0 111` 报 `MemoryNotWriteable`。
    因此数据段方案**要求标准 IC host**；若要兼容设备 host，需改用本地栈
    （`poke`/`peek`，见 §11 的 `--data-access stack`）。
-4. `get(db, addr)` 的越界 / 未初始化行为。
-5. 数据段大小的上限与 loader 分块策略。
-6. 哪些常量应自动进入数据段（启发式）。
-7. CLI / VSCode 的具体交互。
+4. `get(db, addr)` 的越界 / 未初始化行为（未在真机单独验证；loader 未跑时读到 0）。
+5. 数据段大小的上限与 loader 分块策略（当前 loader 超过 128 行即报错，需手动拆表）。
+6. ~~哪些常量应自动进入数据段（启发式）~~ **已实现**：`--auto-table`
+   （密集整数、≥5 case、纯常量赋值、表 ≤64）。
+7. ~~CLI / VSCode 的具体交互~~ **已完成**：`--split-data`/`--data-only`/
+   `--data-access`/`--data-layout`/`--unsafe`/`--auto-table` + VSCode
+   “Install data segment” 命令与 `icg.autoTable` 设置。
 
 ---
 

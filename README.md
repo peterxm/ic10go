@@ -12,6 +12,7 @@
 - **寄存器复用**：活跃性分析 + 图着色（Chaitin-Briggs）+ 拷贝合并；寄存器不足时自动溢出到 IC10 栈。
 - **面向 128 行 / 4 KiB 约束**：不生成 `alias` / `define` / 注释 / 空行 / 标签，跳转用绝对行号。
 - **现代语法**：`:=`、`if/for/switch`、函数（编译期全内联）、设备属性 `d0.On`、槽位 `d0.slot[i].X`、批量 IO、通道。
+- **持久栈数据段**：`data` 表把大块常量 / 查表放进芯片持久栈，`switch ... table` 自动表化，突破 128 行预算。
 - **编译期求值**：常量折叠、`hash()` 的 CRC-32、逻辑类型校验。
 - **快速开发工具链**：`build` / `run` / `fmt` / `disasm` / `decompile` / `stats` / `lsp`，以及内置最小解释器。
 
@@ -52,7 +53,7 @@ j 1
 **M0 已完成**：lexer / parser / AST / 诊断 / CLI 骨架。
 **M1 已完成**：sema（名字解析、常量求值）、lower（AST→三地址 IR、全内联）、regalloc（活跃性 + 图着色 + 拷贝合并 + 溢出，寄存器复用）、codegen（指令选择、空块消除、逆后序布局、绝对行号、限额校验）。
 **M2 已完成**：IR 优化器（块内拷贝/常量传播、全局常量传播、常量折叠、代数化简、全局 CSE（可用表达式）、select 转换、冗余设备/槽位/批量读消除、常量分支折叠、循环不变量外提、活跃性死代码消除、不可达块删除）、比较-分支融合、`&&`/`||`→`min`/`max`（纯操作数）。
-**M3 已完成**：批量 IO（`batch.read/readName/readSlot/readNameSlot/write/writeName/writeSlot`）、网络通道 `d.channel[conn][ch]`、栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr`、`isSet/isUnset/rmap`、`approx/approxZero`、`str("...")` 显示字符串、动态 logicType `read/write`、动态设备寄存器 `readDev/writeDev`（IC10 `drN`）、`LogicType.X` 枚举名透传、补充 logic type。
+**M3 已完成**：批量 IO（`batch.read/readName/readSlot/readNameSlot/write/writeName/writeSlot`）、网络通道 `d.channel[conn][ch]`、栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr`、`isSet/isUnset/rmap`、`approx/approxZero`、`str("...")` 显示字符串、动态 logicType `read/write`、动态设备寄存器 `readDev/writeDev`（IC10 `drN`）、`LogicType.X` 枚举名透传、补充 logic type、**持久栈数据段**（`data` 表 / `switch ... table` / loader+runtime 两段流程 / 版本哨兵 / `--data-access` / `--data-layout` / `--unsafe` / `--auto-table`）。
 **M5 已完成**：测试用最小 IC10 解释器 `internal/vm`（寄存器 / 栈 / 设备 / 槽位 / 通道 / 批量 / 分支 / 标签与绝对行号），配套端到端语义测试与常量折叠差分测试；并经 `ic10c run` 暴露给用户调试。
 **M4 已完成**：`ic10c stats`（行/字节/寄存器预算）、`ic10c fmt`（格式化，支持 `-w`）、`ic10c disasm`（旧 IC10 反汇编注释）、`ic10c decompile`（IC10 → `.icg`，支持 `-s` 结构化）、`ic10c minify`（压缩现有 IC10 行数）、`ic10c run`（内置 VM 执行）、`ic10c lsp`（诊断 / 上下文补全 / 格式化 / hover / 定义 / 大纲 / 折叠 / 引用 / 重命名 / 参数提示 / 快速修复 / 语义高亮 / 预算内联）、VSCode 扩展（`.icg` 与 `.ic`/`.ic10` 支持、片段、编译预览、VM 运行、反编译/压缩/注释命令）。
 
@@ -60,9 +61,13 @@ j 1
 
 ```
 ic10c build  <file.icg>       # 编译为 IC10 并输出到 stdout
-ic10c build --split-data <file.icg>  # 同时输出持久栈数据段 loader（<file>.data.ic）
+ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
+            [--data-layout top|middle] [--unsafe] [--auto-table] <file.icg>
+                              # 同时输出持久栈数据段 loader（默认 <file>.data.ic）
+ic10c build --data-only <file.icg>  # 只输出数据段 loader
 ic10c run    <file.icg>       # 编译并在内置 VM 中运行（--steps/--set/--trace）
-ic10c stats  <file.icg>       # 行 / 字节 / 寄存器预算报告
+ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] <file.icg>
+                              # 行 / 字节 / 寄存器预算 + 数据段 / 栈冲突警告
 ic10c fmt    [-w] <file.icg>  # 格式化源码
 ic10c disasm <file.ic>        # 反汇编注释旧 IC10
 ic10c decompile <file.ic>     # 将 IC10 反编译为 .icg 源码（-o 输出到文件，-s 结构化）
@@ -100,6 +105,7 @@ go test ./...
 - 覆盖：寄存器复用、比较融合、select、死代码消除、批量聚合、栈、通道、槽位、真实脚本 `solar_tracker`
 - 工具：`fmt` 幂等性、`stats`、`disasm`、LSP 诊断与补全
 - 真实脚本：`ic10code/` 下每个 `.ic`/`.ic10` 都做**反编译→重编译→设备写入序列对比**（`TestIc10CodeRoundTrip`）与 **minify 等价性**（`TestMinifyIc10Code`）
+- 数据段：`data` 表端到端（loader→runtime、版本哨兵、`--data-access stack`、`--data-layout middle`、`--auto-table`），见 `pkg/ic10/data_test.go` 与 `experiments/data-segment/`
 
 ## 文档
 
@@ -110,7 +116,7 @@ go test ./...
 | [`docs/spec.md`](docs/spec.md) | `.icg` 语言规范 |
 | [`docs/architecture.md`](docs/architecture.md) | 编译器架构与里程碑 M0–M5 |
 | [`docs/target-ic10.md`](docs/target-ic10.md) | IC10 目标约束、指令映射与内建数据 |
-| [`docs/data-segment.md`](docs/data-segment.md) | 持久栈数据段（草案）：用持久栈扩充行数预算 |
+| [`docs/data-segment.md`](docs/data-segment.md) | 持久栈数据段：`data` 表 / loader+runtime / 布局 / 宿主兼容 |
 | [`Stationeers_IC10_参考文档.md`](Stationeers_IC10_参考文档.md) | IC10 指令完整参考 |
 
 ## 路线图

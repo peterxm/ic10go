@@ -174,6 +174,25 @@ PressureWaste  PressureAir  MaxQuantity  Mature  ReferenceId  Seeding
   - `ReagentMode.Contents`(0) / `Required`(1) / `Recipe`(2)
   - `PrinterInstruction.ExecuteRecipe`(1) / `WaitUntilNextValid`(2)（8 位 OP 码，需核对）
 
+### 5.6 数据段布局
+
+`data` 表放进芯片的持久栈（512 槽）：
+
+| 布局 | 数据段 | 寄存器溢出 | 备注 |
+|------|--------|-----------|------|
+| `top`（默认） | `[512-size, 511]` | `base-1` 向下 | 数据段与溢出不相交 |
+| `middle` | `[256, 256+size-1]` | `511` 向下 | 溢出碰到数据段则报错 |
+
+- 数据段首槽是版本哨兵；其后各表依次排布，`Table[i]` 用
+  `get(db, base + i)` 读取。
+- `size = 1（哨兵）+ 所有表元素数`（`--unsafe`/`--no-data-check` 仍占哨兵槽）。
+- loader 用 `put db addr value`（`--data-access stack` 用 `poke addr value`）写入；
+  value 可为数字或游戏枚举名。
+- 数据段要求**标准 IC host**；设备 host 需 `--data-access stack`。
+- 用户 `push` 增长区与 `poke` 地址必须留在数据段下方；`ic10c stats` 会警告。
+
+详见 [`data-segment.md`](data-segment.md)。
+
 ---
 
 ## 6. 输出格式

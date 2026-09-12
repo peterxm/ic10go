@@ -112,6 +112,7 @@ func main() {
 | `icg.serverPath` | `""` | `ic10c` 可执行文件路径；留空则自动查找 |
 | `icg.stableIns` | `false` | 编译/运行时加 `--stable-ins`（稳定版 `ins` 参数顺序） |
 | `icg.noCheck` | `false` | 关闭设备 logic type 校验（`IC10C_NO_CHECK`） |
+| `icg.autoTable` | `false` | 编译/安装数据段时加 `--auto-table`：自动表化符合条件的常量 `switch`（需先跑 loader） |
 
 ## 七、文件类型
 
@@ -125,6 +126,7 @@ func main() {
 - **没有高亮**：确认扩展出现在扩展列表（搜索 `IC10 Go`），并已重启 VSCode。
 - **没有诊断/补全/悬停**：多半是找不到 `ic10c`。设置 `icg.serverPath`，或在仓库根目录构建 `ic10c`。
 - **悬停一直显示"正在加载"**：旧版扩展/编译器的已知问题，已在 0.5.4 修复——请更新 `ic10c` 与扩展后重载。
+- **含 `data` 表的程序停机 / 行为不对**：数据段要先安装——用命令 “IC10 Go: Install data segment” 生成 loader，先贴入运行，再用编译产物覆盖；设备 host（空调等）需改用 `--data-access stack` 生成。
 - **始终报 `no main function found`**：确认文件确实有 `func main()`；若文件带 UTF-8 BOM，旧版编译器会解析失败（0.5.4 起已支持 BOM）。
 - **改了编译器后行为没变**：运行 `IC10 Go: Restart Language Server`。
 - **查看日志**：输出面板（`Ctrl+Shift+U`）选择 `IC10 Go`。

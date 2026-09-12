@@ -194,6 +194,27 @@ d0.Setting = str("Ready!")
 
 完整语法见 [`docs/spec.md`](docs/spec.md)。
 
+### 持久栈数据段（进阶）
+
+用 `data` 表把大块常量 / 查表放进芯片的持久栈，突破 128 行预算：
+
+```go
+data Display = [ -1301215609, -404336834, 226410516 ]
+
+func main() {
+    ore := d1.Setting
+    db.Setting = Display[ore-1]     // -> get(db, base + ore - 1)
+}
+```
+
+```bash
+ic10c build --split-data app.icg > app.ic        # 生成 loader -> app.data.ic
+ic10c build --data-only app.icg > app.data.ic    # 只生成 loader
+```
+
+先在芯片里运行 loader，再用 runtime 覆盖它。`switch x table { ... }` 可把
+常量多路分支自动表化。详见 [`docs/data-segment.md`](docs/data-segment.md)。
+
 ## 6. 一个完整例子（滞回温控）
 
 `hysteresis.icg`：

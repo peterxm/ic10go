@@ -34,10 +34,12 @@ ident = letter { letter | digit | "_" }
 ### 2.3 关键字
 
 ```
-const  var   func  if    else  for    break  continue
+const  data  var   func  if    else  for    break  continue
 return switch case  default
 true   false nan   pinf  ninf
 ```
+
+> `table` 是 `switch` 的上下文修饰符（`switch x table { ... }`），不是保留字。
 
 ### 2.4 设备端口
 

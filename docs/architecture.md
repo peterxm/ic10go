@@ -296,6 +296,7 @@ ic10go/
     spec.md
     architecture.md
     target-ic10.md
+    data-segment.md
   cmd/ic10c/
     main.go
   internal/
@@ -317,7 +318,8 @@ ic10go/
     decomp/       // IC10 → .icg 反编译（含结构化）
     lsp/          // 语言服务器
     vm/           // 测试用最小解释器
-  pkg/ic10/       // 公开 API（Compile/Format/StatsOf）
+  pkg/ic10/       // 公开 API（Compile/Format/StatsOf/DataLoader/DataStats/MaxStackDepth）
+  experiments/    // 数据段原型与真机测试脚本
   editors/vscode/ // VSCode 扩展
   testdata/
     golden/       // 源 → 期望 IC10
@@ -411,3 +413,27 @@ IC10 → `.icg` 的翻译分两步：
    - 结构化后若产物无法编译，CLI 自动回退到扁平形式。
 
 `ic10code/` 下的真实脚本都会做**反编译 → 重编译 → 设备写入序列对比**（`TestIc10CodeRoundTrip`）与 **minify 等价性**（`TestMinifyIc10Code`）；结构化是尽力而为，失败时回退到扁平形式。
+
+---
+
+## 15. 持久栈数据段
+
+IC10 的栈是持久的（跨 tick、跨换代码保留），`.icg` 用它当**数据段**：
+
+- **语法**：顶层 `data Name = [ ... ]`；元素为编译期常量（数字、`hash("...")`、
+  游戏枚举名如 `LogicType.Open`，渲染成 IC10 字面量）。
+- **寻址**：`Table[i]` → `get(db, base + i)`（`internal/lower`），索引可为变量。
+- **布局**（`internal/sema.assignData`）：
+  - `top`（默认）：数据段在栈顶 `base = 512 - size`，寄存器溢出从 `base-1` 向下；
+  - `middle`：数据段固定槽 `256`，溢出从 `511` 向下，重叠则报错。
+  版本哨兵占数据段首槽（`--no-data-check`/`--unsafe` 时仍写入，仅 runtime 不校验）。
+- **loader**：`internal/codegen` 之外由 `pkg/ic10.DataLoader` 生成，输出
+  `put db addr value`（`--data-access stack` 时为 `poke addr value`）。
+- **runtime 校验**：`lower.emitDataCheck` 读哨兵，与数据内容派生的版本比对，
+  不符则 `jump(9999)` 停机。
+- **`switch ... table` / `--auto-table`**：`internal/sema.buildTableSwitch` 把
+  「常量 → 常量」的密集整数分支转成数据表，lower 为边界检查 + 查表。
+- **冲突检查**：`pkg/ic10.MaxStackDepth` 在 CFG 上静态求 `push` 最大深度；
+  `DataStats` 提示 `poke` 越界；`ic10c stats` 汇总。
+- 细节与真机验证见 [`data-segment.md`](data-segment.md) 与
+  `experiments/data-segment/`。
