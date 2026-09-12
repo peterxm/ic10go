@@ -346,8 +346,10 @@ func main() {
 - ✅ 版本哨兵：loader 写 `put db <base> <version>`；runtime 校验失败用
   `jump(9999)` 停机（`--no-data-check` 可关）。
 - ✅ loader 生成：`ic10.DataLoader` / `ic10c build --data-only`。
+- ✅ `switch tag table { ... }` 自动表化：常量 → 常量、连续整数 case、
+  各 case 目标一致时，编译器为每个目标生成一张表，lower 为边界检查 +
+  `get(db, base + tag - lo)`；可选 `default` 处理越界。
 - ⏳ `--data-access stack`（`poke`/`peek` 兼容设备 host）未实现。
-- ⏳ `switch` 自动表化未实现。
 
 真机验证：标准 IC host 下 loader → runtime 读表成功；设备 host（空调）
 `put db` 报 `MemoryNotWriteable`（见 §11）。

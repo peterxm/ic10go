@@ -512,6 +512,10 @@ func (l *lowerer) lowerFor(s *ast.ForStmt) {
 }
 
 func (l *lowerer) lowerSwitch(s *ast.SwitchStmt) {
+	if ts, ok := l.info.TableSwitches[s]; ok {
+		l.lowerTableSwitch(s, ts)
+		return
+	}
 	endB := l.b.NewBlock()
 	l.loops = append(l.loops, loopCtx{breakB: endB})
 	defer func() { l.loops = l.loops[:len(l.loops)-1] }()
@@ -582,6 +586,54 @@ func (l *lowerer) lowerSwitch(s *ast.SwitchStmt) {
 // Expressions
 // ---------------------------------------------------------------------------
 
+// lowerTableSwitch lowers a `switch tag table` into a bounds check plus one
+// table read per assignment target.
+func (l *lowerer) lowerTableSwitch(s *ast.SwitchStmt, ts *sema.TableSwitch) {
+	endB := l.b.NewBlock()
+	l.loops = append(l.loops, loopCtx{breakB: endB})
+	defer func() { l.loops = l.loops[:len(l.loops)-1] }()
+
+	inB := l.b.NewBlock()
+	outB := l.b.NewBlock()
+
+	tag := l.lowerExpr(s.Tag)
+	lt := l.b.NewReg("swlt")
+	l.b.Emit(&ir.Cmp{Cond: ir.Lt, Dst: lt, A: tag, B: &ir.Const{V: float64(ts.Low)}})
+	gt := l.b.NewReg("swgt")
+	l.b.Emit(&ir.Cmp{Cond: ir.Gt, Dst: gt, A: tag, B: &ir.Const{V: float64(ts.High)}})
+	bad := l.b.NewReg("swbad")
+	l.emitBin(ir.BitOr, bad, lt, gt)
+	l.b.SetTerm(&ir.Br{Cond: ir.NonZero, A: bad, Then: outB, Else: inB})
+
+	// Out of range: run the default body (if any), then skip.
+	l.b.SetBlock(outB)
+	for _, c := range s.Cases {
+		if c.Default {
+			l.lowerStmts(c.Body)
+			break
+		}
+	}
+	if l.b.Cur().Term == nil {
+		l.b.SetTerm(&ir.Jmp{Target: endB})
+	}
+
+	// In range: read each generated table.
+	l.b.SetBlock(inB)
+	idx := l.b.NewReg("swidx")
+	l.emitBin(ir.Sub, idx, tag, &ir.Const{V: float64(ts.Low)})
+	for _, tt := range ts.Targets {
+		addr := l.b.NewReg("swaddr")
+		l.emitBin(ir.Add, addr, &ir.Const{V: float64(tt.Table.Base)}, idx)
+		v := l.b.NewReg("swval")
+		l.b.Emit(&ir.Builtin{Name: "get", Dst: v, Args: []ir.Value{&ir.Device{Name: "db"}, addr}})
+		l.storeTo(tt.Assign.Lhs, v)
+	}
+	l.b.SetTerm(&ir.Jmp{Target: endB})
+
+	l.b.SetBlock(endB)
+}
+
+// lowerExpr lowers an expression into an IR value.
 func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 	switch e := e.(type) {
 	case *ast.NumberLit:

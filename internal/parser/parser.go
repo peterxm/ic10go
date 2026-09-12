@@ -381,8 +381,13 @@ func (p *parser) parseSwitch() ast.Stmt {
 	if !p.at(token.LBrace) {
 		tag = p.parseExpr()
 	}
+	table := false
+	if p.at(token.Ident) && p.cur().Text == "table" {
+		p.advance()
+		table = true
+	}
 	p.expect(token.LBrace)
-	sw := &ast.SwitchStmt{NodeBase: base(kw.Pos), Tag: tag}
+	sw := &ast.SwitchStmt{NodeBase: base(kw.Pos), Tag: tag, Table: table}
 	for {
 		p.skipSemis()
 		switch p.cur().Kind {

@@ -28,6 +28,20 @@ type DataTable struct {
 	Base   int // first stack slot
 }
 
+// TableSwitch describes a `switch tag table { ... }` that is lowered to data
+// tables (one per assignment target) instead of a comparison chain.
+type TableSwitch struct {
+	Low, High int
+	Targets   []TableSwitchTarget
+}
+
+// TableSwitchTarget is one assignment target of a table switch, with the
+// per-index values in Table.
+type TableSwitchTarget struct {
+	Assign *ast.AssignStmt
+	Table  *DataTable
+}
+
 type Info struct {
 	Consts    map[string]float64
 	RawConsts map[string]string
@@ -41,17 +55,21 @@ type Info struct {
 	DataSize    int     // sentinel (if any) + all elements
 	Sentinel    int     // stack slot holding the version, -1 if no data
 	DataVersion float64 // version written by the loader and checked at runtime
+
+	// TableSwitches maps a `switch ... table` node to its generated tables.
+	TableSwitches map[*ast.SwitchStmt]*TableSwitch
 }
 
 // Check resolves declarations and evaluates constants.
 func Check(file *ast.File, diags *diag.Bag) *Info {
 	info := &Info{
-		Consts:    map[string]float64{},
-		RawConsts: map[string]string{},
-		Devices:   map[string]string{},
-		Funcs:     map[string]*FuncInfo{},
-		DataIndex: map[string]*DataTable{},
-		Sentinel:  -1,
+		Consts:        map[string]float64{},
+		RawConsts:     map[string]string{},
+		Devices:       map[string]string{},
+		Funcs:         map[string]*FuncInfo{},
+		DataIndex:     map[string]*DataTable{},
+		Sentinel:      -1,
+		TableSwitches: map[*ast.SwitchStmt]*TableSwitch{},
 	}
 
 	for _, d := range file.Decls {
@@ -165,6 +183,7 @@ func Check(file *ast.File, diags *diag.Bag) *Info {
 		}
 	}
 
+	collectTableSwitches(info, diags)
 	assignData(info)
 	return info
 }
@@ -201,6 +220,163 @@ func dataVersion(tables []*DataTable) float64 {
 		}
 	}
 	return float64(int32(h.Sum32()))
+}
+
+// collectTableSwitches finds `switch ... table` statements and turns each into
+// one data table per assignment target.
+func collectTableSwitches(info *Info, diags *diag.Bag) {
+	for _, fi := range info.Funcs {
+		if fi.Decl.Body != nil {
+			walkStmts(fi.Decl.Body.List, func(s *ast.SwitchStmt) {
+				if s.Table {
+					buildTableSwitch(info, s, diags)
+				}
+			})
+		}
+	}
+}
+
+func walkStmts(stmts []ast.Stmt, visit func(*ast.SwitchStmt)) {
+	for _, s := range stmts {
+		switch s := s.(type) {
+		case *ast.BlockStmt:
+			walkStmts(s.List, visit)
+		case *ast.IfStmt:
+			walkStmts(s.Then.List, visit)
+			if s.Else != nil {
+				walkStmts([]ast.Stmt{s.Else}, visit)
+			}
+		case *ast.ForStmt:
+			walkStmts(s.Body.List, visit)
+		case *ast.SwitchStmt:
+			visit(s)
+			for _, c := range s.Cases {
+				walkStmts(c.Body, visit)
+			}
+		}
+	}
+}
+
+// buildTableSwitch validates a table switch and generates one data table per
+// assignment target: all cases must be dense integers assigning constants to
+// the same targets in the same order.
+func buildTableSwitch(info *Info, s *ast.SwitchStmt, diags *diag.Bag) {
+	if s.Tag == nil {
+		diags.Errorf(s.Pos(), "table switch requires a tag")
+		return
+	}
+	type entry struct {
+		val  int
+		body []ast.Stmt
+	}
+	var entries []entry
+	for _, c := range s.Cases {
+		if c.Default {
+			continue
+		}
+		if len(c.Exprs) != 1 {
+			diags.Errorf(c.Pos(), "table switch case must have one value")
+			return
+		}
+		v, ok := Eval(c.Exprs[0], info.Consts)
+		if !ok || v != math.Trunc(v) {
+			diags.Errorf(c.Exprs[0].Pos(), "table switch case value must be an integer constant")
+			return
+		}
+		entries = append(entries, entry{int(v), c.Body})
+	}
+	if len(entries) == 0 {
+		diags.Errorf(s.Pos(), "table switch has no cases")
+		return
+	}
+	lo, hi := entries[0].val, entries[0].val
+	for _, e := range entries {
+		if e.val < lo {
+			lo = e.val
+		}
+		if e.val > hi {
+			hi = e.val
+		}
+	}
+	if hi-lo+1 != len(entries) {
+		diags.Errorf(s.Pos(), "table switch cases must be dense (%d..%d)", lo, hi)
+		return
+	}
+	n := len(entries[0].body)
+	if n == 0 {
+		diags.Errorf(s.Pos(), "table switch case body must assign a constant")
+		return
+	}
+	targets := make([]*ast.AssignStmt, n)
+	for j, st := range entries[0].body {
+		as, ok := st.(*ast.AssignStmt)
+		if !ok || as.Op != token.Assign {
+			diags.Errorf(st.Pos(), "table switch case must be `target = constant`")
+			return
+		}
+		targets[j] = as
+	}
+	values := make([][]float64, n)
+	for j := range values {
+		values[j] = make([]float64, hi-lo+1)
+	}
+	for _, e := range entries {
+		if len(e.body) != n {
+			diags.Errorf(s.Pos(), "table switch cases must assign the same targets")
+			return
+		}
+		for j, st := range e.body {
+			as, ok := st.(*ast.AssignStmt)
+			if !ok || as.Op != token.Assign || !sameTarget(targets[j].Lhs, as.Lhs) {
+				diags.Errorf(st.Pos(), "table switch cases must assign the same targets")
+				return
+			}
+			cv, ok := Eval(as.Rhs, info.Consts)
+			if !ok {
+				diags.Errorf(as.Rhs.Pos(), "table switch value must be a constant")
+				return
+			}
+			values[j][e.val-lo] = cv
+		}
+	}
+	ts := &TableSwitch{Low: lo, High: hi}
+	for j := range targets {
+		t := &DataTable{Name: fmt.Sprintf("_sw%d_%d", s.Pos().Offset, j), Values: values[j]}
+		info.Data = append(info.Data, t)
+		ts.Targets = append(ts.Targets, TableSwitchTarget{Assign: targets[j], Table: t})
+	}
+	info.TableSwitches[s] = ts
+}
+
+// sameTarget reports whether two assignment targets have the same shape (the
+// same variable, or the same device.logic).
+func sameTarget(a, b ast.Expr) bool {
+	switch x := a.(type) {
+	case *ast.Ident:
+		y, ok := b.(*ast.Ident)
+		return ok && x.Name == y.Name
+	case *ast.SelectorExpr:
+		y, ok := b.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		return sameDevice(x.X, y.X) && x.Sel.Name == y.Sel.Name
+	}
+	return false
+}
+
+// sameDevice reports whether two device operands name the same port (a device
+// literal or an alias identifier).
+func sameDevice(a, b ast.Expr) bool {
+	switch x := a.(type) {
+	case *ast.Ident:
+		y, ok := b.(*ast.Ident)
+		return ok && x.Name == y.Name
+	case *ast.DeviceLit:
+		y, ok := b.(*ast.DeviceLit)
+		return ok && x.Name == y.Name
+	}
+	return false
 }
 
 // Eval evaluates an expression to a compile-time constant. It returns false if

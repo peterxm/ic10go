@@ -212,6 +212,21 @@ default:
 
 编译为比较链或跳转表（视情况）。
 
+加 `table` 标记可把「常量 → 常量」的多路分支自动放进数据段（省行数）：
+
+```go
+switch ore table {
+case 1: db.Setting = -1301215609; heat = 0.0095
+case 2: db.Setting = -404336834;  heat = 0.0095
+case 3: db.Setting = 226410516;   heat = 0.0095
+}
+```
+
+约束：case 值必须是**连续整数**（`lo..hi` 无空缺），每个 case 体是若干
+`目标 = 常量` 赋值，且各 case 的目标一致。编译为一次边界检查 + 每个目标
+一条 `get(db, base + tag - lo)`；可选 `default` 处理越界。见
+[`data-segment.md`](data-segment.md)。
+
 ### 5.5 返回
 
 ```go

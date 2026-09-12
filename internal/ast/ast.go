@@ -132,6 +132,7 @@ type CaseClause struct {
 type SwitchStmt struct {
 	NodeBase
 	Tag   Expr // may be nil
+	Table bool // `switch tag table { ... }`: auto-table into the data segment
 	Cases []*CaseClause
 }
 

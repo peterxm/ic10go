@@ -94,3 +94,70 @@ func TestDataTableNoCheck(t *testing.T) {
 		t.Errorf("d0.Setting = %v, want 0 (T[1] reads an empty slot)", got)
 	}
 }
+
+const tableSwitchSrc = `func main() {
+    var i = 0
+    for {
+        yield()
+        switch i table {
+        case 0: db.Setting = 100; d0.Setting = 10
+        case 1: db.Setting = 200; d0.Setting = 20
+        case 2: db.Setting = 300; d0.Setting = 30
+        }
+        i = (i + 1) % 3
+    }
+}
+`
+
+func TestTableSwitch(t *testing.T) {
+	src := []byte(tableSwitchSrc)
+	code, diags, err := ic10.Compile("sw.icg", src)
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	loader, err := ic10.DataLoader("sw.icg", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loader == "" {
+		t.Fatal("table switch produced no loader")
+	}
+	lm := vm.New()
+	if err := lm.Load(loader); err != nil {
+		t.Fatal(err)
+	}
+	if err := lm.Run(100); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	m := vm.New()
+	m.Device("db").Stack = lm.Device("db").Stack
+	if err := m.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[float64]bool{}
+	for i := 0; i < 400; i++ {
+		if err := m.Run(1); err != nil && err != vm.ErrStepLimit {
+			t.Fatal(err)
+		}
+		seen[m.Get("d0", "Setting")] = true
+	}
+	for _, want := range []float64{10, 20, 30} {
+		if !seen[want] {
+			t.Errorf("table switch value %v never produced", want)
+		}
+	}
+}
+
+func TestTableSwitchRejectsNonDense(t *testing.T) {
+	src := []byte(`func main() {
+    switch d0.Setting table {
+    case 1: d1.Setting = 10
+    case 3: d1.Setting = 30
+    }
+}
+`)
+	_, diags, _ := ic10.Compile("bad.icg", src)
+	if !diags.HasErrors() {
+		t.Error("expected an error for non-dense table switch cases")
+	}
+}
