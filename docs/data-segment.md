@@ -287,6 +287,11 @@ ic10c build --split-data main.icg
 （[`experiments/data-segment/ingame-switch/`](../experiments/data-segment/ingame-switch/)）：
 边界检查 + 自动生成的表布局在标准 IC host 上循环 `111/222/333` 正常。
 
+`--data-access stack`
+（[`experiments/data-segment/ingame-stack/`](../experiments/data-segment/ingame-stack/)）
+在**标准 IC host 与设备 host（空调）**上分别验证：loader（`poke`）→
+runtime（`peek` + `sp` 保存/恢复）都正常循环 `111/222/333`，宿主兼容问题闭环。
+
 ### 已知问题 / 待办
 
 - **[待办] 数据段与用户 `sp`/`poke` 的冲突**：数据段当前放在栈顶
@@ -410,6 +415,7 @@ VSCode 扩展：
 - `--data-access stack` 用本地 `poke`（loader）/`peek`（runtime，读取任意地址
   先保存 `sp`、把 `sp` 指到 `addr+1`、`peek`、再恢复 `sp`），**兼容设备 host**，
   代价是每次读取多 4 条指令。loader 与 runtime 必须用同一 `--data-access` 编译。
+  已在**标准 IC host 与设备 host（空调）**上分别真机验证通过。
 
 ---
 

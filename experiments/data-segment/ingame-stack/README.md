@@ -20,3 +20,8 @@ loader 用 `poke`；runtime 读取任意地址时先保存 `sp`、把 `sp` 指�
 `peek`、再恢复 `sp`。loader 与 runtime 必须用同一 `--data-access` 编译。
 
 > 建议分别在**标准 IC host** 和**设备 host（如空调）**上各测一次：都应正常循环。
+
+## 实测结果
+
+真机通过 ✅：**标准 IC host 与设备 host（空调）**上均正常循环 `111/222/333`，
+版本校验正常。宿主兼容问题闭环。
