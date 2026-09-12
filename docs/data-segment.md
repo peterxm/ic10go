@@ -302,7 +302,9 @@ runtime（`peek` + `sp` 保存/恢复）都正常循环 `111/222/333`，宿主�
   - ✅ **已做（方案 a）**：`ic10.MaxStackDepth` 在 CFG 上静态求 `push`/`pop` 的
     最大深度，`stats` 会警告「最大深度达到数据段」或「深度无界（循环内 push）」；
     溢出（`AllocateReserved`）已自动避让。
-  - ⏳ 方案 b：数据段改用固定中段并保留高地址给溢出。
+  - ✅ **已做（方案 b）**：`--data-layout middle` 把数据段放在固定槽
+    `256`（`sema.FixedDataBase`），高地址 `384..511` 留给寄存器溢出；溢出若
+    会碰到数据段则编译报错。默认仍是 `top`（数据段在栈顶、溢出在其下方）。
 
 
 ---
@@ -353,8 +355,9 @@ func main() {
 
 - ✅ `data` 关键字、AST、parser、sema 常量求值。
 - ✅ `Table[i]` → `get(db, base+i)`（`internal/lower`）。
-- ✅ 地址分配：数据段放在**栈顶**，`base = 512 - (哨兵 + 元素数)`；
-  寄存器溢出从 `base-1` 向下（`regalloc.AllocateReserved`）。
+- ✅ 地址分配：默认 `top` 布局，数据段放**栈顶**（`base = 512 - size`），溢出从
+  `base-1` 向下；`--data-layout middle` 则放固定槽 `256`，高地址留给溢出，
+  溢出与数据段重叠时报错。
 - ✅ 版本哨兵：loader 写 `put db <base> <version>`；runtime 校验失败用
   `jump(9999)` 停机（`--no-data-check` 可关）。
 - ✅ loader 生成：`ic10.DataLoader` / `ic10c build --data-only`。
@@ -369,7 +372,7 @@ func main() {
 
 ---
 
-## 10. CLI 草案
+## 10. CLI 草案（已实现）
 
 ```
 ic10c build [flags] <file.icg>
@@ -378,12 +381,16 @@ ic10c build [flags] <file.icg>
   --split-data           同时输出 runtime（stdout）与 loader
   --data-out <file>      loader 输出路径（默认 <file>.data.ic）
   --data-only            只输出 loader（数据变更后重装用）
-  --data-version <n>     哨兵版本号（默认由数据内容派生）
   --no-data-check        不在 runtime 插入版本校验
   --data-access <mode>   读取方式：
                            get   （默认）get/put db，需标准 IC host
                            stack poke/peek + sp 保存/恢复，兼容设备 host，较慢
+  --data-layout <mode>   数据段位置：
+                           top    （默认）栈顶，溢出在其下方
+                           middle 固定槽 256，高地址留给溢出
 ```
+
+`ic10c stats` 也接受 `--data-layout`，并输出数据段范围与冲突警告。
 
 示例：
 

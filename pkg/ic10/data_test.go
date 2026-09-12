@@ -177,14 +177,14 @@ func TestDataTableStackAccessMissingHalts(t *testing.T) {
 }
 
 func TestDataStatsWarning(t *testing.T) {
-	base, size, warn := ic10.DataStats("t.icg", []byte(dataTableSrc))
+	base, size, warn := ic10.DataStats("t.icg", []byte(dataTableSrc), ic10.Options{})
 	if base < 0 || size == 0 {
 		t.Fatalf("DataStats = (%d,%d), want a data segment", base, size)
 	}
 	if warn != "" {
 		t.Errorf("unexpected warning for a program without push/poke: %q", warn)
 	}
-	_, _, warn = ic10.DataStats("t.icg", []byte("data T = [1]\nfunc main() { poke(10, 5)\n for { yield()\n d0.Setting = T[0] } }\n"))
+	_, _, warn = ic10.DataStats("t.icg", []byte("data T = [1]\nfunc main() { poke(10, 5)\n for { yield()\n d0.Setting = T[0] } }\n"), ic10.Options{})
 	if warn == "" {
 		t.Error("expected a data-segment conflict warning")
 	}
@@ -203,5 +203,16 @@ func TestMaxStackDepth(t *testing.T) {
 	src = []byte("func main() { for { yield()\n push(1) } }\n")
 	if _, unbounded, _ := ic10.MaxStackDepth("x.icg", src, ic10.Options{}); !unbounded {
 		t.Error("push inside a loop should be unbounded")
+	}
+}
+
+func TestDataTableMiddleLayout(t *testing.T) {
+	m := runDataProgram(t, ic10.Options{DataLayout: "middle"}, true, 300)
+	if got := m.Get("d0", "Setting"); got != 20 {
+		t.Errorf("middle layout: d0.Setting = %v, want 20", got)
+	}
+	base, size, _ := ic10.DataStats("t.icg", []byte(dataTableSrc), ic10.Options{DataLayout: "middle"})
+	if base != 256 || size != 4 {
+		t.Errorf("middle layout: base=%d size=%d, want 256/4", base, size)
 	}
 }

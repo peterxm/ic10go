@@ -100,6 +100,11 @@ var commonHelp = Flag{Short: "-h", Long: "--help", Desc: text{
 	ZH: "显示本帮助",
 }}
 
+var dataLayoutFlag = Flag{Long: "--data-layout", Arg: "top|middle", Desc: text{
+	EN: "data segment at the stack top (default) or a fixed middle slot",
+	ZH: "数据段位置：栈顶（默认）或固定中段",
+}}
+
 // Commands is the ordered command table.
 var Commands = []Command{
 	{
@@ -144,6 +149,7 @@ var Commands = []Command{
 				EN: "read the data segment via get/put db (default, IC host) or poke/peek (device host)",
 				ZH: "数据段读写方式：get（默认，IC host）或 stack（poke/peek，兼容设备 host）",
 			}},
+			dataLayoutFlag,
 			commonHelp,
 		},
 		Examples: []string{
@@ -233,7 +239,7 @@ var Commands = []Command{
 			ZH: "编译文件并打印它占用的 IC10 编辑器预算：行数、字节数、最长行\n" +
 				"以及引用到的 CPU 寄存器数量。",
 		},
-		Flags:    []Flag{commonHelp},
+		Flags:    []Flag{dataLayoutFlag, commonHelp},
 		Examples: []string{"ic10c stats blink.icg"},
 	},
 	{

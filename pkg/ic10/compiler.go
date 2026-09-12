@@ -2,6 +2,7 @@
 package ic10
 
 import (
+	"fmt"
 	"os"
 
 	"ic10go/internal/codegen"
@@ -31,6 +32,19 @@ type Options struct {
 	// DataAccessStack reads/writes the data segment through the local stack
 	// (poke/peek) instead of get/put db, so it also works on a device host.
 	DataAccessStack bool
+	// DataLayout selects the data-segment placement: "" or "top" puts it at
+	// the top of the stack (spills below it); "middle" puts it at a fixed
+	// middle slot (sema.FixedDataBase) and leaves the high slots for spills.
+	DataLayout string
+}
+
+// fixedDataBase returns the fixed data base for the selected layout, or 0 for
+// the default top-of-stack layout.
+func fixedDataBase(opts Options) int {
+	if opts.DataLayout == "middle" {
+		return sema.FixedDataBase
+	}
+	return 0
 }
 
 // Compile compiles .icg source into IC10 code.
@@ -49,9 +63,20 @@ func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Ba
 	if fn == nil {
 		return "", diags, nil
 	}
-	colors, err := regalloc.AllocateReserved(fn, NumRegs, info.DataSize)
+	reserved := info.DataSize
+	if fixedDataBase(opts) > 0 {
+		reserved = 0
+	}
+	colors, spillCount, err := regalloc.AllocateReservedSpills(fn, NumRegs, reserved)
 	if err != nil {
 		return "", diags, err
+	}
+	if fixedDataBase(opts) > 0 && spillCount > 0 {
+		dataEnd := info.Sentinel + info.DataSize - 1
+		if bottom := sema.StackSize - spillCount; bottom <= dataEnd {
+			return "", diags, fmt.Errorf("register spills (%d slots, down to %d) overlap the data segment [%d..%d]",
+				spillCount, bottom, info.Sentinel, dataEnd)
+		}
 	}
 
 	code, err := codegen.Generate(fn, colors)
@@ -73,9 +98,13 @@ func compileIR(name string, src []byte, opts Options) (*ir.Function, *sema.Info,
 		return nil, nil, diags
 	}
 
-	info := sema.Check(tree, diags)
+	info := sema.CheckWithOptions(tree, diags, sema.Options{FixedDataBase: fixedDataBase(opts)})
 	if info.Main == nil {
 		diags.Errorf(source.Pos{File: name, Line: 1, Col: 1}, "no main function found")
+	}
+	if info.DataSize > 0 && info.Sentinel+info.DataSize > sema.StackSize {
+		diags.Errorf(source.Pos{File: name, Line: 1, Col: 1},
+			"data segment [%d..%d] exceeds the %d-slot stack", info.Sentinel, info.Sentinel+info.DataSize-1, sema.StackSize)
 	}
 	if diags.HasErrors() {
 		return nil, nil, diags

@@ -19,19 +19,28 @@ func Allocate(fn *ir.Function, k int) (map[*ir.Reg]int, error) {
 // AllocateReserved is Allocate with the top `reserved` stack slots kept free
 // (used by the persistent data segment), so spills start below them.
 func AllocateReserved(fn *ir.Function, k, reserved int) (map[*ir.Reg]int, error) {
+	colors, _, err := AllocateReservedSpills(fn, k, reserved)
+	return colors, err
+}
+
+// AllocateReservedSpills is AllocateReserved and also returns the number of
+// stack slots used for spills (so the caller can check for data-segment
+// overlap in the fixed-middle layout).
+func AllocateReservedSpills(fn *ir.Function, k, reserved int) (map[*ir.Reg]int, int, error) {
 	if colors, ok := tryColor(fn, k); ok {
-		return colors, nil
+		return colors, 0, nil
 	}
 	// Spilling path: reserve one register for the spill-load scratch.
-	sp := &spiller{fn: fn, slots: map[*ir.Reg]int{}, next: 511 - reserved}
+	top := 511 - reserved
+	sp := &spiller{fn: fn, slots: map[*ir.Reg]int{}, next: top}
 	for iter := 0; iter < 64; iter++ {
 		colors, spilled := tryColorPartial(fn, k-1)
 		if len(spilled) == 0 {
-			return colors, nil
+			return colors, top - sp.next, nil
 		}
 		sp.spill(spilled)
 	}
-	return nil, fmt.Errorf("register allocation did not converge")
+	return nil, 0, fmt.Errorf("register allocation did not converge")
 }
 
 func tryColor(fn *ir.Function, k int) (map[*ir.Reg]int, bool) {

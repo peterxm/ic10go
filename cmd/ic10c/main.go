@@ -152,6 +152,7 @@ func cmdBuild(args []string) int {
 	dataOnly := false
 	noDataCheck := false
 	dataAccessStack := false
+	dataLayout := ""
 	dataOut := ""
 	var files []string
 	for i := 0; i < len(args); i++ {
@@ -164,6 +165,11 @@ func cmdBuild(args []string) int {
 			dataOnly = true
 		case "--no-data-check":
 			noDataCheck = true
+		case "--data-layout":
+			if i+1 < len(args) {
+				dataLayout = args[i+1]
+				i++
+			}
 		case "--data-out":
 			if i+1 < len(args) {
 				dataOut = args[i+1]
@@ -201,6 +207,7 @@ func cmdBuild(args []string) int {
 		StableInsOrder:  stableIns,
 		NoDataCheck:     noDataCheck,
 		DataAccessStack: dataAccessStack,
+		DataLayout:      dataLayout,
 	}
 
 	if dataOnly {
@@ -411,18 +418,32 @@ func cmdMinify(args []string) int {
 }
 
 func cmdStats(args []string) int {
-	if len(args) != 1 {
+	dataLayout := ""
+	var files []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--data-layout":
+			if i+1 < len(args) {
+				dataLayout = args[i+1]
+				i++
+			}
+		default:
+			files = append(files, args[i])
+		}
+	}
+	if len(files) != 1 {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "stats"))
 		return 2
 	}
-	data, err := os.ReadFile(args[0])
+	opts := ic10.Options{DataLayout: dataLayout}
+	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	ic10Hint(args[0])
-	code, diags, err := ic10.Compile(args[0], data)
-	file := source.NewFile(args[0], data)
+	ic10Hint(files[0])
+	code, diags, err := ic10.CompileWithOptions(files[0], data, opts)
+	file := source.NewFile(files[0], data)
 	if rc := report(file, diags); rc != 0 {
 		return rc
 	}
@@ -435,12 +456,12 @@ func cmdStats(args []string) int {
 	fmt.Printf("bytes      %3d / %d\n", s.Bytes, codegen.MaxBytes)
 	fmt.Printf("max line   %3d / %d\n", s.MaxLineLen, codegen.MaxLineLen)
 	fmt.Printf("registers  %3d / %d\n", s.RegsUsed, ic10.NumRegs)
-	if base, size, warn := ic10.DataStats(args[0], data); base >= 0 {
-		fmt.Printf("data       slots %d..%d (%d values)\n", base, ic10.StackSize-1, size)
+	if base, size, warn := ic10.DataStats(files[0], data, opts); base >= 0 {
+		fmt.Printf("data       slots %d..%d (%d values)\n", base, base+size-1, size)
 		if warn != "" {
 			fmt.Printf("warning    %s\n", warn)
 		}
-		if depth, unbounded, err := ic10.MaxStackDepth(args[0], data, ic10.Options{}); err == nil {
+		if depth, unbounded, err := ic10.MaxStackDepth(files[0], data, opts); err == nil {
 			switch {
 			case unbounded:
 				fmt.Printf("warning    push depth is unbounded (a loop grows the stack); keep the data segment clear\n")

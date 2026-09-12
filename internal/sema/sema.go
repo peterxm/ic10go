@@ -16,6 +16,18 @@ import (
 // StackSize is the number of slots in an IC10 chip's persistent stack.
 const StackSize = 512
 
+// FixedDataBase is the first slot of the data segment in the "middle" layout:
+// the segment sits at a fixed address and the high slots stay free for
+// register spills.
+const FixedDataBase = 256
+
+// Options controls semantic analysis.
+type Options struct {
+	// FixedDataBase, when non-zero, places the data segment at that fixed slot
+	// (the "middle" layout) instead of at the top of the stack.
+	FixedDataBase int
+}
+
 type FuncInfo struct {
 	Decl   *ast.FuncDecl
 	Params []string
@@ -62,6 +74,11 @@ type Info struct {
 
 // Check resolves declarations and evaluates constants.
 func Check(file *ast.File, diags *diag.Bag) *Info {
+	return CheckWithOptions(file, diags, Options{})
+}
+
+// CheckWithOptions is Check with explicit options.
+func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 	info := &Info{
 		Consts:        map[string]float64{},
 		RawConsts:     map[string]string{},
@@ -184,13 +201,14 @@ func Check(file *ast.File, diags *diag.Bag) *Info {
 	}
 
 	collectTableSwitches(info, diags)
-	assignData(info)
+	assignData(info, opts.FixedDataBase)
 	return info
 }
 
-// assignData lays the data tables out at the top of the stack (below the
-// register-spill region) and derives the version sentinel.
-func assignData(info *Info) {
+// assignData lays the data tables out and derives the version sentinel. With
+// fixedBase > 0 the segment starts there ("middle" layout); otherwise it sits
+// at the top of the stack.
+func assignData(info *Info, fixedBase int) {
 	if len(info.Data) == 0 {
 		return
 	}
@@ -200,6 +218,9 @@ func assignData(info *Info) {
 	}
 	info.DataSize = size
 	base := StackSize - size
+	if fixedBase > 0 {
+		base = fixedBase
+	}
 	info.Sentinel = base
 	cur := base + 1
 	for _, t := range info.Data {
