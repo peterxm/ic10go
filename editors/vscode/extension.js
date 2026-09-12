@@ -224,6 +224,7 @@ class LspClient {
         return {
             stableIns: c.get('stableIns'),
             noCheck: c.get('noCheck'),
+            autoTable: c.get('autoTable'),
         };
     }
 
@@ -271,6 +272,7 @@ class LspClient {
         await this.withTempFile(doc, async (tmp) => {
             const buildArgs = ['build'];
             if (this.config().stableIns) buildArgs.push('--stable-ins');
+            if (this.config().autoTable) buildArgs.push('--auto-table');
             buildArgs.push(tmp);
             const build = await this.execCli(buildArgs);
             if (build.code !== 0) {
@@ -316,6 +318,7 @@ class LspClient {
             const out = tmp + '.data.ic';
             const args = ['build', '--split-data', '--data-out', out];
             if (this.config().stableIns) args.push('--stable-ins');
+            if (this.config().autoTable) args.push('--auto-table');
             args.push(tmp);
             const res = await this.execCli(args);
             let loader = '';

@@ -10,6 +10,7 @@ import (
 	"ic10go/internal/ast"
 	"ic10go/internal/builtin"
 	"ic10go/internal/diag"
+	"ic10go/internal/source"
 	"ic10go/internal/token"
 )
 
@@ -26,6 +27,10 @@ type Options struct {
 	// FixedDataBase, when non-zero, places the data segment at that fixed slot
 	// (the "middle" layout) instead of at the top of the stack.
 	FixedDataBase int
+	// AutoTable tables eligible plain switches into the data segment (no
+	// `table` marker needed). AutoTableMax caps the table size (default 64).
+	AutoTable    bool
+	AutoTableMax int
 }
 
 type FuncInfo struct {
@@ -200,7 +205,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 		}
 	}
 
-	collectTableSwitches(info, diags)
+	collectTableSwitches(info, diags, opts)
 	assignData(info, opts.FixedDataBase)
 	return info
 }
@@ -243,14 +248,23 @@ func dataVersion(tables []*DataTable) float64 {
 	return float64(int32(h.Sum32()))
 }
 
-// collectTableSwitches finds `switch ... table` statements and turns each into
-// one data table per assignment target.
-func collectTableSwitches(info *Info, diags *diag.Bag) {
+// collectTableSwitches turns `switch ... table` statements into data tables,
+// and (when AutoTable is on) also eligible plain switches.
+func collectTableSwitches(info *Info, diags *diag.Bag, opts Options) {
+	maxSize := opts.AutoTableMax
+	if maxSize <= 0 {
+		maxSize = 64
+	}
 	for _, fi := range info.Funcs {
 		if fi.Decl.Body != nil {
 			walkStmts(fi.Decl.Body.List, func(s *ast.SwitchStmt) {
-				if s.Table {
-					buildTableSwitch(info, s, diags)
+				switch {
+				case s.Table:
+					buildTableSwitch(info, s, diags, true, 0)
+				case opts.AutoTable:
+					if buildTableSwitch(info, s, diags, false, maxSize) {
+						diags.Warnf(s.Pos(), "switch auto-tabled into the data segment; install the data loader first")
+					}
 				}
 			})
 		}
@@ -280,11 +294,18 @@ func walkStmts(stmts []ast.Stmt, visit func(*ast.SwitchStmt)) {
 
 // buildTableSwitch validates a table switch and generates one data table per
 // assignment target: all cases must be dense integers assigning constants to
-// the same targets in the same order.
-func buildTableSwitch(info *Info, s *ast.SwitchStmt, diags *diag.Bag) {
+// the same targets in the same order. It returns false when the switch is not
+// eligible; in auto mode (explicit=false) it stays silent and enforces a
+// minimum case count and a maximum table size.
+func buildTableSwitch(info *Info, s *ast.SwitchStmt, diags *diag.Bag, explicit bool, maxSize int) bool {
+	fail := func(pos source.Pos, format string, args ...any) bool {
+		if explicit {
+			diags.Errorf(pos, format, args...)
+		}
+		return false
+	}
 	if s.Tag == nil {
-		diags.Errorf(s.Pos(), "table switch requires a tag")
-		return
+		return fail(s.Pos(), "table switch requires a tag")
 	}
 	type entry struct {
 		val  int
@@ -296,19 +317,19 @@ func buildTableSwitch(info *Info, s *ast.SwitchStmt, diags *diag.Bag) {
 			continue
 		}
 		if len(c.Exprs) != 1 {
-			diags.Errorf(c.Pos(), "table switch case must have one value")
-			return
+			return fail(c.Pos(), "table switch case must have one value")
 		}
 		v, ok := Eval(c.Exprs[0], info.Consts)
 		if !ok || v != math.Trunc(v) {
-			diags.Errorf(c.Exprs[0].Pos(), "table switch case value must be an integer constant")
-			return
+			return fail(c.Exprs[0].Pos(), "table switch case value must be an integer constant")
 		}
 		entries = append(entries, entry{int(v), c.Body})
 	}
 	if len(entries) == 0 {
-		diags.Errorf(s.Pos(), "table switch has no cases")
-		return
+		return fail(s.Pos(), "table switch has no cases")
+	}
+	if !explicit && len(entries) < 5 {
+		return false
 	}
 	lo, hi := entries[0].val, entries[0].val
 	for _, e := range entries {
@@ -320,20 +341,20 @@ func buildTableSwitch(info *Info, s *ast.SwitchStmt, diags *diag.Bag) {
 		}
 	}
 	if hi-lo+1 != len(entries) {
-		diags.Errorf(s.Pos(), "table switch cases must be dense (%d..%d)", lo, hi)
-		return
+		return fail(s.Pos(), "table switch cases must be dense (%d..%d)", lo, hi)
+	}
+	if maxSize > 0 && hi-lo+1 > maxSize {
+		return fail(s.Pos(), "table switch table is too large (%d > %d)", hi-lo+1, maxSize)
 	}
 	n := len(entries[0].body)
 	if n == 0 {
-		diags.Errorf(s.Pos(), "table switch case body must assign a constant")
-		return
+		return fail(s.Pos(), "table switch case body must assign a constant")
 	}
 	targets := make([]*ast.AssignStmt, n)
 	for j, st := range entries[0].body {
 		as, ok := st.(*ast.AssignStmt)
 		if !ok || as.Op != token.Assign {
-			diags.Errorf(st.Pos(), "table switch case must be `target = constant`")
-			return
+			return fail(st.Pos(), "table switch case must be `target = constant`")
 		}
 		targets[j] = as
 	}
@@ -343,19 +364,16 @@ func buildTableSwitch(info *Info, s *ast.SwitchStmt, diags *diag.Bag) {
 	}
 	for _, e := range entries {
 		if len(e.body) != n {
-			diags.Errorf(s.Pos(), "table switch cases must assign the same targets")
-			return
+			return fail(s.Pos(), "table switch cases must assign the same targets")
 		}
 		for j, st := range e.body {
 			as, ok := st.(*ast.AssignStmt)
 			if !ok || as.Op != token.Assign || !sameTarget(targets[j].Lhs, as.Lhs) {
-				diags.Errorf(st.Pos(), "table switch cases must assign the same targets")
-				return
+				return fail(st.Pos(), "table switch cases must assign the same targets")
 			}
 			cv, ok := Eval(as.Rhs, info.Consts)
 			if !ok {
-				diags.Errorf(as.Rhs.Pos(), "table switch value must be a constant")
-				return
+				return fail(as.Rhs.Pos(), "table switch value must be a constant")
 			}
 			values[j][e.val-lo] = cv
 		}
@@ -367,6 +385,7 @@ func buildTableSwitch(info *Info, s *ast.SwitchStmt, diags *diag.Bag) {
 		ts.Targets = append(ts.Targets, TableSwitchTarget{Assign: targets[j], Table: t})
 	}
 	info.TableSwitches[s] = ts
+	return true
 }
 
 // sameTarget reports whether two assignment targets have the same shape (the

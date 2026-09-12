@@ -71,6 +71,11 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "%icg.noCheck.desc%"
+        },
+        "icg.autoTable": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%icg.autoTable.desc%"
         }
       }
     },

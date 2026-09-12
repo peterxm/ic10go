@@ -152,6 +152,7 @@ func cmdBuild(args []string) int {
 	dataOnly := false
 	noDataCheck := false
 	unsafe := false
+	autoTable := false
 	dataAccessStack := false
 	dataLayout := ""
 	dataOut := ""
@@ -162,6 +163,8 @@ func cmdBuild(args []string) int {
 			stableIns = true
 		case "--unsafe":
 			unsafe = true
+		case "--auto-table":
+			autoTable = true
 		case "--split-data":
 			splitData = true
 		case "--data-only":
@@ -210,6 +213,7 @@ func cmdBuild(args []string) int {
 		StableInsOrder:  stableIns,
 		NoDataCheck:     noDataCheck,
 		Unsafe:          unsafe,
+		AutoTable:       autoTable,
 		DataAccessStack: dataAccessStack,
 		DataLayout:      dataLayout,
 	}
@@ -427,6 +431,7 @@ func cmdMinify(args []string) int {
 func cmdStats(args []string) int {
 	dataLayout := ""
 	unsafe := false
+	autoTable := false
 	var files []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -437,6 +442,8 @@ func cmdStats(args []string) int {
 			}
 		case "--unsafe":
 			unsafe = true
+		case "--auto-table":
+			autoTable = true
 		default:
 			files = append(files, args[i])
 		}
@@ -445,7 +452,7 @@ func cmdStats(args []string) int {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "stats"))
 		return 2
 	}
-	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe}
+	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)

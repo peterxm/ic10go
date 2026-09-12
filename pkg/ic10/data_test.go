@@ -232,3 +232,46 @@ func TestDataUnsafeSkipsCheck(t *testing.T) {
 		t.Errorf("unsafe without data: d0.Setting = %v, want 0", got)
 	}
 }
+
+const autoTableSrc = `func main() {
+    var i = 0
+    for {
+        yield()
+        switch i {
+        case 0: d0.Setting = 10; d1.Setting = 100
+        case 1: d0.Setting = 20; d1.Setting = 200
+        case 2: d0.Setting = 30; d1.Setting = 300
+        case 3: d0.Setting = 40; d1.Setting = 400
+        case 4: d0.Setting = 50; d1.Setting = 500
+        }
+        i = (i + 1) % 5
+    }
+}
+`
+
+func TestAutoTable(t *testing.T) {
+	// Off by default: a plain switch stays a comparison chain.
+	plain, _, err := ic10.Compile("a.icg", []byte(autoTableSrc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(plain, "get ") {
+		t.Errorf("plain switch was tabled without --auto-table:\n%s", plain)
+	}
+
+	// On: it becomes a data-segment lookup with a loader.
+	opts := ic10.Options{AutoTable: true}
+	code, diags, err := ic10.CompileWithOptions("a.icg", []byte(autoTableSrc), opts)
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(code, "get ") {
+		t.Errorf("--auto-table did not produce a lookup:\n%s", code)
+	}
+	loader, err := ic10.DataLoaderWithOptions("a.icg", []byte(autoTableSrc), opts)
+	if err != nil || loader == "" {
+		t.Fatalf("loader = %q, err=%v", loader, err)
+	}
+	m := runDataProgram(t, opts, true, 0)
+	_ = m
+}

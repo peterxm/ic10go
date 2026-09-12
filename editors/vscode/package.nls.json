@@ -5,6 +5,7 @@
   "icg.serverPath.desc": "Path to the `ic10c` executable. Leave empty to use `ic10c` from PATH, or a binary named `ic10c` in the workspace folder.",
   "icg.stableIns.desc": "Compile with `--stable-ins` (the stable game branch's `ins` argument order). Leave off for the beta branch.",
   "icg.noCheck.desc": "Disable device logic-type checks (`IC10C_NO_CHECK`).",
+  "icg.autoTable.desc": "Compile with `--auto-table`: table eligible constant switches into the data segment (run the loader first).",
   "cmd.compile": "IC10 Go: Compile to IC10",
   "cmd.run": "IC10 Go: Run in VM",
   "cmd.installData": "IC10 Go: Install data segment",

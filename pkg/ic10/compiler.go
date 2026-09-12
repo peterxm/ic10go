@@ -40,6 +40,10 @@ type Options struct {
 	// the top of the stack (spills below it); "middle" puts it at a fixed
 	// middle slot (sema.FixedDataBase) and leaves the high slots for spills.
 	DataLayout string
+	// AutoTable tables eligible plain switches into the data segment, without
+	// needing the `table` marker. Off by default; the runtime then needs the
+	// data loader installed.
+	AutoTable bool
 }
 
 // fixedDataBase returns the fixed data base for the selected layout, or 0 for
@@ -102,7 +106,10 @@ func compileIR(name string, src []byte, opts Options) (*ir.Function, *sema.Info,
 		return nil, nil, diags
 	}
 
-	info := sema.CheckWithOptions(tree, diags, sema.Options{FixedDataBase: fixedDataBase(opts)})
+	info := sema.CheckWithOptions(tree, diags, sema.Options{
+		FixedDataBase: fixedDataBase(opts),
+		AutoTable:     opts.AutoTable,
+	})
 	if info.Main == nil {
 		diags.Errorf(source.Pos{File: name, Line: 1, Col: 1}, "no main function found")
 	}

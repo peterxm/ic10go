@@ -32,7 +32,7 @@ func DataLoader(name string, src []byte) (string, error) {
 // DataAccessStack the loader uses `poke` (the chip's own stack), matching a
 // runtime compiled the same way.
 func DataLoaderWithOptions(name string, src []byte, opts Options) (string, error) {
-	info, err := analyzeWithBase(name, src, fixedDataBase(opts))
+	info, err := analyzeWithOptions(name, src, opts)
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +71,7 @@ func HasData(name string, src []byte) bool {
 // addresses, so a program that uses it may clobber the segment. (push is
 // checked precisely by MaxStackDepth.)
 func DataStats(name string, src []byte, opts Options) (base, size int, warn string) {
-	info, err := analyzeWithBase(name, src, fixedDataBase(opts))
+	info, err := analyzeWithOptions(name, src, opts)
 	if err != nil || len(info.Data) == 0 {
 		return -1, 0, ""
 	}
@@ -98,10 +98,10 @@ func sourceUsesPoke(src []byte) bool {
 }
 
 func analyze(name string, src []byte) (*sema.Info, error) {
-	return analyzeWithBase(name, src, 0)
+	return analyzeWithOptions(name, src, Options{})
 }
 
-func analyzeWithBase(name string, src []byte, fixedBase int) (*sema.Info, error) {
+func analyzeWithOptions(name string, src []byte, opts Options) (*sema.Info, error) {
 	file := source.NewFile(name, src)
 	diags := &diag.Bag{}
 	toks := lexer.Tokenize(file, diags)
@@ -109,7 +109,10 @@ func analyzeWithBase(name string, src []byte, fixedBase int) (*sema.Info, error)
 	if diags.HasErrors() {
 		return nil, fmt.Errorf("parse errors")
 	}
-	info := sema.CheckWithOptions(tree, diags, sema.Options{FixedDataBase: fixedBase})
+	info := sema.CheckWithOptions(tree, diags, sema.Options{
+		FixedDataBase: fixedDataBase(opts),
+		AutoTable:     opts.AutoTable,
+	})
 	if diags.HasErrors() {
 		return nil, fmt.Errorf("semantic errors")
 	}

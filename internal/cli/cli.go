@@ -110,6 +110,11 @@ var unsafeFlag = Flag{Long: "--unsafe", Desc: text{
 	ZH: "不安全：跳过数据段运行时校验以进一步压缩代码",
 }}
 
+var autoTableFlag = Flag{Long: "--auto-table", Desc: text{
+	EN: "auto-table eligible constant switches into the data segment",
+	ZH: "自动把符合条件的常量 switch 表化进数据段",
+}}
+
 // Commands is the ordered command table.
 var Commands = []Command{
 	{
@@ -151,6 +156,7 @@ var Commands = []Command{
 				ZH: "不在运行时校验数据段",
 			}},
 			unsafeFlag,
+			autoTableFlag,
 			{Long: "--data-access", Arg: "get|stack", Desc: text{
 				EN: "read the data segment via get/put db (default, IC host) or poke/peek (device host)",
 				ZH: "数据段读写方式：get（默认，IC host）或 stack（poke/peek，兼容设备 host）",
@@ -245,7 +251,7 @@ var Commands = []Command{
 			ZH: "编译文件并打印它占用的 IC10 编辑器预算：行数、字节数、最长行\n" +
 				"以及引用到的 CPU 寄存器数量。",
 		},
-		Flags:    []Flag{dataLayoutFlag, unsafeFlag, commonHelp},
+		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, commonHelp},
 		Examples: []string{"ic10c stats blink.icg"},
 	},
 	{

@@ -234,6 +234,9 @@ case 3: db.Setting = 226410516;   heat = 0.0095
 一条 `get(db, base + tag - lo)`；可选 `default` 处理越界。见
 [`data-segment.md`](data-segment.md)。
 
+`--auto-table`（默认关闭）会让编译器自动把**符合上述条件**的普通 `switch`
+表化（≥5 个 case、表大小 ≤64），并对每处表化给出警告提示需先安装 loader。
+
 ### 5.5 返回
 
 ```go

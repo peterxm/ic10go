@@ -366,6 +366,8 @@ func main() {
   `get(db, base + tag - lo)`；可选 `default` 处理越界。
 - ✅ `--data-access stack`：loader 用 `poke`，runtime 用 `peek` + `sp` 保存/恢复，
   兼容设备 host（代价是每次读取多 4 条指令）。
+- ✅ `--auto-table`（默认关闭）：自动表化满足条件的普通 `switch`（密集整数、
+  ≥5 个 case、纯常量赋值、表 ≤64），并对每处表化给出“需先安装 loader”的警告。
 
 真机验证：标准 IC host 下 loader → runtime 读表成功；设备 host（空调）
 `put db` 报 `MemoryNotWriteable`（见 §11）。
@@ -389,6 +391,7 @@ ic10c build [flags] <file.icg>
   --data-layout <mode>   数据段位置：
                            top    （默认）栈顶，溢出在其下方
                            middle 固定槽 256，高地址留给溢出
+  --auto-table           自动把符合条件的普通 switch 表化（默认关闭；每处会警告）
 ```
 
 `ic10c stats` 也接受 `--data-layout`，并输出数据段范围与冲突警告。
