@@ -559,7 +559,7 @@ func (l *lowerer) tryUnrollFor(s *ast.ForStmt) bool {
 	if pid, ok := id.X.(*ast.Ident); !ok || pid.Name != name {
 		return false
 	}
-	if unrollUnsafe(s.Body, name) || countStatements(s.Body) > maxBody {
+	if unrollUnsafe(s.Body, name) || countStatements(s.Body) > maxBody || l.bodyCallsLabeled(s.Body) {
 		return false
 	}
 	if !l.opts.Fast && l.bodyCallsUserFunc(s.Body) {
@@ -572,6 +572,18 @@ func (l *lowerer) tryUnrollFor(s *ast.ForStmt) bool {
 	}
 	l.popScope()
 	return true
+}
+
+// bodyCallsLabeled reports whether a body calls a function containing a label.
+// Duplicating such a call would define the label twice.
+func (l *lowerer) bodyCallsLabeled(body *ast.BlockStmt) bool {
+	found := false
+	forEachCall(body, func(c *ast.CallExpr) {
+		if id, ok := c.Fun.(*ast.Ident); ok && l.labeledFuncs[id.Name] {
+			found = true
+		}
+	})
+	return found
 }
 
 // bodyCallsUserFunc reports whether a body calls a user function. Unrolling
