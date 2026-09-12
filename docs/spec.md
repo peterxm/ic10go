@@ -355,6 +355,11 @@ clr(d0)                // clr
 rmap(d0, reagentHash)  // rmap
 ```
 
+> 在标准 IC host 上，`db` 的栈就是芯片自身的栈：`get/put(db, addr)` 与
+> `push/pop/poke/peek` 访问同一块内存（真机已验证）。栈是**持久**的，跨代码
+> 替换保留，可当作数据段使用（见 [`data-segment.md`](data-segment.md)）。
+> 注意部分设备自带 host（如空调），此时 `db` 指向设备本身而非芯片栈。
+
 ---
 
 ## 8. 内建函数

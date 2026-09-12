@@ -115,6 +115,11 @@ func (m *Machine) Device(name string) *Device {
 		return d
 	}
 	d := newDevice(name)
+	if name == "db" && m.Stack != nil {
+		// On a standard IC host the housing's stack is the chip's own stack:
+		// get/put db and push/pop/poke/peek address the same memory.
+		d.Stack = m.Stack
+	}
 	m.Devices[name] = d
 	m.order = append(m.order, d)
 	return d
@@ -569,6 +574,13 @@ func (m *Machine) execOp(ins *Instr) error {
 		return nil
 	case "clr":
 		d := m.dev(a[0])
+		if d.Name == "db" {
+			// Keep the shared backing array so push/pop see the clear too.
+			for i := range d.Stack {
+				d.Stack[i] = 0
+			}
+			return nil
+		}
 		d.Stack = make([]float64, stackSize)
 		return nil
 	}

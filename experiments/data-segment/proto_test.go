@@ -106,3 +106,30 @@ func TestInGameScriptsRun(t *testing.T) {
 		})
 	}
 }
+
+// TestLocalStackSharedWithDB locks in the real-hardware finding that the local
+// stack (push/pop/poke/peek) and the housing stack (get/put db) are the same
+// memory on a standard IC host.
+func TestLocalStackSharedWithDB(t *testing.T) {
+	m := vm.New()
+	if err := m.Load("poke 50 12345\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(10); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	if got := m.Device("db").Stack[50]; got != 12345 {
+		t.Errorf("poke 50 -> get db 50 = %v, want 12345", got)
+	}
+
+	m2 := vm.New()
+	if err := m2.Load("put db 60 54321\nmove r1 sp\nmove sp 61\npeek r0\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m2.Run(10); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	if got := m2.Regs[0]; got != 54321 {
+		t.Errorf("put db 60 -> peek 60 = %v, want 54321", got)
+	}
+}
