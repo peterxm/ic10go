@@ -156,6 +156,8 @@ data RecipeHeat    = [ 0.009501, 0.009502, 0.009503 ]
 - 数据本身由一次性的 **loader** 写入（见 `ic10c build --split-data`）。
   默认用 `get/put db`，要求芯片插在**标准 IC host** 上；设备 host 用
   `--data-access stack`（本地 `poke`/`peek`）编译。
+- 数据段占用栈顶槽位；`push`/`poke` 必须留在其下方，`ic10c stats` 会在
+  含数据段且源码用了 `push`/`poke` 时给出警告。
 
 ```go
 db.Setting = RecipeDisplay[ore-1]   // -> get(db, baseDisplay + ore - 1)

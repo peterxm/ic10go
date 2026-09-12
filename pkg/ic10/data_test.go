@@ -175,3 +175,17 @@ func TestDataTableStackAccessMissingHalts(t *testing.T) {
 		t.Errorf("stack access without data: d0.Setting = %v, want 7", got)
 	}
 }
+
+func TestDataStatsWarning(t *testing.T) {
+	base, size, warn := ic10.DataStats("t.icg", []byte(dataTableSrc))
+	if base < 0 || size == 0 {
+		t.Fatalf("DataStats = (%d,%d), want a data segment", base, size)
+	}
+	if warn != "" {
+		t.Errorf("unexpected warning for a program without push/poke: %q", warn)
+	}
+	_, _, warn = ic10.DataStats("t.icg", []byte("data T = [1]\nfunc main() { poke(10, 5)\n for { yield()\n d0.Setting = T[0] } }\n"))
+	if warn == "" {
+		t.Error("expected a data-segment conflict warning")
+	}
+}

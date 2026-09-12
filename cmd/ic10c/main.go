@@ -435,6 +435,12 @@ func cmdStats(args []string) int {
 	fmt.Printf("bytes      %3d / %d\n", s.Bytes, codegen.MaxBytes)
 	fmt.Printf("max line   %3d / %d\n", s.MaxLineLen, codegen.MaxLineLen)
 	fmt.Printf("registers  %3d / %d\n", s.RegsUsed, ic10.NumRegs)
+	if base, size, warn := ic10.DataStats(args[0], data); base >= 0 {
+		fmt.Printf("data       slots %d..%d (%d values)\n", base, ic10.StackSize-1, size)
+		if warn != "" {
+			fmt.Printf("warning    %s\n", warn)
+		}
+	}
 	return 0
 }
 
