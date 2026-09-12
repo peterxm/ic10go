@@ -89,6 +89,17 @@ func TestIc10CodePorts(t *testing.T) {
 
 			b := vm.New()
 			portSetup(b)
+			// If the port uses a data segment, install it with the loader.
+			if loader, lerr := ic10.DataLoader(port, newSrc); lerr == nil && loader != "" {
+				lm := vm.New()
+				if err := lm.Load(loader); err != nil {
+					t.Fatalf("loader load: %v", err)
+				}
+				if err := lm.Run(200); err != nil && err != vm.ErrStepLimit {
+					t.Fatalf("loader run: %v", err)
+				}
+				copy(b.Stack, lm.Stack)
+			}
 			if err := b.Load(compiled); err != nil {
 				t.Fatalf("port load: %v", err)
 			}

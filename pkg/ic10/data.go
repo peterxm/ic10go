@@ -39,14 +39,14 @@ func DataLoaderWithOptions(name string, src []byte, opts Options) (string, error
 	if len(info.Data) == 0 {
 		return "", nil
 	}
-	write := func(addr int, v float64) string {
+	write := func(addr int, v string) string {
 		if opts.DataAccessStack {
-			return fmt.Sprintf("poke %d %s\n", addr, formatDataFloat(v))
+			return fmt.Sprintf("poke %d %s\n", addr, v)
 		}
-		return fmt.Sprintf("put db %d %s\n", addr, formatDataFloat(v))
+		return fmt.Sprintf("put db %d %s\n", addr, v)
 	}
 	var b strings.Builder
-	b.WriteString(write(info.Sentinel, info.DataVersion))
+	b.WriteString(write(info.Sentinel, formatDataFloat(info.DataVersion)))
 	for _, t := range info.Data {
 		for i, v := range t.Values {
 			b.WriteString(write(t.Base+i, v))

@@ -287,3 +287,21 @@ func TestAutoTableCount(t *testing.T) {
 		t.Errorf("without AutoTable: base %d auto %d, want -1/0", base, auto)
 	}
 }
+
+func TestDataTableEnumLiteral(t *testing.T) {
+	src := []byte("data L = [LogicType.Open, 0, LogicType.Setting]\nfunc main() { d0.Setting = L[0] }\n")
+	loader, err := ic10.DataLoader("e.icg", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(loader, "LogicType.Open") || !strings.Contains(loader, "LogicType.Setting") {
+		t.Errorf("loader should emit the enum names verbatim:\n%s", loader)
+	}
+	code, diags, err := ic10.Compile("e.icg", src)
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(code, "get ") {
+		t.Errorf("runtime should read the data table:\n%s", code)
+	}
+}

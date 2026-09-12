@@ -314,7 +314,7 @@ runtime（`peek` + `sp` 保存/恢复）都正常循环 `111/222/333`，宿主�
 顶层新增 `data` 表（编译期常量数组），由编译器分配到持久栈：
 
 ```go
-// 元素只允许编译期常量：数字、hash("...")、str("...")
+// 元素只允许编译期常量：数字、hash("...")、游戏枚举名（如 LogicType.Open）
 data RecipeDisplay = [
     -1301215609,   // 1 Iron
     -404336834,    // 2 Copper
@@ -368,6 +368,9 @@ func main() {
   兼容设备 host（代价是每次读取多 4 条指令）。
 - ✅ `--auto-table`（默认关闭）：自动表化满足条件的普通 `switch`（密集整数、
   ≥5 个 case、纯常量赋值、表 ≤64），并对每处表化给出“需先安装 loader”的警告。
+- ✅ `data` 表元素支持游戏枚举名（如 `LogicType.Open`），loader 原样写入。
+  示例：`ic10code/Adv_Airlock_Smol.icg` 用 `data LogicTable` 存逻辑类型，
+  省去运行时 `poke`。
 
 真机验证：标准 IC host 下 loader → runtime 读表成功；设备 host（空调）
 `put db` 报 `MemoryNotWriteable`（见 §11）。

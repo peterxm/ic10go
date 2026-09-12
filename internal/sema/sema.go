@@ -39,9 +39,11 @@ type FuncInfo struct {
 }
 
 // DataTable is a compile-time `data` table stored in the persistent stack.
+// Values are rendered IC10 literals (numbers or game enum names such as
+// LogicType.Open), emitted verbatim by the loader.
 type DataTable struct {
 	Name   string
-	Values []float64
+	Values []string
 	Base   int // first stack slot
 }
 
@@ -158,12 +160,12 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 			}
 			t := &DataTable{Name: d.Name.Name}
 			for _, v := range d.Values {
-				c, ok := Eval(v, info.Consts)
+				lit, ok := dataLiteral(v, info.Consts)
 				if !ok {
 					diags.Errorf(v.Pos(), "data element is not a compile-time expression")
 					continue
 				}
-				t.Values = append(t.Values, c)
+				t.Values = append(t.Values, lit)
 			}
 			info.Data = append(info.Data, t)
 			info.DataIndex[d.Name.Name] = t
@@ -244,10 +246,42 @@ func dataVersion(tables []*DataTable) float64 {
 	for _, t := range tables {
 		fmt.Fprintf(h, "%s:%d", t.Name, len(t.Values))
 		for _, v := range t.Values {
-			fmt.Fprintf(h, ",%v", v)
+			fmt.Fprintf(h, ",%s", v)
 		}
 	}
 	return float64(int32(h.Sum32()))
+}
+
+// dataLiteral renders a data/table element as an IC10 literal: a number, or a
+// game enum name such as LogicType.Open (emitted verbatim, resolved by the
+// game assembler).
+func dataLiteral(e ast.Expr, consts map[string]float64) (string, bool) {
+	if v, ok := Eval(e, consts); ok {
+		return formatDataValue(v), true
+	}
+	if sel, ok := e.(*ast.SelectorExpr); ok {
+		if id, ok := sel.X.(*ast.Ident); ok {
+			return id.Name + "." + sel.Sel.Name, true
+		}
+	}
+	return "", false
+}
+
+// formatDataValue renders a numeric data value as an IC10 literal.
+func formatDataValue(v float64) string {
+	switch {
+	case math.IsNaN(v):
+		return "nan"
+	case math.IsInf(v, 1):
+		return "pinf"
+	case math.IsInf(v, -1):
+		return "ninf"
+	}
+	const maxExact = 1 << 53
+	if v == math.Trunc(v) && v >= -maxExact && v <= maxExact {
+		return strconv.FormatInt(int64(v), 10)
+	}
+	return strconv.FormatFloat(v, 'g', -1, 64)
 }
 
 // collectTableSwitches turns `switch ... table` statements into data tables,
@@ -361,9 +395,9 @@ func buildTableSwitch(info *Info, s *ast.SwitchStmt, diags *diag.Bag, explicit b
 		}
 		targets[j] = as
 	}
-	values := make([][]float64, n)
+	values := make([][]string, n)
 	for j := range values {
-		values[j] = make([]float64, hi-lo+1)
+		values[j] = make([]string, hi-lo+1)
 	}
 	for _, e := range entries {
 		if len(e.body) != n {
@@ -374,7 +408,7 @@ func buildTableSwitch(info *Info, s *ast.SwitchStmt, diags *diag.Bag, explicit b
 			if !ok || as.Op != token.Assign || !sameTarget(targets[j].Lhs, as.Lhs) {
 				return fail(st.Pos(), "table switch cases must assign the same targets")
 			}
-			cv, ok := Eval(as.Rhs, info.Consts)
+			cv, ok := dataLiteral(as.Rhs, info.Consts)
 			if !ok {
 				return fail(as.Rhs.Pos(), "table switch value must be a constant")
 			}

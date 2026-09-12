@@ -1,9 +1,10 @@
-// Adv Airlock (Smol) port.
+// Adv Airlock (Smol) port — using the persistent-stack data segment.
 //
-// The original packs the door/vent control bits into one number. To stay as
-// compact as the hand-minified IC10, this port keeps the same bit-packing
-// approach: it pokes the logic types onto the stack, builds the phase by
-// reading each device, rotates the active bit, then writes the result back.
+// The original pokes a list of logic types onto the stack and iterates it to
+// read/write the door and vent control bits. Here that list is a `data` table,
+// so the logic types are written once by the loader instead of every run.
+//
+// Run `ic10c build --split-data Adv_Airlock_Smol.icg` to get the loader.
 //
 // d0=exterior door, d1=exterior vent, d2=interior vent, d3=interior door,
 // d4=pressure sensor.
@@ -19,15 +20,19 @@ const (
     sensor = d4
 )
 
-func main() {
-    // Logic type read/written for each device, in stack order.
-    poke(0, LogicType.Open)
-    poke(1, LogicType.On)
-    poke(2, LogicType.On)
-    poke(3, LogicType.Open)
-    poke(4, LogicType.Setting)
-    poke(7, LogicType.Setting)
+// Logic type read/written for each device, in stack order (0 = no-op slot).
+data LogicTable = [
+    LogicType.Open,    // 0
+    LogicType.On,      // 1
+    LogicType.On,      // 2
+    LogicType.Open,    // 3
+    LogicType.Setting, // 4
+    0,                 // 5
+    0,                 // 6
+    LogicType.Setting, // 7
+]
 
+func main() {
     var state = 0
     var inVentMode = 0
     var pressure = 0
@@ -39,14 +44,15 @@ func main() {
     pressure = sensor.Pressure
 
     // Build the phase bits from the devices.
-    sp = 8
+    var i = 8
     label load:
-    logicType := pop()
+    i = i - 1
+    logicType := LogicTable[i]
     if logicType == 0 { goto loaded }
-    device := sp % 4
-    state = ins(readDev(device, logicType), sp, 1)
+    device := i % 4
+    state = ins(readDev(device, logicType), i, 1)
     label loaded:
-    if sp > 0 { goto load }
+    if i > 0 { goto load }
 
     doorTriggered = ((state >> 4) ^ state) & 9
     state = state & 15
@@ -79,14 +85,15 @@ func main() {
     doorIn.Mode = 1
     ventIn.Mode = inVentMode
     ventEx.Mode = inVentMode == 0
-    sp = 8
+    i = 8
     label store:
-    logicType = pop()
+    i = i - 1
+    logicType = LogicTable[i]
     if logicType == 0 { goto stored }
-    device = sp % 4
-    writeDev(device, logicType, (state >> sp) & 1)
+    device = i % 4
+    writeDev(device, logicType, (state >> i) & 1)
     label stored:
-    if sp > 0 { goto store }
+    if i > 0 { goto store }
     goto main
 
     // Shift the active phase and re-check.
