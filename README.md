@@ -52,7 +52,7 @@ j 1
 **M0 已完成**：lexer / parser / AST / 诊断 / CLI 骨架。
 **M1 已完成**：sema（名字解析、常量求值）、lower（AST→三地址 IR、全内联）、regalloc（活跃性 + 图着色 + 拷贝合并 + 溢出，寄存器复用）、codegen（指令选择、空块消除、逆后序布局、绝对行号、限额校验）。
 **M2 已完成**：IR 优化器（块内拷贝/常量传播、全局常量传播、常量折叠、代数化简、全局 CSE（可用表达式）、select 转换、冗余设备/槽位/批量读消除、常量分支折叠、循环不变量外提、活跃性死代码消除、不可达块删除）、比较-分支融合、`&&`/`||`→`min`/`max`（纯操作数）。
-**M3 已完成**：批量 IO（`batch.read/readName/readSlot/readNameSlot/write/writeName/writeSlot`）、网络通道 `d.channel[conn][ch]`、栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr`、`isSet/isUnset/rmap`、`approx/approxZero`、`str("...")` 显示字符串、补充 logic type。
+**M3 已完成**：批量 IO（`batch.read/readName/readSlot/readNameSlot/write/writeName/writeSlot`）、网络通道 `d.channel[conn][ch]`、栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr`、`isSet/isUnset/rmap`、`approx/approxZero`、`str("...")` 显示字符串、动态 logicType `read/write`、动态设备寄存器 `readDev/writeDev`（IC10 `drN`）、`LogicType.X` 枚举名透传、补充 logic type。
 **M5 已完成**：测试用最小 IC10 解释器 `internal/vm`（寄存器 / 栈 / 设备 / 槽位 / 通道 / 批量 / 分支 / 标签与绝对行号），配套端到端语义测试与常量折叠差分测试；并经 `ic10c run` 暴露给用户调试。
 **M4 已完成**：`ic10c stats`（行/字节/寄存器预算）、`ic10c fmt`（格式化，支持 `-w`）、`ic10c disasm`（旧 IC10 反汇编注释）、`ic10c decompile`（IC10 → `.icg`，支持 `-s` 结构化）、`ic10c minify`（压缩现有 IC10 行数）、`ic10c run`（内置 VM 执行）、`ic10c lsp`（诊断 / 上下文补全 / 格式化 / hover / 定义 / 大纲 / 折叠 / 引用 / 重命名 / 参数提示 / 快速修复 / 语义高亮 / 预算内联）、VSCode 扩展（`.icg` 与 `.ic`/`.ic10` 支持、片段、编译预览、VM 运行、反编译/压缩/注释命令）。
 
@@ -86,7 +86,7 @@ sh editors/vscode/install.sh   # 安装到 ~/.vscode/extensions
 >
 > 寄存器压力超过 16 时，编译器会自动把多余的值**溢出到 IC10 栈**（固定高地址槽 + 暂存寄存器），而不是报错。未知 logic type 会给出**警告**（可用 `IC10C_NO_CHECK=1` 关闭）。
 >
-> 反编译：`ic10c decompile` 会替换 `alias`/`define`、用 `:=` 声明首次写入的寄存器、用 `label`/`goto`/`call`/`ret` 表达控制流；配合寄存器拷贝合并，`ic10code/` 下的 17 个真实脚本都能反编译并在 128 行内重新编译（含最复杂的 Furnace，148→121 行）。加 `-s/--structured` 会基于后支配树还原 `if`/`else`/`for`；17 个脚本都能结构化，并与原脚本做 VM 等价性验证。结构化失败时自动回退到 goto 形式。
+> 反编译：`ic10c decompile` 会替换 `alias`/`define`、用 `:=` 声明首次写入的寄存器、用 `label`/`goto`/`call`/`ret` 表达控制流；配合寄存器拷贝合并，`ic10code/` 下的真实脚本都能反编译并在 128 行内重新编译（含最复杂的 Furnace，148→121 行）。加 `-s/--structured` 会基于后支配树还原 `if`/`else`/`for`；结构化失败时自动回退到 goto 形式。
 
 ## 测试
 

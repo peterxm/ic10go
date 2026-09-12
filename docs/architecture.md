@@ -237,6 +237,9 @@ Ret
 | `d.slot[i].X` | `ls d d i X` |
 | `d.slot[i].X = v` | `ss d i X v` |
 | `d.channel[c][n]` | `l d d:c Channel<n>` |
+| `read(d, lt)` / `write(d, lt, v)` | `l r d (r_lt)` / `s d (r_lt) v` |
+| `readDev(i, lt)` / `writeDev(i, lt, v)` | `l r drN (r_lt)` / `s drN (r_lt) v` |
+| `ireg(p)` / `setIreg(p, v)` | `move r rrN` / `move rrN r` |
 | `batch.read(...)` | `lb ...` |
 | `yield()` | `yield` |
 
@@ -354,6 +357,7 @@ ic10go/
 - `approx` / `isSet` / `rmap` / NaN 支持、`ext/ins/sla/srl/rol/ror`
 - 底层控制流：`label/goto/call/ret`、`ra/sp`、`ireg/setIreg`、`jump(expr)`
 - 动态 logicType：`read(dev, lt)` / `write(dev, lt, v)`
+- 动态设备寄存器：`readDev(idx, lt)` / `writeDev(idx, lt, v)`（IC10 `drN`）
 
 ### M4 工具链 ✅
 - `fmt`（保留注释）、`stats`、`disasm`
@@ -406,4 +410,4 @@ IC10 → `.icg` 的翻译分两步：
    - 循环：回边识别 + 循环体；循环体含 `ret` 或循环头是 `jal` 目标（尾调用状态机）则不结构化。
    - 结构化后若产物无法编译，CLI 自动回退到扁平形式。
 
-`ic10code/` 下 17 个真实脚本均可结构化，并与原脚本做 VM 等价性验证。
+`ic10code/` 下的真实脚本都会做**反编译 → 重编译 → 设备写入序列对比**（`TestIc10CodeRoundTrip`）与 **minify 等价性**（`TestMinifyIc10Code`）；结构化是尽力而为，失败时回退到扁平形式。

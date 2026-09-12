@@ -412,6 +412,8 @@ str("Ready!")              // 显示字符串，输出为 STR("Ready!")
 | `sla/srl/rol/ror(a,b)` | 移位/旋转 |
 | `ext(src,off,len)` / `ins(field,off,len)` | 位域提取/插入 |
 
+> `ins` 是**读改写**：`x = ins(field, off, len)` 把 `field` 的低 `len` 位插到 `x` 的 `off` 处，保留 `x` 的其余位，因此 `x` 必须已有值（IC10 的 `ins dst field off len` 语义）。
+
 > `ins` 在**稳定版**游戏里参数顺序有 bug（实际为 `offset length field`）；用 `ic10c build --stable-ins` 生成稳定版顺序（默认是文档顺序，即 beta 版）。
 
 ---

@@ -161,15 +161,18 @@ PressureWaste  PressureAir  MaxQuantity  Mature  ReferenceId  Seeding
 
 ### 5.5 枚举常量
 
-以下 IC10 枚举由编译器编译期解析（表见 `internal/builtin.EnumConstants`，
-数值需以游戏 Stationpedia 为准）：
+编译器识别两类游戏枚举：
 
-- `LogicType.Channel0` … `LogicType.Channel7`
-- `SorterInstruction.FilterPrefabHashEquals`(1) / `FilterPrefabHashNotEquals`(2)
-  / `FilterSlotTypeCompare`(3) / `FilterSortingClassCompare`(4)
-- `SlotClass.Battery`、`SortingClass.Ores`
-- `ReagentMode.Contents`(0) / `Required`(1) / `Recipe`(2)
-- `PrinterInstruction.ExecuteRecipe`(1) / `WaitUntilNextValid`(2)（8 位 OP 码，需核对）
+- **`LogicType.<成员>`**（如 `LogicType.Open`、`LogicType.Channel0`）：不查表，
+  **原样输出**到 IC10，由游戏汇编器解析。因此任何合法成员都能用，也不受内建
+  表版本影响。可作为 `read` / `write` / `readDev` / `writeDev` 的逻辑类型实参。
+- 需要编译器知道**数值**的枚举（表见 `internal/builtin.EnumConstants`，数值需
+  以游戏 Stationpedia 为准）：
+  - `SorterInstruction.FilterPrefabHashEquals`(1) / `FilterPrefabHashNotEquals`(2)
+    / `FilterSlotTypeCompare`(3) / `FilterSortingClassCompare`(4)
+  - `SlotClass.Battery`、`SortingClass.Ores`
+  - `ReagentMode.Contents`(0) / `Required`(1) / `Recipe`(2)
+  - `PrinterInstruction.ExecuteRecipe`(1) / `WaitUntilNextValid`(2)（8 位 OP 码，需核对）
 
 ---
 
