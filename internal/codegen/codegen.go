@@ -102,7 +102,18 @@ func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, e
 		case *ir.JmpRA:
 			add("j ra", nil, b.Func)
 		case *ir.JmpDyn:
-			add("j "+valueText(t.Target, colors), nil, b.Func)
+			if len(t.Table) > 0 {
+				// Jump table: the entries are `j <case>` lines right after the
+				// `jr`; `jr rX` is relative to its own line, so rX = index + 1.
+				reg := valueText(t.Target, colors)
+				add("add "+reg+" "+reg+" 1", nil, b.Func)
+				add("jr "+reg, nil, b.Func)
+				for _, tb := range t.Table {
+					add("j ", tb, b.Func)
+				}
+			} else {
+				add("j "+valueText(t.Target, colors), nil, b.Func)
+			}
 		case *ir.BrValid:
 			m := "bdnvl"
 			if t.Store {
@@ -293,6 +304,10 @@ func rpo(fn *ir.Function) []*ir.Block {
 			// points at it.
 			dfs(t.Target)
 			dfs(t.Return)
+		case *ir.JmpDyn:
+			for _, tb := range t.Table {
+				dfs(tb)
+			}
 		case *ir.BrValid:
 			// Branch on invalid to Invalid, so lay out Valid as the fall-through.
 			dfs(t.Invalid)

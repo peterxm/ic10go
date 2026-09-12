@@ -2,6 +2,7 @@ package ic10_test
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -435,5 +436,35 @@ func TestLoopUnrollTable(t *testing.T) {
 	}
 	if got := m.Get("d0", "Setting"); got != 30 {
 		t.Errorf("d0.Setting = %v, want 30 (T[2])", got)
+	}
+}
+
+func TestJumpTableEquivalence(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("func main() {\n    switch d0.Setting {\n")
+	for i := 0; i < 10; i++ {
+		fmt.Fprintf(&sb, "    case %d: d1.On = %d\n", i, i+1)
+	}
+	sb.WriteString("    }\n}\n")
+	src := []byte(sb.String())
+
+	plain, _, err := ic10.Compile("t.icg", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jt, _, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{JumpTable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(jt, "jr ") {
+		t.Fatalf("jump table not emitted:\n%s", jt)
+	}
+	for tag := -1; tag <= 10; tag++ {
+		init := map[[2]string]float64{{"d0", "Setting"}: float64(tag)}
+		wa, _ := runWrites(plain, init)
+		wb, _ := runWrites(jt, init)
+		if strings.Join(wa, "|") != strings.Join(wb, "|") {
+			t.Errorf("tag %d: plain %v, jump-table %v", tag, wa, wb)
+		}
 	}
 }

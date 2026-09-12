@@ -45,6 +45,10 @@ type Options struct {
 	// needing the `table` marker. Off by default; the runtime then needs the
 	// data loader installed.
 	AutoTable bool
+	// JumpTable lowers dense integer switches (>=8 cases) to a computed jump
+	// through a table of `j` instructions, saving about one line per case.
+	// Off by default.
+	JumpTable bool
 }
 
 // fixedDataBase returns the fixed data base for the selected layout, or 0 for
@@ -175,6 +179,7 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, di
 		DataCheck:       !opts.NoDataCheck && !opts.Unsafe,
 		DataAccessStack: opts.DataAccessStack,
 		Outline:         outline,
+		JumpTable:       opts.JumpTable,
 	})
 	if diags.HasErrors() {
 		return nil

@@ -115,6 +115,11 @@ var autoTableFlag = Flag{Long: "--auto-table", Desc: text{
 	ZH: "自动把符合条件的常量 switch 表化进数据段",
 }}
 
+var jumpTableFlag = Flag{Long: "--jump-table", Desc: text{
+	EN: "lower dense integer switches (>=8 cases) to a computed jump table",
+	ZH: "把稠密整数 switch（≥8 case）降为计算跳转表",
+}}
+
 // Commands is the ordered command table.
 var Commands = []Command{
 	{
@@ -157,6 +162,7 @@ var Commands = []Command{
 			}},
 			unsafeFlag,
 			autoTableFlag,
+			jumpTableFlag,
 			{Long: "--data-access", Arg: "get|stack", Desc: text{
 				EN: "read the data segment via get/put db (default, IC host) or poke/peek (device host)",
 				ZH: "数据段读写方式：get（默认，IC host）或 stack（poke/peek，兼容设备 host）",

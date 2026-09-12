@@ -379,8 +379,13 @@ type Call struct {
 // JmpRA jumps to the return address register (IC10 "j ra").
 type JmpRA struct{}
 
-// JmpDyn jumps to a computed line number (IC10 "j r0").
-type JmpDyn struct{ Target Value }
+// JmpDyn jumps to a computed line number (IC10 "j r0"). When Table is set it
+// is a jump table: the codegen emits one `j <target>` per entry right after the
+// dispatch and jumps into it with `Target` holding the case index.
+type JmpDyn struct {
+	Target Value
+	Table  []*Block
+}
 
 // BrValid branches when a device load/store is invalid (IC10 bdnvl/bdnvs).
 type BrValid struct {

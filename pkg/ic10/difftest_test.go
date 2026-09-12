@@ -17,10 +17,13 @@ import (
 // catches optimisation bugs (e.g. a wrong hoist or a bad common-subexpression
 // merge) that unit tests miss.
 func TestDifferentialRandom(t *testing.T) {
-	for _, opts := range []ic10.Options{{}, {StableInsOrder: true}} {
+	for _, opts := range []ic10.Options{{}, {StableInsOrder: true}, {JumpTable: true}} {
 		name := "default"
 		if opts.StableInsOrder {
 			name = "stable-ins"
+		}
+		if opts.JumpTable {
+			name = "jump-table"
 		}
 		t.Run(name, func(t *testing.T) {
 			runDifferential(t, opts, 1500, genProgram, false)
@@ -312,15 +315,15 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		fmt.Fprintf(sb, "%s    goto %s\n", ind, lbl)
 		fmt.Fprintf(sb, "%s}\n", ind)
 	default:
+		ncase := 2 + g.rng.Intn(9) // 2..10 dense cases
 		fmt.Fprintf(sb, "%sswitch %s {\n", ind, g.expr(2))
 		g.switchDepth++
 		savedStack := g.stack
-		fmt.Fprintf(sb, "%scase 0:\n", ind)
-		g.block(sb, depth+1, 1)
-		g.stack = savedStack
-		fmt.Fprintf(sb, "%scase 1:\n", ind)
-		g.block(sb, depth+1, 1)
-		g.stack = savedStack
+		for ci := 0; ci < ncase; ci++ {
+			fmt.Fprintf(sb, "%scase %d:\n", ind, ci)
+			g.block(sb, depth+1, 1)
+			g.stack = savedStack
+		}
 		fmt.Fprintf(sb, "%sdefault:\n", ind)
 		g.block(sb, depth+1, 1)
 		g.stack = savedStack

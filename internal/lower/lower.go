@@ -32,6 +32,9 @@ type Options struct {
 	// Outline lists user functions to emit once as subroutines instead of
 	// inlining them at every call site. See PlanOutlines.
 	Outline map[string]bool
+	// JumpTable lowers dense integer switches to a computed jump through a
+	// table of `j` instructions. Off by default.
+	JumpTable bool
 }
 
 // emitDataCheck verifies the persistent data segment is installed: it reads the
@@ -696,6 +699,9 @@ func (l *lowerer) lowerSwitch(s *ast.SwitchStmt) {
 		l.lowerTableSwitch(s, ts)
 		return
 	}
+	if l.opts.JumpTable && l.lowerJumpTable(s) {
+		return
+	}
 	endB := l.newBlock()
 	l.loops = append(l.loops, loopCtx{breakB: endB})
 	defer func() { l.loops = l.loops[:len(l.loops)-1] }()
@@ -765,6 +771,113 @@ func (l *lowerer) lowerSwitch(s *ast.SwitchStmt) {
 // ---------------------------------------------------------------------------
 // Expressions
 // ---------------------------------------------------------------------------
+
+// jumpTableMin is the smallest dense switch worth a jump table.
+const jumpTableMin = 8
+
+// lowerJumpTable lowers a dense integer switch to a computed jump through a
+// table of `j` instructions. It returns false when the switch is not a
+// candidate.
+func (l *lowerer) lowerJumpTable(s *ast.SwitchStmt) bool {
+	if s.Tag == nil {
+		return false
+	}
+	type entry struct {
+		val  int
+		body []ast.Stmt
+	}
+	var entries []entry
+	for _, c := range s.Cases {
+		if c.Default {
+			continue
+		}
+		if len(c.Exprs) != 1 {
+			return false
+		}
+		v, ok := sema.Eval(c.Exprs[0], l.info.Consts)
+		if !ok || v != math.Trunc(v) {
+			return false
+		}
+		entries = append(entries, entry{int(v), c.Body})
+	}
+	if len(entries) < jumpTableMin {
+		return false
+	}
+	lo, hi := entries[0].val, entries[0].val
+	for _, e := range entries {
+		if e.val < lo {
+			lo = e.val
+		}
+		if e.val > hi {
+			hi = e.val
+		}
+	}
+	if hi-lo+1 != len(entries) {
+		return false // must be dense
+	}
+	// Only simple case bodies: a single assignment or call, with no control
+	// flow. More complex bodies create blocks that the jump-table layout does
+	// not order safely.
+	for _, e := range entries {
+		if len(e.body) != 1 {
+			return false
+		}
+		switch b := e.body[0].(type) {
+		case *ast.AssignStmt:
+		case *ast.ExprStmt:
+			if _, isCall := b.X.(*ast.CallExpr); !isCall {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+
+	endB := l.newBlock()
+	l.loops = append(l.loops, loopCtx{breakB: endB})
+	defer func() { l.loops = l.loops[:len(l.loops)-1] }()
+
+	tag := l.lowerExpr(s.Tag)
+	idx := l.b.NewReg("jidx")
+	l.emitBin(ir.Sub, idx, tag, &ir.Const{V: float64(lo)})
+	lt := l.b.NewReg("jlt")
+	l.b.Emit(&ir.Cmp{Cond: ir.Lt, Dst: lt, A: idx, B: &ir.Const{V: 0}})
+	gt := l.b.NewReg("jgt")
+	l.b.Emit(&ir.Cmp{Cond: ir.Gt, Dst: gt, A: idx, B: &ir.Const{V: float64(hi - lo)}})
+	bad := l.b.NewReg("jbad")
+	l.emitBin(ir.BitOr, bad, lt, gt)
+	defaultB := l.newBlock()
+	tableB := l.newBlock()
+	l.b.SetTerm(&ir.Br{Cond: ir.NonZero, A: bad, Then: defaultB, Else: tableB})
+
+	l.b.SetBlock(defaultB)
+	for _, c := range s.Cases {
+		if c.Default {
+			l.lowerStmts(c.Body)
+			break
+		}
+	}
+	if l.b.Cur().Term == nil {
+		l.b.SetTerm(&ir.Jmp{Target: endB})
+	}
+
+	l.b.SetBlock(tableB)
+	caseBlocks := make([]*ir.Block, hi-lo+1)
+	for i := range caseBlocks {
+		caseBlocks[i] = l.newBlock()
+	}
+	l.b.SetTerm(&ir.JmpDyn{Target: idx, Table: caseBlocks})
+
+	for _, e := range entries {
+		l.b.SetBlock(caseBlocks[e.val-lo])
+		l.lowerStmts(e.body)
+		if l.b.Cur().Term == nil {
+			l.b.SetTerm(&ir.Jmp{Target: endB})
+		}
+	}
+	l.b.SetBlock(endB)
+	return true
+}
 
 // lowerTableSwitch lowers a `switch tag table` into a bounds check plus one
 // table read per assignment target.

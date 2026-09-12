@@ -62,7 +62,7 @@ j 1
 ```
 ic10c build  <file.icg>       # 编译为 IC10 并输出到 stdout
 ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
-            [--data-layout top|middle] [--unsafe] [--auto-table] <file.icg>
+            [--data-layout top|middle] [--unsafe] [--auto-table] [--jump-table] <file.icg>
                               # 同时输出持久栈数据段 loader（默认 <file>.data.ic）
 ic10c build --data-only <file.icg>  # 只输出数据段 loader
 ic10c run    <file.icg>       # 编译并在内置 VM 中运行（--steps/--set/--trace）
