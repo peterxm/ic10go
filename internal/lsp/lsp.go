@@ -496,11 +496,18 @@ func enumReceivers() []string {
 			}
 		}
 	}
+	// LogicType members are modelled separately from EnumConstants.
+	if !seen["LogicType"] {
+		out = append(out, "LogicType")
+	}
 	sort.Strings(out)
 	return out
 }
 
 func enumReceiver(s string) bool {
+	if s == "LogicType" {
+		return true
+	}
 	for k := range builtin.EnumConstants {
 		if strings.HasPrefix(k, s+".") {
 			return true
@@ -511,6 +518,13 @@ func enumReceiver(s string) bool {
 
 func enumItems(recv string) []completionItem {
 	var items []completionItem
+	if recv == "LogicType" {
+		for name := range builtin.LogicTypeIDs {
+			items = append(items, completionItem{Label: name, Kind: 21, Detail: "logic type"})
+		}
+		sortItems(items)
+		return items
+	}
 	for k := range builtin.EnumConstants {
 		if member, ok := strings.CutPrefix(k, recv+"."); ok {
 			items = append(items, completionItem{Label: member, Kind: 21, Detail: "enum"})

@@ -35,6 +35,26 @@
     "body": ["${1:d0}.${2:On} = ${3:1}"],
     "description": "write a device logic type"
   },
+  "Dynamic logic read": {
+    "prefix": "readlt",
+    "body": ["read(${1:d0}, ${2:LogicType.Open})"],
+    "description": "read with a runtime logic type"
+  },
+  "Dynamic logic write": {
+    "prefix": "writelt",
+    "body": ["write(${1:d0}, ${2:LogicType.Open}, ${3:1})"],
+    "description": "write with a runtime logic type"
+  },
+  "Dynamic device read": {
+    "prefix": "readdev",
+    "body": ["readDev(${1:0}, ${2:LogicType.Open})"],
+    "description": "read a register-selected device with a runtime logic type"
+  },
+  "Dynamic device write": {
+    "prefix": "writedev",
+    "body": ["writeDev(${1:0}, ${2:LogicType.Open}, ${3:1})"],
+    "description": "write a register-selected device with a runtime logic type"
+  },
   "Hysteresis control": {
     "prefix": "hyst",
     "body": [

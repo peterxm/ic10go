@@ -9,6 +9,7 @@
     { "include": "#builtins" },
     { "include": "#batch" },
     { "include": "#devices" },
+    { "include": "#enums" },
     { "include": "#logictypes" },
     { "include": "#numbers" },
     { "include": "#operators" }
@@ -37,7 +38,12 @@
     },
     "builtins": {
       "patterns": [
-        { "name": "support.function.icg", "match": "\\b(yield|sleep|hcf|abs|sgn|sqrt|exp|log|floor|ceil|round|trunc|rand|sin|cos|tan|asin|acos|atan|atan2|pow|min|max|clamp|lerp|hash|str|isNaN|approx|approxZero|isSet|isUnset|rmap|get|put|getd|putd|clr|push|pop|peek|poke|read|write)\\b" }
+        { "name": "support.function.icg", "match": "\\b(yield|sleep|hcf|abs|sgn|sqrt|exp|log|floor|ceil|round|trunc|rand|sin|cos|tan|asin|acos|atan|atan2|pow|min|max|clamp|lerp|hash|str|isNaN|approx|approxZero|isSet|isUnset|rmap|get|put|getd|putd|clr|push|pop|peek|poke|read|write|readDev|writeDev)\\b" }
+      ]
+    },
+    "enums": {
+      "patterns": [
+        { "name": "constant.other.enum.icg", "match": "\\b(SorterInstruction|PrinterInstruction|ReagentMode|SlotClass|SortingClass|LogicType)\\.[A-Za-z_][A-Za-z0-9_]*" }
       ]
     },
     "batch": {
