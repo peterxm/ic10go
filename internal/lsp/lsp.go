@@ -318,7 +318,7 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 		"uri":         uri,
 		"diagnostics": items,
 	})
-	s.publishStats(w, uri, code, err, diags)
+	s.publishStats(w, uri, text, code, err, diags)
 }
 
 func severity(s int) int {

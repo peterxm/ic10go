@@ -646,11 +646,15 @@ func (s *Server) inlayHint(w *bufio.Writer, id json.RawMessage, params json.RawM
 		return
 	}
 	st := ic10.StatsOf(code)
+	label := fmt.Sprintf("  IC10: %d/%d 行 · %d/%d 字节 · %d/%d 寄存器", st.Lines, codegen.MaxLines, st.Bytes, codegen.MaxBytes, st.RegsUsed, 16)
+	if base, size, _, _ := ic10.DataStats(p.TextDocument.URI, []byte(text), ic10.Options{}); base >= 0 {
+		label += fmt.Sprintf(" · data %d..%d", base, base+size-1)
+	}
 	lastLine := strings.Count(text, "\n")
 	lastStart := strings.LastIndexByte(text, '\n') + 1
 	hint := map[string]any{
 		"position": lspPosition{Line: lastLine, Character: utf16Len(text[lastStart:])},
-		"label":    fmt.Sprintf("  IC10: %d/%d 行 · %d/%d 字节 · %d/%d 寄存器", st.Lines, codegen.MaxLines, st.Bytes, codegen.MaxBytes, st.RegsUsed, 16),
+		"label":    label,
 		"kind":     1,
 	}
 	reply(w, id, []any{hint})
@@ -658,13 +662,13 @@ func (s *Server) inlayHint(w *bufio.Writer, id json.RawMessage, params json.RawM
 
 // publishStats notifies the client of the compiled program's budget so it can
 // show a persistent status indicator.
-func (s *Server) publishStats(w *bufio.Writer, uri, code string, err error, diags *diag.Bag) {
+func (s *Server) publishStats(w *bufio.Writer, uri, text, code string, err error, diags *diag.Bag) {
 	if err != nil || diags.HasErrors() {
 		notify(w, "icg/stats", map[string]any{"uri": uri, "error": true})
 		return
 	}
 	st := ic10.StatsOf(code)
-	notify(w, "icg/stats", map[string]any{
+	payload := map[string]any{
 		"uri":        uri,
 		"lines":      st.Lines,
 		"bytes":      st.Bytes,
@@ -674,7 +678,21 @@ func (s *Server) publishStats(w *bufio.Writer, uri, code string, err error, diag
 		"maxBytes":   codegen.MaxBytes,
 		"maxLineMax": codegen.MaxLineLen,
 		"maxRegs":    16,
-	})
+	}
+	if base, size, autoTabled, warn := ic10.DataStats(uri, []byte(text), ic10.Options{}); base >= 0 {
+		payload["dataBase"] = base
+		payload["dataSize"] = size
+		payload["dataEnd"] = base + size - 1
+		payload["autoTabled"] = autoTabled
+		if warn != "" {
+			payload["dataWarn"] = warn
+		}
+		if depth, unbounded, err := ic10.MaxStackDepth(uri, []byte(text), ic10.Options{}); err == nil {
+			payload["stackDepth"] = depth
+			payload["stackUnbounded"] = unbounded
+		}
+	}
+	notify(w, "icg/stats", payload)
 }
 
 // deviceAliasOf returns the device port a name aliases via `const NAME = dN`.

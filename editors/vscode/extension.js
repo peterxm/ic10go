@@ -789,11 +789,22 @@ class LspClient {
             this.status.hide();
             return;
         }
-        this.status.text = t(
+        let text = t(
             `IC10: ${p.lines}/${p.maxLines} lines · ${p.bytes}/${p.maxBytes} B · ${p.maxLineLen}/${p.maxLineMax} ch · ${p.regs}/${p.maxRegs} reg`,
             `IC10: ${p.lines}/${p.maxLines} 行 · ${p.bytes}/${p.maxBytes} 字节 · ${p.maxLineLen}/${p.maxLineMax} 字符 · ${p.regs}/${p.maxRegs} 寄存器`
         );
-        this.status.tooltip = t('IC10 budget — click to compile', 'IC10 预算 — 点击编译');
+        if (p.dataBase !== undefined) {
+            text += ` · data ${p.dataBase}..${p.dataEnd}`;
+        }
+        this.status.text = text;
+        const tips = [t('IC10 budget — click to compile', 'IC10 预算 — 点击编译')];
+        if (p.autoTabled) {
+            tips.push(t(`${p.autoTabled} switch(es) auto-tabled; reinstall the data loader`,
+                `已自动表化 ${p.autoTabled} 处 switch；请重装数据段`));
+        }
+        if (p.dataWarn) tips.push(p.dataWarn);
+        if (p.stackUnbounded) tips.push(t('push depth is unbounded', 'push 深度无界'));
+        this.status.tooltip = tips.join('\n');
         this.status.show();
     }
 

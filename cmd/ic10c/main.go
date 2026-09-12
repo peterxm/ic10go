@@ -473,10 +473,13 @@ func cmdStats(args []string) int {
 	fmt.Printf("bytes      %3d / %d\n", s.Bytes, codegen.MaxBytes)
 	fmt.Printf("max line   %3d / %d\n", s.MaxLineLen, codegen.MaxLineLen)
 	fmt.Printf("registers  %3d / %d\n", s.RegsUsed, ic10.NumRegs)
-	if base, size, warn := ic10.DataStats(files[0], data, opts); base >= 0 {
+	if base, size, autoTabled, warn := ic10.DataStats(files[0], data, opts); base >= 0 {
 		fmt.Printf("data       slots %d..%d (%d values)\n", base, base+size-1, size)
 		if warn != "" {
 			fmt.Printf("warning    %s\n", warn)
+		}
+		if autoTabled > 0 {
+			fmt.Printf("warning    auto-tabled %d switch(es) into the data segment; reinstall the loader\n", autoTabled)
 		}
 		if depth, unbounded, err := ic10.MaxStackDepth(files[0], data, opts); err == nil {
 			switch {

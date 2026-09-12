@@ -64,22 +64,23 @@ func HasData(name string, src []byte) bool {
 	return err == nil && len(info.Data) > 0
 }
 
-// DataStats returns the data-segment layout (first slot and size) and a
-// potential-conflict warning. base is -1 when the source has no data segment.
+// DataStats returns the data-segment layout (first slot and size), the number
+// of auto-tabled switches, and a potential-conflict warning. base is -1 when
+// the source has no data segment.
 //
 // The data segment sits at the top of the stack; poke writes arbitrary
 // addresses, so a program that uses it may clobber the segment. (push is
 // checked precisely by MaxStackDepth.)
-func DataStats(name string, src []byte, opts Options) (base, size int, warn string) {
+func DataStats(name string, src []byte, opts Options) (base, size, autoTabled int, warn string) {
 	info, err := analyzeWithOptions(name, src, opts)
 	if err != nil || len(info.Data) == 0 {
-		return -1, 0, ""
+		return -1, 0, 0, ""
 	}
 	if sourceUsesPoke(src) {
 		warn = fmt.Sprintf("data segment occupies stack slots [%d..%d]; poke must stay below %d",
 			info.Sentinel, sema.StackSize-1, info.Sentinel)
 	}
-	return info.Sentinel, info.DataSize, warn
+	return info.Sentinel, info.DataSize, info.AutoTabled, warn
 }
 
 // sourceUsesPoke reports whether the source calls poke.

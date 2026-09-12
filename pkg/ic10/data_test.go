@@ -177,14 +177,14 @@ func TestDataTableStackAccessMissingHalts(t *testing.T) {
 }
 
 func TestDataStatsWarning(t *testing.T) {
-	base, size, warn := ic10.DataStats("t.icg", []byte(dataTableSrc), ic10.Options{})
+	base, size, _, warn := ic10.DataStats("t.icg", []byte(dataTableSrc), ic10.Options{})
 	if base < 0 || size == 0 {
 		t.Fatalf("DataStats = (%d,%d), want a data segment", base, size)
 	}
 	if warn != "" {
 		t.Errorf("unexpected warning for a program without push/poke: %q", warn)
 	}
-	_, _, warn = ic10.DataStats("t.icg", []byte("data T = [1]\nfunc main() { poke(10, 5)\n for { yield()\n d0.Setting = T[0] } }\n"), ic10.Options{})
+	_, _, _, warn = ic10.DataStats("t.icg", []byte("data T = [1]\nfunc main() { poke(10, 5)\n for { yield()\n d0.Setting = T[0] } }\n"), ic10.Options{})
 	if warn == "" {
 		t.Error("expected a data-segment conflict warning")
 	}
@@ -211,7 +211,7 @@ func TestDataTableMiddleLayout(t *testing.T) {
 	if got := m.Get("d0", "Setting"); got != 20 {
 		t.Errorf("middle layout: d0.Setting = %v, want 20", got)
 	}
-	base, size, _ := ic10.DataStats("t.icg", []byte(dataTableSrc), ic10.Options{DataLayout: "middle"})
+	base, size, _, _ := ic10.DataStats("t.icg", []byte(dataTableSrc), ic10.Options{DataLayout: "middle"})
 	if base != 256 || size != 4 {
 		t.Errorf("middle layout: base=%d size=%d, want 256/4", base, size)
 	}
@@ -274,4 +274,16 @@ func TestAutoTable(t *testing.T) {
 	}
 	m := runDataProgram(t, opts, true, 0)
 	_ = m
+}
+
+func TestAutoTableCount(t *testing.T) {
+	opts := ic10.Options{AutoTable: true}
+	base, _, auto, _ := ic10.DataStats("a.icg", []byte(autoTableSrc), opts)
+	if base < 0 || auto != 1 {
+		t.Errorf("DataStats = base %d auto %d, want a data segment and 1 auto-tabled switch", base, auto)
+	}
+	// Without AutoTable nothing is tabled.
+	if base, _, auto, _ := ic10.DataStats("a.icg", []byte(autoTableSrc), ic10.Options{}); base >= 0 || auto != 0 {
+		t.Errorf("without AutoTable: base %d auto %d, want -1/0", base, auto)
+	}
 }

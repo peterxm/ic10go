@@ -75,6 +75,8 @@ type Info struct {
 
 	// TableSwitches maps a `switch ... table` node to its generated tables.
 	TableSwitches map[*ast.SwitchStmt]*TableSwitch
+	// AutoTabled counts plain switches tabled by AutoTable.
+	AutoTabled int
 }
 
 // Check resolves declarations and evaluates constants.
@@ -263,6 +265,7 @@ func collectTableSwitches(info *Info, diags *diag.Bag, opts Options) {
 					buildTableSwitch(info, s, diags, true, 0)
 				case opts.AutoTable:
 					if buildTableSwitch(info, s, diags, false, maxSize) {
+						info.AutoTabled++
 						diags.Warnf(s.Pos(), "switch auto-tabled into the data segment; install the data loader first")
 					}
 				}
