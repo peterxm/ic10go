@@ -27,6 +27,9 @@ type Options struct {
 	// NoDataCheck disables the runtime check that the persistent data segment
 	// is installed before main runs.
 	NoDataCheck bool
+	// DataAccessStack reads/writes the data segment through the local stack
+	// (poke/peek) instead of get/put db, so it also works on a device host.
+	DataAccessStack bool
 }
 
 // Compile compiles .icg source into IC10 code.
@@ -59,8 +62,9 @@ func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Ba
 	}
 
 	fn := lower.Lower(info, diags, lower.Options{
-		StableInsOrder: opts.StableInsOrder,
-		DataCheck:      !opts.NoDataCheck,
+		StableInsOrder:  opts.StableInsOrder,
+		DataCheck:       !opts.NoDataCheck,
+		DataAccessStack: opts.DataAccessStack,
 	})
 	if diags.HasErrors() {
 		return "", diags, nil

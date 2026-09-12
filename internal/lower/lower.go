@@ -24,6 +24,10 @@ type Options struct {
 	// DataCheck emits a runtime check that the persistent data segment is
 	// installed (version sentinel matches) before running main.
 	DataCheck bool
+	// DataAccessStack reads the data segment through the local stack
+	// (poke/peek with sp save/restore) instead of get/put db. This works on a
+	// device host, where db is the device rather than the chip housing.
+	DataAccessStack bool
 }
 
 // emitDataCheck verifies the persistent data segment is installed: it reads the
@@ -31,16 +35,32 @@ type Options struct {
 func (l *lowerer) emitDataCheck() {
 	body := l.b.NewBlock()
 	halt := l.b.NewBlock()
-	r := l.b.NewReg("dataver")
-	l.b.Emit(&ir.Builtin{Name: "get", Dst: r, Args: []ir.Value{
-		&ir.Device{Name: "db"}, &ir.Const{V: float64(l.info.Sentinel)},
-	}})
+	r := l.emitDataRead(&ir.Const{V: float64(l.info.Sentinel)})
 	c := l.b.NewReg("datachk")
 	l.b.Emit(&ir.Cmp{Cond: ir.Ne, Dst: c, A: r, B: &ir.Const{V: l.info.DataVersion}})
 	l.b.SetTerm(&ir.Br{Cond: ir.NonZero, A: c, Then: halt, Else: body})
 	l.b.SetBlock(halt)
 	l.b.SetTerm(&ir.JmpDyn{Target: &ir.Const{V: 9999}})
 	l.b.SetBlock(body)
+}
+
+// emitDataRead reads one data-segment slot. In get mode it is a single
+// get(db, addr); in stack mode it saves sp, points sp just past addr, peeks,
+// then restores sp (device-host compatible).
+func (l *lowerer) emitDataRead(addr ir.Value) ir.Value {
+	r := l.b.NewReg("data")
+	if !l.opts.DataAccessStack {
+		l.b.Emit(&ir.Builtin{Name: "get", Dst: r, Args: []ir.Value{&ir.Device{Name: "db"}, addr}})
+		return r
+	}
+	saved := l.b.NewReg("spsave")
+	l.b.Emit(&ir.LoadSpecial{Dst: saved, Name: "sp"})
+	top := l.b.NewReg("sptop")
+	l.emitBin(ir.Add, top, addr, &ir.Const{V: 1})
+	l.b.Emit(&ir.StoreSpecial{Name: "sp", Src: top})
+	l.b.Emit(&ir.Builtin{Name: "peek", Dst: r})
+	l.b.Emit(&ir.StoreSpecial{Name: "sp", Src: saved})
+	return r
 }
 
 // Lower compiles the program's main function into an IR function.
@@ -624,9 +644,7 @@ func (l *lowerer) lowerTableSwitch(s *ast.SwitchStmt, ts *sema.TableSwitch) {
 	for _, tt := range ts.Targets {
 		addr := l.b.NewReg("swaddr")
 		l.emitBin(ir.Add, addr, &ir.Const{V: float64(tt.Table.Base)}, idx)
-		v := l.b.NewReg("swval")
-		l.b.Emit(&ir.Builtin{Name: "get", Dst: v, Args: []ir.Value{&ir.Device{Name: "db"}, addr}})
-		l.storeTo(tt.Assign.Lhs, v)
+		l.storeTo(tt.Assign.Lhs, l.emitDataRead(addr))
 	}
 	l.b.SetTerm(&ir.Jmp{Target: endB})
 
@@ -674,9 +692,7 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 			idx := l.lowerExpr(e.Index)
 			addr := l.b.NewReg("dataaddr")
 			l.emitBin(ir.Add, addr, &ir.Const{V: float64(t.Base)}, idx)
-			r := l.b.NewReg("data")
-			l.b.Emit(&ir.Builtin{Name: "get", Dst: r, Args: []ir.Value{&ir.Device{Name: "db"}, addr}})
-			return r
+			return l.emitDataRead(addr)
 		}
 		if dev, conn, ch, ok := l.channelOf(e); ok {
 			r := l.b.NewReg("channel")

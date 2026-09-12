@@ -50,7 +50,7 @@ func runDataProgram(t *testing.T, opts ic10.Options, withLoader bool, steps int)
 	m := vm.New()
 	m.Set("d0", "Setting", 7) // distinguishable from the value the program writes
 	if withLoader {
-		loader, err := ic10.DataLoader("t.icg", src)
+		loader, err := ic10.DataLoaderWithOptions("t.icg", src, opts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -61,7 +61,7 @@ func runDataProgram(t *testing.T, opts ic10.Options, withLoader bool, steps int)
 		if err := lm.Run(100); err != nil && err != vm.ErrStepLimit {
 			t.Fatal(err)
 		}
-		m.Device("db").Stack = lm.Device("db").Stack
+		copy(m.Stack, lm.Stack)
 	}
 	if err := m.Load(code); err != nil {
 		t.Fatal(err)
@@ -159,5 +159,19 @@ func TestTableSwitchRejectsNonDense(t *testing.T) {
 	_, diags, _ := ic10.Compile("bad.icg", src)
 	if !diags.HasErrors() {
 		t.Error("expected an error for non-dense table switch cases")
+	}
+}
+
+func TestDataTableStackAccess(t *testing.T) {
+	m := runDataProgram(t, ic10.Options{DataAccessStack: true}, true, 300)
+	if got := m.Get("d0", "Setting"); got != 20 {
+		t.Errorf("stack access: d0.Setting = %v, want 20", got)
+	}
+}
+
+func TestDataTableStackAccessMissingHalts(t *testing.T) {
+	m := runDataProgram(t, ic10.Options{DataAccessStack: true}, false, 300)
+	if got := m.Get("d0", "Setting"); got != 7 {
+		t.Errorf("stack access without data: d0.Setting = %v, want 7", got)
 	}
 }

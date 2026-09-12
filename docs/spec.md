@@ -153,8 +153,9 @@ data RecipeHeat    = [ 0.009501, 0.009502, 0.009503 ]
 - 表**只读**，越界不检查（与 IC10 一致）。
 - 编译器把数据段放在栈顶、寄存器溢出区（511 向下）之上，并写一个版本哨兵；
   runtime 启动时校验，缺失/过期则停机。
-- 数据本身由一次性的 **loader** 写入（见 `ic10c build --split-data`），
-  要求芯片插在**标准 IC host** 上（设备 host 会 `MemoryNotWriteable`）。
+- 数据本身由一次性的 **loader** 写入（见 `ic10c build --split-data`）。
+  默认用 `get/put db`，要求芯片插在**标准 IC host** 上；设备 host 用
+  `--data-access stack`（本地 `poke`/`peek`）编译。
 
 ```go
 db.Setting = RecipeDisplay[ore-1]   // -> get(db, baseDisplay + ore - 1)

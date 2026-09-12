@@ -151,6 +151,7 @@ func cmdBuild(args []string) int {
 	splitData := false
 	dataOnly := false
 	noDataCheck := false
+	dataAccessStack := false
 	dataOut := ""
 	var files []string
 	for i := 0; i < len(args); i++ {
@@ -170,8 +171,13 @@ func cmdBuild(args []string) int {
 			}
 		case "--data-access":
 			if i+1 < len(args) {
-				if args[i+1] != "get" {
-					fmt.Fprintln(os.Stderr, "ic10c: --data-access stack is not implemented yet")
+				switch args[i+1] {
+				case "get":
+					dataAccessStack = false
+				case "stack":
+					dataAccessStack = true
+				default:
+					fmt.Fprintln(os.Stderr, "ic10c: --data-access must be get or stack")
 					return 2
 				}
 				i++
@@ -191,8 +197,14 @@ func cmdBuild(args []string) int {
 	}
 	ic10Hint(files[0])
 
+	opts := ic10.Options{
+		StableInsOrder:  stableIns,
+		NoDataCheck:     noDataCheck,
+		DataAccessStack: dataAccessStack,
+	}
+
 	if dataOnly {
-		loader, err := ic10.DataLoader(files[0], data)
+		loader, err := ic10.DataLoaderWithOptions(files[0], data, opts)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ic10c:", err)
 			return 1
@@ -205,10 +217,7 @@ func cmdBuild(args []string) int {
 		return 0
 	}
 
-	code, diags, err := ic10.CompileWithOptions(files[0], data, ic10.Options{
-		StableInsOrder: stableIns,
-		NoDataCheck:    noDataCheck,
-	})
+	code, diags, err := ic10.CompileWithOptions(files[0], data, opts)
 	file := source.NewFile(files[0], data)
 	if rc := report(file, diags); rc != 0 {
 		return rc
@@ -220,7 +229,7 @@ func cmdBuild(args []string) int {
 	fmt.Print(code)
 
 	if splitData {
-		loader, err := ic10.DataLoader(files[0], data)
+		loader, err := ic10.DataLoaderWithOptions(files[0], data, opts)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ic10c:", err)
 			return 1

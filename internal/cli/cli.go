@@ -140,6 +140,10 @@ var Commands = []Command{
 				EN: "do not verify the data segment at runtime",
 				ZH: "不在运行时校验数据段",
 			}},
+			{Long: "--data-access", Arg: "get|stack", Desc: text{
+				EN: "read the data segment via get/put db (default, IC host) or poke/peek (device host)",
+				ZH: "数据段读写方式：get（默认，IC host）或 stack（poke/peek，兼容设备 host）",
+			}},
 			commonHelp,
 		},
 		Examples: []string{

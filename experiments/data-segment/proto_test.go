@@ -154,7 +154,7 @@ func runPair(t *testing.T, dir string, steps int) *vm.Machine {
 		t.Fatal(err)
 	}
 	m := vm.New()
-	m.Device("db").Stack = lm.Device("db").Stack
+	copy(m.Stack, lm.Stack)
 	if err := m.Load(string(runtime)); err != nil {
 		t.Fatal(err)
 	}
@@ -195,6 +195,17 @@ func TestIngameSwitchDemo(t *testing.T) {
 	for _, want := range []float64{111, 222, 333} {
 		if !seen[want] {
 			t.Errorf("table switch value %v never displayed", want)
+		}
+	}
+}
+
+// TestIngameStackDemo runs the committed stack-access loader/runtime pair.
+func TestIngameStackDemo(t *testing.T) {
+	m := runPair(t, "ingame-stack", 0)
+	seen := displayedValues(m, 400)
+	for _, want := range []float64{111, 222, 333} {
+		if !seen[want] {
+			t.Errorf("stack-access value %v never displayed", want)
 		}
 	}
 }

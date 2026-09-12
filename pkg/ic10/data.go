@@ -21,6 +21,13 @@ import (
 // The loader is plain IC10 (a sequence of `put db <addr> <value>` lines); run
 // it once, then replace the chip's code with the compiled runtime.
 func DataLoader(name string, src []byte) (string, error) {
+	return DataLoaderWithOptions(name, src, Options{})
+}
+
+// DataLoaderWithOptions is DataLoader with explicit options. With
+// DataAccessStack the loader uses `poke` (the chip's own stack), matching a
+// runtime compiled the same way.
+func DataLoaderWithOptions(name string, src []byte, opts Options) (string, error) {
 	info, err := analyze(name, src)
 	if err != nil {
 		return "", err
@@ -28,11 +35,17 @@ func DataLoader(name string, src []byte) (string, error) {
 	if len(info.Data) == 0 {
 		return "", nil
 	}
+	write := func(addr int, v float64) string {
+		if opts.DataAccessStack {
+			return fmt.Sprintf("poke %d %s\n", addr, formatDataFloat(v))
+		}
+		return fmt.Sprintf("put db %d %s\n", addr, formatDataFloat(v))
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "put db %d %s\n", info.Sentinel, formatDataFloat(info.DataVersion))
+	b.WriteString(write(info.Sentinel, info.DataVersion))
 	for _, t := range info.Data {
 		for i, v := range t.Values {
-			fmt.Fprintf(&b, "put db %d %s\n", t.Base+i, formatDataFloat(v))
+			b.WriteString(write(t.Base+i, v))
 		}
 	}
 	if n := strings.Count(b.String(), "\n"); n > codegen.MaxLines {

@@ -353,7 +353,8 @@ func main() {
 - ✅ `switch tag table { ... }` 自动表化：常量 → 常量、连续整数 case、
   各 case 目标一致时，编译器为每个目标生成一张表，lower 为边界检查 +
   `get(db, base + tag - lo)`；可选 `default` 处理越界。
-- ⏳ `--data-access stack`（`poke`/`peek` 兼容设备 host）未实现。
+- ✅ `--data-access stack`：loader 用 `poke`，runtime 用 `peek` + `sp` 保存/恢复，
+  兼容设备 host（代价是每次读取多 4 条指令）。
 
 真机验证：标准 IC host 下 loader → runtime 读表成功；设备 host（空调）
 `put db` 报 `MemoryNotWriteable`（见 §11）。
@@ -401,13 +402,14 @@ VSCode 扩展：
 
 | 宿主 | `db` 指向 | `get/put db` | 数据段可用性 |
 |------|-----------|--------------|--------------|
-| 标准 IC host | 芯片自身栈 | 可用（真机已验证） | ✅ 默认 `--data-access get` |
-| 设备 host（空调等） | 设备本身 | `MemoryNotWriteable` | ❌ 需 `--data-access stack` |
+| 标准 IC host | 芯片自身栈 | 可用（真机已验证） | ✅ `--data-access get`（默认） |
+| 设备 host（空调等） | 设备本身 | `MemoryNotWriteable` | ✅ `--data-access stack` |
 
 - 默认 `--data-access get` **要求标准 IC host**；设备 host 会报
   `MemoryNotWriteable`（真机确认）。
-- `--data-access stack` 用本地 `poke`/`peek`（读取任意地址需保存/恢复 `sp`），
-  兼容设备 host，但每次读取多几条指令、且不能与用户 `sp` 使用冲突。
+- `--data-access stack` 用本地 `poke`（loader）/`peek`（runtime，读取任意地址
+  先保存 `sp`、把 `sp` 指到 `addr+1`、`peek`、再恢复 `sp`），**兼容设备 host**，
+  代价是每次读取多 4 条指令。loader 与 runtime 必须用同一 `--data-access` 编译。
 
 ---
 

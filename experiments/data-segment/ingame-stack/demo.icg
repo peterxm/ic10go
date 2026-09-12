@@ -1,0 +1,12 @@
+// 真机测试：--data-access stack（设备 host 兼容）。
+// d0 = LED Display（Setting）。
+data T = [111, 222, 333]
+
+func main() {
+    var i = 0
+    for {
+        yield()
+        d0.Setting = T[i]
+        i = (i + 1) % 3
+    }
+}
