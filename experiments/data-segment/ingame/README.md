@@ -41,8 +41,8 @@
 
 - IC 芯片必须插在 **IC host** 上才能运行。本测试用的是标准 host（`d0–d5`）。
 - 部分设备自带 host（如空调），此时 `db` 指向**设备本身**
-  （`db On = 0` 关闭空调），`get/put db` 访问的是设备而非芯片栈。
-  空调 host 下能否访问芯片栈未确认；数据段方案应要求标准 IC host，
+  （`db On = 0` 关闭空调）。**设备 host 下真机已确认不支持**：执行
+  `put db 0 111` 报 `MemoryNotWriteable`。数据段方案应要求标准 IC host，
   或改用本地栈（`poke`/`peek`）以兼容。
 - 若 LED Display 不是用 `Setting` 显示，把脚本里的 `Setting` 换成它实际
   使用的 logic type（如 `On` / `Value`）即可。`sleep 1` 只是让显示便于观察。

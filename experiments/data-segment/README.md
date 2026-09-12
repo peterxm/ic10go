@@ -43,8 +43,9 @@ runtime 从 94 → 60 行，**省下 34 行**，剩余预算从 34 行涨到 68 
   VM 已同步修正（`db.Stack` 与 `m.Stack` 共用底层数组）。
 - **宿主差异**：IC 芯片必须插在 **IC host** 上才能运行；标准 host 提供
   `d0–d5`。部分设备自带 host（如空调），此时 `db` 指向设备本身
-  （`db On = 0` 关闭空调），`get/put db` 访问的是设备而非芯片栈；数据段方案
-  应要求标准 IC host，或改用本地栈（`poke`/`peek`）以兼容。
+  （`db On = 0` 关闭空调）；**设备 host 下真机已确认不支持**：`put db 0 111`
+  报 `MemoryNotWriteable`。数据段方案应要求标准 IC host，或改用本地栈
+  （`poke`/`peek`）以兼容。
 - **版本哨兵**：本原型在槽 34 写了 `1`，runtime 可据此检测数据缺失/过期。
 - **地址分区**：数据段与本地栈共享同一空间，要避开 `sp` 增长区与寄存器
   溢出槽（511 向下，见 `internal/regalloc/regalloc.go:20`）。

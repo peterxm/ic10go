@@ -224,9 +224,10 @@ ic10c build --split-data main.icg
 3. **宿主差异（重要）**：IC 芯片必须插在 **IC host** 上才能运行；标准 host
    提供 `d0–d5` 六个设备接口，`db` = 该 host（芯片栈）。
    部分设备自带 host（如空调），此时 `db` 指向**设备本身**
-   （`db On = 0` 关闭空调），`get/put db` 访问的是设备而非芯片栈。
-   数据段方案应要求标准 IC host，或改用本地栈（`poke`/`peek`）以兼容。
-   —— 空调 host 下能否访问芯片栈仍未确认。
+   （`db On = 0` 关闭空调）。**已确认真机不支持**：设备 host 下执行
+   `put db 0 111` 报 `MemoryNotWriteable`。
+   因此数据段方案**要求标准 IC host**；若要兼容设备 host，需改用本地栈
+   （`poke`/`peek`，见 §11 的 `--data-access stack`）。
 4. `get(db, addr)` 的越界 / 未初始化行为。
 5. 数据段大小的上限与 loader 分块策略。
 6. 哪些常量应自动进入数据段（启发式）。
@@ -273,7 +274,102 @@ ic10c build --split-data main.icg
 
 ---
 
-## 9. 参考
+## 9. 语法草案
+
+顶层新增 `data` 表（编译期常量数组），由编译器分配到持久栈：
+
+```go
+// 元素只允许编译期常量：数字、hash("...")、str("...")
+data RecipeDisplay = [
+    -1301215609,   // 1 Iron
+    -404336834,    // 2 Copper
+    226410516,     // 3 Gold
+    // ...
+]
+
+data RecipeHeat = [
+    0.00950100000010010000,  // 1 Iron
+    0.00950100000100010000,  // 2 Copper
+    // ...
+]
+```
+
+使用：
+
+```go
+func main() {
+    // ...
+    db.Setting = RecipeDisplay[ore-1]   // 编译为 get(db, baseDisplay + ore - 1)
+    heat = RecipeHeat[ore-1]            // 编译为 get(db, baseHeat + ore - 1)
+}
+```
+
+规则：
+
+- 表名是编译期符号，不占运行期寄存器；索引 `Table[i]` 读栈（1 条 `get`）。
+- 索引可为变量；越界不检查（与 IC10 一致），由使用者保证。
+- 表**只读**：不允许 `Table[i] = x`（v1 不支持写回数据段）。
+- 多表各自分配 base，编译期确定。
+- 可选：编译器自动保留一个哨兵槽存数据版本（默认由数据内容派生 CRC），
+  runtime 启动时校验；可用 `--no-data-check` 关闭。
+
+> 后续可加：给 `switch` 加标记，让编译器把「常量 → 常量」的多路分支自动
+> 表化进数据段，进一步减少手写。
+
+---
+
+## 10. CLI 草案
+
+```
+ic10c build [flags] <file.icg>
+
+数据段相关 flags：
+  --split-data           同时输出 runtime（stdout）与 loader
+  --data-out <file>      loader 输出路径（默认 <file>.data.ic）
+  --data-only            只输出 loader（数据变更后重装用）
+  --data-version <n>     哨兵版本号（默认由数据内容派生）
+  --no-data-check        不在 runtime 插入版本校验
+  --data-access <mode>   读取方式：
+                           get   （默认）get/put db，需标准 IC host
+                           stack poke/peek + sp 保存/恢复，兼容设备 host，较慢
+```
+
+示例：
+
+```bash
+# 无 data 表时行为不变
+ic10c build main.icg
+
+# 有 data 表：runtime 到 stdout，loader 到 main.data.ic
+ic10c build --split-data main.icg > main.ic
+
+# 数据变更后只重装 loader
+ic10c build --data-only main.icg > main.data.ic
+```
+
+VSCode 扩展：
+
+- 新命令 **“IC10 Go: Install data segment”**：编译 loader、展示并提示
+  “先贴入运行，再换回 runtime”。
+- 当当前文件含 `data` 表时，状态栏/诊断提示“需要先安装数据段”。
+
+---
+
+## 11. 宿主与兼容
+
+| 宿主 | `db` 指向 | `get/put db` | 数据段可用性 |
+|------|-----------|--------------|--------------|
+| 标准 IC host | 芯片自身栈 | 可用（真机已验证） | ✅ 默认 `--data-access get` |
+| 设备 host（空调等） | 设备本身 | `MemoryNotWriteable` | ❌ 需 `--data-access stack` |
+
+- 默认 `--data-access get` **要求标准 IC host**；设备 host 会报
+  `MemoryNotWriteable`（真机确认）。
+- `--data-access stack` 用本地 `poke`/`peek`（读取任意地址需保存/恢复 `sp`），
+  兼容设备 host，但每次读取多几条指令、且不能与用户 `sp` 使用冲突。
+
+---
+
+## 12. 参考
 
 - `Stationeers_IC10_参考文档.md`：栈内存（第 152–168 行）、栈遍历、
   内部栈编程。
