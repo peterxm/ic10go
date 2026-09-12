@@ -163,10 +163,10 @@ func parseAndCheck(name string, src []byte, opts Options) (*sema.Info, *diag.Bag
 		AutoTable:     opts.AutoTable,
 	})
 	if info.Main == nil {
-		diags.Errorf(source.Pos{File: name, Line: 1, Col: 1}, "no main function found")
+		diags.ErrorfCode("no-main", source.Pos{File: name, Line: 1, Col: 1}, "no main function found")
 	}
 	if info.DataSize > 0 && info.Sentinel+info.DataSize > sema.StackSize {
-		diags.Errorf(source.Pos{File: name, Line: 1, Col: 1},
+		diags.ErrorfCode("data-too-large", source.Pos{File: name, Line: 1, Col: 1},
 			"data segment [%d..%d] exceeds the %d-slot stack", info.Sentinel, info.Sentinel+info.DataSize-1, sema.StackSize)
 	}
 	if diags.HasErrors() {

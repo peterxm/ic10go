@@ -61,6 +61,7 @@ j 1
 
 ```
 ic10c build  <file.icg>       # 编译为 IC10 并输出到 stdout
+ic10c build --json <file.icg> # 输出机器可读的 JSON（代码/数据段 loader/统计/诊断）
 ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
             [--data-layout top|middle] [--unsafe] [--auto-table] [--jump-table] \
             [--fast] <file.icg>
@@ -120,6 +121,7 @@ go test ./...
 | [`docs/architecture.md`](docs/architecture.md) | 编译器架构与里程碑 M0–M5 |
 | [`docs/target-ic10.md`](docs/target-ic10.md) | IC10 目标约束、指令映射与内建数据 |
 | [`docs/data-segment.md`](docs/data-segment.md) | 持久栈数据段：`data` 表 / loader+runtime / 布局 / 宿主兼容 |
+| [`docs/plugin-api.md`](docs/plugin-api.md) | `build --json` 机器接口：字段、诊断 code、桥接流程 |
 
 > IC10 指令完整参考（`Stationeers_IC10_参考文档.md`）为第三方资料，仅本地保留、未随仓库分发。
 

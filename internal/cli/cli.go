@@ -145,6 +145,10 @@ var Commands = []Command{
 				"（128 行 / 4096 字节 / 每行 90 字符）。",
 		},
 		Flags: []Flag{
+			{Long: "--json", Desc: text{
+				EN: "emit a machine-readable JSON result (code, data loader, stats, diagnostics)",
+				ZH: "输出机器可读的 JSON 结果（代码、数据段装载器、统计、诊断）",
+			}},
 			{Long: "--stable-ins", Desc: text{
 				EN: "emit 'ins' with the stable branch's argument order",
 				ZH: "按稳定版的参数顺序生成 `ins`",

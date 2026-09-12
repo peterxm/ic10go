@@ -1277,7 +1277,7 @@ func (l *lowerer) checkLogic(pos source.Pos, name string) {
 	if l.noCheck || builtin.LogicTypes[name] {
 		return
 	}
-	l.diags.Warnf(pos, "unknown logic type %q", name)
+	l.diags.WarnfCode("unknown-logic-type", pos, "unknown logic type %q", name)
 }
 
 // checkSlot warns about a slot type that is not in the built-in table.
@@ -1285,7 +1285,7 @@ func (l *lowerer) checkSlot(pos source.Pos, name string) {
 	if l.noCheck || builtin.SlotTypes[name] {
 		return
 	}
-	l.diags.Warnf(pos, "unknown slot type %q", name)
+	l.diags.WarnfCode("unknown-slot-type", pos, "unknown slot type %q", name)
 }
 
 // ---------------------------------------------------------------------------

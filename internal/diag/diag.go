@@ -29,7 +29,13 @@ func (s Severity) String() string {
 type Diagnostic struct {
 	Severity Severity
 	Pos      source.Pos
-	Msg      string
+	// End is the optional end position of the span. Its zero value means the
+	// span is unknown (treat it as the single point Pos).
+	End source.Pos
+	// Code is an optional stable, machine-readable identifier (for example
+	// "unknown-logic-type"). It is never localised; Msg is.
+	Code string
+	Msg  string
 }
 
 func (d Diagnostic) String() string {
@@ -48,12 +54,27 @@ func (b *Bag) Add(sev Severity, pos source.Pos, format string, args ...any) {
 	b.Diags = append(b.Diags, Diagnostic{Severity: sev, Pos: pos, Msg: fmt.Sprintf(format, args...)})
 }
 
+// AddCode is Add with a stable machine-readable code.
+func (b *Bag) AddCode(sev Severity, code string, pos source.Pos, format string, args ...any) {
+	b.Diags = append(b.Diags, Diagnostic{Severity: sev, Pos: pos, Code: code, Msg: fmt.Sprintf(format, args...)})
+}
+
 func (b *Bag) Errorf(pos source.Pos, format string, args ...any) {
 	b.Add(Error, pos, format, args...)
 }
 
+// ErrorfCode is Errorf with a stable machine-readable code.
+func (b *Bag) ErrorfCode(code string, pos source.Pos, format string, args ...any) {
+	b.AddCode(Error, code, pos, format, args...)
+}
+
 func (b *Bag) Warnf(pos source.Pos, format string, args ...any) {
 	b.Add(Warning, pos, format, args...)
+}
+
+// WarnfCode is Warnf with a stable machine-readable code.
+func (b *Bag) WarnfCode(code string, pos source.Pos, format string, args ...any) {
+	b.AddCode(Warning, code, pos, format, args...)
 }
 
 func (b *Bag) HasErrors() bool {

@@ -8,10 +8,10 @@ import (
 
 // Stats summarises a generated IC10 program.
 type Stats struct {
-	Lines      int
-	Bytes      int
-	MaxLineLen int
-	RegsUsed   int
+	Lines      int `json:"lines"`
+	Bytes      int `json:"bytes"`
+	MaxLineLen int `json:"maxLine"`
+	RegsUsed   int `json:"regs"`
 }
 
 var regRe = regexp.MustCompile(`\br([0-9]+)\b`)

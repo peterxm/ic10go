@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -163,6 +164,7 @@ func cmdBuild(args []string) int {
 	dataAccessStack := false
 	dataLayout := ""
 	dataOut := ""
+	jsonOut := false
 	var files []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -182,6 +184,8 @@ func cmdBuild(args []string) int {
 			dataOnly = true
 		case "--no-data-check":
 			noDataCheck = true
+		case "--json":
+			jsonOut = true
 		case "--data-layout":
 			if i+1 < len(args) {
 				dataLayout = args[i+1]
@@ -215,10 +219,12 @@ func cmdBuild(args []string) int {
 	}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
+		if jsonOut {
+			return emitJSON(jsonIOError(files[0], err), 2)
+		}
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	ic10Hint(files[0])
 
 	opts := ic10.Options{
 		StableInsOrder:  stableIns,
@@ -230,6 +236,16 @@ func cmdBuild(args []string) int {
 		DataAccessStack: dataAccessStack,
 		DataLayout:      dataLayout,
 	}
+
+	if jsonOut {
+		res, _ := ic10.BuildJSON(files[0], data, opts)
+		if res.OK {
+			return emitJSON(res, 0)
+		}
+		return emitJSON(res, 1)
+	}
+
+	ic10Hint(files[0])
 	if unsafe {
 		fmt.Fprintln(os.Stderr, cli.UnsafeHint(lang))
 	}
@@ -768,4 +784,32 @@ func report(file *source.File, diags *diag.Bag) int {
 		return 1
 	}
 	return 0
+}
+
+// emitJSON writes v as compact JSON to stdout and returns the given exit code.
+func emitJSON(v any, code int) int {
+	b, err := json.Marshal(v)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 2
+	}
+	os.Stdout.Write(b)
+	fmt.Println()
+	return code
+}
+
+// jsonIOError builds a BuildResult that reports a file/IO failure, so that
+// `--json` always produces a parseable document.
+func jsonIOError(name string, err error) ic10.BuildResult {
+	return ic10.BuildResult{
+		APIVersion: ic10.APIVersion,
+		Lines:      []string{},
+		Limits:     ic10.LimitsOf(),
+		Diagnostics: []ic10.Diagnostic{{
+			Severity: "error",
+			Code:     "io-error",
+			File:     name,
+			Message:  err.Error(),
+		}},
+	}
 }
