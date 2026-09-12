@@ -1,0 +1,14 @@
+# 持久栈数据段 · 真机测试 6/6：peek 读 put db 写的槽
+# d0 = LED Display（显示在 Setting）
+#
+# 预期：若本地栈与 db 栈是同一块，LED 显示 54321；否则显示 0。
+# 读地址 60：先把 sp 设到 61，peek 读栈顶即 stack[60]，再还原 sp。
+
+main:
+move r1 sp
+move sp 61
+peek r0
+move sp r1
+s d0 Setting r0
+yield
+j main

@@ -1,0 +1,9 @@
+# 持久栈数据段 · 真机测试 5/6：put db 写设备栈
+# d0 = LED Display（显示在 Setting）
+#
+# 用途：验证 put db 写入的内容，能否被本地 peek 读到。
+# 步骤：贴入本段 -> 运行，LED 显示 888。
+#       然后贴入 6_peek.ic 覆盖本段。
+
+put db 60 54321
+s d0 Setting 888

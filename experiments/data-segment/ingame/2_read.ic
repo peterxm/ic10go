@@ -1,0 +1,21 @@
+# 持久栈数据段 · 真机测试 2/6：读取持久栈
+# d0 = LED Display（显示在 Setting）
+#
+# 用途：验证数据是否跨「换代码」保留。
+# 预期：LED 每秒循环显示 111 -> 222 -> 333。
+#       若一直显示 0，说明栈没有保留（或 get(db,..) 读不到 put 写入的内容）。
+
+main:
+get r0 db 0
+s d0 Setting r0
+sleep 1
+
+get r0 db 1
+s d0 Setting r0
+sleep 1
+
+get r0 db 2
+s d0 Setting r0
+sleep 1
+
+j main

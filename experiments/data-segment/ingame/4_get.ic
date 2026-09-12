@@ -1,0 +1,10 @@
+# 持久栈数据段 · 真机测试 4/6：get db 读 poke 写的槽
+# d0 = LED Display（显示在 Setting）
+#
+# 预期：若本地栈与 db 栈是同一块，LED 显示 12345；否则显示 0。
+
+main:
+get r0 db 50
+s d0 Setting r0
+yield
+j main

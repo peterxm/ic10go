@@ -2,6 +2,7 @@ package dataseg
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"ic10go/internal/builtin"
@@ -76,5 +77,32 @@ func TestBarsielDataSegment(t *testing.T) {
 	run(t, missing, 4000)
 	if got := missing.Get("db", "Setting"); got != 0 {
 		t.Errorf("no-loader db.Setting = %v, want 0", got)
+	}
+}
+
+// TestInGameScriptsRun sanity-checks the hand-written in-game test scripts:
+// each must parse and execute without an unsupported-instruction error.
+func TestInGameScriptsRun(t *testing.T) {
+	files, err := filepath.Glob("ingame/*.ic")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no ingame scripts: %v", err)
+	}
+	for _, f := range files {
+		t.Run(filepath.Base(f), func(t *testing.T) {
+			src, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := vm.New()
+			m.Set("d0", "Setting", 0)
+			if err := m.Load(string(src)); err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			for i := 0; i < 30; i++ {
+				if err := m.Run(1); err != nil && err != vm.ErrStepLimit {
+					t.Fatalf("run: %v", err)
+				}
+			}
+		})
 	}
 }
