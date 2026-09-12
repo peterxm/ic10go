@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 
 	"ic10go/internal/ast"
 	"ic10go/internal/builtin"
@@ -28,13 +29,16 @@ type Options struct {
 	// (poke/peek with sp save/restore) instead of get/put db. This works on a
 	// device host, where db is the device rather than the chip housing.
 	DataAccessStack bool
+	// Outline lists user functions to emit once as subroutines instead of
+	// inlining them at every call site. See PlanOutlines.
+	Outline map[string]bool
 }
 
 // emitDataCheck verifies the persistent data segment is installed: it reads the
 // version sentinel and halts the chip when it does not match.
 func (l *lowerer) emitDataCheck() {
-	body := l.b.NewBlock()
-	halt := l.b.NewBlock()
+	body := l.newBlock()
+	halt := l.newBlock()
 	r := l.emitDataRead(&ir.Const{V: float64(l.info.Sentinel)})
 	c := l.b.NewReg("datachk")
 	l.b.Emit(&ir.Cmp{Cond: ir.Ne, Dst: c, A: r, B: &ir.Const{V: l.info.DataVersion}})
@@ -66,15 +70,18 @@ func (l *lowerer) emitDataRead(addr ir.Value) ir.Value {
 // Lower compiles the program's main function into an IR function.
 func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 	l := &lowerer{
-		b:        ir.NewBuilder("main"),
-		info:     info,
-		diags:    diags,
-		labels:   map[string]*ir.Block{},
-		devices:  info.Devices,
-		labelDef: map[string]source.Pos{},
-		labelUse: map[string]source.Pos{},
-		noCheck:  os.Getenv("IC10C_NO_CHECK") != "",
-		opts:     opts,
+		b:         ir.NewBuilder("main"),
+		info:      info,
+		diags:     diags,
+		labels:    map[string]*ir.Block{},
+		devices:   info.Devices,
+		labelDef:  map[string]source.Pos{},
+		labelUse:  map[string]source.Pos{},
+		noCheck:   os.Getenv("IC10C_NO_CHECK") != "",
+		opts:      opts,
+		outline:   opts.Outline,
+		outlined:  map[string]*outlinedFunc{},
+		pureFuncs: computePureFuncs(info),
 	}
 	scope := map[string]ir.Value{}
 	for name, v := range info.Consts {
@@ -85,7 +92,7 @@ func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 	}
 	l.scopes = append(l.scopes, scope)
 
-	end := l.b.NewBlock()
+	end := l.newBlock()
 	l.inline = append(l.inline, inlineCtx{end: end})
 
 	if len(info.Data) > 0 && opts.DataCheck {
@@ -98,6 +105,11 @@ func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 	}
 	l.b.SetBlock(end)
 	l.b.SetTerm(&ir.Ret{})
+
+	// Emit the bodies of outlined functions once, after the main flow.
+	for _, name := range l.pending {
+		l.lowerOutlined(name)
+	}
 
 	for name, pos := range l.labelUse {
 		if _, ok := l.labelDef[name]; !ok {
@@ -165,7 +177,13 @@ type lowerer struct {
 	inline []inlineCtx
 	loops  []loopCtx
 	stack  []string // names of functions currently being inlined
-	labels map[string]*ir.Block
+	// outline marks functions emitted once as subroutines instead of inlined.
+	outline  map[string]bool
+	outlined map[string]*outlinedFunc
+	pending  []string
+	// pureFuncs marks user functions free of observable side effects.
+	pureFuncs map[string]bool
+	labels    map[string]*ir.Block
 	// devices maps a const device alias to its port (d0..d5 / db).
 	devices map[string]string
 	// labelDef and labelUse track low-level label definitions and references.
@@ -175,13 +193,29 @@ type lowerer struct {
 	opts     Options
 }
 
+// funcName is the source function currently being lowered ("" for main).
+func (l *lowerer) funcName() string {
+	if len(l.stack) > 0 {
+		return l.stack[len(l.stack)-1]
+	}
+	return ""
+}
+
+// newBlock creates a block tagged with the function currently being lowered, so
+// a size report can attribute emitted lines to source functions.
+func (l *lowerer) newBlock() *ir.Block {
+	b := l.b.NewBlock()
+	b.Func = l.funcName()
+	return b
+}
+
 // ---------------------------------------------------------------------------
 // Statements
 // ---------------------------------------------------------------------------
 
 func (l *lowerer) ensure() {
 	if l.b.Cur().Term != nil {
-		l.b.SetBlock(l.b.NewBlock())
+		l.b.SetBlock(l.newBlock())
 	}
 }
 
@@ -236,7 +270,7 @@ func (l *lowerer) lowerStmt(s ast.Stmt) {
 		l.b.SetTerm(&ir.Goto{Target: l.useLabel(s.Name.Name, s.Name.Pos())})
 	case *ast.CallStmt:
 		target := l.useLabel(s.Name.Name, s.Name.Pos())
-		ret := l.b.NewBlock()
+		ret := l.newBlock()
 		l.b.SetTerm(&ir.Call{Target: target, Return: ret})
 		l.b.SetBlock(ret)
 	case *ast.RetStmt:
@@ -257,7 +291,7 @@ func (l *lowerer) labelBlock(name string) *ir.Block {
 	if b, ok := l.labels[name]; ok {
 		return b
 	}
-	b := l.b.NewBlock()
+	b := l.newBlock()
 	l.labels[name] = b
 	return b
 }
@@ -285,7 +319,7 @@ func (l *lowerer) lowerLabel(s *ast.LabelStmt) {
 		l.labels[name] = cur
 		return
 	}
-	b := l.b.NewBlock()
+	b := l.newBlock()
 	if cur.Term == nil {
 		l.b.SetTerm(&ir.Jmp{Target: b})
 	}
@@ -470,9 +504,9 @@ func (l *lowerer) lowerReturn(s *ast.ReturnStmt) {
 }
 
 func (l *lowerer) lowerIf(s *ast.IfStmt) {
-	thenB := l.b.NewBlock()
-	elseB := l.b.NewBlock()
-	endB := l.b.NewBlock()
+	thenB := l.newBlock()
+	elseB := l.newBlock()
+	endB := l.newBlock()
 	l.branchCond(s.Cond, thenB, elseB)
 
 	l.b.SetBlock(thenB)
@@ -497,10 +531,10 @@ func (l *lowerer) lowerFor(s *ast.ForStmt) {
 	if s.Init != nil {
 		l.lowerStmt(s.Init)
 	}
-	condB := l.b.NewBlock()
-	bodyB := l.b.NewBlock()
-	postB := l.b.NewBlock()
-	endB := l.b.NewBlock()
+	condB := l.newBlock()
+	bodyB := l.newBlock()
+	postB := l.newBlock()
+	endB := l.newBlock()
 
 	l.b.SetTerm(&ir.Jmp{Target: condB})
 
@@ -536,7 +570,7 @@ func (l *lowerer) lowerSwitch(s *ast.SwitchStmt) {
 		l.lowerTableSwitch(s, ts)
 		return
 	}
-	endB := l.b.NewBlock()
+	endB := l.newBlock()
 	l.loops = append(l.loops, loopCtx{breakB: endB})
 	defer func() { l.loops = l.loops[:len(l.loops)-1] }()
 
@@ -547,7 +581,7 @@ func (l *lowerer) lowerSwitch(s *ast.SwitchStmt) {
 
 	bodyBlocks := make([]*ir.Block, len(s.Cases))
 	for i := range s.Cases {
-		bodyBlocks[i] = l.b.NewBlock()
+		bodyBlocks[i] = l.newBlock()
 	}
 
 	defaultIdx := -1
@@ -566,9 +600,9 @@ func (l *lowerer) lowerSwitch(s *ast.SwitchStmt) {
 			last := j == len(c.Exprs)-1
 			var next *ir.Block
 			if last {
-				next = l.b.NewBlock() // fallthrough target, patched below
+				next = l.newBlock() // fallthrough target, patched below
 			} else {
-				next = l.b.NewBlock()
+				next = l.newBlock()
 			}
 			if s.Tag != nil {
 				v := l.lowerExpr(ce)
@@ -609,12 +643,12 @@ func (l *lowerer) lowerSwitch(s *ast.SwitchStmt) {
 // lowerTableSwitch lowers a `switch tag table` into a bounds check plus one
 // table read per assignment target.
 func (l *lowerer) lowerTableSwitch(s *ast.SwitchStmt, ts *sema.TableSwitch) {
-	endB := l.b.NewBlock()
+	endB := l.newBlock()
 	l.loops = append(l.loops, loopCtx{breakB: endB})
 	defer func() { l.loops = l.loops[:len(l.loops)-1] }()
 
-	inB := l.b.NewBlock()
-	outB := l.b.NewBlock()
+	inB := l.newBlock()
+	outB := l.newBlock()
 
 	tag := l.lowerExpr(s.Tag)
 	lt := l.b.NewReg("swlt")
@@ -852,7 +886,7 @@ func (l *lowerer) emitBin(op ir.BinOp, dst *ir.Reg, a, b ir.Value) {
 func (l *lowerer) lowerShortCircuit(e *ast.BinaryExpr, isAnd bool) ir.Value {
 	// When both operands are free of side effects, IC10's min/max directly
 	// implement logical AND/OR and avoid branches.
-	if isPure(e.X) && isPure(e.Y) {
+	if l.isPure(e.X) && l.isPure(e.Y) {
 		a := l.lowerExpr(e.X)
 		b := l.lowerExpr(e.Y)
 		op := ir.Min
@@ -866,8 +900,8 @@ func (l *lowerer) lowerShortCircuit(e *ast.BinaryExpr, isAnd bool) ir.Value {
 
 	a := l.lowerExpr(e.X)
 	res := l.b.NewReg("logic")
-	endB := l.b.NewBlock()
-	contB := l.b.NewBlock()
+	endB := l.newBlock()
+	contB := l.newBlock()
 	if isAnd {
 		l.b.Emit(&ir.Assign{Dst: res, Src: &ir.Const{V: 0}})
 		l.b.SetTerm(&ir.Br{Cond: ir.NonZero, A: a, Then: contB, Else: endB})
@@ -890,9 +924,9 @@ func (l *lowerer) lowerShortCircuit(e *ast.BinaryExpr, isAnd bool) ir.Value {
 func (l *lowerer) lowerTernary(e *ast.TernaryExpr) ir.Value {
 	cond, a, b := l.lowerCond(e.Cond)
 	res := l.b.NewReg("tern")
-	thenB := l.b.NewBlock()
-	elseB := l.b.NewBlock()
-	endB := l.b.NewBlock()
+	thenB := l.newBlock()
+	elseB := l.newBlock()
+	endB := l.newBlock()
 	l.b.SetTerm(&ir.Br{Cond: cond, A: a, B: b, Then: thenB, Else: elseB})
 
 	l.b.SetBlock(thenB)
@@ -1023,7 +1057,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			l.diags.Errorf(call.Args[0].Pos(), "read expects a device as its first argument")
 			return &ir.Const{V: 0}
 		}
-		logic := l.lowerExpr(call.Args[1])
+		logic := l.dynamicLogic(call.Args[1])
 		r := l.b.NewReg("read")
 		l.b.Emit(&ir.LoadDyn{Dst: r, Dev: dev, Logic: logic})
 		return r
@@ -1038,7 +1072,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			l.diags.Errorf(call.Args[0].Pos(), "write expects a device as its first argument")
 			return &ir.Const{V: 0}
 		}
-		logic := l.lowerExpr(call.Args[1])
+		logic := l.dynamicLogic(call.Args[1])
 		src := l.lowerExpr(call.Args[2])
 		l.b.Emit(&ir.StoreDyn{Dev: dev, Logic: logic, Src: src})
 		return &ir.Const{V: 0}
@@ -1052,7 +1086,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			return &ir.Const{V: 0}
 		}
 		ptr := l.lowerExpr(call.Args[0])
-		logic := l.lowerExpr(call.Args[1])
+		logic := l.dynamicLogic(call.Args[1])
 		r := l.b.NewReg("read")
 		l.b.Emit(&ir.LoadDyn{Dst: r, DevPtr: ptr, Logic: logic})
 		return r
@@ -1063,7 +1097,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			return &ir.Const{V: 0}
 		}
 		ptr := l.lowerExpr(call.Args[0])
-		logic := l.lowerExpr(call.Args[1])
+		logic := l.dynamicLogic(call.Args[1])
 		src := l.lowerExpr(call.Args[2])
 		l.b.Emit(&ir.StoreDyn{DevPtr: ptr, Logic: logic, Src: src})
 		return &ir.Const{V: 0}
@@ -1103,6 +1137,9 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 
 	// User-defined functions take precedence over built-ins.
 	if fi, ok := l.info.Funcs[id.Name]; ok {
+		if l.outline[id.Name] {
+			return l.outlineCall(id, fi, call.Args, needResult)
+		}
 		return l.inlineCall(id, fi, call.Args, needResult)
 	}
 
@@ -1311,7 +1348,7 @@ func (l *lowerer) inlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr, 
 		vals[i] = l.lowerExpr(a)
 	}
 
-	end := l.b.NewBlock()
+	end := l.newBlock()
 	ctx := inlineCtx{end: end}
 	if fi.Decl.Result != "" {
 		ctx.result = l.b.NewReg(id.Name + "$ret")
@@ -1341,6 +1378,101 @@ func (l *lowerer) inlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr, 
 		return ctx.result
 	}
 	return &ir.Const{V: 0}
+}
+
+// outlineCall emits a call to an outlined function: arguments are moved into the
+// function's parameter registers, then a jal is emitted. The body itself is
+// emitted once later, by lowerOutlined.
+func (l *lowerer) outlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr, needResult bool) ir.Value {
+	// Specialize constant-argument calls: inlining lets the optimizer fold the
+	// body, so outline only the calls that cannot be folded.
+	if l.argsConstant(args) {
+		return l.inlineCall(id, fi, args, needResult)
+	}
+	if len(args) != len(fi.Decl.Params) {
+		l.diags.Errorf(id.Pos(), "%s expects %d arguments, got %d", id.Name, len(fi.Decl.Params), len(args))
+		return &ir.Const{V: 0}
+	}
+	if needResult && fi.Decl.Result == "" {
+		l.diags.Errorf(id.Pos(), "function %q does not return a value", id.Name)
+		return &ir.Const{V: 0}
+	}
+
+	of := l.outlined[id.Name]
+	if of == nil {
+		of = &outlinedFunc{fi: fi, entry: l.newBlock(), epilogue: l.newBlock()}
+		for _, p := range fi.Decl.Params {
+			of.params = append(of.params, l.b.NewReg(id.Name+"$"+p.Name.Name))
+		}
+		if fi.Decl.Result != "" {
+			of.result = l.b.NewReg(id.Name + "$ret")
+		}
+		l.outlined[id.Name] = of
+		l.pending = append(l.pending, id.Name)
+	}
+
+	for i, a := range args {
+		v := l.lowerExpr(a)
+		l.b.Emit(&ir.Assign{Dst: of.params[i], Src: v})
+	}
+	ret := l.newBlock()
+	l.b.SetTerm(&ir.Call{Target: of.entry, Return: ret})
+	l.b.SetBlock(ret)
+	if needResult {
+		return of.result
+	}
+	return &ir.Const{V: 0}
+}
+
+// argsConstant reports whether every argument is a compile-time constant, so an
+// inlined call would fold.
+func (l *lowerer) argsConstant(args []ast.Expr) bool {
+	for _, a := range args {
+		if _, ok := sema.Eval(a, l.info.Consts); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// dynamicLogic lowers a runtime logic-type operand. IC10's dynamic form
+// (l r? d? rN) requires a register, so a constant id is materialised into one.
+func (l *lowerer) dynamicLogic(e ast.Expr) ir.Value {
+	v := l.lowerExpr(e)
+	if _, isConst := v.(*ir.Const); isConst {
+		r := l.b.NewReg("lt")
+		l.b.Emit(&ir.Assign{Dst: r, Src: v})
+		return r
+	}
+	return v
+}
+
+// lowerOutlined emits the body of an outlined function once. Only leaf
+// functions are outlined, so a single return-address register is safe.
+func (l *lowerer) lowerOutlined(name string) {
+	of := l.outlined[name]
+	of.entry.Func = name
+	of.epilogue.Func = name
+	l.b.SetBlock(of.entry)
+
+	scope := map[string]ir.Value{}
+	for i, p := range of.fi.Decl.Params {
+		scope[p.Name.Name] = of.params[i]
+	}
+	l.scopes = append(l.scopes, scope)
+	l.inline = append(l.inline, inlineCtx{end: of.epilogue, result: of.result})
+	l.stack = append(l.stack, name)
+
+	l.lowerStmts(of.fi.Decl.Body.List)
+	if l.b.Cur().Term == nil {
+		l.b.SetTerm(&ir.Jmp{Target: of.epilogue})
+	}
+
+	l.stack = l.stack[:len(l.stack)-1]
+	l.inline = l.inline[:len(l.inline)-1]
+	l.scopes = l.scopes[:len(l.scopes)-1]
+	l.b.SetBlock(of.epilogue)
+	l.b.SetTerm(&ir.JmpRA{})
 }
 
 // ---------------------------------------------------------------------------
@@ -1398,37 +1530,44 @@ func (l *lowerer) deviceName(e ast.Expr) (string, bool) {
 
 // isPure reports whether an expression has no observable side effects, so it is
 // safe to evaluate unconditionally.
-func isPure(e ast.Expr) bool {
+func (l *lowerer) isPure(e ast.Expr) bool {
 	switch x := e.(type) {
 	case *ast.NumberLit, *ast.BoolLit, *ast.SpecialLit, *ast.Ident, *ast.DeviceLit:
 		return true
 	case *ast.ParenExpr:
-		return isPure(x.X)
+		return l.isPure(x.X)
 	case *ast.UnaryExpr:
-		return isPure(x.X)
+		return l.isPure(x.X)
 	case *ast.BinaryExpr:
-		return isPure(x.X) && isPure(x.Y)
+		return l.isPure(x.X) && l.isPure(x.Y)
 	case *ast.TernaryExpr:
-		return isPure(x.Cond) && isPure(x.Then) && isPure(x.Else)
+		return l.isPure(x.Cond) && l.isPure(x.Then) && l.isPure(x.Else)
 	case *ast.SelectorExpr:
-		return isPure(x.X)
+		return l.isPure(x.X)
 	case *ast.IndexExpr:
-		return isPure(x.X) && isPure(x.Index)
+		return l.isPure(x.X) && l.isPure(x.Index)
 	case *ast.CallExpr:
 		id, ok := x.Fun.(*ast.Ident)
 		if !ok {
+			// batch.read* are pure reads; batch.write* are not.
+			if sel, ok := x.Fun.(*ast.SelectorExpr); ok {
+				return !strings.HasPrefix(sel.Sel.Name, "write")
+			}
 			return false
+		}
+		if _, isFunc := l.info.Funcs[id.Name]; isFunc {
+			return l.pureFuncs[id.Name]
 		}
 		f, ok := builtin.Funcs[id.Name]
 		if !ok {
-			return false // user function: conservatively impure
+			return false
 		}
 		switch f.Name {
 		case "yield", "sleep", "hcf":
 			return false
 		}
 		for _, a := range x.Args {
-			if !isPure(a) {
+			if !l.isPure(a) {
 				return false
 			}
 		}

@@ -326,3 +326,81 @@ func TestDeviceAliasRedeclared(t *testing.T) {
 		t.Fatal("expected a redeclaration error")
 	}
 }
+
+func TestSizeReport(t *testing.T) {
+	src := []byte(`func helper(a num, b num) num {
+    x := a + b
+    y := x * 2
+    z := y - a
+    w := z + b
+    return w
+}
+
+func main() {
+    p := d0.Setting
+    q := d1.Setting
+    d2.Setting = helper(p, q)
+    d3.Setting = helper(q, p)
+    d4.Setting = helper(p, p)
+}`)
+	rep, err := ic10.Size("t.icg", src, ic10.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Total <= 0 {
+		t.Fatalf("total = %d, want > 0", rep.Total)
+	}
+	sum := 0
+	for _, n := range rep.ByFunc {
+		sum += n
+	}
+	if sum != rep.Total {
+		t.Errorf("ByFunc sums to %d, want %d", sum, rep.Total)
+	}
+	// The report must agree with what Compile produces.
+	code := mustCompile(t, string(src))
+	if got := strings.Count(code, "\n"); got != rep.Total {
+		t.Errorf("report total = %d, compiled lines = %d", rep.Total, got)
+	}
+}
+
+func TestPureFuncShortCircuitUsesMax(t *testing.T) {
+	src := `func open(d num) num { return batch.read(d, "Open", "Maximum") }
+func main() {
+    a := d0.Setting
+    b := d1.Setting
+    d2.On = open(a) || open(b)
+}`
+	code := mustCompile(t, src)
+	if !strings.Contains(code, "max") {
+		t.Errorf("expected `||` over pure calls to lower to max, got:\n%s", code)
+	}
+}
+
+func TestFunctionSpecialization(t *testing.T) {
+	src := `func helper(a num, b num) num {
+    x := a + b
+    y := x * 2
+    z := y - a
+    w := z + b
+    v := w * w
+    return v
+}
+
+func main() {
+    d0.Setting = helper(1, 2)
+    p := d1.Setting
+    q := d2.Setting
+    r := d3.Setting
+    d4.Setting = helper(p, q)
+    d5.Setting = helper(q, r)
+    db.Setting = helper(r, p)
+}`
+	code := mustCompile(t, src)
+	if !strings.Contains(code, "s d0 Setting 49") {
+		t.Errorf("expected the constant call to fold, got:\n%s", code)
+	}
+	if !strings.Contains(code, "jal") {
+		t.Errorf("expected the variable calls to be outlined, got:\n%s", code)
+	}
+}

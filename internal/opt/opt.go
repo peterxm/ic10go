@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"ic10go/internal/ir"
 )
@@ -25,8 +26,10 @@ func Optimize(fn *ir.Function) {
 		c9 := licm(fn)
 		c10 := dce(fn)
 		c11 := removeUnreachable(fn)
+		c12 := deadStores(fn)
+		c13 := mergeTails(fn)
 		fn.BuildCFG()
-		if !c1 && !c2 && !c3 && !c4 && !c5 && !c6 && !c7 && !c8 && !c9 && !c10 && !c11 {
+		if !c1 && !c2 && !c3 && !c4 && !c5 && !c6 && !c7 && !c8 && !c9 && !c10 && !c11 && !c12 && !c13 {
 			break
 		}
 	}
@@ -458,8 +461,44 @@ func rewriteUses(i ir.Instr, val map[*ir.Reg]ir.Value) bool {
 		for j := range v.Args {
 			v.Args[j] = rw(v.Args[j])
 		}
+	case *ir.Batch:
+		v.Device = rw(v.Device)
+		v.Name = rw(v.Name)
+		v.Slot = rw(v.Slot)
+		v.Mode = rw(v.Mode)
+		v.Src = rw(v.Src)
+	case *ir.LoadDyn:
+		v.DevPtr = rw(v.DevPtr)
+		v.Logic = rwLogic(v.Logic, val, &changed)
+	case *ir.StoreDyn:
+		v.DevPtr = rw(v.DevPtr)
+		v.Logic = rwLogic(v.Logic, val, &changed)
+		v.Src = rw(v.Src)
+	case *ir.LoadIndirect:
+		v.Ptr = rw(v.Ptr)
+	case *ir.StoreIndirect:
+		v.Ptr = rw(v.Ptr)
+		v.Src = rw(v.Src)
+	case *ir.StoreSpecial:
+		v.Src = rw(v.Src)
 	}
 	return changed
+}
+
+// rwLogic rewrites a dynamic logic-type operand, but only to another register:
+// IC10's dynamic form requires a register, so a constant must not be folded in.
+func rwLogic(v ir.Value, val map[*ir.Reg]ir.Value, changed *bool) ir.Value {
+	r, ok := v.(*ir.Reg)
+	if !ok {
+		return v
+	}
+	if nv, ok := val[r]; ok {
+		if nr, isReg := nv.(*ir.Reg); isReg {
+			*changed = true
+			return nr
+		}
+	}
+	return v
 }
 
 // ---------------------------------------------------------------------------
@@ -619,36 +658,53 @@ func simplifyInstr(i ir.Instr) (ir.Instr, bool) {
 // ---------------------------------------------------------------------------
 
 // redundantLoads reuses a previously loaded value when nothing between the two
-// loads can change it. It covers device loads, constant-index slot loads and
-// batch loads whose operands are all constant.
+// loads can change it. It covers device loads, slot loads (constant or
+// register-indexed), device-stack get, and batch loads whose operands are all
+// constant.
 func redundantLoads(fn *ir.Function) bool {
 	changed := false
 	for _, b := range fn.Blocks {
-		seen := map[string]*ir.Reg{}
+		seen := map[string]ir.Value{}
 		byDevice := map[string][]string{}
+		byReg := map[*ir.Reg][]string{}
 		invalidate := func(dev string) {
 			for _, k := range byDevice[dev] {
 				delete(seen, k)
 			}
 			delete(byDevice, dev)
 		}
+		invalidateReg := func(r *ir.Reg) {
+			for _, k := range byReg[r] {
+				delete(seen, k)
+			}
+			delete(byReg, r)
+		}
 		clearAll := func() {
 			clear(seen)
 			clear(byDevice)
+			clear(byReg)
 		}
-		add := func(key, dev string, r *ir.Reg) {
-			seen[key] = r
+		add := func(key, dev string, val ir.Value, deps []*ir.Reg) {
+			seen[key] = val
 			byDevice[dev] = append(byDevice[dev], key)
+			for _, d := range deps {
+				byReg[d] = append(byReg[d], key)
+			}
 		}
 		for idx, ins := range b.Instrs {
-			if key, dev, dst, ok := loadKey(ins); ok {
+			if key, dev, dst, deps, ok := loadKey(ins); ok {
 				if r, found := seen[key]; found {
 					b.Instrs[idx] = &ir.Assign{Dst: dst, Src: r}
 					changed = true
 				} else {
-					add(key, dev, dst)
+					add(key, dev, dst, deps)
 				}
 				continue
+			}
+			// A redefinition of a register used as a load index invalidates
+			// every load keyed on it.
+			if d := defOf(ins); d != nil {
+				invalidateReg(d)
 			}
 			switch v := ins.(type) {
 			case *ir.Store:
@@ -665,6 +721,14 @@ func redundantLoads(fn *ir.Function) bool {
 			case *ir.Builtin:
 				if hasSideEffect(v) {
 					clearAll()
+					// Forward a subsequent get of the same slot to the stored
+					// value (store-to-load forwarding).
+					if v.Name == "put" && len(v.Args) == 3 {
+						if d, isDev := v.Args[0].(*ir.Device); isDev {
+							key := "g|" + d.Name + "|" + valKey(v.Args[1])
+							add(key, d.Name, v.Args[2], depsOf(v.Args[1]))
+						}
+					}
 				} else if v.Name == "pop" || v.Name == "push" {
 					// These mutate the stack pointer.
 					invalidate("sp")
@@ -675,37 +739,58 @@ func redundantLoads(fn *ir.Function) bool {
 	return changed
 }
 
+// depsOf returns the register a value depends on, for load invalidation.
+func depsOf(v ir.Value) []*ir.Reg {
+	if r, ok := v.(*ir.Reg); ok {
+		return []*ir.Reg{r}
+	}
+	return nil
+}
+
 // loadKey recognises a redundant-load candidate and returns a stable key, the
-// device it reads and its destination.
-func loadKey(i ir.Instr) (key, dev string, dst *ir.Reg, ok bool) {
+// device it reads, its destination, and any registers its address depends on.
+func loadKey(i ir.Instr) (key, dev string, dst *ir.Reg, deps []*ir.Reg, ok bool) {
+	indexReg := func(v ir.Value) []*ir.Reg {
+		if r, isR := v.(*ir.Reg); isR {
+			return []*ir.Reg{r}
+		}
+		return nil
+	}
 	switch v := i.(type) {
 	case *ir.Load:
-		return "l|" + v.Dev + "|" + v.Logic, v.Dev, v.Dst, true
+		return "l|" + v.Dev + "|" + v.Logic, v.Dev, v.Dst, nil, true
 	case *ir.LoadSlot:
-		c, isC := v.Index.(*ir.Const)
-		if !isC {
-			return "", "", nil, false
+		if c, isC := v.Index.(*ir.Const); isC {
+			return "ls|" + v.Dev + "|" + c.String() + "|" + v.Logic, v.Dev, v.Dst, nil, true
 		}
-		return "ls|" + v.Dev + "|" + c.String() + "|" + v.Logic, v.Dev, v.Dst, true
+		return "ls|" + v.Dev + "|" + valKey(v.Index) + "|" + v.Logic, v.Dev, v.Dst, indexReg(v.Index), true
+	case *ir.Builtin:
+		// get(dev, addr) reads a device-stack slot; addr may be a register.
+		if v.Name == "get" && v.Dst != nil && len(v.Args) == 2 {
+			if d, isDev := v.Args[0].(*ir.Device); isDev {
+				return "g|" + d.Name + "|" + valKey(v.Args[1]), d.Name, v.Dst, indexReg(v.Args[1]), true
+			}
+		}
+		return "", "", nil, nil, false
 	case *ir.Batch:
 		if v.Dst == nil {
-			return "", "", nil, false
+			return "", "", nil, nil, false
 		}
 		dev, ok := constText(v.Device)
 		if !ok {
-			return "", "", nil, false
+			return "", "", nil, nil, false
 		}
 		name, ok1 := constText(v.Name)
 		slot, ok2 := constText(v.Slot)
 		mode, ok3 := constText(v.Mode)
 		if !ok1 || !ok2 || !ok3 {
-			return "", "", nil, false
+			return "", "", nil, nil, false
 		}
-		return fmt.Sprintf("b%d|%s|%s|%s|%s|%s", v.Kind, dev, name, slot, v.Logic, mode), dev, v.Dst, true
+		return fmt.Sprintf("b%d|%s|%s|%s|%s|%s", v.Kind, dev, name, slot, v.Logic, mode), dev, v.Dst, nil, true
 	case *ir.LoadSpecial:
-		return "sp|" + v.Name, v.Name, v.Dst, true
+		return "sp|" + v.Name, v.Name, v.Dst, nil, true
 	}
-	return "", "", nil, false
+	return "", "", nil, nil, false
 }
 
 func constText(v ir.Value) (string, bool) {
@@ -732,6 +817,7 @@ func globalCSE(fn *ir.Function) bool {
 	for _, b := range fn.Blocks {
 		avail := map[string]availExpr{}
 		rev := map[*ir.Reg]map[string]bool{}
+		byDev := map[string][]string{}
 		register := func(key string, e availExpr) {
 			avail[key] = e
 			if rev[e.reg] == nil {
@@ -746,6 +832,9 @@ func globalCSE(fn *ir.Function) bool {
 					rev[rr][key] = true
 				}
 			}
+			if e.dev != "" {
+				byDev[e.dev] = append(byDev[e.dev], key)
+			}
 		}
 		for k, e := range availIn[b] {
 			register(k, e)
@@ -756,11 +845,25 @@ func globalCSE(fn *ir.Function) bool {
 			}
 			delete(rev, r)
 		}
+		invalidateDev := func(dev string) {
+			for _, key := range byDev[dev] {
+				delete(avail, key)
+			}
+			delete(byDev, dev)
+		}
+		clearLoads := func() {
+			for key, e := range avail {
+				if e.dev != "" {
+					delete(avail, key)
+				}
+			}
+			clear(byDev)
+		}
 		for idx, ins := range b.Instrs {
-			key, operands, ok := exprKey(ins)
+			key, operands, dev, ok := exprKey(ins)
 			d := defOf(ins)
 			if ok {
-				if e, found := avail[key]; found {
+				if e, found := avail[key]; found && d != e.reg {
 					b.Instrs[idx] = &ir.Assign{Dst: d, Src: e.reg}
 					if d != nil {
 						invalidate(d)
@@ -772,8 +875,13 @@ func globalCSE(fn *ir.Function) bool {
 			if d != nil {
 				invalidate(d)
 			}
+			if wdev, all := loadWrite(ins); all {
+				clearLoads()
+			} else if wdev != "" {
+				invalidateDev(wdev)
+			}
 			if ok && !containsReg(operands, d) {
-				register(key, availExpr{reg: d, ops: operands})
+				register(key, availExpr{reg: d, ops: operands, dev: dev})
 			}
 		}
 	}
@@ -783,10 +891,12 @@ func globalCSE(fn *ir.Function) bool {
 // availExpr is an available expression: the register holding its result and
 // the values it reads. The operands are needed so that redefining an operand
 // invalidates the expression, including expressions inherited from a
-// predecessor block.
+// predecessor block. dev names the device a load reads ("" for pure
+// expressions); a write to that device invalidates it.
 type availExpr struct {
 	reg *ir.Reg
 	ops []ir.Value
+	dev string
 }
 
 // availableExprs computes, for each block, the expressions available at entry
@@ -837,6 +947,7 @@ func meetAvail(b *ir.Block, out map[*ir.Block]map[string]availExpr) map[string]a
 func transferAvail(b *ir.Block, in map[string]availExpr) map[string]availExpr {
 	avail := map[string]availExpr{}
 	rev := map[*ir.Reg]map[string]bool{}
+	byDev := map[string][]string{}
 	register := func(key string, e availExpr) {
 		avail[key] = e
 		if rev[e.reg] == nil {
@@ -851,6 +962,9 @@ func transferAvail(b *ir.Block, in map[string]availExpr) map[string]availExpr {
 				rev[rr][key] = true
 			}
 		}
+		if e.dev != "" {
+			byDev[e.dev] = append(byDev[e.dev], key)
+		}
 	}
 	for k, e := range in {
 		register(k, e)
@@ -861,14 +975,33 @@ func transferAvail(b *ir.Block, in map[string]availExpr) map[string]availExpr {
 		}
 		delete(rev, r)
 	}
+	invalidateDev := func(dev string) {
+		for _, key := range byDev[dev] {
+			delete(avail, key)
+		}
+		delete(byDev, dev)
+	}
+	clearLoads := func() {
+		for key, e := range avail {
+			if e.dev != "" {
+				delete(avail, key)
+			}
+		}
+		clear(byDev)
+	}
 	for _, ins := range b.Instrs {
-		key, operands, ok := exprKey(ins)
+		key, operands, dev, ok := exprKey(ins)
 		d := defOf(ins)
 		if d != nil {
 			invalidate(d)
 		}
+		if wdev, all := loadWrite(ins); all {
+			clearLoads()
+		} else if wdev != "" {
+			invalidateDev(wdev)
+		}
 		if ok && !containsReg(operands, d) {
-			register(key, availExpr{reg: d, ops: operands})
+			register(key, availExpr{reg: d, ops: operands, dev: dev})
 		}
 	}
 	return avail
@@ -898,26 +1031,71 @@ func containsReg(vs []ir.Value, r *ir.Reg) bool {
 	return false
 }
 
-func exprKey(i ir.Instr) (string, []ir.Value, bool) {
+func exprKey(i ir.Instr) (key string, operands []ir.Value, dev string, ok bool) {
 	switch v := i.(type) {
 	case *ir.Bin:
 		return "b" + strconv.Itoa(int(v.Op)) + "|" + valKey(v.A) + "|" + valKey(v.B),
-			[]ir.Value{v.A, v.B}, true
+			[]ir.Value{v.A, v.B}, "", true
 	case *ir.Un:
 		return "u" + strconv.Itoa(int(v.Op)) + "|" + valKey(v.A),
-			[]ir.Value{v.A}, true
+			[]ir.Value{v.A}, "", true
 	case *ir.Cmp:
 		if v.B == nil {
 			return "c" + strconv.Itoa(int(v.Cond)) + "|" + valKey(v.A) + "|-",
-				[]ir.Value{v.A}, true
+				[]ir.Value{v.A}, "", true
 		}
 		return "c" + strconv.Itoa(int(v.Cond)) + "|" + valKey(v.A) + "|" + valKey(v.B),
-			[]ir.Value{v.A, v.B}, true
+			[]ir.Value{v.A, v.B}, "", true
 	case *ir.Select:
 		return "s|" + valKey(v.Cond) + "|" + valKey(v.Then) + "|" + valKey(v.Else),
-			[]ir.Value{v.Cond, v.Then, v.Else}, true
+			[]ir.Value{v.Cond, v.Then, v.Else}, "", true
 	}
-	return "", nil, false
+	// Loads (device loads, slot loads, device-stack get, constant batch) are
+	// pure reads: safe to common up across blocks while no write to the device
+	// (and no redefinition of the address) intervenes.
+	if k, d, dst, deps, isLoad := loadKey(i); isLoad && dst != nil {
+		ops := make([]ir.Value, len(deps))
+		for j, r := range deps {
+			ops[j] = r
+		}
+		return k, ops, d, true
+	}
+	return "", nil, "", false
+}
+
+// loadWrite reports the device a store writes, or all=true when it may write
+// any device or stack slot (so every load must be invalidated).
+func loadWrite(i ir.Instr) (dev string, all bool) {
+	switch v := i.(type) {
+	case *ir.Store:
+		return v.Dev, false
+	case *ir.StoreSlot:
+		return v.Dev, false
+	case *ir.StoreSpecial:
+		return v.Name, false
+	case *ir.StoreDyn, *ir.StoreIndirect:
+		return "", true
+	case *ir.Batch:
+		switch v.Kind {
+		case ir.BatchStore, ir.BatchStoreName, ir.BatchStoreSlot:
+			if dev, ok := constText(v.Device); ok {
+				return dev, false
+			}
+			return "", true
+		}
+	case *ir.Builtin:
+		if !hasSideEffect(v) {
+			return "", false
+		}
+		if v.Name == "put" && len(v.Args) == 3 {
+			if d, ok := v.Args[0].(*ir.Device); ok {
+				return d.Name, false
+			}
+		}
+		// putd/poke/push/pop/clr/yield/sleep/hcf may change anything.
+		return "", true
+	}
+	return "", false
 }
 
 func valKey(v ir.Value) string {
@@ -1332,6 +1510,11 @@ func findLoops(fn *ir.Function, succs map[*ir.Block][]*ir.Block, dom map[*ir.Blo
 				if lp.blocks[n] {
 					continue
 				}
+				// Only blocks dominated by the header belong to the loop;
+				// otherwise the preheader would be pulled in.
+				if n != s && !dom[n][s] {
+					continue
+				}
 				lp.blocks[n] = true
 				stack = append(stack, preds[n]...)
 			}
@@ -1412,6 +1595,40 @@ func redirect(b *ir.Block, from, to *ir.Block) {
 
 func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool, dom map[*ir.Block]map[*ir.Block]bool) bool {
 	changed := false
+	// Device reads may be hoisted only when the loop neither writes the device
+	// nor contains a barrier (yield/sleep or a dynamic store) that could change
+	// it between iterations.
+	barrier := false
+	writes := map[string]bool{}
+	for _, b := range fn.Blocks {
+		if !lp.blocks[b] {
+			continue
+		}
+		for _, ins := range b.Instrs {
+			switch v := ins.(type) {
+			case *ir.Store:
+				writes[v.Dev] = true
+			case *ir.StoreSlot:
+				writes[v.Dev] = true
+			case *ir.Batch:
+				switch v.Kind {
+				case ir.BatchStore, ir.BatchStoreName, ir.BatchStoreSlot:
+					if dev, ok := constText(v.Device); ok {
+						writes[dev] = true
+					} else {
+						barrier = true
+					}
+				}
+			case *ir.StoreDyn, *ir.StoreIndirect:
+				barrier = true
+			case *ir.Builtin:
+				switch v.Name {
+				case "yield", "sleep", "hcf", "put", "putd", "poke", "push", "pop", "clr":
+					barrier = true
+				}
+			}
+		}
+	}
 	for {
 		definedSet := map[*ir.Reg]bool{}
 		defCount := map[*ir.Reg]int{}
@@ -1446,7 +1663,13 @@ func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool
 				// loop is unsound: a use could observe a different definition
 				// on some iteration.
 				soleDef := d != nil && defCount[d] == 1
-				if hoistable(ins) && !usesAny(ins, definedSet) && !definesLiveIn(ins, liveIn) &&
+				canHoist := hoistable(ins)
+				if !canHoist {
+					if dev, ok := hoistableLoad(ins); ok && !barrier && !writes[dev] {
+						canHoist = true
+					}
+				}
+				if canHoist && !usesAny(ins, definedSet) && !definesLiveIn(ins, liveIn) &&
 					soleDef && dominatesAllUses(b, d, useBlocks, dom) {
 					pre.Instrs = append(pre.Instrs, ins)
 					moved = true
@@ -1494,6 +1717,26 @@ func hoistable(i ir.Instr) bool {
 		return true
 	}
 	return false
+}
+
+// hoistableLoad reports whether an instruction is a device read that may be
+// hoisted out of a loop (subject to the loop-write and barrier checks), and the
+// device it reads.
+func hoistableLoad(i ir.Instr) (string, bool) {
+	switch v := i.(type) {
+	case *ir.Load:
+		return v.Dev, true
+	case *ir.LoadSlot:
+		return v.Dev, true
+	case *ir.Batch:
+		switch v.Kind {
+		case ir.BatchLoad, ir.BatchLoadName, ir.BatchLoadSlot, ir.BatchLoadNameSlot:
+			if dev, ok := constText(v.Device); ok {
+				return dev, true
+			}
+		}
+	}
+	return "", false
 }
 
 func usesAny(i ir.Instr, defined map[*ir.Reg]bool) bool {
@@ -1674,4 +1917,249 @@ func ic10Mod(x, y float64) float64 {
 		r += y
 	}
 	return r
+}
+
+// ---------------------------------------------------------------------------
+// Dead stack stores
+// ---------------------------------------------------------------------------
+
+// deadStores removes stack writes (put/poke with a constant address) that are
+// overwritten before any read. It is block-local and only handles the chip's
+// own stack, whose intermediate values are not observable by the game; device
+// stores are left alone. A yield or any other side effect clears the pending
+// set, so writes that survive to the end of a tick are kept.
+func deadStores(fn *ir.Function) bool {
+	changed := false
+	for _, b := range fn.Blocks {
+		pending := map[string]int{} // stack slot key -> index of the pending store
+		dead := map[int]bool{}
+		for idx, ins := range b.Instrs {
+			if key, ok := stackStoreKey(ins); ok {
+				if prev, found := pending[key]; found {
+					dead[prev] = true
+				}
+				pending[key] = idx
+				continue
+			}
+			if key, ok := stackReadKey(ins); ok {
+				delete(pending, key)
+				continue
+			}
+			if hasSideEffect(ins) {
+				clear(pending)
+			}
+		}
+		if len(dead) == 0 {
+			continue
+		}
+		kept := b.Instrs[:0]
+		for idx, ins := range b.Instrs {
+			if dead[idx] {
+				changed = true
+				continue
+			}
+			kept = append(kept, ins)
+		}
+		b.Instrs = kept
+	}
+	return changed
+}
+
+// stackStoreKey keys a stack write (put/poke) with a constant address.
+func stackStoreKey(i ir.Instr) (string, bool) {
+	v, ok := i.(*ir.Builtin)
+	if !ok {
+		return "", false
+	}
+	switch v.Name {
+	case "put":
+		if len(v.Args) == 3 {
+			if d, isDev := v.Args[0].(*ir.Device); isDev {
+				if _, isConst := v.Args[1].(*ir.Const); isConst {
+					return "put|" + d.Name + "|" + valKey(v.Args[1]), true
+				}
+			}
+		}
+	case "poke":
+		if len(v.Args) == 2 {
+			if _, isConst := v.Args[0].(*ir.Const); isConst {
+				return "poke|" + valKey(v.Args[0]), true
+			}
+		}
+	}
+	return "", false
+}
+
+// stackReadKey keys a stack read that matches stackStoreKey.
+func stackReadKey(i ir.Instr) (string, bool) {
+	v, ok := i.(*ir.Builtin)
+	if !ok {
+		return "", false
+	}
+	if v.Name == "get" && len(v.Args) == 2 {
+		if d, isDev := v.Args[0].(*ir.Device); isDev {
+			if _, isConst := v.Args[1].(*ir.Const); isConst {
+				return "put|" + d.Name + "|" + valKey(v.Args[1]), true
+			}
+		}
+	}
+	return "", false
+}
+
+// ---------------------------------------------------------------------------
+// Tail merging
+// ---------------------------------------------------------------------------
+
+// mergeTails factors identical instruction suffixes of blocks that share the
+// same terminator into one shared block, replacing each duplicate with a jump.
+// It merges one pair at a time and re-scans, which keeps the bookkeeping simple
+// on the small functions IC10 programs produce.
+func mergeTails(fn *ir.Function) bool {
+	changed := false
+	for mergeOneTail(fn) {
+		changed = true
+		fn.BuildCFG()
+	}
+	return changed
+}
+
+func mergeOneTail(fn *ir.Function) bool {
+	type entry struct {
+		block *ir.Block
+		n     int
+	}
+	seen := map[string]entry{}
+	for _, b := range fn.Blocks {
+		if len(b.Instrs) == 0 {
+			continue
+		}
+		tk := termKey(b.Term)
+		for n := 1; n < len(b.Instrs); n++ {
+			key := tk + "\x00" + suffixKey(b.Instrs, n)
+			e, ok := seen[key]
+			if !ok || e.block == b || e.n != n || e.block == fn.Entry {
+				continue
+			}
+			shared := fn.NewBlock()
+			shared.Instrs = append(shared.Instrs, b.Instrs[len(b.Instrs)-n:]...)
+			shared.Term = b.Term
+			shared.Func = b.Func
+			trimBlock(b, n, shared)
+			trimBlock(e.block, n, shared)
+			return true
+		}
+		for n := 1; n < len(b.Instrs); n++ {
+			key := tk + "\x00" + suffixKey(b.Instrs, n)
+			if _, ok := seen[key]; !ok {
+				seen[key] = entry{b, n}
+			}
+		}
+	}
+	return false
+}
+
+// trimBlock removes the last n instructions of b and makes it jump to shared.
+func trimBlock(b *ir.Block, n int, shared *ir.Block) {
+	b.Instrs = b.Instrs[:len(b.Instrs)-n]
+	b.Term = &ir.Jmp{Target: shared}
+}
+
+// suffixKey returns a structural key for the last n instructions.
+func suffixKey(instrs []ir.Instr, n int) string {
+	var sb strings.Builder
+	for _, ins := range instrs[len(instrs)-n:] {
+		sb.WriteString(instrKey(ins))
+		sb.WriteByte('\n')
+	}
+	return sb.String()
+}
+
+// instrKey renders an instruction structurally, using register IDs so that
+// equivalent instructions in different blocks compare equal.
+func instrKey(i ir.Instr) string {
+	reg := func(r *ir.Reg) string {
+		if r == nil {
+			return "-"
+		}
+		return strconv.Itoa(r.ID)
+	}
+	switch v := i.(type) {
+	case *ir.Assign:
+		return "assign|" + reg(v.Dst) + "|" + valKey(v.Src)
+	case *ir.Bin:
+		return "bin|" + v.Op.IC10() + "|" + reg(v.Dst) + "|" + valKey(v.A) + "|" + valKey(v.B)
+	case *ir.Un:
+		return "un|" + strconv.Itoa(int(v.Op)) + "|" + reg(v.Dst) + "|" + valKey(v.A)
+	case *ir.Cmp:
+		return "cmp|" + strconv.Itoa(int(v.Cond)) + "|" + reg(v.Dst) + "|" + valKey(v.A) + "|" + valKey(v.B)
+	case *ir.Select:
+		return "select|" + reg(v.Dst) + "|" + valKey(v.Cond) + "|" + valKey(v.Then) + "|" + valKey(v.Else)
+	case *ir.Load:
+		return "load|" + v.Dev + "|" + v.Logic + "|" + reg(v.Dst)
+	case *ir.Store:
+		return "store|" + v.Dev + "|" + v.Logic + "|" + valKey(v.Src)
+	case *ir.LoadSlot:
+		return "loadslot|" + v.Dev + "|" + v.Logic + "|" + valKey(v.Index) + "|" + reg(v.Dst)
+	case *ir.StoreSlot:
+		return "storeslot|" + v.Dev + "|" + v.Logic + "|" + valKey(v.Index) + "|" + valKey(v.Src)
+	case *ir.LoadDyn:
+		return "loaddyn|" + valKey(v.DevPtr) + "|" + valKey(v.Logic) + "|" + reg(v.Dst)
+	case *ir.StoreDyn:
+		return "storedyn|" + valKey(v.DevPtr) + "|" + valKey(v.Logic) + "|" + valKey(v.Src)
+	case *ir.LoadSpecial:
+		return "loadsp|" + v.Name + "|" + reg(v.Dst)
+	case *ir.StoreSpecial:
+		return "storesp|" + v.Name + "|" + valKey(v.Src)
+	case *ir.LoadIndirect:
+		return "loadind|" + valKey(v.Ptr) + "|" + reg(v.Dst)
+	case *ir.StoreIndirect:
+		return "storeind|" + valKey(v.Ptr) + "|" + valKey(v.Src)
+	case *ir.LoadSpill:
+		return "loadspill|" + strconv.Itoa(v.Slot) + "|" + reg(v.Dst)
+	case *ir.StoreSpill:
+		return "storespill|" + strconv.Itoa(v.Slot) + "|" + valKey(v.Src)
+	case *ir.Builtin:
+		s := "builtin|" + v.Name + "|" + reg(v.Dst)
+		for _, a := range v.Args {
+			s += "|" + valKey(a)
+		}
+		return s
+	case *ir.Batch:
+		return "batch|" + strconv.Itoa(int(v.Kind)) + "|" + valKey(v.Device) + "|" + valKey(v.Name) +
+			"|" + valKey(v.Slot) + "|" + v.Logic + "|" + valKey(v.Mode) + "|" + valKey(v.Src) + "|" + reg(v.Dst)
+	}
+	return "?"
+}
+
+// termKey returns a structural key for a terminator (block pointers are keyed
+// by their ID so identical control flow compares equal).
+func termKey(t ir.Term) string {
+	switch v := t.(type) {
+	case *ir.Jmp:
+		return "jmp|" + blockID(v.Target)
+	case *ir.Goto:
+		return "goto|" + blockID(v.Target)
+	case *ir.Ret:
+		return "ret|" + valKey(v.Value)
+	case *ir.Call:
+		return "call|" + blockID(v.Target) + "|" + blockID(v.Return)
+	case *ir.JmpRA:
+		return "jmpra"
+	case *ir.JmpDyn:
+		return "jmpdyn|" + valKey(v.Target)
+	case *ir.Br:
+		return "br|" + strconv.Itoa(int(v.Cond)) + "|" + valKey(v.A) + "|" + valKey(v.B) +
+			"|" + blockID(v.Then) + "|" + blockID(v.Else)
+	case *ir.BrValid:
+		return "brvalid|" + v.Dev + "|" + v.Logic + "|" + strconv.FormatBool(v.Store) +
+			"|" + blockID(v.Valid) + "|" + blockID(v.Invalid)
+	}
+	return "?"
+}
+
+func blockID(b *ir.Block) string {
+	if b == nil {
+		return "-"
+	}
+	return strconv.Itoa(b.ID)
 }

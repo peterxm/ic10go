@@ -35,7 +35,7 @@
 - `sqrt` → `sqrt(x)` — 平方根 / Square root
 - `clamp` → `clamp(x, lo, hi)` — 把 x 限制在 [lo, hi]
 - `Temperature` → 温度（开尔文）
-- `func` → 全内联，不支持递归
+- `func` → 编译期内联 / 外提，不支持递归
 
 ## 二、安装（推荐，一条命令）
 

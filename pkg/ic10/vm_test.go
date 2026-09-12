@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"ic10go/internal/vm"
@@ -440,6 +441,44 @@ func TestVMConstantFolding(t *testing.T) {
 		got := m.Get("d0", "Setting")
 		if math.Abs(got-c.want) > 1e-9 {
 			t.Errorf("%s = %v, want %v", c.expr, got, c.want)
+		}
+	}
+}
+
+// TestVMOutlinedFunction verifies that a function called several times can be
+// emitted once as a subroutine (jal / j ra) and still compute correctly.
+func TestVMOutlinedFunction(t *testing.T) {
+	src := `func helper(a num, b num) num {
+    x := a + b
+    y := x * 2
+    z := y - a
+    w := z + b
+    return w
+}
+
+func main() {
+    p := d0.Setting
+    q := d1.Setting
+    d2.Setting = helper(p, q)
+    d3.Setting = helper(q, p)
+    d4.Setting = helper(p, p)
+}`
+	code := mustCompile(t, src)
+	if !strings.Contains(code, "jal") {
+		t.Errorf("expected an outlined jal in:\n%s", code)
+	}
+	m := vm.New()
+	m.Set("d0", "Setting", 3)
+	m.Set("d1", "Setting", 5)
+	if err := m.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(200); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	for dev, want := range map[string]float64{"d2": 18, "d3": 14, "d4": 12} {
+		if got := m.Get(dev, "Setting"); got != want {
+			t.Errorf("%s.Setting = %v, want %v", dev, got, want)
 		}
 	}
 }

@@ -255,6 +255,22 @@ var Commands = []Command{
 		Examples: []string{"ic10c stats blink.icg"},
 	},
 	{
+		Name: "size", Args: "<file.icg>",
+		Summary: text{EN: "break the line budget down by function", ZH: "按函数拆分行预算"},
+		Long: text{
+			EN: "Compile the file and print how many IC10 lines each source function\n" +
+				"contributes. Inlined functions are counted once per call site, so the\n" +
+				"largest entries are the best candidates to simplify or outline.\n" +
+				"Functions with control flow are attributed exactly; straight-line\n" +
+				"inlined code is attributed to its caller.",
+			ZH: "编译文件并打印每个源函数贡献了多少 IC10 行。被内联的函数按调用点\n" +
+				"累计，因此占比最大的函数最值得简化或外提。\n" +
+				"含控制流的函数能精确归属；纯顺序的内联代码会归到调用者。",
+		},
+		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, commonHelp},
+		Examples: []string{"ic10c size blink.icg"},
+	},
+	{
 		Name: "fmt", Args: "[-w] <file.icg>",
 		Summary: text{EN: "format .icg source", ZH: "格式化 .icg 源码"},
 		Long: text{

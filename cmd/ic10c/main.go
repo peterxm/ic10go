@@ -110,6 +110,8 @@ parse:
 		return cmdMinify(args)
 	case "stats":
 		return cmdStats(args)
+	case "size":
+		return cmdSize(args)
 	case "fmt":
 		return cmdFmt(args)
 	case "disasm":
@@ -492,6 +494,68 @@ func cmdStats(args []string) int {
 				fmt.Printf("warning    max push depth %d reaches the data segment (base %d)\n", depth, base)
 			}
 		}
+	}
+	return 0
+}
+
+func cmdSize(args []string) int {
+	dataLayout := ""
+	unsafe := false
+	autoTable := false
+	var files []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--data-layout":
+			if i+1 < len(args) {
+				dataLayout = args[i+1]
+				i++
+			}
+		case "--unsafe":
+			unsafe = true
+		case "--auto-table":
+			autoTable = true
+		default:
+			files = append(files, args[i])
+		}
+	}
+	if len(files) != 1 {
+		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "size"))
+		return 2
+	}
+	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable}
+	data, err := os.ReadFile(files[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	rep, err := ic10.Size(files[0], data, opts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	fmt.Printf("lines  %3d / %d\n", rep.Total, rep.Limit)
+	type entry struct {
+		name  string
+		lines int
+	}
+	var entries []entry
+	for name, n := range rep.ByFunc {
+		if name == "" {
+			name = "(main)"
+		}
+		entries = append(entries, entry{name, n})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].lines != entries[j].lines {
+			return entries[i].lines > entries[j].lines
+		}
+		return entries[i].name < entries[j].name
+	})
+	for _, e := range entries {
+		fmt.Printf("  %-16s %3d\n", e.name, e.lines)
+	}
+	if len(rep.Outlined) > 0 {
+		fmt.Printf("outlined: %s\n", strings.Join(rep.Outlined, ", "))
 	}
 	return 0
 }

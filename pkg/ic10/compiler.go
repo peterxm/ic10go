@@ -4,6 +4,7 @@ package ic10
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"ic10go/internal/codegen"
 	"ic10go/internal/diag"
@@ -66,44 +67,85 @@ func Compile(name string, src []byte) (string, *diag.Bag, error) {
 }
 
 // CompileWithOptions is Compile with explicit options.
+//
+// It compiles twice when outlining is possible (once inlined, once with the
+// repeated functions outlined) and keeps the shorter result. Inlining exposes
+// constant folding and CSE across call sites; outlining saves lines when a
+// function is called several times, so the better choice depends on the
+// program.
 func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Bag, error) {
-	fn, info, diags := compileIR(name, src, opts)
-	if fn == nil {
+	info, diags := parseAndCheck(name, src, opts)
+	if info == nil || diags.HasErrors() {
 		return "", diags, nil
 	}
+
+	plan := lower.PlanOutlines(info)
+	best := ""
+	var bestErr error
+	run := func(outline map[string]bool) {
+		fn := lowerAndOptimize(info, opts, outline, diags)
+		if fn == nil || diags.HasErrors() {
+			return
+		}
+		code, err := generate(fn, info, opts)
+		if err != nil {
+			bestErr = err
+			return
+		}
+		if best == "" || better(code, best) {
+			best, bestErr = code, nil
+		}
+	}
+	run(nil)
+	if len(plan) > 0 {
+		run(plan)
+	}
+	if best == "" {
+		return "", diags, bestErr
+	}
+	return best, diags, nil
+}
+
+// better reports whether candidate a is preferable to b: fewer lines first
+// (the tighter IC10 budget), then fewer bytes.
+func better(a, b string) bool {
+	la, lb := strings.Count(a, "\n"), strings.Count(b, "\n")
+	if la != lb {
+		return la < lb
+	}
+	return len(a) < len(b)
+}
+
+// generate runs register allocation and code generation for a lowered function.
+func generate(fn *ir.Function, info *sema.Info, opts Options) (string, error) {
 	reserved := info.DataSize
 	if fixedDataBase(opts) > 0 {
 		reserved = 0
 	}
 	colors, spillCount, err := regalloc.AllocateReservedSpills(fn, NumRegs, reserved)
 	if err != nil {
-		return "", diags, err
+		return "", err
 	}
 	if fixedDataBase(opts) > 0 && spillCount > 0 {
 		dataEnd := info.Sentinel + info.DataSize - 1
 		if bottom := sema.StackSize - spillCount; bottom <= dataEnd {
-			return "", diags, fmt.Errorf("register spills (%d slots, down to %d) overlap the data segment [%d..%d]",
+			return "", fmt.Errorf("register spills (%d slots, down to %d) overlap the data segment [%d..%d]",
 				spillCount, bottom, info.Sentinel, dataEnd)
 		}
 	}
-
-	code, err := codegen.Generate(fn, colors)
-	if err != nil {
-		return "", diags, err
-	}
-	return code, diags, nil
+	return codegen.Generate(fn, colors)
 }
 
-// compileIR parses, checks and lowers the source to IR. When diags.HasErrors()
-// the returned function is nil.
-func compileIR(name string, src []byte, opts Options) (*ir.Function, *sema.Info, *diag.Bag) {
+// parseAndCheck lexes, parses and type-checks the source. It returns a nil Info
+// when there are errors.
+func parseAndCheck(name string, src []byte, opts Options) (*sema.Info, *diag.Bag) {
 	file := source.NewFile(name, src)
 	diags := &diag.Bag{}
 
 	toks := lexer.Tokenize(file, diags)
 	tree := parser.Parse(file, toks, diags)
 	if diags.HasErrors() {
-		return nil, nil, diags
+		return nil, diags
 	}
 
 	info := sema.CheckWithOptions(tree, diags, sema.Options{
@@ -118,20 +160,24 @@ func compileIR(name string, src []byte, opts Options) (*ir.Function, *sema.Info,
 			"data segment [%d..%d] exceeds the %d-slot stack", info.Sentinel, info.Sentinel+info.DataSize-1, sema.StackSize)
 	}
 	if diags.HasErrors() {
-		return nil, nil, diags
+		return nil, diags
 	}
+	return info, diags
+}
 
+// lowerAndOptimize lowers a checked program to IR and runs the optimiser.
+func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, diags *diag.Bag) *ir.Function {
 	fn := lower.Lower(info, diags, lower.Options{
 		StableInsOrder:  opts.StableInsOrder,
 		DataCheck:       !opts.NoDataCheck && !opts.Unsafe,
 		DataAccessStack: opts.DataAccessStack,
+		Outline:         outline,
 	})
 	if diags.HasErrors() {
-		return nil, info, diags
+		return nil
 	}
-
 	if os.Getenv("IC10C_NO_OPT") == "" {
 		opt.Optimize(fn)
 	}
-	return fn, info, diags
+	return fn
 }

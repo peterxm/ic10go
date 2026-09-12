@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"ic10go/internal/ir"
+	"ic10go/internal/lower"
 )
 
 // MaxStackDepth compiles the source and returns the maximum sp depth reached by
@@ -12,12 +13,16 @@ import (
 // slot written is depth-1: a data segment starting at base is safe when
 // depth <= base.
 func MaxStackDepth(name string, src []byte, opts Options) (depth int, unbounded bool, err error) {
-	fn, _, diags := compileIR(name, src, opts)
-	if fn == nil {
+	info, diags := parseAndCheck(name, src, opts)
+	if info == nil {
 		if diags.HasErrors() {
 			return 0, false, fmt.Errorf("compile failed")
 		}
 		return 0, false, fmt.Errorf("no IR produced")
+	}
+	fn := lowerAndOptimize(info, opts, lower.PlanOutlines(info), diags)
+	if fn == nil {
+		return 0, false, fmt.Errorf("compile failed")
 	}
 	return stackDepth(fn), stackDepthUnbounded(fn), nil
 }

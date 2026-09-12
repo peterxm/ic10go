@@ -165,7 +165,7 @@ default:
 }
 ```
 
-### 函数（编译期全内联，不支持递归）
+### 函数（编译期内联 / 外提，不支持递归）
 
 ```go
 func clamp(x num, lo num, hi num) num {
@@ -314,7 +314,7 @@ sh editors/vscode/install.sh      # 2. 安装扩展
 
 - **128 行 / 4 KiB / 90 字符** 是硬限制，`ic10c build` 会在超限时报错，`stats` 可提前查看。
 - 输出**不可读**：不生成 `alias`/`define`/注释/空行/标签，跳转使用绝对行号。
-- IC10 常见的**尾调用状态机**（如 `gasHeaters` 循环后 `j greenhouseGasCheck`）请改写为结构化循环，因为函数全内联且不支持递归。
+- IC10 常见的**尾调用状态机**（如 `gasHeaters` 循环后 `j greenhouseGasCheck`）请改写为结构化循环，因为函数不支持递归（编译期展开 / 外提）。
 - 寄存器 `r0..r15` 由编译器按活跃区间自动复用，尽量不落栈。
 
 ## 11. 下一步

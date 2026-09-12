@@ -88,3 +88,195 @@ func TestGlobalCSESelfLoopRedefinedOperand(t *testing.T) {
 		t.Error("globalCSE reused an expression whose operand was redefined in a loop")
 	}
 }
+
+func TestRedundantGetCSE(t *testing.T) {
+	b := ir.NewBuilder("f")
+	idx := b.NewReg("idx")
+	b.Emit(&ir.Load{Dst: idx, Dev: "d0", Logic: "Setting"})
+	a := b.NewReg("a")
+	b.Emit(&ir.Builtin{Name: "get", Dst: a, Args: []ir.Value{&ir.Device{Name: "db"}, idx}})
+	c := b.NewReg("c")
+	b.Emit(&ir.Builtin{Name: "get", Dst: c, Args: []ir.Value{&ir.Device{Name: "db"}, idx}})
+	b.Emit(&ir.Builtin{Name: "sleep", Args: []ir.Value{a, c}})
+	b.SetTerm(&ir.Ret{})
+	fn := b.Fn()
+	if !redundantLoads(fn) {
+		t.Fatal("redundantLoads made no change")
+	}
+	if _, ok := fn.Blocks[0].Instrs[2].(*ir.Assign); !ok {
+		t.Fatalf("second get = %T, want *ir.Assign", fn.Blocks[0].Instrs[2])
+	}
+}
+
+func TestStoreToLoadForwarding(t *testing.T) {
+	b := ir.NewBuilder("f")
+	idx := b.NewReg("idx")
+	b.Emit(&ir.Load{Dst: idx, Dev: "d0", Logic: "Setting"})
+	a := b.NewReg("a")
+	b.Emit(&ir.Builtin{Name: "get", Dst: a, Args: []ir.Value{&ir.Device{Name: "db"}, idx}})
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, idx, &ir.Const{V: 99}}})
+	c := b.NewReg("c")
+	b.Emit(&ir.Builtin{Name: "get", Dst: c, Args: []ir.Value{&ir.Device{Name: "db"}, idx}})
+	b.Emit(&ir.Builtin{Name: "sleep", Args: []ir.Value{a, c}})
+	b.SetTerm(&ir.Ret{})
+	fn := b.Fn()
+	if !redundantLoads(fn) {
+		t.Fatal("expected store-to-load forwarding")
+	}
+	as, ok := fn.Blocks[0].Instrs[3].(*ir.Assign)
+	if !ok {
+		t.Fatalf("second get = %T, want *ir.Assign", fn.Blocks[0].Instrs[3])
+	}
+	if _, isConst := as.Src.(*ir.Const); !isConst {
+		t.Fatalf("forwarded value = %T, want *ir.Const (the stored value)", as.Src)
+	}
+}
+
+func TestRedundantGetInvalidatedByIndexRedef(t *testing.T) {
+	b := ir.NewBuilder("f")
+	idx := b.NewReg("idx")
+	b.Emit(&ir.Load{Dst: idx, Dev: "d0", Logic: "Setting"})
+	a := b.NewReg("a")
+	b.Emit(&ir.Builtin{Name: "get", Dst: a, Args: []ir.Value{&ir.Device{Name: "db"}, idx}})
+	b.Emit(&ir.Assign{Dst: idx, Src: &ir.Const{V: 3}})
+	c := b.NewReg("c")
+	b.Emit(&ir.Builtin{Name: "get", Dst: c, Args: []ir.Value{&ir.Device{Name: "db"}, idx}})
+	b.Emit(&ir.Builtin{Name: "sleep", Args: []ir.Value{a, c}})
+	b.SetTerm(&ir.Ret{})
+	if redundantLoads(b.Fn()) {
+		t.Fatal("redundantLoads merged a get across an index redefinition")
+	}
+}
+
+func TestGlobalCSELoadAcrossBlocks(t *testing.T) {
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	b.Emit(&ir.Load{Dst: a, Dev: "d1", Logic: "Temperature"})
+	thenB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: a, Then: thenB, Else: endB})
+
+	b.SetBlock(thenB)
+	a2 := b.NewReg("a2")
+	b.Emit(&ir.Load{Dst: a2, Dev: "d1", Logic: "Temperature"})
+	b.Emit(&ir.Builtin{Name: "sleep", Args: []ir.Value{a2}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+
+	fn := b.Fn()
+	if !globalCSE(fn) {
+		t.Fatal("globalCSE did not CSE a load available from a dominating block")
+	}
+	if _, ok := fn.Blocks[1].Instrs[0].(*ir.Assign); !ok {
+		t.Fatalf("load in dominated block = %T, want *ir.Assign", fn.Blocks[1].Instrs[0])
+	}
+}
+
+func TestGlobalCSELoadInvalidatedByWrite(t *testing.T) {
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	b.Emit(&ir.Load{Dst: a, Dev: "d1", Logic: "Temperature"})
+	b.Emit(&ir.Store{Dev: "d1", Logic: "On", Src: &ir.Const{V: 1}})
+	thenB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: a, Then: thenB, Else: endB})
+
+	b.SetBlock(thenB)
+	a2 := b.NewReg("a2")
+	b.Emit(&ir.Load{Dst: a2, Dev: "d1", Logic: "Temperature"})
+	b.Emit(&ir.Builtin{Name: "sleep", Args: []ir.Value{a2}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+
+	if globalCSE(b.Fn()) {
+		t.Fatal("globalCSE reused a load across a write to the same device")
+	}
+}
+
+func TestGlobalCSELoadInvalidatedByYield(t *testing.T) {
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	b.Emit(&ir.Load{Dst: a, Dev: "d1", Logic: "Temperature"})
+	b.Emit(&ir.Builtin{Name: "yield"})
+	thenB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: a, Then: thenB, Else: endB})
+
+	b.SetBlock(thenB)
+	a2 := b.NewReg("a2")
+	b.Emit(&ir.Load{Dst: a2, Dev: "d1", Logic: "Temperature"})
+	b.Emit(&ir.Builtin{Name: "sleep", Args: []ir.Value{a2}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+
+	if globalCSE(b.Fn()) {
+		t.Fatal("globalCSE reused a load across a yield")
+	}
+}
+
+func TestDeadStackStore(t *testing.T) {
+	b := ir.NewBuilder("f")
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 1}}})
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 2}}})
+	b.SetTerm(&ir.Ret{})
+	if !deadStores(b.Fn()) {
+		t.Fatal("expected the overwritten put to be removed")
+	}
+	if n := len(b.Fn().Blocks[0].Instrs); n != 1 {
+		t.Fatalf("instrs = %d, want 1", n)
+	}
+}
+
+func TestDeadStackStoreKeptWhenRead(t *testing.T) {
+	b := ir.NewBuilder("f")
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 1}}})
+	b.Emit(&ir.Builtin{Name: "get", Dst: b.NewReg("x"), Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}}})
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 2}}})
+	b.SetTerm(&ir.Ret{})
+	if deadStores(b.Fn()) {
+		t.Fatal("a read between the stores keeps both live")
+	}
+}
+
+func TestDeadStackStoreKeptAcrossYield(t *testing.T) {
+	b := ir.NewBuilder("f")
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 1}}})
+	b.Emit(&ir.Builtin{Name: "yield"})
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 2}}})
+	b.SetTerm(&ir.Ret{})
+	if deadStores(b.Fn()) {
+		t.Fatal("a yield between the stores keeps both live")
+	}
+}
+
+func TestMergeTails(t *testing.T) {
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	b.Emit(&ir.Load{Dst: a, Dev: "d0", Logic: "Setting"})
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: a, Then: thenB, Else: elseB})
+
+	b.SetBlock(thenB)
+	b.Emit(&ir.Store{Dev: "d2", Logic: "On", Src: &ir.Const{V: 1}})
+	b.Emit(&ir.Store{Dev: "d3", Logic: "On", Src: &ir.Const{V: 1}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(elseB)
+	b.Emit(&ir.Store{Dev: "d2", Logic: "On", Src: &ir.Const{V: 0}})
+	b.Emit(&ir.Store{Dev: "d3", Logic: "On", Src: &ir.Const{V: 1}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+	if !mergeTails(b.Fn()) {
+		t.Fatal("mergeTails did not factor the shared suffix")
+	}
+}

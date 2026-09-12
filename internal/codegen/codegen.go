@@ -24,35 +24,50 @@ const spillScratch = "r15"
 type line struct {
 	text   string
 	target *ir.Block
+	fn     string // source function this line was emitted for ("" = main)
+}
+
+// Report breaks the generated code down by source function.
+type Report struct {
+	Total  int
+	ByFunc map[string]int
 }
 
 // Generate renders a function to IC10 code and validates the result against the
 // IC10 editor limits.
 func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
+	code, _, err := GenerateReport(fn, colors)
+	return code, err
+}
+
+// GenerateReport is Generate plus a per-function line breakdown, used by the
+// size report to show which functions cost the most lines.
+func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, error) {
 	blocks := rpo(fn)
 	var lines []line
 	start := map[*ir.Block]int{}
+	add := func(text string, target *ir.Block, f string) {
+		lines = append(lines, line{text: text, target: target, fn: f})
+	}
 
 	for i, b := range blocks {
 		start[b] = len(lines)
 		for _, ins := range b.Instrs {
 			if ls, ok := ins.(*ir.LoadSpill); ok {
 				dst := regName(ls.Dst, colors)
-				lines = append(lines,
-					line{text: "move " + spillScratch + " sp"},
-					line{text: "move sp " + strconv.Itoa(ls.Slot)},
-					line{text: "add sp sp 1"},
-					line{text: "peek " + dst},
-					line{text: "move sp " + spillScratch},
-				)
+				add("move "+spillScratch+" sp", nil, b.Func)
+				add("move sp "+strconv.Itoa(ls.Slot), nil, b.Func)
+				add("add sp sp 1", nil, b.Func)
+				add("peek "+dst, nil, b.Func)
+				add("move sp "+spillScratch, nil, b.Func)
 				continue
 			}
 			if ss, ok := ins.(*ir.StoreSpill); ok {
-				lines = append(lines, line{text: "poke " + strconv.Itoa(ss.Slot) + " " + valueText(ss.Src, colors)})
+				add("poke "+strconv.Itoa(ss.Slot)+" "+valueText(ss.Src, colors), nil, b.Func)
 				continue
 			}
 			if text, ok := renderInstr(ins, colors); ok {
-				lines = append(lines, line{text: text})
+				add(text, nil, b.Func)
 			}
 		}
 		var next *ir.Block
@@ -62,38 +77,38 @@ func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
 		switch t := b.Term.(type) {
 		case *ir.Jmp:
 			if t.Target != next {
-				lines = append(lines, line{text: "j ", target: t.Target})
+				add("j ", t.Target, b.Func)
 			}
 		case *ir.Goto:
 			if t.Target != next {
-				lines = append(lines, line{text: "j ", target: t.Target})
+				add("j ", t.Target, b.Func)
 			}
 		case *ir.Call:
-			lines = append(lines, line{text: "jal ", target: t.Target})
+			add("jal ", t.Target, b.Func)
 		case *ir.JmpRA:
-			lines = append(lines, line{text: "j ra"})
+			add("j ra", nil, b.Func)
 		case *ir.JmpDyn:
-			lines = append(lines, line{text: "j " + valueText(t.Target, colors)})
+			add("j "+valueText(t.Target, colors), nil, b.Func)
 		case *ir.BrValid:
 			m := "bdnvl"
 			if t.Store {
 				m = "bdnvs"
 			}
-			lines = append(lines, line{text: m + " " + t.Dev + " " + t.Logic + " ", target: t.Invalid})
+			add(m+" "+t.Dev+" "+t.Logic+" ", t.Invalid, b.Func)
 			if t.Valid != next {
-				lines = append(lines, line{text: "j ", target: t.Valid})
+				add("j ", t.Valid, b.Func)
 			}
 		case *ir.Br:
 			thenNext := t.Then == next
 			elseNext := t.Else == next
 			switch {
 			case elseNext:
-				lines = append(lines, line{text: branchText(t.Cond, t.A, t.B, colors) + " ", target: t.Then})
+				add(branchText(t.Cond, t.A, t.B, colors)+" ", t.Then, b.Func)
 			case thenNext:
-				lines = append(lines, line{text: branchText(t.Cond.Invert(), t.A, t.B, colors) + " ", target: t.Else})
+				add(branchText(t.Cond.Invert(), t.A, t.B, colors)+" ", t.Else, b.Func)
 			default:
-				lines = append(lines, line{text: branchText(t.Cond, t.A, t.B, colors) + " ", target: t.Then})
-				lines = append(lines, line{text: "j ", target: t.Else})
+				add(branchText(t.Cond, t.A, t.B, colors)+" ", t.Then, b.Func)
+				add("j ", t.Else, b.Func)
 			}
 		}
 	}
@@ -107,7 +122,7 @@ func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
 		}
 	}
 	if needNop {
-		lines = append(lines, line{text: "move r0 r0"})
+		add("move r0 r0", nil, "")
 	}
 
 	lines, start = removeRedundantJumps(lines, start)
@@ -122,10 +137,15 @@ func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
 	}
 	code := sb.String()
 
-	if err := Validate(code); err != nil {
-		return "", err
+	report := &Report{Total: len(lines), ByFunc: map[string]int{}}
+	for _, ln := range lines {
+		report.ByFunc[ln.fn]++
 	}
-	return code, nil
+
+	if err := Validate(code); err != nil {
+		return "", report, err
+	}
+	return code, report, nil
 }
 
 // removeRedundantJumps rewrites "b<cond> ... T" followed by "j J" into the
@@ -148,7 +168,7 @@ func removeRedundantJumps(lines []line, start map[*ir.Block]int) ([]line, map[*i
 		if start[br.target] != i+2 {
 			continue
 		}
-		lines[i] = line{text: inv, target: j.target}
+		lines[i] = line{text: inv, target: j.target, fn: br.fn}
 		removed[i+1] = true
 		i++
 	}

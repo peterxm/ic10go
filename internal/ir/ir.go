@@ -406,6 +406,7 @@ func (*BrValid) isTerm() {}
 
 type Block struct {
 	ID     int
+	Func   string // source function this block was emitted for ("" = main)
 	Instrs []Instr
 	Term   Term
 	Preds  []*Block
