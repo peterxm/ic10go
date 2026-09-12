@@ -17,12 +17,31 @@ import (
 // catches optimisation bugs (e.g. a wrong hoist or a bad common-subexpression
 // merge) that unit tests miss.
 func TestDifferentialRandom(t *testing.T) {
-	for seed := int64(0); seed < 2000; seed++ {
-		src := genProgram(seed)
+	for _, opts := range []ic10.Options{{}, {StableInsOrder: true}} {
+		name := "default"
+		if opts.StableInsOrder {
+			name = "stable-ins"
+		}
+		t.Run(name, func(t *testing.T) {
+			runDifferential(t, opts, 1500, genProgram, false)
+		})
+	}
+}
+
+// TestDifferentialData runs the same comparison on programs that use a `data`
+// table: the loader is installed once, then each runtime reads the table.
+func TestDifferentialData(t *testing.T) {
+	runDifferential(t, ic10.Options{}, 300, genDataProgram, true)
+}
+
+func runDifferential(t *testing.T, opts ic10.Options, seeds int, genFunc func(int64) string, withData bool) {
+	t.Helper()
+	for seed := int64(0); seed < int64(seeds); seed++ {
+		src := genFunc(seed)
 
 		t.Setenv("IC10C_NO_OPT", "")
 		t.Setenv("IC10C_NO_OUTLINE", "")
-		optCode, diags, err := ic10.Compile("t.icg", []byte(src))
+		optCode, diags, err := ic10.CompileWithOptions("t.icg", []byte(src), opts)
 		if err != nil && (strings.Contains(err.Error(), "exceeding") ||
 			strings.Contains(err.Error(), "did not converge")) {
 			continue // program too big/spilly; not a correctness issue
@@ -33,18 +52,29 @@ func TestDifferentialRandom(t *testing.T) {
 
 		t.Setenv("IC10C_NO_OPT", "1")
 		t.Setenv("IC10C_NO_OUTLINE", "1")
-		rawCode, diags, err := ic10.Compile("t.icg", []byte(src))
+		rawCode, diags, err := ic10.CompileWithOptions("t.icg", []byte(src), opts)
 		if err != nil && (strings.Contains(err.Error(), "exceeding") ||
 			strings.Contains(err.Error(), "did not converge")) {
-			continue // unoptimized form is too big/spilly; not a correctness issue
+			continue
 		}
 		if diags.HasErrors() || err != nil {
 			t.Fatalf("seed %d: unoptimized compile failed: %v %v\n%s", seed, diags.Diags, err, src)
 		}
 
 		init := deviceInit(seed)
-		want, wantErr := runWrites(rawCode, init)
-		got, gotErr := runWrites(optCode, init)
+		var want, got []string
+		var wantErr, gotErr bool
+		if withData {
+			loader, lerr := ic10.DataLoaderWithOptions("t.icg", []byte(src), opts)
+			if lerr != nil {
+				t.Fatalf("seed %d: loader failed: %v\n%s", seed, lerr, src)
+			}
+			want, wantErr = runWithLoader(rawCode, loader, init)
+			got, gotErr = runWithLoader(optCode, loader, init)
+		} else {
+			want, wantErr = runWrites(rawCode, init)
+			got, gotErr = runWrites(optCode, init)
+		}
 		if strings.Join(got, "|") != strings.Join(want, "|") || gotErr != wantErr {
 			t.Fatalf("seed %d: optimized and unoptimized differ (err %v vs %v)\n%s\n--- optimized ---\n%v\n--- unoptimized ---\n%v\n--- optimized code ---\n%s",
 				seed, gotErr, wantErr, src, got, want, optCode)
@@ -68,9 +98,7 @@ func deviceInit(seed int64) map[[2]string]float64 {
 
 func runWrites(code string, init map[[2]string]float64) ([]string, bool) {
 	m := vm.New()
-	for k, v := range init {
-		m.Set(k[0], k[1], v)
-	}
+	setup(m, init)
 	var writes []string
 	m.OnWrite = func(dev, logic string, v float64) {
 		writes = append(writes, fmt.Sprintf("%s.%s=%v", dev, logic, v))
@@ -82,6 +110,33 @@ func runWrites(code string, init map[[2]string]float64) ([]string, bool) {
 	return writes, err != nil && err != vm.ErrStepLimit
 }
 
+// runWithLoader installs the data segment, then runs the runtime on top.
+func runWithLoader(runtime, loader string, init map[[2]string]float64) ([]string, bool) {
+	m := vm.New()
+	setup(m, init)
+	if err := m.Load(loader); err != nil {
+		return nil, true
+	}
+	if err := m.Run(10000); err != nil {
+		return nil, true
+	}
+	var writes []string
+	m.OnWrite = func(dev, logic string, v float64) {
+		writes = append(writes, fmt.Sprintf("%s.%s=%v", dev, logic, v))
+	}
+	if err := m.Load(runtime); err != nil {
+		return writes, true
+	}
+	err := m.Run(200000)
+	return writes, err != nil && err != vm.ErrStepLimit
+}
+
+func setup(m *vm.Machine, init map[[2]string]float64) {
+	for k, v := range init {
+		m.Set(k[0], k[1], v)
+	}
+}
+
 // --- random .icg generator ---
 
 type gen struct {
@@ -89,9 +144,13 @@ type gen struct {
 	vars        []string
 	funcs       []string
 	consts      []string
+	tables      []string
+	tableLen    int
 	loops       int
+	labels      int
 	loopDepth   int
 	switchDepth int
+	inFunc      bool
 	stack       int // conservative lower bound on stack depth
 }
 
@@ -105,14 +164,15 @@ func genProgram(seed int64) string {
 		fmt.Fprintf(&sb, "const %s = %d\n", c, g.rng.Intn(10)+i)
 	}
 
-	// A couple of leaf functions with parameters and a return value.
 	for i := 0; i < g.rng.Intn(2); i++ {
 		name := fmt.Sprintf("f%d", i)
 		fmt.Fprintf(&sb, "\nfunc %s(a num, b num) num {\n", name)
 		fmt.Fprintf(&sb, "    var x = 0\n    var y = 0\n")
 		saved := g.vars
 		g.vars = []string{"a", "b", "x", "y"}
+		g.inFunc = true
 		g.block(&sb, 1, 1+g.rng.Intn(2))
+		g.inFunc = false
 		g.vars = saved
 		fmt.Fprintf(&sb, "    return (x + y + a + b)\n}\n")
 		g.funcs = append(g.funcs, name)
@@ -122,6 +182,40 @@ func genProgram(seed int64) string {
 	for i := 0; i < 2+g.rng.Intn(2); i++ {
 		fmt.Fprintf(&sb, "    var v%d = %d\n", i, g.rng.Intn(4))
 		g.vars = append(g.vars, fmt.Sprintf("v%d", i))
+	}
+	for i := 0; i < 3; i++ {
+		fmt.Fprintf(&sb, "    var g%d = 0\n", i)
+	}
+	for i := 0; i < 3; i++ {
+		sb.WriteString("    push(0)\n")
+		g.stack++
+	}
+	g.block(&sb, 1, 2+g.rng.Intn(2))
+	sb.WriteString("}\n")
+	return sb.String()
+}
+
+// genDataProgram builds a program with a `data` table read at runtime.
+func genDataProgram(seed int64) string {
+	g := &gen{rng: rand.New(rand.NewSource(seed))}
+	g.tables = []string{"T"}
+	n := 2 + g.rng.Intn(4)
+	g.tableLen = n
+	var sb strings.Builder
+	sb.WriteString("data T = [")
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		fmt.Fprintf(&sb, "%d", g.rng.Intn(20))
+	}
+	sb.WriteString("]\n\nfunc main() {\n")
+	for i := 0; i < 2+g.rng.Intn(2); i++ {
+		fmt.Fprintf(&sb, "    var v%d = %d\n", i, g.rng.Intn(4))
+		g.vars = append(g.vars, fmt.Sprintf("v%d", i))
+	}
+	for i := 0; i < 3; i++ {
+		fmt.Fprintf(&sb, "    var g%d = 0\n", i)
 	}
 	for i := 0; i < 3; i++ {
 		sb.WriteString("    push(0)\n")
@@ -144,7 +238,7 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		g.simple(sb, ind)
 		return
 	}
-	switch g.rng.Intn(20) {
+	switch g.rng.Intn(21) {
 	case 0, 1:
 		g.simple(sb, ind)
 	case 2, 3:
@@ -201,6 +295,21 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		g.block(sb, depth+1, 1+g.rng.Intn(2))
 		g.stack = savedStack
 		g.loopDepth--
+		fmt.Fprintf(sb, "%s}\n", ind)
+	case 19:
+		if g.inFunc {
+			g.simple(sb, ind)
+			return
+		}
+		// A bounded low-level label/goto loop.
+		gv := fmt.Sprintf("g%d", g.labels%3)
+		lbl := fmt.Sprintf("L%d", g.labels)
+		g.labels++
+		fmt.Fprintf(sb, "%s%s = 0\n", ind, gv)
+		fmt.Fprintf(sb, "%slabel %s:\n", ind, lbl)
+		fmt.Fprintf(sb, "%s%s += 1\n", ind, gv)
+		fmt.Fprintf(sb, "%sif %s < %d {\n", ind, gv, 1+g.rng.Intn(3))
+		fmt.Fprintf(sb, "%s    goto %s\n", ind, lbl)
 		fmt.Fprintf(sb, "%s}\n", ind)
 	default:
 		fmt.Fprintf(sb, "%sswitch %s {\n", ind, g.expr(2))
@@ -286,7 +395,7 @@ func (g *gen) expr(depth int) string {
 }
 
 func (g *gen) atom() string {
-	switch g.rng.Intn(9) {
+	switch g.rng.Intn(10) {
 	case 0:
 		return strconv.Itoa(g.rng.Intn(20))
 	case 1, 2:
@@ -304,6 +413,12 @@ func (g *gen) atom() string {
 			return fmt.Sprintf("%s(%s, %s)", f, g.expr(1), g.expr(1))
 		}
 		return "2"
+	case 6:
+		if len(g.tables) > 0 && g.tableLen > 0 {
+			t := g.tables[g.rng.Intn(len(g.tables))]
+			return fmt.Sprintf("%s[%d]", t, g.rng.Intn(g.tableLen))
+		}
+		return "3"
 	default:
 		return strconv.Itoa(g.rng.Intn(5))
 	}

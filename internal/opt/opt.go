@@ -2156,9 +2156,9 @@ func instrKey(i ir.Instr, reg func(*ir.Reg) string) string {
 	case *ir.StoreSlot:
 		return "storeslot|" + v.Dev + "|" + v.Logic + "|" + vk(v.Index) + "|" + vk(v.Src)
 	case *ir.LoadDyn:
-		return "loaddyn|" + vk(v.DevPtr) + "|" + vk(v.Logic) + "|" + reg(v.Dst)
+		return "loaddyn|" + v.Dev + "|" + vk(v.DevPtr) + "|" + vk(v.Logic) + "|" + reg(v.Dst)
 	case *ir.StoreDyn:
-		return "storedyn|" + vk(v.DevPtr) + "|" + vk(v.Logic) + "|" + vk(v.Src)
+		return "storedyn|" + v.Dev + "|" + vk(v.DevPtr) + "|" + vk(v.Logic) + "|" + vk(v.Src)
 	case *ir.LoadSpecial:
 		return "loadsp|" + v.Name + "|" + reg(v.Dst)
 	case *ir.StoreSpecial:
