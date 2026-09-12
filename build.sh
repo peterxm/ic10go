@@ -21,7 +21,7 @@ cd "$(dirname "$0")"
 BIN=ic10c
 PKG=./cmd/ic10c
 DIST=dist
-LDFLAGS="-s -w"
+VERSION_PKG=ic10go/internal/version
 
 # release targets as <GOOS>/<GOARCH>
 TARGETS="linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64"
@@ -30,11 +30,20 @@ version() {
     sed -n 's/.*Version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/version/version.go | head -1
 }
 
+# meta_flags injects version/commit/build metadata via -ldflags -X.
+meta_flags() {
+    printf -- '-X %s.Version=%s -X %s.Commit=%s -X %s.BuildTime=%s -X %s.BuildUser=%s' \
+        "$VERSION_PKG" "$(version)" \
+        "$VERSION_PKG" "$(git rev-parse --short HEAD 2>/dev/null || true)" \
+        "$VERSION_PKG" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        "$VERSION_PKG" "$(id -un 2>/dev/null || true)"
+}
+
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 
 build() {
     info "building $BIN for the host ($(go env GOOS)/$(go env GOARCH))"
-    go build -trimpath -o "$BIN" "$PKG"
+    go build -trimpath -ldflags "$(meta_flags)" -o "$BIN" "$PKG"
     info "wrote ./$BIN ($(version))"
 }
 
@@ -53,7 +62,7 @@ release() {
         [ "$os" = windows ] && out="$out.exe"
         info "building $os/$arch -> $out"
         CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
-            go build -trimpath -ldflags "$LDFLAGS" -o "$out" "$PKG"
+            go build -trimpath -ldflags "-s -w $(meta_flags)" -o "$out" "$PKG"
     done
     info "release binaries in $DIST/"
 }

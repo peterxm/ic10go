@@ -110,7 +110,7 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 						"full": true,
 					},
 				},
-				"serverInfo": map[string]any{"name": "ic10c", "version": version.Version},
+				"serverInfo": map[string]any{"name": "ic10c", "version": version.Short()},
 			})
 		case "initialized":
 			// no-op

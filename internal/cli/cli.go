@@ -361,11 +361,11 @@ var Commands = []Command{
 		Name:    "version",
 		Summary: text{EN: "print version", ZH: "打印版本"},
 		Long: text{
-			EN: "Print the ic10c version.",
-			ZH: "打印 ic10c 版本。",
+			EN: "Print the ic10c version, commit, build time, Go version and platform. Use -v/--version for a one-line version.",
+			ZH: "打印 ic10c 版本、提交、构建时间、Go 版本与平台信息。用 -v/--version 只打印一行版本号。",
 		},
 		Flags:    []Flag{commonHelp},
-		Examples: []string{"ic10c version"},
+		Examples: []string{"ic10c version", "ic10c -v"},
 	},
 	{
 		Name: "help", Args: "[command]",

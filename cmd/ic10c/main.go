@@ -86,8 +86,11 @@ parse:
 		}
 		fmt.Print(cli.Usage(lang))
 		return 0
-	case "-v", "--version", "version":
-		fmt.Println("ic10c " + version.Version)
+	case "-v", "--version":
+		fmt.Println("ic10c " + version.Short())
+		return 0
+	case "version":
+		fmt.Print(version.Details())
 		return 0
 	}
 
