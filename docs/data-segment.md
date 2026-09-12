@@ -283,6 +283,10 @@ ic10c build --split-data main.icg
 
 即编译器生成的两段流程在真机上工作正常。
 
+`switch ... table` 自动表化同样通过真机验证
+（[`experiments/data-segment/ingame-switch/`](../experiments/data-segment/ingame-switch/)）：
+边界检查 + 自动生成的表布局在标准 IC host 上循环 `111/222/333` 正常。
+
 ### 已知问题 / 待办
 
 - **[待办] 数据段与用户 `sp`/`poke` 的冲突**：数据段当前放在栈顶

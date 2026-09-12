@@ -19,4 +19,9 @@ ic10c build             demo.icg > 2_runtime.ic
 编译器生成一张表（槽 509..511），runtime 做边界检查后
 `get(db, 509 + i)`。
 
+## 实测结果
+
+真机通过 ✅：先跑 `1_loader.ic`，再覆盖成 `2_runtime.ic`，LED 循环
+`111 → 222 → 333`，自动生成的边界检查与表布局正常。
+
 > 仅标准 IC host 支持（设备 host 的 `put db` 报 `MemoryNotWriteable`）。
