@@ -328,3 +328,31 @@ func TestCommutativeCSE(t *testing.T) {
 		t.Fatal("globalCSE did not merge a+b and b+a")
 	}
 }
+
+func TestDeadStackStoreCrossBlock(t *testing.T) {
+	b := ir.NewBuilder("f")
+	c := b.NewReg("c")
+	b.Emit(&ir.Load{Dst: c, Dev: "d0", Logic: "On"})
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	joinB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: c, Then: thenB, Else: elseB})
+	b.SetBlock(thenB)
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 1}}})
+	b.SetTerm(&ir.Jmp{Target: joinB})
+	b.SetBlock(elseB)
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 2}}})
+	b.SetTerm(&ir.Jmp{Target: joinB})
+	b.SetBlock(joinB)
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 3}}})
+	b.SetTerm(&ir.Ret{})
+	if !deadStores(b.Fn()) {
+		t.Fatal("expected the branch stores to be removed")
+	}
+	if n := len(b.Fn().Blocks[1].Instrs); n != 0 {
+		t.Fatalf("then block instrs = %d, want 0", n)
+	}
+	if n := len(b.Fn().Blocks[3].Instrs); n != 1 {
+		t.Fatalf("join block instrs = %d, want 1", n)
+	}
+}

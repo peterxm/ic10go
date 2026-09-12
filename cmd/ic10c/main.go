@@ -159,6 +159,7 @@ func cmdBuild(args []string) int {
 	unsafe := false
 	autoTable := false
 	jumpTable := false
+	fast := false
 	dataAccessStack := false
 	dataLayout := ""
 	dataOut := ""
@@ -169,6 +170,8 @@ func cmdBuild(args []string) int {
 			stableIns = true
 		case "--jump-table":
 			jumpTable = true
+		case "--fast":
+			fast = true
 		case "--unsafe":
 			unsafe = true
 		case "--auto-table":
@@ -223,6 +226,7 @@ func cmdBuild(args []string) int {
 		Unsafe:          unsafe,
 		AutoTable:       autoTable,
 		JumpTable:       jumpTable,
+		Fast:            fast,
 		DataAccessStack: dataAccessStack,
 		DataLayout:      dataLayout,
 	}

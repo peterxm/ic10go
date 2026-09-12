@@ -1955,24 +1955,37 @@ func ic10Mod(x, y float64) float64 {
 // stores are left alone. A yield or any other side effect clears the pending
 // set, so writes that survive to the end of a tick are kept.
 func deadStores(fn *ir.Function) bool {
+	fn.BuildCFG()
+	all := allStackSlots(fn)
+	liveIn, liveOut := stackLive(fn, all)
 	changed := false
 	for _, b := range fn.Blocks {
-		pending := map[string]int{} // stack slot key -> index of the pending store
+		live := map[string]bool{}
+		for k := range liveOut[b] {
+			live[k] = true
+		}
 		dead := map[int]bool{}
-		for idx, ins := range b.Instrs {
+		for idx := len(b.Instrs) - 1; idx >= 0; idx-- {
+			ins := b.Instrs[idx]
 			if key, ok := stackStoreKey(ins); ok {
-				if prev, found := pending[key]; found {
-					dead[prev] = true
+				// A store is dead when its slot is not live afterwards (the
+				// value is never read before being overwritten, on any path).
+				if !live[key] {
+					dead[idx] = true
 				}
-				pending[key] = idx
+				delete(live, key)
 				continue
 			}
 			if key, ok := stackReadKey(ins); ok {
-				delete(pending, key)
+				live[key] = true
 				continue
 			}
 			if hasSideEffect(ins) {
-				clear(pending)
+				// yield/sleep/push/pop/clr/putd may expose the stack; keep
+				// every slot written before the barrier.
+				for k := range all {
+					live[k] = true
+				}
 			}
 		}
 		if len(dead) == 0 {
@@ -1988,7 +2001,96 @@ func deadStores(fn *ir.Function) bool {
 		}
 		b.Instrs = kept
 	}
+	_ = liveIn
 	return changed
+}
+
+// allStackSlots collects every stack slot key written or read in fn.
+func allStackSlots(fn *ir.Function) map[string]bool {
+	m := map[string]bool{}
+	for _, b := range fn.Blocks {
+		for _, ins := range b.Instrs {
+			if k, ok := stackStoreKey(ins); ok {
+				m[k] = true
+			}
+			if k, ok := stackReadKey(ins); ok {
+				m[k] = true
+			}
+		}
+	}
+	return m
+}
+
+// stackLive computes stack-slot liveness (backward dataflow). in[b] holds the
+// slots live at block entry; out[b] at block exit.
+func stackLive(fn *ir.Function, all map[string]bool) (in, out map[*ir.Block]map[string]bool) {
+	in = map[*ir.Block]map[string]bool{}
+	out = map[*ir.Block]map[string]bool{}
+	for _, b := range fn.Blocks {
+		in[b] = map[string]bool{}
+		out[b] = map[string]bool{}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, b := range fn.Blocks {
+			no := map[string]bool{}
+			if len(b.Succs) == 0 {
+				// The stack is persistent: at program exit every slot may still
+				// be read by later code, so nothing is dead there.
+				for k := range all {
+					no[k] = true
+				}
+			} else {
+				for _, s := range b.Succs {
+					for k := range in[s] {
+						no[k] = true
+					}
+				}
+			}
+			ni := transferStack(b, no, all)
+			if !sameStrSet(ni, in[b]) || !sameStrSet(no, out[b]) {
+				changed = true
+			}
+			in[b], out[b] = ni, no
+		}
+	}
+	return in, out
+}
+
+func transferStack(b *ir.Block, liveOut, all map[string]bool) map[string]bool {
+	live := map[string]bool{}
+	for k := range liveOut {
+		live[k] = true
+	}
+	for idx := len(b.Instrs) - 1; idx >= 0; idx-- {
+		ins := b.Instrs[idx]
+		if key, ok := stackStoreKey(ins); ok {
+			delete(live, key)
+			continue
+		}
+		if key, ok := stackReadKey(ins); ok {
+			live[key] = true
+			continue
+		}
+		if hasSideEffect(ins) {
+			for k := range all {
+				live[k] = true
+			}
+		}
+	}
+	return live
+}
+
+func sameStrSet(a, b map[string]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if !b[k] {
+			return false
+		}
+	}
+	return true
 }
 
 // stackStoreKey keys a stack write (put/poke) with a constant address.

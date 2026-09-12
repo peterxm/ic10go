@@ -35,6 +35,8 @@ type Options struct {
 	// JumpTable lowers dense integer switches to a computed jump through a
 	// table of `j` instructions. Off by default.
 	JumpTable bool
+	// Fast prefers runtime speed over size: it unrolls more loops.
+	Fast bool
 }
 
 // emitDataCheck verifies the persistent data segment is installed: it reads the
@@ -543,7 +545,11 @@ func (l *lowerer) tryUnrollFor(s *ast.ForStmt) bool {
 		return false
 	}
 	hi, ok := l.loopBound(s.Cond, name)
-	if !ok || hi <= lo || hi-lo > 4 {
+	maxTrip, maxBody := 4, 2
+	if l.opts.Fast {
+		maxTrip, maxBody = 8, 4
+	}
+	if !ok || hi <= lo || hi-lo > maxTrip {
 		return false
 	}
 	id, ok := s.Post.(*ast.IncDecStmt)
@@ -553,7 +559,10 @@ func (l *lowerer) tryUnrollFor(s *ast.ForStmt) bool {
 	if pid, ok := id.X.(*ast.Ident); !ok || pid.Name != name {
 		return false
 	}
-	if unrollUnsafe(s.Body, name) || l.bodyCallsUserFunc(s.Body) || countStatements(s.Body) > 2 {
+	if unrollUnsafe(s.Body, name) || countStatements(s.Body) > maxBody {
+		return false
+	}
+	if !l.opts.Fast && l.bodyCallsUserFunc(s.Body) {
 		return false
 	}
 	l.pushScope()

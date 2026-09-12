@@ -17,13 +17,16 @@ import (
 // catches optimisation bugs (e.g. a wrong hoist or a bad common-subexpression
 // merge) that unit tests miss.
 func TestDifferentialRandom(t *testing.T) {
-	for _, opts := range []ic10.Options{{}, {StableInsOrder: true}, {JumpTable: true}} {
+	for _, opts := range []ic10.Options{{}, {StableInsOrder: true}, {JumpTable: true}, {Fast: true}} {
 		name := "default"
 		if opts.StableInsOrder {
 			name = "stable-ins"
 		}
 		if opts.JumpTable {
 			name = "jump-table"
+		}
+		if opts.Fast {
+			name = "fast"
 		}
 		t.Run(name, func(t *testing.T) {
 			runDifferential(t, opts, 1500, genProgram, false)

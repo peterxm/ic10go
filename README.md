@@ -62,7 +62,8 @@ j 1
 ```
 ic10c build  <file.icg>       # 编译为 IC10 并输出到 stdout
 ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
-            [--data-layout top|middle] [--unsafe] [--auto-table] [--jump-table] <file.icg>
+            [--data-layout top|middle] [--unsafe] [--auto-table] [--jump-table] \
+            [--fast] <file.icg>
                               # 同时输出持久栈数据段 loader（默认 <file>.data.ic）
 ic10c build --data-only <file.icg>  # 只输出数据段 loader
 ic10c run    <file.icg>       # 编译并在内置 VM 中运行（--steps/--set/--trace）
@@ -103,7 +104,7 @@ go test ./...
 
 - golden：`testdata/programs/*.icg` → `testdata/golden/*.ic`（用 `go test ./pkg/ic10 -update` 更新）
 - VM 端到端：编译后在 `internal/vm` 中执行并断言设备状态
-- 差分/随机：`TestDifferentialRandom` 随机生成 2000 个 `.icg`（含 `const`、函数、`if/else`、`for`、`switch`、`break/continue`、栈、批量、槽位、动态 `read/write`、`ins/ext`），分别用优化与 `IC10C_NO_OPT` 编译，在 VM 中运行并对比设备写入序列（优化的回归安全网）
+- 差分/随机：`TestDifferentialRandom` 随机生成 2000 个 `.icg`（含 `const`、函数、`if/else`、`for`、`switch`、`break/continue`、`label`/`goto`、栈、批量、槽位、动态 `read/write`、`ins/ext`），分别用优化与 `IC10C_NO_OPT` 编译（并覆盖 `--stable-ins`/`--jump-table`/`--fast` 与 `data` 表），在 VM 中运行并对比设备写入序列（优化的回归安全网）
 - 覆盖：寄存器复用、比较融合、select、死代码消除、批量聚合、栈、通道、槽位、真实脚本 `solar_tracker`
 - 工具：`fmt` 幂等性、`stats`、`disasm`、LSP 诊断与补全
 - 真实脚本：`ic10code/` 下的每个 `.ic`/`.ic10` 都做**反编译→重编译→设备写入序列对比**（`TestIc10CodeRoundTrip`）与 **minify 等价性**（`TestMinifyIc10Code`）；第三方脚本仅本地保留，缺失时自动跳过

@@ -49,6 +49,9 @@ type Options struct {
 	// through a table of `j` instructions, saving about one line per case.
 	// Off by default.
 	JumpTable bool
+	// Fast prefers runtime speed over size: it unrolls more loops (at the cost
+	// of program size). Off by default.
+	Fast bool
 }
 
 // fixedDataBase returns the fixed data base for the selected layout, or 0 for
@@ -180,6 +183,7 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, di
 		DataAccessStack: opts.DataAccessStack,
 		Outline:         outline,
 		JumpTable:       opts.JumpTable,
+		Fast:            opts.Fast,
 	})
 	if diags.HasErrors() {
 		return nil

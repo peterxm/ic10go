@@ -120,6 +120,11 @@ var jumpTableFlag = Flag{Long: "--jump-table", Desc: text{
 	ZH: "把稠密整数 switch（≥8 case）降为计算跳转表",
 }}
 
+var fastFlag = Flag{Long: "--fast", Desc: text{
+	EN: "prefer runtime speed over size (unroll more loops)",
+	ZH: "优先运行速度而非体积（展开更多循环）",
+}}
+
 // Commands is the ordered command table.
 var Commands = []Command{
 	{
@@ -163,6 +168,7 @@ var Commands = []Command{
 			unsafeFlag,
 			autoTableFlag,
 			jumpTableFlag,
+			fastFlag,
 			{Long: "--data-access", Arg: "get|stack", Desc: text{
 				EN: "read the data segment via get/put db (default, IC host) or poke/peek (device host)",
 				ZH: "数据段读写方式：get（默认，IC host）或 stack（poke/peek，兼容设备 host）",
