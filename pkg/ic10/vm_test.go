@@ -65,6 +65,46 @@ func main() {
 	}
 }
 
+// TestVMMultiBackEdgeLoop verifies that a condition using a variable assigned
+// on another path through a loop with several back edges is not hoisted by
+// LICM: the loop body must be treated as a whole.
+func TestVMMultiBackEdgeLoop(t *testing.T) {
+	src := `func main() {
+    for {
+        x := d0.Setting
+        dt := ((x >> 4) ^ x) & 9
+        x &= 15
+        retry := true
+        for retry {
+            retry = false
+            if x != 0 && ((x-1)&x) == 0 {
+                if dt != 0 {
+                    x = x * 2
+                    retry = true
+                    dt = 0
+                } else {
+                    d1.Setting = x
+                }
+            }
+        }
+        d2.Setting = dt
+    }
+}`
+	m := runProgram(t, src, 300, func(m *vm.Machine) { m.Set("d0", "Setting", 130) })
+	if got := m.Get("d1", "Setting"); got != 4 {
+		t.Errorf("d1.Setting = %v, want 4 (loop-carried condition hoisted)", got)
+	}
+}
+
+// TestVMBitwisePrecedence verifies the documented Go-style precedence where
+// bitwise operators bind tighter than comparisons.
+func TestVMBitwisePrecedence(t *testing.T) {
+	m := runProgram(t, "func main() { x := 2\n d0.Setting = (x-1)&x == 0 }\n", 50, nil)
+	if got := m.Get("d0", "Setting"); got != 1 {
+		t.Errorf("(x-1)&x == 0 = %v, want 1", got)
+	}
+}
+
 // TestVMCallRetKeepsCalleeWrites verifies that a value written by a call/ret
 // routine is observed by the caller on the next iteration; LICM must not treat
 // it as loop-invariant.

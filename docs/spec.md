@@ -309,6 +309,16 @@ v := read(d0, lt)               // l r d0 (r_lt)
 write(d0, lt, v)                // s d0 (r_lt) v
 ```
 
+设备端口本身也可在运行时选择（对应 IC10 的 `drN`）：
+
+```go
+idx := someNumber
+v := readDev(idx, lt)           // l r drN (r_lt)
+writeDev(idx, lt, v)            // s drN (r_lt) v
+```
+
+`LogicType.X`（如 `LogicType.Open`）作为游戏枚举名原样输出，可作为 `read`/`write`/`readDev`/`writeDev` 的逻辑类型实参。
+
 ### 7.5 设备状态查询
 
 ```go

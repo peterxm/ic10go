@@ -440,6 +440,8 @@ func baseCompletionItems() []completionItem {
 		ci("batch", 9, "batch IO"),
 		ci("read", 3, "runtime logic type"),
 		ci("write", 3, "runtime logic type"),
+		ci("readDev", 3, "runtime device + logic type"),
+		ci("writeDev", 3, "runtime device + logic type"),
 		ci("isLoadValid", 3, "condition only"),
 		ci("isStoreValid", 3, "condition only"),
 	}

@@ -83,6 +83,9 @@ type Machine struct {
 // New returns an empty machine.
 func New() *Machine {
 	m := &Machine{Devices: map[string]*Device{}, Stack: make([]float64, stackSize), LogicByID: map[int]string{}}
+	for id, name := range builtin.LogicTypeNames {
+		m.LogicByID[id] = name
+	}
 	m.Regs[regSP] = 0
 	return m
 }
@@ -115,6 +118,36 @@ func (m *Machine) Device(name string) *Device {
 	m.Devices[name] = d
 	m.order = append(m.order, d)
 	return d
+}
+
+// dev resolves a device operand, which may be a plain port name or an IC10
+// device register such as dr15 ("d" followed by a register holding the port
+// index).
+func (m *Machine) dev(s string) *Device { return m.Device(m.devName(s)) }
+
+// devName resolves device-register operands (dr15, drr0) to a port name and
+// returns other operands unchanged.
+func (m *Machine) devName(s string) string {
+	if len(s) < 3 || s[0] != 'd' || s[1] != 'r' {
+		return s
+	}
+	base := s[1:]
+	var idx int
+	switch {
+	case strings.HasPrefix(base, "rr"):
+		i, ok := m.indirectIndex(base)
+		if !ok {
+			return s
+		}
+		idx = int(m.Regs[i])
+	default:
+		i, ok := regIndex(base)
+		if !ok {
+			return s
+		}
+		idx = int(m.Regs[i])
+	}
+	return "d" + strconv.Itoa(idx)
 }
 
 // Set sets a logic value on a device port.
@@ -201,6 +234,9 @@ func Parse(src string) (*Program, error) {
 	}
 	for k, v := range builtin.EnumConstants {
 		prog.Symbols[k] = strconv.FormatFloat(v, 'g', -1, 64)
+	}
+	for name, id := range builtin.LogicTypeIDs {
+		prog.Symbols["LogicType."+name] = strconv.Itoa(id)
 	}
 	resolve := func(s string) string {
 		for i := 0; i < 10; i++ {
@@ -446,24 +482,24 @@ func (m *Machine) execOp(ins *Instr) error {
 		return m.cmpZeroOp(ins.Op, a[0], a[1])
 	case "l":
 		dst, _ := m.reg(a[0])
-		m.Regs[dst] = m.Device(a[1]).Values[m.logicName(a[2])]
+		m.Regs[dst] = m.dev(a[1]).Values[m.logicName(a[2])]
 		return nil
 	case "s":
 		logic := m.logicName(a[1])
 		v := mustNum(m, a[2])
-		m.Device(a[0]).Values[logic] = v
+		m.dev(a[0]).Values[logic] = v
 		if m.OnWrite != nil {
-			m.OnWrite(a[0], logic, v)
+			m.OnWrite(m.devName(a[0]), logic, v)
 		}
 		return nil
 	case "ls":
 		dst, _ := m.reg(a[0])
 		slot, _ := m.num(a[2])
-		m.Regs[dst] = m.GetSlot(a[1], int(slot), a[3])
+		m.Regs[dst] = m.GetSlot(m.devName(a[1]), int(slot), a[3])
 		return nil
 	case "ss":
 		slot, _ := m.num(a[1])
-		m.SetSlot(a[0], int(slot), a[2], mustNum(m, a[3]))
+		m.SetSlot(m.devName(a[0]), int(slot), a[2], mustNum(m, a[3]))
 		return nil
 	case "lb", "lbn", "lbs", "lbns":
 		return m.batchLoad(ins.Op, a)
@@ -497,7 +533,7 @@ func (m *Machine) execOp(ins *Instr) error {
 		return nil
 	case "sdse":
 		dst, _ := m.reg(a[0])
-		if m.Device(a[1]).Set {
+		if m.dev(a[1]).Set {
 			m.Regs[dst] = 1
 		} else {
 			m.Regs[dst] = 0
@@ -505,7 +541,7 @@ func (m *Machine) execOp(ins *Instr) error {
 		return nil
 	case "sdns":
 		dst, _ := m.reg(a[0])
-		if !m.Device(a[1]).Set {
+		if !m.dev(a[1]).Set {
 			m.Regs[dst] = 1
 		} else {
 			m.Regs[dst] = 0
@@ -516,11 +552,11 @@ func (m *Machine) execOp(ins *Instr) error {
 	case "get":
 		dst, _ := m.reg(a[0])
 		addr, _ := m.num(a[2])
-		m.Regs[dst] = m.Device(a[1]).Stack[int(addr)]
+		m.Regs[dst] = m.dev(a[1]).Stack[int(addr)]
 		return nil
 	case "put":
 		addr, _ := m.num(a[1])
-		m.Device(a[0]).Stack[int(addr)] = mustNum(m, a[2])
+		m.dev(a[0]).Stack[int(addr)] = mustNum(m, a[2])
 		return nil
 	case "getd":
 		dst, _ := m.reg(a[0])
@@ -532,7 +568,7 @@ func (m *Machine) execOp(ins *Instr) error {
 		m.deviceByID(mustNum(m, a[0])).Stack[int(addr)] = mustNum(m, a[2])
 		return nil
 	case "clr":
-		d := m.Device(a[0])
+		d := m.dev(a[0])
 		d.Stack = make([]float64, stackSize)
 		return nil
 	}
@@ -779,13 +815,13 @@ func (m *Machine) execBranch(ins *Instr, next *int) error {
 		}
 		targetArg = args[2]
 	case cond == "dns" || cond == "dse":
-		take = !m.Device(args[0]).Set
+		take = !m.dev(args[0]).Set
 		if cond == "dse" {
 			take = !take
 		}
 		targetArg = args[1]
 	case cond == "dnvl" || cond == "dnvs":
-		dev := m.Device(args[0])
+		dev := m.dev(args[0])
 		if cond == "dnvl" {
 			_, ok := dev.Values[args[1]]
 			take = !ok

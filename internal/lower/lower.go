@@ -296,6 +296,10 @@ func (l *lowerer) lowerAssign(s *ast.AssignStmt) {
 			return
 		}
 		r := l.b.NewReg(id.Name)
+		if l.lowerInsInto(r, s.Rhs) {
+			l.bind(id.Name, r)
+			return
+		}
 		l.b.Emit(&ir.Assign{Dst: r, Src: l.lowerExpr(s.Rhs)})
 		l.bind(id.Name, r)
 		return
@@ -317,10 +321,42 @@ func (l *lowerer) lowerAssign(s *ast.AssignStmt) {
 			return
 		}
 		r := v.(*ir.Reg)
+		// ins reads its destination, so it must be lowered directly into the
+		// assignment target rather than into a fresh temporary.
+		if l.lowerInsInto(r, s.Rhs) {
+			return
+		}
 		l.b.Emit(&ir.Assign{Dst: r, Src: l.lowerExpr(s.Rhs)})
 		return
 	}
 	l.storeTo(s.Lhs, l.lowerExpr(s.Rhs))
+}
+
+// lowerInsInto lowers an ins(...) call directly into dst, whose previous value
+// is the base the field is inserted into (IC10 read-modify-write). It returns
+// false when e is not an ins call.
+func (l *lowerer) lowerInsInto(dst *ir.Reg, e ast.Expr) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok || id.Name != "ins" {
+		return false
+	}
+	if len(call.Args) != 3 {
+		l.diags.Errorf(call.Pos(), "ins expects 3 arguments, got %d", len(call.Args))
+		return true
+	}
+	field := l.lowerExpr(call.Args[0])
+	off := l.lowerExpr(call.Args[1])
+	length := l.lowerExpr(call.Args[2])
+	args := []ir.Value{field, off, length}
+	if l.opts.StableInsOrder {
+		args = []ir.Value{off, length, field}
+	}
+	l.b.Emit(&ir.Builtin{Name: "ins", Dst: dst, Args: args})
+	return true
 }
 
 func (l *lowerer) lowerIncDec(s *ast.IncDecStmt) {
@@ -789,6 +825,11 @@ func (l *lowerer) lowerDeviceRead(e *ast.SelectorExpr) ir.Value {
 		if v, ok := builtin.EnumConstants[id.Name+"."+e.Sel.Name]; ok {
 			return &ir.Const{V: v}
 		}
+		// LogicType members are emitted verbatim; the game assembler resolves
+		// them, so the compiler does not need their numeric values.
+		if id.Name == "LogicType" {
+			return &ir.Const{Raw: "LogicType." + e.Sel.Name}
+		}
 	}
 	l.diags.Errorf(e.Pos(), "unsupported device access")
 	return &ir.Const{V: 0}
@@ -900,6 +941,31 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		logic := l.lowerExpr(call.Args[1])
 		src := l.lowerExpr(call.Args[2])
 		l.b.Emit(&ir.StoreDyn{Dev: dev, Logic: logic, Src: src})
+		return &ir.Const{V: 0}
+	}
+
+	// readDev(reg, lt) / writeDev(reg, lt, v) select the device port from a
+	// register at runtime (IC10 "l r? drN rM" / "s drN rM r?").
+	if id.Name == "readDev" {
+		if len(call.Args) != 2 {
+			l.diags.Errorf(call.Pos(), "readDev expects a register and a logic type")
+			return &ir.Const{V: 0}
+		}
+		ptr := l.lowerExpr(call.Args[0])
+		logic := l.lowerExpr(call.Args[1])
+		r := l.b.NewReg("read")
+		l.b.Emit(&ir.LoadDyn{Dst: r, DevPtr: ptr, Logic: logic})
+		return r
+	}
+	if id.Name == "writeDev" {
+		if len(call.Args) != 3 {
+			l.diags.Errorf(call.Pos(), "writeDev expects a register, a logic type and a value")
+			return &ir.Const{V: 0}
+		}
+		ptr := l.lowerExpr(call.Args[0])
+		logic := l.lowerExpr(call.Args[1])
+		src := l.lowerExpr(call.Args[2])
+		l.b.Emit(&ir.StoreDyn{DevPtr: ptr, Logic: logic, Src: src})
 		return &ir.Const{V: 0}
 	}
 

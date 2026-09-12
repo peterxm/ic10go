@@ -267,9 +267,10 @@ func (d *decompiler) readFirstRegisters(lines []icLine) []string {
 			continue
 		}
 		hasDest := destOps[l.op]
-		// Uses are read before the destination is written.
+		// Uses are read before the destination is written. "ins" reads its
+		// destination as well (IC10 read-modify-write), so it is not skipped.
 		for i, a := range l.args {
-			if hasDest && i == 0 {
+			if hasDest && i == 0 && l.op != "ins" {
 				continue
 			}
 			r := d.resolve(a)

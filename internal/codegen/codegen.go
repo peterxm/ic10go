@@ -243,10 +243,10 @@ func renderInstr(ins ir.Instr, colors map[*ir.Reg]int) (string, bool) {
 		return "ls " + regName(v.Dst, colors) + " " + v.Dev + " " +
 			valueText(v.Index, colors) + " " + v.Logic, true
 	case *ir.LoadDyn:
-		return "l " + regName(v.Dst, colors) + " " + v.Dev + " " +
+		return "l " + regName(v.Dst, colors) + " " + dynDev(v.Dev, v.DevPtr, colors) + " " +
 			valueText(v.Logic, colors), true
 	case *ir.StoreDyn:
-		return "s " + v.Dev + " " + valueText(v.Logic, colors) + " " +
+		return "s " + dynDev(v.Dev, v.DevPtr, colors) + " " + valueText(v.Logic, colors) + " " +
 			valueText(v.Src, colors), true
 	case *ir.StoreSlot:
 		return "ss " + v.Dev + " " + valueText(v.Index, colors) + " " +
@@ -273,6 +273,18 @@ func indirectName(ptr ir.Value, colors map[*ir.Reg]int) string {
 		return "r" + regName(r, colors)
 	}
 	return "r0"
+}
+
+// dynDev renders a dynamic-device operand: a register-selected port (IC10 drN)
+// when DevPtr is set, otherwise the fixed port name.
+func dynDev(dev string, ptr ir.Value, colors map[*ir.Reg]int) string {
+	if ptr == nil {
+		return dev
+	}
+	if r, ok := ptr.(*ir.Reg); ok {
+		return "d" + regName(r, colors)
+	}
+	return dev
 }
 
 func renderBatch(v *ir.Batch, colors map[*ir.Reg]int) string {

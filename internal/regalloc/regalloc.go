@@ -75,16 +75,21 @@ func useDefInstr(i ir.Instr) (use, def []*ir.Reg) {
 	case *ir.StoreSlot:
 		use = append(valuesRegs(v.Index), valuesRegs(v.Src)...)
 	case *ir.LoadDyn:
-		use = valuesRegs(v.Logic)
+		use = append(valuesRegs(v.DevPtr), valuesRegs(v.Logic)...)
 		def = []*ir.Reg{v.Dst}
 	case *ir.StoreDyn:
-		use = append(valuesRegs(v.Logic), valuesRegs(v.Src)...)
+		use = append(valuesRegs(v.DevPtr), valuesRegs(v.Logic)...)
+		use = append(use, valuesRegs(v.Src)...)
 	case *ir.Builtin:
 		for _, a := range v.Args {
 			use = append(use, valuesRegs(a)...)
 		}
 		if v.Dst != nil {
 			def = []*ir.Reg{v.Dst}
+			// ins reads its destination (IC10 read-modify-write).
+			if v.Name == "ins" {
+				use = append(use, v.Dst)
+			}
 		}
 	case *ir.Batch:
 		use = append(use, valuesRegs(v.Device)...)
@@ -589,8 +594,10 @@ func replaceInstrUses(i ir.Instr, f func(ir.Value) ir.Value) {
 		v.Index = f(v.Index)
 		v.Src = f(v.Src)
 	case *ir.LoadDyn:
+		v.DevPtr = f(v.DevPtr)
 		v.Logic = f(v.Logic)
 	case *ir.StoreDyn:
+		v.DevPtr = f(v.DevPtr)
 		v.Logic = f(v.Logic)
 		v.Src = f(v.Src)
 	case *ir.Builtin:

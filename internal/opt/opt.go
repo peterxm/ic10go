@@ -93,12 +93,16 @@ func usesOf(i ir.Instr) []ir.Value {
 	case *ir.StoreSlot:
 		add(v.Index, v.Src)
 	case *ir.LoadDyn:
-		add(v.Logic)
+		add(v.DevPtr, v.Logic)
 	case *ir.StoreDyn:
-		add(v.Logic, v.Src)
+		add(v.DevPtr, v.Logic, v.Src)
 	case *ir.Builtin:
 		for _, a := range v.Args {
 			add(a)
+		}
+		// ins reads its destination (IC10 read-modify-write).
+		if v.Name == "ins" && v.Dst != nil {
+			add(v.Dst)
 		}
 	case *ir.Batch:
 		add(v.Device, v.Name, v.Slot, v.Mode, v.Src)
@@ -1296,24 +1300,38 @@ func dominators(fn *ir.Function, preds map[*ir.Block][]*ir.Block) map[*ir.Block]
 }
 
 func findLoops(fn *ir.Function, succs map[*ir.Block][]*ir.Block, dom map[*ir.Block]map[*ir.Block]bool, preds map[*ir.Block][]*ir.Block) []*loop {
-	var loops []*loop
+	// A loop header can have several back edges. Their bodies must be merged:
+	// a register defined on one path is still loop-defined for a use on
+	// another, so hoisting such a use would read the wrong value.
+	byHeader := map[*ir.Block]*loop{}
+	var order []*ir.Block
 	for _, b := range fn.Blocks {
 		for _, s := range succs[b] {
-			if dom[b][s] { // back edge b -> s
-				blocks := map[*ir.Block]bool{s: true}
-				stack := []*ir.Block{b}
-				for len(stack) > 0 {
-					n := stack[len(stack)-1]
-					stack = stack[:len(stack)-1]
-					if blocks[n] {
-						continue
-					}
-					blocks[n] = true
-					stack = append(stack, preds[n]...)
-				}
-				loops = append(loops, &loop{header: s, blocks: blocks})
+			if !dom[b][s] { // back edge b -> s
+				continue
 			}
+			lp := byHeader[s]
+			if lp == nil {
+				lp = &loop{header: s, blocks: map[*ir.Block]bool{}}
+				byHeader[s] = lp
+				order = append(order, s)
+			}
+			stack := []*ir.Block{b}
+			for len(stack) > 0 {
+				n := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				if lp.blocks[n] {
+					continue
+				}
+				lp.blocks[n] = true
+				stack = append(stack, preds[n]...)
+			}
+			lp.blocks[s] = true
 		}
+	}
+	loops := make([]*loop, 0, len(order))
+	for _, h := range order {
+		loops = append(loops, byHeader[h])
 	}
 	return loops
 }

@@ -65,11 +65,17 @@ func (d *decompiler) translate(l icLine) []string {
 		return []string{d.assignDst(l.args[0], d.a(l, 1))}
 	case "l":
 		if d.isDynLogic(l.args[2]) {
+			if reg, ok := d.deviceRegArg(l.args[1]); ok {
+				return []string{d.assignDst(l.args[0], fmt.Sprintf("readDev(%s, %s)", reg, d.a(l, 2)))}
+			}
 			return []string{d.assignDst(l.args[0], fmt.Sprintf("read(%s, %s)", d.resolve(l.args[1]), d.a(l, 2)))}
 		}
 		return []string{d.assignDst(l.args[0], d.deviceRead(l.args[1], l.args[2]))}
 	case "s":
 		if d.isDynLogic(l.args[1]) {
+			if reg, ok := d.deviceRegArg(l.args[0]); ok {
+				return []string{fmt.Sprintf("writeDev(%s, %s, %s)", reg, d.a(l, 1), d.a(l, 2))}
+			}
 			return []string{fmt.Sprintf("write(%s, %s, %s)", d.resolve(l.args[0]), d.a(l, 1), d.a(l, 2))}
 		}
 		return []string{d.deviceWrite(l.args[0], l.args[1], d.a(l, 2))}
@@ -260,6 +266,16 @@ func (d *decompiler) isDynLogic(s string) bool {
 	}
 	_, err := strconv.Atoi(s)
 	return err == nil
+}
+
+// deviceRegArg recognises an IC10 device-register operand (dr15, drr0) and
+// returns the .icg expression for the register that holds the port index.
+func (d *decompiler) deviceRegArg(devArg string) (string, bool) {
+	dev := d.resolve(devArg)
+	if len(dev) >= 3 && dev[0] == 'd' && dev[1] == 'r' {
+		return d.operand(dev[1:]), true
+	}
+	return "", false
 }
 
 func (d *decompiler) deviceRead(devArg, logic string) string {

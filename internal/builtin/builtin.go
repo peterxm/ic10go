@@ -2,7 +2,11 @@
 // built-in function signatures.
 package builtin
 
-import "hash/crc32"
+import (
+	"hash/crc32"
+	"sort"
+	"strconv"
+)
 
 // Hash returns the CRC-32 checksum used by IC10's HASH() function.
 func Hash(s string) uint32 { return crc32.ChecksumIEEE([]byte(s)) }
@@ -51,6 +55,31 @@ var LogicTypes = map[string]bool{
 	"TotalMoles": true, "VelocityMagnitude": true, "VelocityRelativeX": true,
 	"VelocityRelativeY": true, "VelocityRelativeZ": true, "Vertical": true,
 	"VerticalRatio": true, "Volume": true,
+}
+
+// LogicTypeIDs maps "LogicType.X" member names to stable integer ids used by
+// the test VM to model dynamic logic reads and writes. The game assigns its own
+// enum values; the compiler emits the symbolic name verbatim, so these ids are
+// only meaningful inside the VM. Ids start at 1 so 0 stays "unset".
+var LogicTypeIDs = map[string]int{}
+
+// LogicTypeNames is the reverse of LogicTypeIDs.
+var LogicTypeNames = map[int]string{}
+
+func init() {
+	names := make([]string, 0, len(LogicTypes)+8)
+	for n := range LogicTypes {
+		names = append(names, n)
+	}
+	for i := 0; i < 8; i++ {
+		names = append(names, "Channel"+strconv.Itoa(i))
+	}
+	sort.Strings(names)
+	for i, n := range names {
+		id := i + 1
+		LogicTypeIDs[n] = id
+		LogicTypeNames[id] = n
+	}
 }
 
 // SlotTypes is the set of slot logic type names.

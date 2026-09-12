@@ -222,18 +222,21 @@ type StoreSlot struct {
 }
 
 // LoadDyn reads a device logic value whose logic type is chosen at runtime
-// (IC10 "l r? d? rN").
+// (IC10 "l r? d? rN"). When DevPtr is set the device port is also chosen at
+// runtime from the register it names (IC10 "l r? drN rM").
 type LoadDyn struct {
-	Dst   *Reg
-	Dev   string
-	Logic Value
+	Dst    *Reg
+	Dev    string
+	DevPtr Value
+	Logic  Value
 }
 
 // StoreDyn writes a device logic value whose logic type is chosen at runtime.
 type StoreDyn struct {
-	Dev   string
-	Logic Value
-	Src   Value
+	Dev    string
+	DevPtr Value
+	Logic  Value
+	Src    Value
 }
 
 // Builtin is a call to a built-in function, e.g. yield, sleep or sqrt.

@@ -86,6 +86,8 @@
 | `d.channel[c][n] = v` | `s d:c Channel<n> v` |
 | `read(d, lt)` | `l r d (r_lt)` |
 | `write(d, lt, v)` | `s d (r_lt) v` |
+| `readDev(idx, lt)` | `l r drN (r_lt)` |
+| `writeDev(idx, lt, v)` | `s drN (r_lt) v` |
 | `batch.read` | `lb` |
 | `batch.readName` | `lbn` |
 | `batch.readSlot` | `lbs` |
