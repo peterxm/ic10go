@@ -19,10 +19,15 @@
 | 产物 | 行数 |
 |------|------|
 | 原来的合并端口（loader 内联） | 94 |
-| 拆出的 **runtime** | **60** |
+| 拆出的 **runtime**（手写 loader/runtime） | **60** |
 | 拆出的 **loader**（只跑一次，不计入 runtime 预算） | 35 |
+| `data` 语法版 runtime（`barsiel_datatable.icg`，含版本校验） | **65** |
 
-runtime 从 94 → 60 行，**省下 34 行**，剩余预算从 34 行涨到 68 行。
+runtime 从 94 → 60/65 行，**省下约 30 行**，剩余预算从 34 行涨到 63 行。
+
+`barsiel_datatable.icg` 演示了新语法：两个 `data` 表，runtime 用
+`RecipeDisplay[ore-1]` / `RecipeHeat[ore-1]` 读表，loader 由
+`ic10c build --split-data` 生成（35 行，含版本哨兵）。
 
 ## 闭环测试（`go test ./experiments/data-segment/`）
 

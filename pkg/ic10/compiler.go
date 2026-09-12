@@ -24,6 +24,9 @@ type Options struct {
 	// stable game branch (offset length field) instead of the documented
 	// (field offset length). The beta branch uses the documented order.
 	StableInsOrder bool
+	// NoDataCheck disables the runtime check that the persistent data segment
+	// is installed before main runs.
+	NoDataCheck bool
 }
 
 // Compile compiles .icg source into IC10 code.
@@ -55,7 +58,10 @@ func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Ba
 		return "", diags, nil
 	}
 
-	fn := lower.Lower(info, diags, lower.Options{StableInsOrder: opts.StableInsOrder})
+	fn := lower.Lower(info, diags, lower.Options{
+		StableInsOrder: opts.StableInsOrder,
+		DataCheck:      !opts.NoDataCheck,
+	})
 	if diags.HasErrors() {
 		return "", diags, nil
 	}
@@ -63,7 +69,7 @@ func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Ba
 	if os.Getenv("IC10C_NO_OPT") == "" {
 		opt.Optimize(fn)
 	}
-	colors, err := regalloc.Allocate(fn, NumRegs)
+	colors, err := regalloc.AllocateReserved(fn, NumRegs, info.DataSize)
 	if err != nil {
 		return "", diags, err
 	}

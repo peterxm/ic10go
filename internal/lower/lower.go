@@ -21,6 +21,26 @@ type Options struct {
 	// StableInsOrder emits IC10 "ins" with the stable branch's argument order
 	// (offset length field) instead of the documented (field offset length).
 	StableInsOrder bool
+	// DataCheck emits a runtime check that the persistent data segment is
+	// installed (version sentinel matches) before running main.
+	DataCheck bool
+}
+
+// emitDataCheck verifies the persistent data segment is installed: it reads the
+// version sentinel and halts the chip when it does not match.
+func (l *lowerer) emitDataCheck() {
+	body := l.b.NewBlock()
+	halt := l.b.NewBlock()
+	r := l.b.NewReg("dataver")
+	l.b.Emit(&ir.Builtin{Name: "get", Dst: r, Args: []ir.Value{
+		&ir.Device{Name: "db"}, &ir.Const{V: float64(l.info.Sentinel)},
+	}})
+	c := l.b.NewReg("datachk")
+	l.b.Emit(&ir.Cmp{Cond: ir.Ne, Dst: c, A: r, B: &ir.Const{V: l.info.DataVersion}})
+	l.b.SetTerm(&ir.Br{Cond: ir.NonZero, A: c, Then: halt, Else: body})
+	l.b.SetBlock(halt)
+	l.b.SetTerm(&ir.JmpDyn{Target: &ir.Const{V: 9999}})
+	l.b.SetBlock(body)
 }
 
 // Lower compiles the program's main function into an IR function.
@@ -47,6 +67,10 @@ func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 
 	end := l.b.NewBlock()
 	l.inline = append(l.inline, inlineCtx{end: end})
+
+	if len(info.Data) > 0 && opts.DataCheck {
+		l.emitDataCheck()
+	}
 
 	l.lowerStmts(info.Main.Body.List)
 	if l.b.Cur().Term == nil {
@@ -594,6 +618,14 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 	case *ast.SelectorExpr:
 		return l.lowerDeviceRead(e)
 	case *ast.IndexExpr:
+		if t, ok := l.dataTable(e.X); ok {
+			idx := l.lowerExpr(e.Index)
+			addr := l.b.NewReg("dataaddr")
+			l.emitBin(ir.Add, addr, &ir.Const{V: float64(t.Base)}, idx)
+			r := l.b.NewReg("data")
+			l.b.Emit(&ir.Builtin{Name: "get", Dst: r, Args: []ir.Value{&ir.Device{Name: "db"}, addr}})
+			return r
+		}
 		if dev, conn, ch, ok := l.channelOf(e); ok {
 			r := l.b.NewReg("channel")
 			l.b.Emit(&ir.Load{Dst: r, Dev: channelDev(dev, conn), Logic: "Channel" + itoa(ch)})
@@ -1383,6 +1415,20 @@ func (l *lowerer) channelOf(e ast.Expr) (dev string, conn, ch float64, ok bool) 
 		return "", 0, 0, false
 	}
 	return d, conn, ch, true
+}
+
+// dataTable reports whether e names a top-level `data` table (not shadowed by a
+// local variable).
+func (l *lowerer) dataTable(e ast.Expr) (*sema.DataTable, bool) {
+	id, ok := e.(*ast.Ident)
+	if !ok {
+		return nil, false
+	}
+	if _, bound := l.lookup(id.Name); bound {
+		return nil, false
+	}
+	t, ok := l.info.DataIndex[id.Name]
+	return t, ok
 }
 
 func channelDev(dev string, conn float64) string {

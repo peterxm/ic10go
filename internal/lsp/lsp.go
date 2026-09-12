@@ -430,7 +430,7 @@ func completionItemsFor(text string, pos lspPosition) []completionItem {
 
 func baseCompletionItems() []completionItem {
 	items := []completionItem{
-		ci("const", 14, "declaration"), ci("var", 14, "declaration"), ci("func", 3, "declaration"),
+		ci("const", 14, "declaration"), ci("data", 14, "data table"), ci("var", 14, "declaration"), ci("func", 3, "declaration"),
 		ci("if", 14, ""), ci("else", 14, ""), ci("for", 14, ""), ci("switch", 14, ""),
 		ci("case", 14, ""), ci("default", 14, ""), ci("break", 14, ""), ci("continue", 14, ""),
 		ci("return", 14, ""), ci("label", 14, ""), ci("goto", 14, ""), ci("call", 14, ""), ci("ret", 14, ""),
@@ -570,6 +570,8 @@ func documentSymbols(name, text string) []completionItem {
 			add(d.Name.Name, 3, "function")
 		case *ast.ConstDecl:
 			add(d.Name.Name, 21, "constant")
+		case *ast.DataDecl:
+			add(d.Name.Name, 21, "data table")
 		case *ast.VarDecl:
 			add(d.Name.Name, 6, "variable")
 		}

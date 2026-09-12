@@ -148,13 +148,36 @@ func missingLang() string {
 
 func cmdBuild(args []string) int {
 	stableIns := false
+	splitData := false
+	dataOnly := false
+	noDataCheck := false
+	dataOut := ""
 	var files []string
-	for _, a := range args {
-		switch a {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
 		case "--stable-ins":
 			stableIns = true
+		case "--split-data":
+			splitData = true
+		case "--data-only":
+			dataOnly = true
+		case "--no-data-check":
+			noDataCheck = true
+		case "--data-out":
+			if i+1 < len(args) {
+				dataOut = args[i+1]
+				i++
+			}
+		case "--data-access":
+			if i+1 < len(args) {
+				if args[i+1] != "get" {
+					fmt.Fprintln(os.Stderr, "ic10c: --data-access stack is not implemented yet")
+					return 2
+				}
+				i++
+			}
 		default:
-			files = append(files, a)
+			files = append(files, args[i])
 		}
 	}
 	if len(files) != 1 {
@@ -167,7 +190,25 @@ func cmdBuild(args []string) int {
 		return 1
 	}
 	ic10Hint(files[0])
-	code, diags, err := ic10.CompileWithOptions(files[0], data, ic10.Options{StableInsOrder: stableIns})
+
+	if dataOnly {
+		loader, err := ic10.DataLoader(files[0], data)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		if loader == "" {
+			fmt.Fprintln(os.Stderr, "ic10c: source has no data tables")
+			return 1
+		}
+		fmt.Print(loader)
+		return 0
+	}
+
+	code, diags, err := ic10.CompileWithOptions(files[0], data, ic10.Options{
+		StableInsOrder: stableIns,
+		NoDataCheck:    noDataCheck,
+	})
 	file := source.NewFile(files[0], data)
 	if rc := report(file, diags); rc != 0 {
 		return rc
@@ -177,6 +218,25 @@ func cmdBuild(args []string) int {
 		return 1
 	}
 	fmt.Print(code)
+
+	if splitData {
+		loader, err := ic10.DataLoader(files[0], data)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		if loader == "" {
+			return 0
+		}
+		if dataOut == "" {
+			dataOut = strings.TrimSuffix(files[0], ".icg") + ".data.ic"
+		}
+		if err := os.WriteFile(dataOut, []byte(loader), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "ic10c: data loader written to %s (run it once, then use the runtime)\n", dataOut)
+	}
 	return 0
 }
 

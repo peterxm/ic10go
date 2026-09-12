@@ -25,7 +25,7 @@ func kinds(toks []token.Token) []token.Kind {
 }
 
 func TestDeviceClassification(t *testing.T) {
-	toks, diags := lex(t, "d0 d5 db d6 data db2")
+	toks, diags := lex(t, "d0 d5 db d6 datum db2")
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags.Diags)
 	}

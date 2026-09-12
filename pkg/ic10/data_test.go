@@ -1,0 +1,96 @@
+package ic10_test
+
+import (
+	"strings"
+	"testing"
+
+	"ic10go/internal/vm"
+	"ic10go/pkg/ic10"
+)
+
+const dataTableSrc = `data T = [10, 20, 30]
+
+func main() {
+    for {
+        yield()
+        d0.Setting = T[1]
+    }
+}
+`
+
+func TestDataTableCompile(t *testing.T) {
+	code, diags, err := ic10.Compile("t.icg", []byte(dataTableSrc))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(code, "get ") {
+		t.Errorf("runtime does not read the data segment:\n%s", code)
+	}
+	loader, err := ic10.DataLoader("t.icg", []byte(dataTableSrc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(loader, "put db") {
+		t.Errorf("loader missing writes:\n%s", loader)
+	}
+	if !ic10.HasData("t.icg", []byte(dataTableSrc)) {
+		t.Error("HasData = false, want true")
+	}
+}
+
+// runDataProgram runs the loader (if any), then the compiled runtime on a
+// machine whose stack is preloaded from the loader.
+func runDataProgram(t *testing.T, opts ic10.Options, withLoader bool, steps int) *vm.Machine {
+	t.Helper()
+	src := []byte(dataTableSrc)
+	code, diags, err := ic10.CompileWithOptions("t.icg", src, opts)
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	m := vm.New()
+	m.Set("d0", "Setting", 7) // distinguishable from the value the program writes
+	if withLoader {
+		loader, err := ic10.DataLoader("t.icg", src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lm := vm.New()
+		if err := lm.Load(loader); err != nil {
+			t.Fatal(err)
+		}
+		if err := lm.Run(100); err != nil && err != vm.ErrStepLimit {
+			t.Fatal(err)
+		}
+		m.Device("db").Stack = lm.Device("db").Stack
+	}
+	if err := m.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < steps; i++ {
+		if err := m.Run(1); err != nil && err != vm.ErrStepLimit {
+			t.Fatal(err)
+		}
+	}
+	return m
+}
+
+func TestDataTableEndToEnd(t *testing.T) {
+	m := runDataProgram(t, ic10.Options{}, true, 300)
+	if got := m.Get("d0", "Setting"); got != 20 {
+		t.Errorf("d0.Setting = %v, want 20 (T[1])", got)
+	}
+}
+
+func TestDataTableMissingHalts(t *testing.T) {
+	m := runDataProgram(t, ic10.Options{}, false, 300)
+	if got := m.Get("d0", "Setting"); got != 7 {
+		t.Errorf("d0.Setting = %v, want 7 (chip should halt before writing)", got)
+	}
+}
+
+func TestDataTableNoCheck(t *testing.T) {
+	m := runDataProgram(t, ic10.Options{NoDataCheck: true}, false, 300)
+	if got := m.Get("d0", "Setting"); got != 0 {
+		t.Errorf("d0.Setting = %v, want 0 (T[1] reads an empty slot)", got)
+	}
+}

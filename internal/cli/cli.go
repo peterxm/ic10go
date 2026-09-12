@@ -124,11 +124,28 @@ var Commands = []Command{
 				EN: "emit 'ins' with the stable branch's argument order",
 				ZH: "按稳定版的参数顺序生成 `ins`",
 			}},
+			{Long: "--split-data", Desc: text{
+				EN: "also emit the one-time data-segment loader",
+				ZH: "同时输出一次性的数据段装载器",
+			}},
+			{Long: "--data-out", Arg: "<file>", Desc: text{
+				EN: "loader output path (default <file>.data.ic)",
+				ZH: "装载器输出路径（默认 <file>.data.ic）",
+			}},
+			{Long: "--data-only", Desc: text{
+				EN: "emit only the data-segment loader",
+				ZH: "只输出数据段装载器",
+			}},
+			{Long: "--no-data-check", Desc: text{
+				EN: "do not verify the data segment at runtime",
+				ZH: "不在运行时校验数据段",
+			}},
 			commonHelp,
 		},
 		Examples: []string{
 			"ic10c build blink.icg",
 			"ic10c build blink.icg > blink.ic",
+			"ic10c build --split-data table.icg > table.ic",
 		},
 	},
 	{

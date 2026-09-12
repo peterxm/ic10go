@@ -274,7 +274,7 @@ ic10c build --split-data main.icg
 
 ---
 
-## 9. 语法草案
+## 9. 语法草案（已实现）
 
 顶层新增 `data` 表（编译期常量数组），由编译器分配到持久栈：
 
@@ -315,6 +315,21 @@ func main() {
 
 > 后续可加：给 `switch` 加标记，让编译器把「常量 → 常量」的多路分支自动
 > 表化进数据段，进一步减少手写。
+
+### 9.1 实现状态
+
+- ✅ `data` 关键字、AST、parser、sema 常量求值。
+- ✅ `Table[i]` → `get(db, base+i)`（`internal/lower`）。
+- ✅ 地址分配：数据段放在**栈顶**，`base = 512 - (哨兵 + 元素数)`；
+  寄存器溢出从 `base-1` 向下（`regalloc.AllocateReserved`）。
+- ✅ 版本哨兵：loader 写 `put db <base> <version>`；runtime 校验失败用
+  `jump(9999)` 停机（`--no-data-check` 可关）。
+- ✅ loader 生成：`ic10.DataLoader` / `ic10c build --data-only`。
+- ⏳ `--data-access stack`（`poke`/`peek` 兼容设备 host）未实现。
+- ⏳ `switch` 自动表化未实现。
+
+真机验证：标准 IC host 下 loader → runtime 读表成功；设备 host（空调）
+`put db` 报 `MemoryNotWriteable`（见 §11）。
 
 ---
 

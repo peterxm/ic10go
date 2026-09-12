@@ -13,11 +13,17 @@ import (
 // [0, k). If k registers are not enough it spills the excess to the IC10 stack,
 // reserving the highest register as a scratch for the spill load sequence.
 func Allocate(fn *ir.Function, k int) (map[*ir.Reg]int, error) {
+	return AllocateReserved(fn, k, 0)
+}
+
+// AllocateReserved is Allocate with the top `reserved` stack slots kept free
+// (used by the persistent data segment), so spills start below them.
+func AllocateReserved(fn *ir.Function, k, reserved int) (map[*ir.Reg]int, error) {
 	if colors, ok := tryColor(fn, k); ok {
 		return colors, nil
 	}
 	// Spilling path: reserve one register for the spill-load scratch.
-	sp := &spiller{fn: fn, slots: map[*ir.Reg]int{}, next: 511}
+	sp := &spiller{fn: fn, slots: map[*ir.Reg]int{}, next: 511 - reserved}
 	for iter := 0; iter < 64; iter++ {
 		colors, spilled := tryColorPartial(fn, k-1)
 		if len(spilled) == 0 {

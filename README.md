@@ -60,6 +60,7 @@ j 1
 
 ```
 ic10c build  <file.icg>       # 编译为 IC10 并输出到 stdout
+ic10c build --split-data <file.icg>  # 同时输出持久栈数据段 loader（<file>.data.ic）
 ic10c run    <file.icg>       # 编译并在内置 VM 中运行（--steps/--set/--trace）
 ic10c stats  <file.icg>       # 行 / 字节 / 寄存器预算报告
 ic10c fmt    [-w] <file.icg>  # 格式化源码

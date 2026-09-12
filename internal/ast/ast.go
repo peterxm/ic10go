@@ -53,6 +53,14 @@ type ConstDecl struct {
 	Value Expr
 }
 
+// DataDecl is a top-level `data Name = [ ... ]` table. Its elements are
+// compile-time constants stored in the persistent IC10 stack.
+type DataDecl struct {
+	NodeBase
+	Name   *Ident
+	Values []Expr
+}
+
 type VarDecl struct {
 	NodeBase
 	Name  *Ident
@@ -68,6 +76,7 @@ type FuncDecl struct {
 }
 
 func (*ConstDecl) declNode() {}
+func (*DataDecl) declNode()  {}
 func (*VarDecl) declNode()   {}
 func (*FuncDecl) declNode()  {}
 

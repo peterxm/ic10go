@@ -139,6 +139,30 @@ func clampTemp(x num) num {
 - 无函数重载、无闭包、无多返回值。
 - `return` 可省略类型（推导）。
 
+### 4.4 数据表（持久栈数据段）
+
+顶层 `data` 声明一个**编译期常量数组**，由编译器放进 IC 的持久栈：
+
+```go
+data RecipeDisplay = [ -1301215609, -404336834, 226410516 ]
+data RecipeHeat    = [ 0.009501, 0.009502, 0.009503 ]
+```
+
+- 元素只能是编译期常量（数字、`hash("...")`）。
+- `Table[i]` 读栈：编译为 `get(db, base + i)`（1 条指令），`i` 可为变量。
+- 表**只读**，越界不检查（与 IC10 一致）。
+- 编译器把数据段放在栈顶、寄存器溢出区（511 向下）之上，并写一个版本哨兵；
+  runtime 启动时校验，缺失/过期则停机。
+- 数据本身由一次性的 **loader** 写入（见 `ic10c build --split-data`），
+  要求芯片插在**标准 IC host** 上（设备 host 会 `MemoryNotWriteable`）。
+
+```go
+db.Setting = RecipeDisplay[ore-1]   // -> get(db, baseDisplay + ore - 1)
+heat       = RecipeHeat[ore-1]
+```
+
+详见 [`data-segment.md`](data-segment.md)。
+
 ---
 
 ## 5. 语句

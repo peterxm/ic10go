@@ -2,6 +2,8 @@
 package sema
 
 import (
+	"fmt"
+	"hash/crc32"
 	"math"
 	"strconv"
 
@@ -11,9 +13,19 @@ import (
 	"ic10go/internal/token"
 )
 
+// StackSize is the number of slots in an IC10 chip's persistent stack.
+const StackSize = 512
+
 type FuncInfo struct {
 	Decl   *ast.FuncDecl
 	Params []string
+}
+
+// DataTable is a compile-time `data` table stored in the persistent stack.
+type DataTable struct {
+	Name   string
+	Values []float64
+	Base   int // first stack slot
 }
 
 type Info struct {
@@ -22,6 +34,13 @@ type Info struct {
 	Devices   map[string]string // const NAME = dN (device alias)
 	Funcs     map[string]*FuncInfo
 	Main      *ast.FuncDecl
+
+	// Data segment (top-level `data` tables). All zero when there is none.
+	Data        []*DataTable
+	DataIndex   map[string]*DataTable
+	DataSize    int     // sentinel (if any) + all elements
+	Sentinel    int     // stack slot holding the version, -1 if no data
+	DataVersion float64 // version written by the loader and checked at runtime
 }
 
 // Check resolves declarations and evaluates constants.
@@ -31,6 +50,8 @@ func Check(file *ast.File, diags *diag.Bag) *Info {
 		RawConsts: map[string]string{},
 		Devices:   map[string]string{},
 		Funcs:     map[string]*FuncInfo{},
+		DataIndex: map[string]*DataTable{},
+		Sentinel:  -1,
 	}
 
 	for _, d := range file.Decls {
@@ -52,6 +73,10 @@ func Check(file *ast.File, diags *diag.Bag) *Info {
 				diags.Errorf(d.Name.Pos(), "constant %q conflicts with a function", d.Name.Name)
 				continue
 			}
+			if _, exists := info.DataIndex[d.Name.Name]; exists {
+				diags.Errorf(d.Name.Pos(), "constant %q conflicts with a data table", d.Name.Name)
+				continue
+			}
 			// const NAME = dN / db aliases a device port; const NAME = other
 			// aliases a previously declared device alias.
 			if dev, ok := deviceAlias(d.Value, info.Devices); ok {
@@ -68,6 +93,38 @@ func Check(file *ast.File, diags *diag.Bag) *Info {
 				continue
 			}
 			info.Consts[d.Name.Name] = v
+		case *ast.DataDecl:
+			if _, exists := info.DataIndex[d.Name.Name]; exists {
+				diags.Errorf(d.Name.Pos(), "data table %q redeclared", d.Name.Name)
+				continue
+			}
+			if _, exists := info.Consts[d.Name.Name]; exists {
+				diags.Errorf(d.Name.Pos(), "data table %q conflicts with a constant", d.Name.Name)
+				continue
+			}
+			if _, exists := info.RawConsts[d.Name.Name]; exists {
+				diags.Errorf(d.Name.Pos(), "data table %q conflicts with a constant", d.Name.Name)
+				continue
+			}
+			if _, exists := info.Devices[d.Name.Name]; exists {
+				diags.Errorf(d.Name.Pos(), "data table %q conflicts with a constant", d.Name.Name)
+				continue
+			}
+			if _, exists := info.Funcs[d.Name.Name]; exists {
+				diags.Errorf(d.Name.Pos(), "data table %q conflicts with a function", d.Name.Name)
+				continue
+			}
+			t := &DataTable{Name: d.Name.Name}
+			for _, v := range d.Values {
+				c, ok := Eval(v, info.Consts)
+				if !ok {
+					diags.Errorf(v.Pos(), "data element is not a compile-time expression")
+					continue
+				}
+				t.Values = append(t.Values, c)
+			}
+			info.Data = append(info.Data, t)
+			info.DataIndex[d.Name.Name] = t
 		case *ast.FuncDecl:
 			if _, exists := info.Funcs[d.Name.Name]; exists {
 				diags.Errorf(d.Name.Pos(), "function %q redeclared", d.Name.Name)
@@ -79,6 +136,10 @@ func Check(file *ast.File, diags *diag.Bag) *Info {
 			}
 			if _, exists := info.Devices[d.Name.Name]; exists {
 				diags.Errorf(d.Name.Pos(), "function %q conflicts with a constant", d.Name.Name)
+				continue
+			}
+			if _, exists := info.DataIndex[d.Name.Name]; exists {
+				diags.Errorf(d.Name.Pos(), "function %q conflicts with a data table", d.Name.Name)
 				continue
 			}
 			fi := &FuncInfo{Decl: d}
@@ -104,7 +165,42 @@ func Check(file *ast.File, diags *diag.Bag) *Info {
 		}
 	}
 
+	assignData(info)
 	return info
+}
+
+// assignData lays the data tables out at the top of the stack (below the
+// register-spill region) and derives the version sentinel.
+func assignData(info *Info) {
+	if len(info.Data) == 0 {
+		return
+	}
+	size := 1 // version sentinel
+	for _, t := range info.Data {
+		size += len(t.Values)
+	}
+	info.DataSize = size
+	base := StackSize - size
+	info.Sentinel = base
+	cur := base + 1
+	for _, t := range info.Data {
+		t.Base = cur
+		cur += len(t.Values)
+	}
+	info.DataVersion = dataVersion(info.Data)
+}
+
+// dataVersion derives a stable version number from the table contents so a
+// stale stack can be detected at runtime.
+func dataVersion(tables []*DataTable) float64 {
+	h := crc32.NewIEEE()
+	for _, t := range tables {
+		fmt.Fprintf(h, "%s:%d", t.Name, len(t.Values))
+		for _, v := range t.Values {
+			fmt.Fprintf(h, ",%v", v)
+		}
+	}
+	return float64(int32(h.Sum32()))
 }
 
 // Eval evaluates an expression to a compile-time constant. It returns false if

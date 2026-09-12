@@ -13,6 +13,7 @@ const (
 
 	// Keywords
 	Const
+	Data
 	Var
 	Func
 	If
@@ -84,6 +85,7 @@ const (
 
 var keywords = map[string]Kind{
 	"const":    Const,
+	"data":     Data,
 	"var":      Var,
 	"func":     Func,
 	"if":       If,

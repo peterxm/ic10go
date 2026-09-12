@@ -101,6 +101,8 @@ func (p *parser) parseTopDecl() []ast.Decl {
 	switch p.cur().Kind {
 	case token.Const:
 		return p.parseConstDecl()
+	case token.Data:
+		return p.parseDataDecl()
 	case token.Var:
 		return p.parseVarDecls()
 	case token.Func:
@@ -134,6 +136,26 @@ func (p *parser) parseConstDecl() []ast.Decl {
 	p.expect(token.Assign)
 	val := p.parseExpr()
 	return []ast.Decl{&ast.ConstDecl{NodeBase: base(kw.Pos), Name: name, Value: val}}
+}
+
+// parseDataDecl parses `data Name = [ expr, ... ]`, a compile-time constant
+// table stored in the persistent IC10 stack.
+func (p *parser) parseDataDecl() []ast.Decl {
+	kw := p.expect(token.Data)
+	name := p.parseIdent()
+	p.expect(token.Assign)
+	p.expect(token.LBracket)
+	var vals []ast.Expr
+	for !p.at(token.RBracket) && !p.at(token.EOF) {
+		vals = append(vals, p.parseExpr())
+		if p.at(token.Comma) {
+			p.advance()
+			continue
+		}
+		break
+	}
+	p.expect(token.RBracket)
+	return []ast.Decl{&ast.DataDecl{NodeBase: base(kw.Pos), Name: name, Values: vals}}
 }
 
 func (p *parser) parseVarDecls() []ast.Decl {
