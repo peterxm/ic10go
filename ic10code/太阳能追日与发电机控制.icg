@@ -1,0 +1,35 @@
+// 太阳能双轴追踪 + 发电机滞回控制。
+// 传感器（d0）指向 90°；两块双轴面板根据传感器角度调整朝向。
+
+const (
+    solarPanel   = -2045627372
+    solarPanel15 = -295209029
+)
+
+func main() {
+    for {
+        yield()
+        tracking()
+        generatorControl()
+    }
+}
+
+// 把面板角度对准太阳。
+func tracking() {
+    v := 90 - d0.Vertical
+    batch.write(solarPanel, "Vertical", v)
+    batch.write(solarPanel15, "Vertical", v)
+
+    h := d0.Horizontal - 90
+    batch.write(solarPanel, "Horizontal", h)
+    batch.write(solarPanel15, "Horizontal", h)
+
+    yield()
+}
+
+// 电池电量低于 10% 开、高于 30% 关（滞回，防止抖动）。
+func generatorControl() {
+    ratio := d1.Ratio
+    if ratio <= 0.1 { d2.On = 1 }
+    if ratio >= 0.3 { d2.On = 0 }
+}

@@ -14,7 +14,16 @@ coverage.txt
 !.vscode/extensions.json
 
 # Third-party content (not licensed for redistribution, kept locally only)
-/ic10code/
 /Stationeers_IC10_参考文档.md
 /experiments/data-segment/barsiel_*.icg
 /experiments/data-segment/ingame-airlock/*.ic
+
+# ic10code/: only the author's own (Chinese-named) scripts are tracked;
+# the rest is third-party community code kept locally only.
+/ic10code/**
+!/ic10code/太阳能追日与发电机控制.ic
+!/ic10code/太阳能追日与发电机控制.icg
+!/ic10code/温室照明与通风过滤.ic
+!/ic10code/温室照明与通风过滤.icg
+!/ic10code/氧气过滤灌装.ic
+!/ic10code/氧气过滤灌装.icg

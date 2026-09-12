@@ -92,7 +92,7 @@ sh editors/vscode/install.sh   # 安装到 ~/.vscode/extensions
 >
 > 寄存器压力超过 16 时，编译器会自动把多余的值**溢出到 IC10 栈**（固定高地址槽 + 暂存寄存器），而不是报错。未知 logic type 会给出**警告**（可用 `IC10C_NO_CHECK=1` 关闭）。
 >
-> 反编译：`ic10c decompile` 会替换 `alias`/`define`、用 `:=` 声明首次写入的寄存器、用 `label`/`goto`/`call`/`ret` 表达控制流；配合寄存器拷贝合并，本地 `ic10code/` 语料（第三方，未随仓库分发）里的真实脚本都能反编译并在 128 行内重新编译（含最复杂的 Furnace，148→121 行）。加 `-s/--structured` 会基于后支配树还原 `if`/`else`/`for`；结构化失败时自动回退到 goto 形式。
+> 反编译：`ic10c decompile` 会替换 `alias`/`define`、用 `:=` 声明首次写入的寄存器、用 `label`/`goto`/`call`/`ret` 表达控制流；配合寄存器拷贝合并，`ic10code/` 里的真实脚本都能反编译并在 128 行内重新编译（含最复杂的 Furnace，148→121 行）。加 `-s/--structured` 会基于后支配树还原 `if`/`else`/`for`；结构化失败时自动回退到 goto 形式。
 
 ## 测试
 
@@ -104,7 +104,7 @@ go test ./...
 - VM 端到端：编译后在 `internal/vm` 中执行并断言设备状态
 - 覆盖：寄存器复用、比较融合、select、死代码消除、批量聚合、栈、通道、槽位、真实脚本 `solar_tracker`
 - 工具：`fmt` 幂等性、`stats`、`disasm`、LSP 诊断与补全
-- 真实脚本（可选，需本地 `ic10code/` 语料）：每个 `.ic`/`.ic10` 都做**反编译→重编译→设备写入序列对比**（`TestIc10CodeRoundTrip`）与 **minify 等价性**（`TestMinifyIc10Code`）；语料缺失时自动跳过
+- 真实脚本：`ic10code/` 下的每个 `.ic`/`.ic10` 都做**反编译→重编译→设备写入序列对比**（`TestIc10CodeRoundTrip`）与 **minify 等价性**（`TestMinifyIc10Code`）；第三方脚本仅本地保留，缺失时自动跳过
 - 数据段：`data` 表端到端（loader→runtime、版本哨兵、`--data-access stack`、`--data-layout middle`、`--auto-table`），见 `pkg/ic10/data_test.go` 与 `experiments/data-segment/`
 
 ## 文档

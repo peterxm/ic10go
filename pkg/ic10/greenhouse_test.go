@@ -24,11 +24,11 @@ func greenhouseSetup(activate float64, pressure float64) func(*vm.Machine) {
 func TestGreenhousePort(t *testing.T) {
 	orig, err := os.ReadFile("../../ic10code/温室照明与通风过滤.ic")
 	if err != nil {
-		t.Skip("ic10code/ corpus not present (third-party, not in this repo)")
+		t.Fatal(err)
 	}
 	port, err := os.ReadFile("../../ic10code/温室照明与通风过滤.icg")
 	if err != nil {
-		t.Skip("ic10code/ corpus not present (third-party, not in this repo)")
+		t.Fatal(err)
 	}
 	code, diags, err := ic10.Compile("port.icg", port)
 	if diags.HasErrors() || err != nil {

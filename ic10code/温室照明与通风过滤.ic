@@ -1,0 +1,42 @@
+alias dSelf db
+alias dActVent d0
+
+alias rVentPre r0
+alias rVentStats r1
+alias rFilterStats r2
+alias rFilterPre r3
+alias rSun r4
+alias rGrowLightStats r4
+alias rLongLightStats r5
+
+define PreMax 48000
+define PreMin 42000
+
+define dGrowLight -1758710260
+define dLightSensor 1076425094
+define dLongLight 797794350
+
+main:
+ yield
+ lb rSun dLightSensor Activate 0
+ seq rGrowLightStats rSun 1
+ sb dGrowLight On rGrowLightStats
+ seq rLongLightStats rSun 0
+ sb dLongLight On 1
+ jal ventControl
+ jal filterControl
+j main
+
+ventControl:
+s dActVent Mode 1
+l rVentPre dActVent PressureOutput
+select rVentStats rVentStats PreMax PreMin
+slt rVentStats rVentPre rVentStats
+s dActVent On rVentStats
+j ra
+
+filterControl:
+l rFilterPre dSelf PressureOutput
+slt rFilterStats rFilterPre 19000
+s dSelf Mode rFilterStats
+j ra

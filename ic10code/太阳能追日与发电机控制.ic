@@ -1,0 +1,48 @@
+alias dSensor d0
+alias dBattery d1
+alias dGenerator d2
+
+define solarPanel -2045627372
+define solarPanel15 -295209029
+
+alias vertical r0
+alias horizontal r1
+alias batteryRatio r2
+alias devStats r3
+
+main:
+ yield
+ jal tracking
+ jal generatorControl
+j main
+
+tracking:
+l vertical dSensor Vertical
+sub vertical 90 vertical
+sb solarPanel Vertical vertical
+sb solarPanel15 Vertical vertical
+
+l horizontal dSensor Horizontal
+sub horizontal horizontal 90
+sb solarPanel Horizontal horizontal
+sb solarPanel15 Horizontal horizontal
+
+yield
+j ra
+
+generatorControl:
+l batteryRatio dBattery Ratio
+
+ble batteryRatio 0.1 turnOn
+bge batteryRatio 0.3 turnOff
+j done
+
+turnOn:
+s dGenerator On 1
+j done
+
+turnOff:
+s dGenerator On 0
+
+done:
+j ra
