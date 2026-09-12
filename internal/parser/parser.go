@@ -127,7 +127,7 @@ func (p *parser) parseConstDecl() []ast.Decl {
 			name := p.parseIdent()
 			p.expect(token.Assign)
 			val := p.parseExpr()
-			decls = append(decls, &ast.ConstDecl{NodeBase: base(pos), Name: name, Value: val})
+			decls = append(decls, &ast.ConstDecl{NodeBase: base(pos), Name: name, Value: val, Group: true})
 		}
 		p.expect(token.RParen)
 		return decls
@@ -170,7 +170,7 @@ func (p *parser) parseVarDecls() []ast.Decl {
 			}
 			pos := p.cur().Pos
 			name := p.parseIdent()
-			d := &ast.VarDecl{NodeBase: base(pos), Name: name}
+			d := &ast.VarDecl{NodeBase: base(pos), Name: name, Group: true}
 			if p.at(token.Assign) {
 				p.advance()
 				d.Value = p.parseExpr()

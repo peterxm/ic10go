@@ -75,3 +75,20 @@ func TestFormatDataTable(t *testing.T) {
 		t.Errorf("data table formatting is not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", out, twice)
 	}
 }
+
+func TestFormatGroupsAndTableSwitch(t *testing.T) {
+	src := []byte("const (\n    A = 1\n    B = 2\n)\n\nfunc main() {\n    switch x table {\n    case 0: y = 1\n    case 1: y = 2\n    }\n}\n")
+	out, diags, err := ic10.Format("t.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("diags=%v err=%v", diags.Diags, err)
+	}
+	for _, want := range []string{"const (", "switch x table {"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	twice, _, _ := ic10.Format("t.icg", []byte(out))
+	if out != twice {
+		t.Errorf("not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", out, twice)
+	}
+}

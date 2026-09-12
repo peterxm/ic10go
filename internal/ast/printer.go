@@ -24,6 +24,13 @@ type printer struct {
 	indent   int
 	comments []source.Comment
 	ci       int
+	lastLine int // last source line emitted, for blank-line preservation
+}
+
+func (p *printer) note(line int) {
+	if line > p.lastLine {
+		p.lastLine = line
+	}
 }
 
 func (p *printer) write(s string) { p.b.WriteString(s) }
@@ -45,6 +52,7 @@ func (p *printer) leading(line int) bool {
 	for p.ci < len(p.comments) && p.comments[p.ci].Line < line {
 		c := p.comments[p.ci]
 		p.ci++
+		p.note(c.Line)
 		p.nl()
 		p.write(c.Text)
 		wrote = true
@@ -57,6 +65,7 @@ func (p *printer) trailing(line int) {
 	for p.ci < len(p.comments) && p.comments[p.ci].Line == line && p.comments[p.ci].Trailing {
 		c := p.comments[p.ci]
 		p.ci++
+		p.note(c.Line)
 		p.write("  " + c.Text)
 	}
 }
@@ -65,34 +74,98 @@ func (p *printer) flushComments() {
 	for p.ci < len(p.comments) {
 		c := p.comments[p.ci]
 		p.ci++
+		p.note(c.Line)
 		p.nl()
 		p.write(c.Text)
 	}
 }
 
 func (p *printer) file(f *File) {
-	for i, d := range f.Decls {
-		had := p.leading(d.Pos().Line)
-		if i > 0 {
-			p.b.WriteByte('\n')
-		}
-		if had {
+	first := true
+	for i := 0; i < len(f.Decls); i++ {
+		d := f.Decls[i]
+		if kind := groupKind(d); kind != "" {
+			j := i
+			for j < len(f.Decls) && groupKind(f.Decls[j]) == kind {
+				j++
+			}
+			p.before(d, first)
+			p.write(kind + " (")
+			p.indent++
+			for k := i; k < j; k++ {
+				if k > i && f.Decls[k].Pos().Line-f.Decls[k-1].Pos().Line > 1 {
+					p.b.WriteByte('\n') // preserve a blank line inside the group
+				}
+				p.leading(f.Decls[k].Pos().Line)
+				p.nl()
+				p.declIn(f.Decls[k], true)
+				p.trailing(f.Decls[k].Pos().Line)
+				p.note(f.Decls[k].Pos().Line)
+			}
+			p.indent--
 			p.nl()
+			p.write(")")
+			i = j - 1
+			first = false
+			continue
 		}
-		p.decl(d)
+		p.before(d, first)
+		p.declIn(d, false)
 		p.trailing(d.Pos().Line)
+		p.note(d.Pos().Line)
+		first = false
 	}
 	p.flushComments()
 	p.b.WriteByte('\n')
 }
 
-func (p *printer) decl(d Decl) {
+// before emits a preserved blank line (when the source had one) and the leading
+// comments ahead of a declaration.
+func (p *printer) before(d Decl, first bool) {
+	firstLine := d.Pos().Line
+	if p.ci < len(p.comments) && p.comments[p.ci].Line < d.Pos().Line {
+		firstLine = p.comments[p.ci].Line
+	}
+	if !first && p.lastLine > 0 && firstLine-p.lastLine > 1 {
+		p.b.WriteByte('\n')
+	}
+	for p.ci < len(p.comments) && p.comments[p.ci].Line < d.Pos().Line {
+		c := p.comments[p.ci]
+		p.ci++
+		p.note(c.Line)
+		p.nl()
+		p.write(c.Text)
+	}
+	p.nl()
+}
+
+// groupKind reports "const"/"var" when d belongs to a declaration group.
+func groupKind(d Decl) string {
 	switch d := d.(type) {
 	case *ConstDecl:
-		p.write("const ")
+		if d.Group {
+			return "const"
+		}
+	case *VarDecl:
+		if d.Group {
+			return "var"
+		}
+	}
+	return ""
+}
+
+func (p *printer) decl(d Decl) { p.declIn(d, false) }
+
+func (p *printer) declIn(d Decl, inGroup bool) {
+	switch d := d.(type) {
+	case *ConstDecl:
+		if !inGroup {
+			p.write("const ")
+		}
 		p.write(d.Name.Name)
 		p.write(" = ")
 		p.expr(d.Value)
+		p.note(d.Value.Pos().Line)
 	case *DataDecl:
 		p.write("data ")
 		p.write(d.Name.Name)
@@ -108,16 +181,20 @@ func (p *printer) decl(d Decl) {
 			p.expr(v)
 			p.write(",")
 			p.trailing(v.Pos().Line)
+			p.note(v.Pos().Line)
 		}
 		p.indent--
 		p.nl()
 		p.write("]")
 	case *VarDecl:
-		p.write("var ")
+		if !inGroup {
+			p.write("var ")
+		}
 		p.write(d.Name.Name)
 		if d.Value != nil {
 			p.write(" = ")
 			p.expr(d.Value)
+			p.note(d.Value.Pos().Line)
 		}
 	case *FuncDecl:
 		p.write("func ")
@@ -151,6 +228,7 @@ func (p *printer) block(b *BlockStmt) {
 		p.nl()
 		p.stmt(s)
 		p.trailing(s.Pos().Line)
+		p.note(s.Pos().Line)
 	}
 	p.indent--
 	p.nl()
@@ -215,6 +293,9 @@ func (p *printer) stmt(s Stmt) {
 		if s.Tag != nil {
 			p.write(" ")
 			p.expr(s.Tag)
+		}
+		if s.Table {
+			p.write(" table")
 		}
 		p.write(" {")
 		p.indent++

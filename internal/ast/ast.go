@@ -51,6 +51,7 @@ type ConstDecl struct {
 	NodeBase
 	Name  *Ident
 	Value Expr
+	Group bool // declared inside a `const ( ... )` block
 }
 
 // DataDecl is a top-level `data Name = [ ... ]` table. Its elements are
@@ -65,6 +66,7 @@ type VarDecl struct {
 	NodeBase
 	Name  *Ident
 	Value Expr // may be nil
+	Group bool // declared inside a `var ( ... )` block
 }
 
 type FuncDecl struct {
