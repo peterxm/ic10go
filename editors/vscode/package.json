@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "publisher": "ic10go",
   "license": "MIT",
   "engines": {
@@ -15,7 +15,6 @@
     "onLanguage:ic10",
     "onCommand:icg.compile",
     "onCommand:icg.run",
-    "onCommand:icg.installData",
     "onCommand:icg.decompile",
     "onCommand:icg.minify",
     "onCommand:icg.disasm",
@@ -90,10 +89,6 @@
         "title": "%cmd.run%"
       },
       {
-        "command": "icg.installData",
-        "title": "%cmd.installData%"
-      },
-      {
         "command": "icg.decompile",
         "title": "%cmd.decompile%"
       },
@@ -119,11 +114,6 @@
         },
         {
           "command": "icg.run",
-          "when": "editorLangId == icg",
-          "group": "navigation"
-        },
-        {
-          "command": "icg.installData",
           "when": "editorLangId == icg",
           "group": "navigation"
         },

@@ -22,7 +22,7 @@
 | 快速修复 | 未知 logic/slot type 的"你是不是想写…"；缺 `main` 一键补上 |
 | 预算常驻 | **状态栏**实时显示当前 `.icg` 的 `行/字节/行长/寄存器` 预算（含数据段 `data a..b`；点击即编译）；文件末尾另有 inlay hint |
 | 格式化 | `Shift+Alt+F`（或保存时）调用 `ic10c fmt` |
-| 数据段 | 命令 **“IC10 Go: Install data segment”** 生成一次性 loader 并在旁边打开；`data` 表 / `switch ... table` 有语法高亮与补全 |
+| 数据段 | 命令 **“IC10 Go: 编译为 IC10”** 会自动识别 `data` 表：把一次性安装代码复制到剪贴板、并在旁边打开运行代码；`data` 表 / `switch ... table` 有语法高亮与补全 |
 | 片段 | `main`、`hyst`、`batchread`、`batchwrite`、`readlt`、`writelt`、`readdev`、`writedev`、`data`、`switchtable`、`func`、`const`、`slotread` 等 |
 
 **上下文感知补全**：
@@ -97,9 +97,8 @@ func main() {
 
 | 命令 | 说明 |
 |------|------|
-| `IC10 Go: Compile to IC10` | 编译 `.icg`，旁边预览 IC10 产物 + 行/字节预算 |
+| `IC10 Go: Compile to IC10` | 编译 `.icg`，旁边预览 IC10 产物 + 行/字节预算。若程序含 `data` 表，自动把「安装代码」复制到剪贴板并提示两步操作（先运行安装代码，再用预览中的运行代码覆盖） |
 | `IC10 Go: Run in VM` | 在内置 VM 中运行 `.icg` 并显示设备状态 |
-| `IC10 Go: Install data segment` | 为含 `data` 表的 `.icg` 生成一次性 loader 并在旁边打开（先运行它，再换回 runtime） |
 | `IC10 Go: Decompile IC10 to .icg` | 把 `.ic`/`.ic10` 反编译为 `.icg`（结构化） |
 | `IC10 Go: Minify IC10` | 压缩 `.ic`/`.ic10` 行数 |
 | `IC10 Go: Annotate IC10 (disasm)` | 给 `.ic`/`.ic10` 加跳转目标注释 |
@@ -112,7 +111,7 @@ func main() {
 | `icg.serverPath` | `""` | `ic10c` 可执行文件路径；留空则自动查找 |
 | `icg.stableIns` | `false` | 编译/运行时加 `--stable-ins`（稳定版 `ins` 参数顺序） |
 | `icg.noCheck` | `false` | 关闭设备 logic type 校验（`IC10C_NO_CHECK`） |
-| `icg.autoTable` | `false` | 编译/安装数据段时加 `--auto-table`：自动表化符合条件的常量 `switch`（需先跑 loader） |
+| `icg.autoTable` | `false` | 编译时加 `--auto-table`：自动表化符合条件的常量 `switch`（需先跑安装代码） |
 
 ## 七、文件类型
 
@@ -126,7 +125,7 @@ func main() {
 - **没有高亮**：确认扩展出现在扩展列表（搜索 `IC10 Go`），并已重启 VSCode。
 - **没有诊断/补全/悬停**：多半是找不到 `ic10c`。设置 `icg.serverPath`，或在仓库根目录构建 `ic10c`。
 - **悬停一直显示"正在加载"**：旧版扩展/编译器的已知问题，已在 0.5.4 修复——请更新 `ic10c` 与扩展后重载。
-- **含 `data` 表的程序停机 / 行为不对**：数据段要先安装——用命令 “IC10 Go: Install data segment” 生成 loader，先贴入运行，再用编译产物覆盖；设备 host（空调等）需改用 `--data-access stack` 生成。
+- **含 `data` 表的程序停机 / 行为不对**：数据段要先安装——点“IC10 Go: 编译为 IC10”，扩展会把「安装代码」复制到剪贴板：先贴入 IC 运行一次，再用旁边预览里的运行代码覆盖；设备 host（空调等）需改用 `--data-access stack` 生成。
 - **始终报 `no main function found`**：确认文件确实有 `func main()`；若文件带 UTF-8 BOM，旧版编译器会解析失败（0.5.4 起已支持 BOM）。
 - **改了编译器后行为没变**：运行 `IC10 Go: Restart Language Server`。
 - **查看日志**：输出面板（`Ctrl+Shift+U`）选择 `IC10 Go`。

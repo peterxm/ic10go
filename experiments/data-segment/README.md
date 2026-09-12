@@ -69,4 +69,4 @@ runtime 从 94 → 60/65 行，**省下约 30 行**，剩余预算从 34 行涨�
 
 已全部落地：`.icg` 的 `data` 表语法、`switch ... table`、`--split-data`/
 `--data-only`/`--data-access`/`--data-layout`/`--unsafe`/`--auto-table`、
-VSCode “安装数据段”命令、地址分区与版本哨兵约定。
+VSCode “编译为 IC10”命令（自动处理数据段安装代码）、地址分区与版本哨兵约定。

@@ -26,9 +26,6 @@ function activate(context) {
         vscode.commands.registerCommand('icg.run', () => client.run())
     );
     context.subscriptions.push(
-        vscode.commands.registerCommand('icg.installData', () => client.installData())
-    );
-    context.subscriptions.push(
         vscode.commands.registerCommand('icg.decompile', () => client.decompile())
     );
     context.subscriptions.push(
@@ -265,16 +262,31 @@ class LspClient {
         }
     }
 
-    // compile runs `ic10c build` + `ic10c stats` and previews the result.
+    // compile runs `ic10c build` + `ic10c stats` and previews the result. When
+    // the program uses a data table it also produces the one-time loader and
+    // copies it to the clipboard, so a single command covers the whole
+    // "compile -> paste into the chip" flow for non-programmers.
     async compile() {
         const doc = this.activeICG();
         if (!doc) return;
         await this.withTempFile(doc, async (tmp) => {
-            const buildArgs = ['build'];
+            const dataOut = tmp + '.data.ic';
+            const buildArgs = ['build', '--split-data', '--data-out', dataOut];
             if (this.config().stableIns) buildArgs.push('--stable-ins');
             if (this.config().autoTable) buildArgs.push('--auto-table');
             buildArgs.push(tmp);
             const build = await this.execCli(buildArgs);
+            let loader = '';
+            try {
+                loader = fs.readFileSync(dataOut, 'utf8');
+            } catch (err) {
+                // no data segment
+            }
+            try {
+                fs.unlinkSync(dataOut);
+            } catch (err) {
+                // ignore
+            }
             if (build.code !== 0) {
                 this.output.appendLine(`=== compile failed: ${path.basename(doc.fileName)} ===\n${build.stderr}`);
                 this.output.show(true);
@@ -284,7 +296,7 @@ class LspClient {
             const stats = await this.execCli(['stats', tmp]);
             const preview = await vscode.workspace.openTextDocument({
                 content: build.stdout,
-                language: 'plaintext',
+                language: 'ic10',
             });
             await vscode.window.showTextDocument(preview, {
                 viewColumn: vscode.ViewColumn.Beside,
@@ -292,7 +304,20 @@ class LspClient {
             });
             this.output.appendLine(`=== ${path.basename(doc.fileName)} ===\n${stats.stdout.trim()}`);
             const lines = stats.stdout.split('\n').find((l) => l.trim().startsWith('lines'));
-            vscode.window.setStatusBarMessage(`IC10 Go: ${lines ? lines.trim() : t('compiled', '已编译')}`, 5000);
+            if (loader.trim()) {
+                await vscode.env.clipboard.writeText(loader);
+                const copyRuntime = t('Copy runtime code', '复制运行代码');
+                const pick = await vscode.window.showInformationMessage(
+                    t('IC10 Go: this program uses a data table. The one-time data loader is on your clipboard — paste it into the IC chip and run it once, then paste the runtime code from the preview on the right.',
+                        'IC10 Go: 该程序使用了数据表。已把「安装代码」复制到剪贴板：先粘贴到 IC 芯片并运行一次，再用右侧预览中的「运行代码」覆盖它。'),
+                    copyRuntime);
+                if (pick === copyRuntime) {
+                    await vscode.env.clipboard.writeText(build.stdout);
+                    vscode.window.setStatusBarMessage(t('IC10 Go: runtime code copied', 'IC10 Go: 运行代码已复制'), 5000);
+                }
+            } else {
+                vscode.window.setStatusBarMessage(`IC10 Go: ${lines ? lines.trim() : t('compiled', '已编译')}`, 5000);
+            }
         });
     }
 
@@ -307,49 +332,6 @@ class LspClient {
             const res = await this.execCli(args);
             this.output.appendLine(`=== run: ${path.basename(doc.fileName)} ===\n${res.stdout}${res.stderr}`);
             this.output.show(true);
-        });
-    }
-
-    // installData compiles the one-time data-segment loader and opens it.
-    async installData() {
-        const doc = this.activeICG();
-        if (!doc) return;
-        await this.withTempFile(doc, async (tmp) => {
-            const out = tmp + '.data.ic';
-            const args = ['build', '--split-data', '--data-out', out];
-            if (this.config().stableIns) args.push('--stable-ins');
-            if (this.config().autoTable) args.push('--auto-table');
-            args.push(tmp);
-            const res = await this.execCli(args);
-            let loader = '';
-            try {
-                loader = fs.readFileSync(out, 'utf8');
-            } catch (err) {
-                // no data segment
-            }
-            try {
-                fs.unlinkSync(out);
-            } catch (err) {
-                // ignore
-            }
-            if (res.code !== 0) {
-                this.output.appendLine(`=== install data failed ===\n${res.stderr}`);
-                this.output.show(true);
-                vscode.window.showErrorMessage(t('IC10 Go: data loader failed. See the "IC10 Go" output.', 'IC10 Go: 生成数据装载器失败，详见 "IC10 Go" 输出面板。'));
-                return;
-            }
-            if (!loader) {
-                vscode.window.showInformationMessage(t('IC10 Go: this file has no data tables.', 'IC10 Go: 该文件没有 data 表。'));
-                return;
-            }
-            const preview = await vscode.workspace.openTextDocument({ content: loader, language: 'ic10' });
-            await vscode.window.showTextDocument(preview, {
-                viewColumn: vscode.ViewColumn.Beside,
-                preview: false,
-            });
-            vscode.window.showInformationMessage(t(
-                'IC10 Go: run this loader once, then replace it with the compiled runtime.',
-                'IC10 Go: 先运行这段 loader，再用编译后的 runtime 覆盖它。'));
         });
     }
 

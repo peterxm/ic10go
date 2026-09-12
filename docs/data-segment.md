@@ -152,8 +152,8 @@ ic10c build --split-data main.icg
 ...
 ```
 
-工具决定：CLI 新增 `--split-data` / `--data-file`，VSCode 扩展加
-“Install data segment”命令。
+工具决定：CLI 新增 `--split-data` / `--data-file`，VSCode 的
+“编译为 IC10”命令自动处理数据段（复制安装代码 + 预览运行代码）。
 
 ### 5.3 寻址与代码生成
 
@@ -192,8 +192,8 @@ ic10c build --split-data main.icg
 
 - `ic10c build --split-data`
 - `ic10c data`（只生成 / 更新 loader）
-- VSCode：“IC10 Go: Install data segment” → 先把 loader 编译并预览，
-  用户贴入运行后再切换回 runtime。
+- VSCode：“IC10 Go: 编译为 IC10” → 一个命令完成：把安装代码复制到
+  剪贴板、在旁边预览运行代码，并提示“先跑安装代码、再用运行代码覆盖”。
 - 文档：安装步骤、版本升级、失败行为。
 
 ---
@@ -234,7 +234,7 @@ ic10c build --split-data main.icg
    （密集整数、≥5 case、纯常量赋值、表 ≤64）。
 7. ~~CLI / VSCode 的具体交互~~ **已完成**：`--split-data`/`--data-only`/
    `--data-access`/`--data-layout`/`--unsafe`/`--auto-table` + VSCode
-   “Install data segment” 命令与 `icg.autoTable` 设置。
+   “编译为 IC10”命令（自动复制安装代码 + 预览运行代码）与 `icg.autoTable` 设置。
 
 ---
 
@@ -417,8 +417,9 @@ ic10c build --data-only main.icg > main.data.ic
 
 VSCode 扩展：
 
-- 新命令 **“IC10 Go: Install data segment”**：编译 loader、展示并提示
-  “先贴入运行，再换回 runtime”。
+- 命令 **“IC10 Go: 编译为 IC10”**：若文件含 `data` 表，编译后把安装代码
+  复制到剪贴板、在旁边预览运行代码，并提示“先贴入运行安装代码，再用运行
+  代码覆盖”。
 - 当当前文件含 `data` 表时，状态栏/诊断提示“需要先安装数据段”。
 
 ---
