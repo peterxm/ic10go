@@ -1,0 +1,14 @@
+// 真机测试：switch ... table 自动表化。
+// d0 = LED Display（Setting）。
+func main() {
+    var i = 0
+    for {
+        yield()
+        switch i table {
+        case 0: d0.Setting = 111
+        case 1: d0.Setting = 222
+        case 2: d0.Setting = 333
+        }
+        i = (i + 1) % 3
+    }
+}

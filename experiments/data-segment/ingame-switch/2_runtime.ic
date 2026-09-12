@@ -1,0 +1,16 @@
+get r0 db 508
+sne r0 r0 798292897
+beqz r0 4
+j 9999
+move r2 0
+yield
+slt r1 r2 0
+sgt r0 r2 2
+or r0 r1 r0
+bnez r0 13
+add r0 509 r2
+get r0 db r0
+s d0 Setting r0
+add r0 r2 1
+mod r2 r0 3
+j 5

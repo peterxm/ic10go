@@ -134,14 +134,15 @@ func TestLocalStackSharedWithDB(t *testing.T) {
 	}
 }
 
-// TestIngameDataDemo runs the committed loader/runtime pair (generated from
-// demo.icg) and checks the table cycles through all values.
-func TestIngameDataDemo(t *testing.T) {
-	loader, err := os.ReadFile("ingame-data/1_loader.ic")
+// runPair runs a committed loader/runtime pair and returns the runtime machine
+// after `steps` instructions.
+func runPair(t *testing.T, dir string, steps int) *vm.Machine {
+	t.Helper()
+	loader, err := os.ReadFile(dir + "/1_loader.ic")
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := os.ReadFile("ingame-data/2_runtime.ic")
+	runtime, err := os.ReadFile(dir + "/2_runtime.ic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,16 +158,43 @@ func TestIngameDataDemo(t *testing.T) {
 	if err := m.Load(string(runtime)); err != nil {
 		t.Fatal(err)
 	}
-	seen := map[float64]bool{}
-	for i := 0; i < 400; i++ {
+	for i := 0; i < steps; i++ {
 		if err := m.Run(1); err != nil && err != vm.ErrStepLimit {
 			t.Fatal(err)
 		}
+	}
+	return m
+}
+
+func displayedValues(m *vm.Machine, steps int) map[float64]bool {
+	seen := map[float64]bool{}
+	for i := 0; i < steps; i++ {
+		if err := m.Run(1); err != nil && err != vm.ErrStepLimit {
+			break
+		}
 		seen[m.Get("d0", "Setting")] = true
 	}
+	return seen
+}
+
+// TestIngameDataDemo runs the committed data-table loader/runtime pair.
+func TestIngameDataDemo(t *testing.T) {
+	m := runPair(t, "ingame-data", 0)
+	seen := displayedValues(m, 400)
 	for _, want := range []float64{111, 222, 333} {
 		if !seen[want] {
 			t.Errorf("table value %v never displayed", want)
+		}
+	}
+}
+
+// TestIngameSwitchDemo runs the committed switch-table loader/runtime pair.
+func TestIngameSwitchDemo(t *testing.T) {
+	m := runPair(t, "ingame-switch", 0)
+	seen := displayedValues(m, 400)
+	for _, want := range []float64{111, 222, 333} {
+		if !seen[want] {
+			t.Errorf("table switch value %v never displayed", want)
 		}
 	}
 }
