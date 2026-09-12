@@ -1,5 +1,6 @@
 # Build output
 /ic10c
+/dist/
 *.exe
 
 # Go test artifacts
