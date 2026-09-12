@@ -70,18 +70,19 @@ func (l *lowerer) emitDataRead(addr ir.Value) ir.Value {
 // Lower compiles the program's main function into an IR function.
 func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 	l := &lowerer{
-		b:         ir.NewBuilder("main"),
-		info:      info,
-		diags:     diags,
-		labels:    map[string]*ir.Block{},
-		devices:   info.Devices,
-		labelDef:  map[string]source.Pos{},
-		labelUse:  map[string]source.Pos{},
-		noCheck:   os.Getenv("IC10C_NO_CHECK") != "",
-		opts:      opts,
-		outline:   opts.Outline,
-		outlined:  map[string]*outlinedFunc{},
-		pureFuncs: computePureFuncs(info),
+		b:            ir.NewBuilder("main"),
+		info:         info,
+		diags:        diags,
+		labels:       map[string]*ir.Block{},
+		devices:      info.Devices,
+		labelDef:     map[string]source.Pos{},
+		labelUse:     map[string]source.Pos{},
+		noCheck:      os.Getenv("IC10C_NO_CHECK") != "",
+		opts:         opts,
+		outline:      opts.Outline,
+		outlined:     map[string]*outlinedFunc{},
+		pureFuncs:    computePureFuncs(info),
+		labeledFuncs: computeLabeledFuncs(info),
 	}
 	scope := map[string]ir.Value{}
 	for name, v := range info.Consts {
@@ -183,7 +184,10 @@ type lowerer struct {
 	pending  []string
 	// pureFuncs marks user functions free of observable side effects.
 	pureFuncs map[string]bool
-	labels    map[string]*ir.Block
+	// labeledFuncs marks functions containing low-level labels (or calling
+	// such a function); they must not be inlined or unrolled twice.
+	labeledFuncs map[string]bool
+	labels       map[string]*ir.Block
 	// devices maps a const device alias to its port (d0..d5 / db).
 	devices map[string]string
 	// labelDef and labelUse track low-level label definitions and references.
@@ -526,7 +530,129 @@ func (l *lowerer) lowerIf(s *ast.IfStmt) {
 	l.b.SetBlock(endB)
 }
 
+// tryUnrollFor unrolls a small constant `for i := lo; i < hi; i++` loop whose
+// body neither modifies i nor jumps out. The loop variable becomes a constant,
+// so table reads `T[i]` fold to a single get with a constant address. Returns
+// false when the loop is not a safe candidate.
+func (l *lowerer) tryUnrollFor(s *ast.ForStmt) bool {
+	name, lo, ok := l.loopInit(s.Init)
+	if !ok {
+		return false
+	}
+	hi, ok := l.loopBound(s.Cond, name)
+	if !ok || hi <= lo || hi-lo > 4 {
+		return false
+	}
+	id, ok := s.Post.(*ast.IncDecStmt)
+	if !ok || id.Op != token.PlusPlus {
+		return false
+	}
+	if pid, ok := id.X.(*ast.Ident); !ok || pid.Name != name {
+		return false
+	}
+	if unrollUnsafe(s.Body, name) || l.bodyCallsUserFunc(s.Body) || countStatements(s.Body) > 2 {
+		return false
+	}
+	l.pushScope()
+	for k := lo; k < hi; k++ {
+		l.bind(name, &ir.Const{V: float64(k)})
+		l.lowerBlock(s.Body)
+	}
+	l.popScope()
+	return true
+}
+
+// bodyCallsUserFunc reports whether a body calls a user function. Unrolling
+// such a loop would duplicate the (inlined) body, which usually costs more
+// lines than the loop it replaces.
+func (l *lowerer) bodyCallsUserFunc(body *ast.BlockStmt) bool {
+	found := false
+	forEachCall(body, func(c *ast.CallExpr) {
+		if id, ok := c.Fun.(*ast.Ident); ok {
+			if _, isFunc := l.info.Funcs[id.Name]; isFunc {
+				found = true
+			}
+		}
+	})
+	return found
+}
+
+// loopInit extracts the loop variable and its constant start from a for-init.
+func (l *lowerer) loopInit(init ast.Stmt) (string, int, bool) {
+	var name string
+	var rhs ast.Expr
+	switch v := init.(type) {
+	case *ast.AssignStmt:
+		if v.Op != token.Define {
+			return "", 0, false
+		}
+		id, ok := v.Lhs.(*ast.Ident)
+		if !ok {
+			return "", 0, false
+		}
+		name, rhs = id.Name, v.Rhs
+	case *ast.DeclStmt:
+		vd, ok := v.Decl.(*ast.VarDecl)
+		if !ok || vd.Value == nil {
+			return "", 0, false
+		}
+		name, rhs = vd.Name.Name, vd.Value
+	default:
+		return "", 0, false
+	}
+	f, ok := sema.Eval(rhs, l.info.Consts)
+	if !ok || f != math.Trunc(f) {
+		return "", 0, false
+	}
+	return name, int(f), true
+}
+
+// loopBound extracts the exclusive upper bound from `i < hi` / `i <= hi`.
+func (l *lowerer) loopBound(cond ast.Expr, name string) (int, bool) {
+	be, ok := cond.(*ast.BinaryExpr)
+	if !ok || (be.Op != token.Lt && be.Op != token.Le) {
+		return 0, false
+	}
+	id, ok := be.X.(*ast.Ident)
+	if !ok || id.Name != name {
+		return 0, false
+	}
+	f, ok := sema.Eval(be.Y, l.info.Consts)
+	if !ok || f != math.Trunc(f) {
+		return 0, false
+	}
+	if be.Op == token.Le {
+		return int(f) + 1, true
+	}
+	return int(f), true
+}
+
+// unrollUnsafe reports whether a loop body prevents unrolling: it assigns to
+// the loop variable, or contains control flow that could escape the body.
+func unrollUnsafe(body *ast.BlockStmt, name string) bool {
+	unsafe := false
+	walkStmt(body, func(s ast.Stmt) {
+		switch v := s.(type) {
+		case *ast.AssignStmt:
+			if id, ok := v.Lhs.(*ast.Ident); ok && id.Name == name {
+				unsafe = true
+			}
+		case *ast.IncDecStmt:
+			if id, ok := v.X.(*ast.Ident); ok && id.Name == name {
+				unsafe = true
+			}
+		case *ast.BreakStmt, *ast.ContinueStmt, *ast.GotoStmt, *ast.CallStmt,
+			*ast.RetStmt, *ast.ReturnStmt, *ast.ForStmt:
+			unsafe = true
+		}
+	})
+	return unsafe
+}
+
 func (l *lowerer) lowerFor(s *ast.ForStmt) {
+	if l.tryUnrollFor(s) {
+		return
+	}
 	l.pushScope()
 	if s.Init != nil {
 		l.lowerStmt(s.Init)

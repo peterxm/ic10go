@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"ic10go/internal/vm"
 	"ic10go/pkg/ic10"
 )
 
@@ -402,5 +403,37 @@ func main() {
 	}
 	if !strings.Contains(code, "jal") {
 		t.Errorf("expected the variable calls to be outlined, got:\n%s", code)
+	}
+}
+
+func TestLoopUnrollTable(t *testing.T) {
+	src := []byte("data T = [10, 20, 30]\nfunc main() {\n    for i := 0; i < 3; i++ {\n        d0.Setting = T[i]\n    }\n}")
+	code, diags, err := ic10.Compile("t.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatal(err, diags.Diags)
+	}
+	// The loop is unrolled and each read uses a constant stack address.
+	if strings.Contains(code, "add r0 ") && strings.Contains(code, "get r0 db r0") {
+		t.Errorf("loop not unrolled / index not folded:\n%s", code)
+	}
+	loader, err := ic10.DataLoader("t.icg", src)
+	if err != nil || loader == "" {
+		t.Fatalf("loader: %v", err)
+	}
+	m := vm.New()
+	if err := m.Load(loader); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(1000); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(1000); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	if got := m.Get("d0", "Setting"); got != 30 {
+		t.Errorf("d0.Setting = %v, want 30 (T[2])", got)
 	}
 }

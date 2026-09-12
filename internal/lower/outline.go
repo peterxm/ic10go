@@ -206,3 +206,33 @@ func walkExpr(e ast.Expr, visit func(ast.Expr)) {
 		walkExpr(v.Else, visit)
 	}
 }
+
+// computeLabeledFuncs marks user functions whose body (or the body of any
+// function they call) contains a low-level label. Inlining or unrolling such a
+// function twice would duplicate the label, so callers must not do it.
+func computeLabeledFuncs(info *sema.Info) map[string]bool {
+	labeled := map[string]bool{}
+	for name, fi := range info.Funcs {
+		walkStmt(fi.Decl.Body, func(s ast.Stmt) {
+			switch s.(type) {
+			case *ast.LabelStmt, *ast.GotoStmt, *ast.CallStmt, *ast.RetStmt:
+				labeled[name] = true
+			}
+		})
+	}
+	for changed := true; changed; {
+		changed = false
+		for name, fi := range info.Funcs {
+			if labeled[name] {
+				continue
+			}
+			forEachCall(fi.Decl.Body, func(c *ast.CallExpr) {
+				if id, ok := c.Fun.(*ast.Ident); ok && labeled[id.Name] {
+					labeled[name] = true
+					changed = true
+				}
+			})
+		}
+	}
+	return labeled
+}
