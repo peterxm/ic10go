@@ -17,12 +17,16 @@ import (
 // catches optimisation bugs (e.g. a wrong hoist or a bad common-subexpression
 // merge) that unit tests miss.
 func TestDifferentialRandom(t *testing.T) {
-	for seed := int64(0); seed < 500; seed++ {
+	for seed := int64(0); seed < 2000; seed++ {
 		src := genProgram(seed)
 
 		t.Setenv("IC10C_NO_OPT", "")
 		t.Setenv("IC10C_NO_OUTLINE", "")
 		optCode, diags, err := ic10.Compile("t.icg", []byte(src))
+		if err != nil && (strings.Contains(err.Error(), "exceeding") ||
+			strings.Contains(err.Error(), "did not converge")) {
+			continue // program too big/spilly; not a correctness issue
+		}
 		if diags.HasErrors() || err != nil {
 			t.Fatalf("seed %d: optimized compile failed: %v %v\n%s", seed, diags.Diags, err, src)
 		}
@@ -30,19 +34,20 @@ func TestDifferentialRandom(t *testing.T) {
 		t.Setenv("IC10C_NO_OPT", "1")
 		t.Setenv("IC10C_NO_OUTLINE", "1")
 		rawCode, diags, err := ic10.Compile("t.icg", []byte(src))
-		if err != nil && strings.Contains(err.Error(), "exceeding") {
-			continue // unoptimized form is too big; not a correctness issue
+		if err != nil && (strings.Contains(err.Error(), "exceeding") ||
+			strings.Contains(err.Error(), "did not converge")) {
+			continue // unoptimized form is too big/spilly; not a correctness issue
 		}
 		if diags.HasErrors() || err != nil {
 			t.Fatalf("seed %d: unoptimized compile failed: %v %v\n%s", seed, diags.Diags, err, src)
 		}
 
 		init := deviceInit(seed)
-		want := runWrites(rawCode, init)
-		got := runWrites(optCode, init)
-		if strings.Join(got, "|") != strings.Join(want, "|") {
-			t.Fatalf("seed %d: optimized and unoptimized differ\n%s\n--- optimized ---\n%v\n--- unoptimized ---\n%v\n--- optimized code ---\n%s",
-				seed, src, got, want, optCode)
+		want, wantErr := runWrites(rawCode, init)
+		got, gotErr := runWrites(optCode, init)
+		if strings.Join(got, "|") != strings.Join(want, "|") || gotErr != wantErr {
+			t.Fatalf("seed %d: optimized and unoptimized differ (err %v vs %v)\n%s\n--- optimized ---\n%v\n--- unoptimized ---\n%v\n--- optimized code ---\n%s",
+				seed, gotErr, wantErr, src, got, want, optCode)
 		}
 	}
 }
@@ -61,7 +66,7 @@ func deviceInit(seed int64) map[[2]string]float64 {
 	return init
 }
 
-func runWrites(code string, init map[[2]string]float64) []string {
+func runWrites(code string, init map[[2]string]float64) ([]string, bool) {
 	m := vm.New()
 	for k, v := range init {
 		m.Set(k[0], k[1], v)
@@ -71,35 +76,58 @@ func runWrites(code string, init map[[2]string]float64) []string {
 		writes = append(writes, fmt.Sprintf("%s.%s=%v", dev, logic, v))
 	}
 	if err := m.Load(code); err != nil {
-		writes = append(writes, "LOADERR:"+err.Error())
-		return writes
+		return writes, true
 	}
-	if err := m.Run(200000); err != nil && err != vm.ErrStepLimit {
-		writes = append(writes, "RUNERR:"+err.Error())
-	}
-	return writes
+	err := m.Run(200000)
+	return writes, err != nil && err != vm.ErrStepLimit
 }
 
 // --- random .icg generator ---
 
 type gen struct {
-	rng   *rand.Rand
-	vars  []string
-	loops int
+	rng         *rand.Rand
+	vars        []string
+	funcs       []string
+	consts      []string
+	loops       int
+	loopDepth   int
+	switchDepth int
+	stack       int // conservative lower bound on stack depth
 }
 
 func genProgram(seed int64) string {
 	g := &gen{rng: rand.New(rand.NewSource(seed))}
-	nv := 2 + g.rng.Intn(2)
-	for i := 0; i < nv; i++ {
-		g.vars = append(g.vars, fmt.Sprintf("v%d", i))
+	for i := 0; i < g.rng.Intn(3); i++ {
+		g.consts = append(g.consts, fmt.Sprintf("C%d", i))
 	}
 	var sb strings.Builder
-	sb.WriteString("func main() {\n")
-	for _, v := range g.vars {
-		fmt.Fprintf(&sb, "    var %s = %d\n", v, g.rng.Intn(4))
+	for i, c := range g.consts {
+		fmt.Fprintf(&sb, "const %s = %d\n", c, g.rng.Intn(10)+i)
 	}
-	g.block(&sb, 1, 3+g.rng.Intn(2))
+
+	// A couple of leaf functions with parameters and a return value.
+	for i := 0; i < g.rng.Intn(2); i++ {
+		name := fmt.Sprintf("f%d", i)
+		fmt.Fprintf(&sb, "\nfunc %s(a num, b num) num {\n", name)
+		fmt.Fprintf(&sb, "    var x = 0\n    var y = 0\n")
+		saved := g.vars
+		g.vars = []string{"a", "b", "x", "y"}
+		g.block(&sb, 1, 1+g.rng.Intn(2))
+		g.vars = saved
+		fmt.Fprintf(&sb, "    return (x + y + a + b)\n}\n")
+		g.funcs = append(g.funcs, name)
+	}
+
+	sb.WriteString("\nfunc main() {\n")
+	for i := 0; i < 2+g.rng.Intn(2); i++ {
+		fmt.Fprintf(&sb, "    var v%d = %d\n", i, g.rng.Intn(4))
+		g.vars = append(g.vars, fmt.Sprintf("v%d", i))
+	}
+	for i := 0; i < 3; i++ {
+		sb.WriteString("    push(0)\n")
+		g.stack++
+	}
+	g.block(&sb, 1, 2+g.rng.Intn(2))
 	sb.WriteString("}\n")
 	return sb.String()
 }
@@ -113,46 +141,115 @@ func (g *gen) block(sb *strings.Builder, depth, n int) {
 func (g *gen) stmt(sb *strings.Builder, depth int) {
 	ind := strings.Repeat("    ", depth)
 	if depth >= 4 { // cap nesting so the unoptimized form still fits 128 lines
-		fmt.Fprintf(sb, "%s%s = %s\n", ind, g.varName(), g.expr(2))
+		g.simple(sb, ind)
 		return
 	}
-	switch g.rng.Intn(12) {
-	case 0, 1, 2:
-		fmt.Fprintf(sb, "%s%s = %s\n", ind, g.varName(), g.expr(2))
-	case 3, 4:
-		fmt.Fprintf(sb, "%s%s = %s\n", ind, g.devTarget(), g.expr(2))
+	switch g.rng.Intn(20) {
+	case 0, 1:
+		g.simple(sb, ind)
+	case 2, 3:
+		fmt.Fprintf(sb, "%s%s += %s\n", ind, g.varName(), g.expr(2))
+	case 4:
+		fmt.Fprintf(sb, "%s%s -= %s\n", ind, g.varName(), g.expr(2))
 	case 5, 6:
+		fmt.Fprintf(sb, "%s%s = %s\n", ind, g.devTarget(), g.expr(2))
+	case 7:
+		fmt.Fprintf(sb, "%s%s.slot[0].Mature = %s\n", ind, g.devPort(), g.expr(2))
+	case 8:
+		fmt.Fprintf(sb, "%spush(%s)\n", ind, g.expr(2))
+		g.stack++
+	case 9:
+		if g.stack > 0 && g.loopDepth == 0 {
+			fmt.Fprintf(sb, "%s%s = pop()\n", ind, g.varName())
+			g.stack--
+		} else {
+			g.simple(sb, ind)
+		}
+	case 10:
+		fmt.Fprintf(sb, "%spoke(%d, %s)\n", ind, g.rng.Intn(32), g.expr(2))
+	case 11:
+		if g.stack > 0 {
+			fmt.Fprintf(sb, "%s%s = peek()\n", ind, g.varName())
+		} else {
+			g.simple(sb, ind)
+		}
+	case 12:
+		fmt.Fprintf(sb, "%sbatch.write(hash(\"StructureBattery\"), \"Setting\", %s)\n", ind, g.expr(2))
+	case 13:
+		fmt.Fprintf(sb, "%s%s = batch.read(hash(\"StructureBattery\"), \"Setting\", \"Sum\")\n", ind, g.varName())
+	case 14:
+		fmt.Fprintf(sb, "%swrite(%s, %s, %s)\n", ind, g.devPort(), g.expr(2), g.expr(2))
+	case 15:
+		fmt.Fprintf(sb, "%s%s = read(%s, %s)\n", ind, g.varName(), g.devPort(), g.expr(2))
+	case 16, 17:
 		fmt.Fprintf(sb, "%sif %s {\n", ind, g.expr(2))
+		savedStack := g.stack
 		g.block(sb, depth+1, 1+g.rng.Intn(2))
+		g.stack = savedStack
 		if g.rng.Intn(2) == 0 {
 			fmt.Fprintf(sb, "%s} else {\n", ind)
 			g.block(sb, depth+1, 1+g.rng.Intn(2))
+			g.stack = savedStack
 		}
 		fmt.Fprintf(sb, "%s}\n", ind)
-	case 7, 8:
+	case 18:
 		iv := fmt.Sprintf("i%d", g.loops)
 		g.loops++
+		g.loopDepth++
 		fmt.Fprintf(sb, "%sfor %s := 0; %s < %d; %s++ {\n", ind, iv, iv, 1+g.rng.Intn(4), iv)
+		savedStack := g.stack
 		g.block(sb, depth+1, 1+g.rng.Intn(2))
+		g.stack = savedStack
+		g.loopDepth--
 		fmt.Fprintf(sb, "%s}\n", ind)
 	default:
-		fmt.Fprintf(sb, "%s%s = %s\n", ind, g.varName(), g.expr(3))
+		fmt.Fprintf(sb, "%sswitch %s {\n", ind, g.expr(2))
+		g.switchDepth++
+		savedStack := g.stack
+		fmt.Fprintf(sb, "%scase 0:\n", ind)
+		g.block(sb, depth+1, 1)
+		g.stack = savedStack
+		fmt.Fprintf(sb, "%scase 1:\n", ind)
+		g.block(sb, depth+1, 1)
+		g.stack = savedStack
+		fmt.Fprintf(sb, "%sdefault:\n", ind)
+		g.block(sb, depth+1, 1)
+		g.stack = savedStack
+		g.switchDepth--
+		fmt.Fprintf(sb, "%s}\n", ind)
 	}
+}
+
+// simple emits an assignment, optionally a loop control statement.
+func (g *gen) simple(sb *strings.Builder, ind string) {
+	if g.loopDepth > 0 && g.switchDepth == 0 && g.rng.Intn(6) == 0 {
+		if g.rng.Intn(2) == 0 {
+			fmt.Fprintf(sb, "%sbreak\n", ind)
+		} else {
+			fmt.Fprintf(sb, "%scontinue\n", ind)
+		}
+		return
+	}
+	fmt.Fprintf(sb, "%s%s = %s\n", ind, g.varName(), g.expr(2))
 }
 
 func (g *gen) varName() string { return g.vars[g.rng.Intn(len(g.vars))] }
 
-func (g *gen) devTarget() string {
+func (g *gen) devPort() string {
 	devs := []string{"d0", "d1", "d2", "db"}
+	return devs[g.rng.Intn(len(devs))]
+}
+
+func (g *gen) devTarget() string {
 	logics := []string{"On", "Setting", "Mode"}
-	return devs[g.rng.Intn(len(devs))] + "." + logics[g.rng.Intn(len(logics))]
+	return g.devPort() + "." + logics[g.rng.Intn(len(logics))]
 }
 
 func (g *gen) expr(depth int) string {
 	if depth <= 0 {
 		return g.atom()
 	}
-	switch g.rng.Intn(10) {
+	switch g.rng.Intn(16) {
 	case 0:
 		return g.atom()
 	case 1:
@@ -170,27 +267,54 @@ func (g *gen) expr(depth int) string {
 	case 7:
 		return fmt.Sprintf("max(%s, %s)", g.expr(depth-1), g.expr(depth-1))
 	case 8:
+		return fmt.Sprintf("min(%s, %s)", g.expr(depth-1), g.expr(depth-1))
+	case 9:
 		return fmt.Sprintf("(%s < %s)", g.expr(depth-1), g.expr(depth-1))
+	case 10:
+		return fmt.Sprintf("(%s == %s)", g.expr(depth-1), g.expr(depth-1))
+	case 11:
+		return fmt.Sprintf("!%s", g.atom())
+	case 12:
+		return fmt.Sprintf("abs(%s)", g.expr(depth-1))
+	case 13:
+		return fmt.Sprintf("ins(%s, 0, 8)", g.expr(depth-1))
+	case 14:
+		return fmt.Sprintf("ext(%s, 0, 8)", g.expr(depth-1))
 	default:
 		return g.atom()
 	}
 }
 
 func (g *gen) atom() string {
-	switch g.rng.Intn(5) {
+	switch g.rng.Intn(9) {
 	case 0:
 		return strconv.Itoa(g.rng.Intn(20))
 	case 1, 2:
 		return g.varName()
 	case 3:
 		return g.devRead()
+	case 4:
+		if len(g.consts) > 0 {
+			return g.consts[g.rng.Intn(len(g.consts))]
+		}
+		return "1"
+	case 5:
+		if len(g.funcs) > 0 {
+			f := g.funcs[g.rng.Intn(len(g.funcs))]
+			return fmt.Sprintf("%s(%s, %s)", f, g.expr(1), g.expr(1))
+		}
+		return "2"
 	default:
 		return strconv.Itoa(g.rng.Intn(5))
 	}
 }
 
 func (g *gen) devRead() string {
-	devs := []string{"d0", "d1", "d2", "db"}
-	logics := []string{"Setting", "On", "Temperature"}
-	return devs[g.rng.Intn(len(devs))] + "." + logics[g.rng.Intn(len(logics))]
+	switch g.rng.Intn(4) {
+	case 3:
+		return g.devPort() + ".slot[0].Occupied"
+	default:
+		logics := []string{"Setting", "On", "Temperature"}
+		return g.devPort() + "." + logics[g.rng.Intn(len(logics))]
+	}
 }

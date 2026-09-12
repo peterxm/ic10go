@@ -1411,15 +1411,24 @@ func (l *lowerer) outlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr,
 		l.pending = append(l.pending, id.Name)
 	}
 
+	// Evaluate every argument before writing any parameter register: an
+	// argument may itself call this function and clobber the parameters.
+	vals := make([]ir.Value, len(args))
 	for i, a := range args {
-		v := l.lowerExpr(a)
-		l.b.Emit(&ir.Assign{Dst: of.params[i], Src: v})
+		vals[i] = l.lowerExpr(a)
+	}
+	for i := range of.params {
+		l.b.Emit(&ir.Assign{Dst: of.params[i], Src: vals[i]})
 	}
 	ret := l.newBlock()
 	l.b.SetTerm(&ir.Call{Target: of.entry, Return: ret})
 	l.b.SetBlock(ret)
 	if needResult {
-		return of.result
+		// Copy the result out of the function's fixed result register: a later
+		// call would otherwise clobber a result the caller still needs.
+		tmp := l.b.NewReg(id.Name + "$res")
+		l.b.Emit(&ir.Assign{Dst: tmp, Src: of.result})
+		return tmp
 	}
 	return &ir.Const{V: 0}
 }

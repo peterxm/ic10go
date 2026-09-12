@@ -44,6 +44,20 @@ func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
 // size report to show which functions cost the most lines.
 func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, error) {
 	blocks := rpo(fn)
+	// Move halt (Ret) blocks to the end of the layout. A Ret emits no line, so
+	// a jump to one that is followed by an outlined function body would resolve
+	// into that body; putting halts last makes such jumps fall past the program.
+	{
+		var rest, halt []*ir.Block
+		for _, b := range blocks {
+			if _, ok := b.Term.(*ir.Ret); ok {
+				halt = append(halt, b)
+			} else {
+				rest = append(rest, b)
+			}
+		}
+		blocks = append(rest, halt...)
+	}
 	var lines []line
 	start := map[*ir.Block]int{}
 	add := func(text string, target *ir.Block, f string) {

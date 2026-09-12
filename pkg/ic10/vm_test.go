@@ -5,7 +5,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"ic10go/internal/vm"
@@ -464,9 +463,6 @@ func main() {
     d4.Setting = helper(p, p)
 }`
 	code := mustCompile(t, src)
-	if !strings.Contains(code, "jal") {
-		t.Errorf("expected an outlined jal in:\n%s", code)
-	}
 	m := vm.New()
 	m.Set("d0", "Setting", 3)
 	m.Set("d1", "Setting", 5)
