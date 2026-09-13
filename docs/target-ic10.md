@@ -137,10 +137,11 @@ RecipeHash  ReferenceId  PrefabHash  Error  Idle  Lock  Output
 PressureExternal  PressureInternal  PressureSetting  Volume
 TotalMoles  CompletionRatio  ElevatorLevel  ElevatorSpeed
 Filtration  Harvest  Plant  ClearMemory  Maximum
-DataNetwork  ...
+NameHash  ...
 ```
 
-> 完整表以 `internal/builtin` 为准，可随游戏版本更新。
+> 完整表以 `internal/builtin` 为准，可随游戏版本更新。当前已与游戏
+> `LogicType` 枚举（280 项，去 `None`）对齐。
 
 ### 5.3 槽位类型表
 
@@ -148,7 +149,11 @@ DataNetwork  ...
 Occupied  OccupantHash  Quantity  Damage  Efficiency  FilterType
 Health  Growth  Pressure  Temperature  Charge  ChargeRatio  Class
 PressureWaste  PressureAir  MaxQuantity  Mature  ReferenceId  Seeding
+FreeSlots  HarvestedHash  LineNumber  Lock  MaturityRatio  Mode
+On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 ```
+
+> 当前已与游戏 `LogicSlotType` 枚举（32 项，去 `None`）对齐。
 
 ### 5.4 批量模式
 
@@ -173,6 +178,17 @@ PressureWaste  PressureAir  MaxQuantity  Mature  ReferenceId  Seeding
   - `SlotClass.Battery`、`SortingClass.Ores`
   - `ReagentMode.Contents`(0) / `Required`(1) / `Recipe`(2)
   - `PrinterInstruction.ExecuteRecipe`(1) / `WaitUntilNextValid`(2)（8 位 OP 码，需核对）
+  - `Color.Blue`(0) / `Gray`(1) / `Green`(2) / `Orange`(3) / `Red`(4) / `Yellow`(5)
+    / `White`(6) / `Black`(7) / `Brown`(8) / `Khaki`(9) / `Pink`(10) / `Purple`(11)
+    （`LogicType.Color` 设备颜色；>11 视作 Purple，<0 视作 Blue）
+  - `PowerMode.Idle`(0) / `Discharged`(1) / `Discharging`(2) / `Charging`(3) / `Charged`(4)
+    （区域电源控制器充电状态）
+  - `DisplayMode.Default`(0) / `Percent`(1) / `Power`(2) / `Kelvin`(3) / `Celsius`(4)
+    / `Meters`(5) / `Credits`(6) / `Seconds`(7) / `Minutes`(8) / `Days`(9) / `String`(10)
+    / `Fahrenheit`(11) / `Litres`(12) / `Mol`(13) / `Pa`(14) / `Newtons`(15) / `Degrees`(16)
+    （LED 显示器读数模式）
+  - `Sound.None`(0) / `Alarm2`(1) … `Alarm1`(45)（扬声器/警报；游戏枚举
+    `SoundAlert`，IC10 前缀为 `Sound`）
 
 ### 5.6 数据段布局
 

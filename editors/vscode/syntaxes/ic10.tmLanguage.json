@@ -36,7 +36,7 @@
       "patterns": [
         {
           "name": "constant.other.enum.ic10",
-          "match": "\\b(SorterInstruction|PrinterInstruction|ReagentMode|SlotClass|SortingClass|LogicType)\\.[A-Za-z_][A-Za-z0-9_]*"
+          "match": "\\b(SorterInstruction|PrinterInstruction|ReagentMode|SlotClass|SortingClass|Sound|DisplayMode|PowerMode|Color|LogicType)\\.[A-Za-z_][A-Za-z0-9_]*"
         }
       ]
     },

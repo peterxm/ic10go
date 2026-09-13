@@ -116,6 +116,11 @@ var LogicTypeDocs = map[string]Doc{
 	"PositionZ":         {"PositionZ", "World Z coordinate.", "世界坐标 Z。"},
 	"Horizontal":        {"Horizontal", "Horizontal angle.", "水平角度。"},
 	"Vertical":          {"Vertical", "Vertical angle.", "垂直角度。"},
+	"NameHash":          {"NameHash", "Device name hash.", "设备名称 hash。"},
+	"PrefabHash":        {"PrefabHash", "Prefab (structure) hash.", "预制体（结构）hash。"},
+	"SortingClass":      {"SortingClass", "Sorting class of the slot contents.", "槽内物品的分类类别。"},
+	"FreeSlots":         {"FreeSlots", "Number of free slots.", "空闲槽位数量。"},
+	"TotalSlots":        {"TotalSlots", "Total number of slots.", "槽位总数。"},
 }
 
 // KeywordDocs documents the language keywords and low-level control flow.

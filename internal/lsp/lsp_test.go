@@ -132,6 +132,10 @@ func TestCompletionContext(t *testing.T) {
 		{"batch method", "batch.", `{"line":0,"character":6}`, "readName", "Temperature"},
 		{"enum member", "SorterInstruction.", `{"line":0,"character":18}`, "FilterPrefabHashEquals", `"label":"func"`},
 		{"logic type member", "LogicType.", `{"line":0,"character":10}`, "Temperature", `"label":"func"`},
+		{"display mode member", "DisplayMode.", `{"line":0,"character":12}`, "Percent", `"label":"func"`},
+		{"sound member", "Sound.", `{"line":0,"character":6}`, "Alarm1", `"label":"func"`},
+		{"power mode member", "PowerMode.", `{"line":0,"character":10}`, "Charging", `"label":"func"`},
+		{"color member", "Color.", `{"line":0,"character":6}`, "Purple", `"label":"func"`},
 		{"slot type", "d0.slot[0].", `{"line":0,"character":11}`, "Occupied", `"label":"func"`},
 	}
 	for _, c := range cases {
