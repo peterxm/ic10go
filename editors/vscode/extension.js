@@ -10,6 +10,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+// Oldest ic10c the extension is known to work with (build --json, current
+// enum/logic-type tables). Older servers are reported after initialize.
+const MIN_SERVER_VERSION = '0.6.4';
+
 /** @type {LspClient|undefined} */
 let client;
 
@@ -53,7 +57,8 @@ class LspClient {
         this.initialized = false;
         this.output = vscode.window.createOutputChannel('IC10 Go');
         this.diags = vscode.languages.createDiagnosticCollection('icg');
-        this.disposables = [this.output, this.diags];
+        this.ic10Diags = vscode.languages.createDiagnosticCollection('ic10');
+        this.disposables = [this.output, this.diags, this.ic10Diags];
         this.pendingChanges = new Map();
         this.changeTimer = undefined;
         this.statsByUri = new Map();
@@ -113,6 +118,36 @@ class LspClient {
             })
         );
         this.disposables.push(
+            vscode.languages.registerDocumentHighlightProvider('icg', {
+                provideDocumentHighlights: (doc, pos) => this.documentHighlights(doc, pos),
+            })
+        );
+        this.disposables.push(
+            vscode.languages.registerSelectionRangeProvider('icg', {
+                provideSelectionRanges: (doc, positions) => this.selectionRanges(doc, positions),
+            })
+        );
+        this.disposables.push(
+            vscode.languages.registerWorkspaceSymbolProvider({
+                provideWorkspaceSymbols: (query) => this.workspaceSymbols(query),
+            })
+        );
+        this.disposables.push(
+            vscode.languages.registerCodeLensProvider('icg', {
+                provideCodeLenses: (doc) => this.codeLenses(doc),
+            })
+        );
+        this.disposables.push(
+            vscode.languages.registerDocumentLinkProvider('icg', {
+                provideDocumentLinks: (doc) => this.documentLinks(doc),
+            })
+        );
+        this.disposables.push(
+            vscode.languages.registerDocumentSymbolProvider('ic10', {
+                provideDocumentSymbols: (doc) => this.ic10Symbols(doc),
+            })
+        );
+        this.disposables.push(
             vscode.languages.registerSignatureHelpProvider(
                 'icg',
                 { provideSignatureHelp: (doc, pos) => this.signatureHelp(doc, pos) },
@@ -169,11 +204,28 @@ class LspClient {
                 this.initialized = true;
                 this.notify('initialized', {});
                 this.registerSemanticTokens(result);
+                this.checkServerVersion((result && result.serverInfo && result.serverInfo.version) || '');
                 for (const doc of vscode.workspace.textDocuments) {
                     if (doc.languageId === 'icg') this.sendDidOpen(doc);
                 }
             })
             .catch((err) => this.output.appendLine(`initialize failed: ${err.message}`));
+    }
+
+    // checkServerVersion warns when ic10c is older than MIN_SERVER_VERSION.
+    checkServerVersion(version) {
+        const got = parseVersion(version);
+        const min = parseVersion(MIN_SERVER_VERSION);
+        if (got && !versionLess(got, min)) return;
+        this.output.appendLine(
+            `ic10c ${version || '(unknown)'} is older than the required ${MIN_SERVER_VERSION}`
+        );
+        vscode.window.showWarningMessage(
+            t(
+                `IC10 Go: ic10c ${version || '(unknown)'} is older than the required ${MIN_SERVER_VERSION}; some features (e.g. compile) may not work. Please update ic10c.`,
+                `IC10 Go: ic10c ${version || '(未知)'} 低于所需版本 ${MIN_SERVER_VERSION}，部分功能（如编译）可能不可用，请升级 ic10c。`
+            )
+        );
     }
 
     restart() {
@@ -222,6 +274,10 @@ class LspClient {
             stableIns: c.get('stableIns'),
             noCheck: c.get('noCheck'),
             autoTable: c.get('autoTable'),
+            dataAccess: c.get('dataAccess'),
+            runSteps: c.get('runSteps'),
+            runTrace: c.get('runTrace'),
+            runSet: c.get('runSet'),
         };
     }
 
@@ -262,49 +318,68 @@ class LspClient {
         }
     }
 
-    // compile runs `ic10c build` + `ic10c stats` and previews the result. When
-    // the program uses a data table it also produces the one-time loader and
-    // copies it to the clipboard, so a single command covers the whole
-    // "compile -> paste into the chip" flow for non-programmers.
+    // compile runs `ic10c build --json` and previews the result. When the
+    // program uses a data table it also copies the one-time loader to the
+    // clipboard, so a single command covers the whole "compile -> paste into
+    // the chip" flow for non-programmers.
     async compile() {
         const doc = this.activeICG();
         if (!doc) return;
         await this.withTempFile(doc, async (tmp) => {
-            const dataOut = tmp + '.data.ic';
-            const buildArgs = ['build', '--split-data', '--data-out', dataOut];
+            const buildArgs = ['build', '--json'];
             if (this.config().stableIns) buildArgs.push('--stable-ins');
             if (this.config().autoTable) buildArgs.push('--auto-table');
+            const access = this.config().dataAccess;
+            if (access && access !== 'get') buildArgs.push('--data-access', access);
             buildArgs.push(tmp);
             const build = await this.execCli(buildArgs);
-            let loader = '';
+
+            let result;
             try {
-                loader = fs.readFileSync(dataOut, 'utf8');
+                result = JSON.parse(build.stdout);
             } catch (err) {
-                // no data segment
-            }
-            try {
-                fs.unlinkSync(dataOut);
-            } catch (err) {
-                // ignore
-            }
-            if (build.code !== 0) {
-                this.output.appendLine(`=== compile failed: ${path.basename(doc.fileName)} ===\n${build.stderr}`);
+                this.output.appendLine(
+                    `=== compile failed: ${path.basename(doc.fileName)} ===\n${build.stderr || build.stdout}`
+                );
                 this.output.show(true);
-                vscode.window.showErrorMessage(t('IC10 Go: compilation failed. See the "IC10 Go" output.', 'IC10 Go: 编译失败，详见 "IC10 Go" 输出面板。'));
+                vscode.window.showErrorMessage(
+                    t('IC10 Go: compilation failed. See the "IC10 Go" output.', 'IC10 Go: 编译失败，详见 "IC10 Go" 输出面板。')
+                );
                 return;
             }
-            const stats = await this.execCli(['stats', tmp]);
+            if (!result.ok) {
+                this.output.appendLine(`=== compile failed: ${path.basename(doc.fileName)} ===`);
+                for (const d of result.diagnostics || []) {
+                    const at = d.range && d.range.start ? `${d.range.start.line}:${d.range.start.col}` : '?';
+                    const code = d.code ? ` [${d.code}]` : '';
+                    this.output.appendLine(`${at} ${d.severity}: ${d.message}${code}`);
+                }
+                this.output.show(true);
+                vscode.window.showErrorMessage(
+                    t('IC10 Go: compilation failed. See the "IC10 Go" output.', 'IC10 Go: 编译失败，详见 "IC10 Go" 输出面板。')
+                );
+                return;
+            }
+
             const preview = await vscode.workspace.openTextDocument({
-                content: build.stdout,
+                content: result.code,
                 language: 'ic10',
             });
             await vscode.window.showTextDocument(preview, {
                 viewColumn: vscode.ViewColumn.Beside,
                 preview: true,
             });
-            this.output.appendLine(`=== ${path.basename(doc.fileName)} ===\n${stats.stdout.trim()}`);
-            const lines = stats.stdout.split('\n').find((l) => l.trim().startsWith('lines'));
-            if (loader.trim()) {
+
+            const st = result.stats || {};
+            const lim = result.limits || {};
+            const budget =
+                `${st.lines || 0}/${lim.lines || 0} lines · ${st.bytes || 0}/${lim.bytes || 0} B · ` +
+                `${st.maxLine || 0}/${lim.maxLine || 0} ch · ${st.regs || 0}/${lim.regs || 0} reg`;
+            this.output.appendLine(`=== ${path.basename(doc.fileName)} ===\n${budget}`);
+
+            const data = result.data || {};
+            const loader = data.loader || '';
+            if (data.needed && loader.trim()) {
                 await vscode.env.clipboard.writeText(loader);
                 const copyRuntime = t('Copy runtime code', '复制运行代码');
                 const pick = await vscode.window.showInformationMessage(
@@ -312,11 +387,11 @@ class LspClient {
                         'IC10 Go: 该程序使用了数据表。已把「安装代码」复制到剪贴板：先粘贴到 IC 芯片并运行一次，再用右侧预览中的「运行代码」覆盖它。'),
                     copyRuntime);
                 if (pick === copyRuntime) {
-                    await vscode.env.clipboard.writeText(build.stdout);
+                    await vscode.env.clipboard.writeText(result.code);
                     vscode.window.setStatusBarMessage(t('IC10 Go: runtime code copied', 'IC10 Go: 运行代码已复制'), 5000);
                 }
             } else {
-                vscode.window.setStatusBarMessage(`IC10 Go: ${lines ? lines.trim() : t('compiled', '已编译')}`, 5000);
+                vscode.window.setStatusBarMessage(`IC10 Go: ${st.lines || 0}/${lim.lines || 0} lines`, 5000);
             }
         });
     }
@@ -328,6 +403,12 @@ class LspClient {
         await this.withTempFile(doc, async (tmp) => {
             const args = ['run'];
             if (this.config().stableIns) args.push('--stable-ins');
+            const steps = this.config().runSteps;
+            if (steps && steps > 0) args.push('--steps', String(steps));
+            if (this.config().runTrace) args.push('--trace');
+            for (const s of this.config().runSet || []) {
+                if (s) args.push('--set', s);
+            }
             args.push(tmp);
             const res = await this.execCli(args);
             this.output.appendLine(`=== run: ${path.basename(doc.fileName)} ===\n${res.stdout}${res.stderr}`);
@@ -382,6 +463,74 @@ class LspClient {
         if (doc) await this.runTool(doc, ['disasm'], 'ic10');
     }
 
+    // -- native IC10 (.ic / .ic10) -----------------------------------------
+
+    // checkIC10 reports the IC10 editor limits (128 lines / 4096 bytes / 90
+    // chars). Native IC10 has no full validator yet, so this is what we can
+    // check without the game's assembler.
+    checkIC10(doc) {
+        const text = doc.getText();
+        const lines = text.split('\n');
+        const bytes = Buffer.byteLength(text, 'utf8');
+        const diags = [];
+        if (bytes > 4096) {
+            diags.push(
+                this.ic10Diag(
+                    new vscode.Range(0, 0, 0, 0),
+                    t(`program is ${bytes} bytes, exceeding the 4096-byte limit`, `程序为 ${bytes} 字节，超过 4096 字节上限`)
+                )
+            );
+        }
+        if (lines.length > 128) {
+            diags.push(
+                this.ic10Diag(
+                    new vscode.Range(0, 0, 0, 0),
+                    t(`program has ${lines.length} lines, exceeding the 128-line limit`, `程序有 ${lines.length} 行，超过 128 行上限`)
+                )
+            );
+        }
+        lines.forEach((ln, i) => {
+            const n = ln.length;
+            if (n > 90) {
+                diags.push(
+                    this.ic10Diag(
+                        new vscode.Range(i, 90, i, n),
+                        t(`line is ${n} characters, exceeding the 90-character limit`, `该行 ${n} 个字符，超过 90 字符上限`)
+                    )
+                );
+            }
+        });
+        this.ic10Diags.set(doc.uri, diags);
+    }
+
+    ic10Diag(range, message) {
+        const d = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Error);
+        d.source = 'ic10c';
+        d.code = 'ic10-limit';
+        return d;
+    }
+
+    // ic10Symbols lists the labels of a native IC10 program.
+    ic10Symbols(doc) {
+        const symbols = [];
+        const lines = doc.getText().split('\n');
+        for (let i = 0; i < lines.length; i++) {
+            const m = /^\s*([A-Za-z_][A-Za-z0-9_]*):/.exec(lines[i]);
+            if (!m) continue;
+            const start = lines[i].indexOf(m[1]);
+            symbols.push(
+                new vscode.DocumentSymbol(
+                    m[1],
+                    'label',
+                    vscode.SymbolKind.Key,
+                    new vscode.Range(i, 0, i, lines[i].length),
+                    new vscode.Range(i, start, i, start + m[1].length)
+                )
+            );
+        }
+        return symbols;
+    }
+
     reportMissingServer(err) {
         this.output.appendLine(`cannot start ic10c: ${err.message}`);
         this.output.appendLine('searched: icg.serverPath, workspace folders, parent directories, ~/go/bin, $GOPATH/bin, PATH');
@@ -404,9 +553,14 @@ class LspClient {
 
     onOpen(doc) {
         if (doc.languageId === 'icg' && this.initialized) this.sendDidOpen(doc);
+        else if (doc.languageId === 'ic10') this.checkIC10(doc);
     }
 
     onChange(e) {
+        if (e.document.languageId === 'ic10') {
+            this.checkIC10(e.document);
+            return;
+        }
         if (e.document.languageId !== 'icg' || !this.initialized) return;
         // Send the whole document on each (debounced) change: full sync works
         // with every ic10c version, and .icg files are tiny, so it is not worth
@@ -430,6 +584,10 @@ class LspClient {
     }
 
     onClose(doc) {
+        if (doc.languageId === 'ic10') {
+            this.ic10Diags.delete(doc.uri);
+            return;
+        }
         if (doc.languageId !== 'icg') return;
         this.pendingChanges.delete(doc.uri.toString());
         this.statsByUri.delete(doc.uri.toString());
@@ -464,7 +622,9 @@ class LspClient {
             });
             const items = Array.isArray(res) ? res : (res && res.items) || [];
             return items.map((i) => {
-                const item = new vscode.CompletionItem(i.label, i.kind || 1);
+                // LSP CompletionItemKind is 1-based; VSCode's is 0-based.
+                const kind = i.kind ? i.kind - 1 : vscode.CompletionItemKind.Text;
+                const item = new vscode.CompletionItem(i.label, kind);
                 if (i.detail) item.detail = i.detail;
                 if (i.documentation) {
                     item.documentation = new vscode.MarkdownString(i.documentation.value || '');
@@ -546,7 +706,10 @@ class LspClient {
         this.disposables.push(
             vscode.languages.registerDocumentSemanticTokensProvider(
                 'icg',
-                { provideDocumentSemanticTokens: (doc) => this.semanticTokens(doc) },
+                {
+                    provideDocumentSemanticTokens: (doc) => this.semanticTokens(doc),
+                    provideDocumentRangeSemanticTokens: (doc, range) => this.semanticTokensRange(doc, range),
+                },
                 legendObj
             )
         );
@@ -556,6 +719,18 @@ class LspClient {
         try {
             const res = await this.request('textDocument/semanticTokens/full', {
                 textDocument: { uri: doc.uri.toString() },
+            });
+            return new vscode.SemanticTokens(new Uint32Array((res && res.data) || []));
+        } catch (err) {
+            return undefined;
+        }
+    }
+
+    async semanticTokensRange(doc, range) {
+        try {
+            const res = await this.request('textDocument/semanticTokens/range', {
+                textDocument: { uri: doc.uri.toString() },
+                range: fromRange(range),
             });
             return new vscode.SemanticTokens(new Uint32Array((res && res.data) || []));
         } catch (err) {
@@ -597,6 +772,7 @@ class LspClient {
             const res = await this.request('textDocument/references', {
                 textDocument: { uri: doc.uri.toString() },
                 position: { line: pos.line, character: pos.character },
+                context: { includeDeclaration: true },
             });
             return (res || []).map(
                 (l) => new vscode.Location(vscode.Uri.parse(l.uri), toRange(l.range))
@@ -620,6 +796,76 @@ class LspClient {
             }
         }
         return edit;
+    }
+
+    async documentHighlights(doc, pos) {
+        try {
+            const res = await this.request('textDocument/documentHighlight', {
+                textDocument: { uri: doc.uri.toString() },
+                position: { line: pos.line, character: pos.character },
+            });
+            return (res || []).map((h) => new vscode.DocumentHighlight(toRange(h.range), h.kind));
+        } catch (err) {
+            return [];
+        }
+    }
+
+    async selectionRanges(doc, positions) {
+        try {
+            const res = await this.request('textDocument/selectionRange', {
+                textDocument: { uri: doc.uri.toString() },
+                positions: positions.map((p) => ({ line: p.line, character: p.character })),
+            });
+            return (res || []).map(toSelectionRange);
+        } catch (err) {
+            return [];
+        }
+    }
+
+    async workspaceSymbols(query) {
+        try {
+            const res = await this.request('workspace/symbol', { query: query || '' });
+            return (res || []).map(
+                (s) =>
+                    new vscode.SymbolInformation(
+                        s.name,
+                        Math.max(0, (s.kind || 1) - 1),
+                        '',
+                        new vscode.Location(vscode.Uri.parse(s.location.uri), toRange(s.location.range))
+                    )
+            );
+        } catch (err) {
+            return [];
+        }
+    }
+
+    async codeLenses(doc) {
+        try {
+            const res = await this.request('textDocument/codeLens', {
+                textDocument: { uri: doc.uri.toString() },
+            });
+            return (res || []).map((l) => {
+                const cmd = l.command
+                    ? new vscode.Command(l.command.title, l.command.command, l.command.arguments)
+                    : undefined;
+                return new vscode.CodeLens(toRange(l.range), cmd);
+            });
+        } catch (err) {
+            return [];
+        }
+    }
+
+    async documentLinks(doc) {
+        try {
+            const res = await this.request('textDocument/documentLink', {
+                textDocument: { uri: doc.uri.toString() },
+            });
+            return (res || []).map(
+                (l) => new vscode.DocumentLink(toRange(l.range), l.target ? vscode.Uri.parse(l.target) : undefined)
+            );
+        } catch (err) {
+            return [];
+        }
     }
 
     async signatureHelp(doc, pos) {
@@ -751,6 +997,52 @@ class LspClient {
         }
         if (msg.method === 'icg/stats') {
             this.onStats(msg.params);
+            return;
+        }
+        // Requests initiated by the server. Reply so the server never waits
+        // forever; handle the handful of methods a minimal client must answer.
+        if (msg.id !== undefined && msg.method !== undefined) {
+            this.handleServerRequest(msg);
+        }
+    }
+
+    handleServerRequest(msg) {
+        const params = msg.params || {};
+        switch (msg.method) {
+            case 'window/showMessage':
+                this.showServerMessage(params);
+                this.send({ jsonrpc: '2.0', id: msg.id, result: null });
+                return;
+            case 'window/logMessage':
+                this.output.appendLine(params.message || '');
+                this.send({ jsonrpc: '2.0', id: msg.id, result: null });
+                return;
+            case 'workspace/configuration': {
+                // No server-side settings yet: answer null for every item.
+                const items = params.items || [];
+                this.send({ jsonrpc: '2.0', id: msg.id, result: items.map(() => null) });
+                return;
+            }
+            default:
+                this.send({
+                    jsonrpc: '2.0',
+                    id: msg.id,
+                    error: { code: -32601, message: 'method not found: ' + msg.method },
+                });
+        }
+    }
+
+    showServerMessage(params) {
+        const text = params.message || '';
+        switch (params.type) {
+            case 1:
+                vscode.window.showErrorMessage(text);
+                break;
+            case 2:
+                vscode.window.showWarningMessage(text);
+                break;
+            default:
+                vscode.window.showInformationMessage(text);
         }
     }
 
@@ -807,6 +1099,10 @@ class LspClient {
                       : vscode.DiagnosticSeverity.Information;
             const diag = new vscode.Diagnostic(range, d.message, severity);
             diag.source = d.source || 'ic10c';
+            if (d.code) diag.code = d.code;
+            if (d.codeDescription && d.codeDescription.href) {
+                diag.codeDescription = { href: vscode.Uri.parse(d.codeDescription.href) };
+            }
             return diag;
         });
         this.diags.set(uri, diagnostics);
@@ -819,6 +1115,22 @@ class LspClient {
 }
 
 module.exports = { activate, deactivate };
+
+// parseVersion extracts major.minor.patch from a version string like "0.6.4"
+// or "0.6.4+abc1234". Returns undefined when it cannot be parsed.
+function parseVersion(v) {
+    const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || ''));
+    if (!m) return undefined;
+    return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+// versionLess reports whether a < b for [major, minor, patch] tuples.
+function versionLess(a, b) {
+    for (let i = 0; i < 3; i++) {
+        if (a[i] !== b[i]) return a[i] < b[i];
+    }
+    return false;
+}
 
 // findUp looks for an ic10c binary in start and its parent directories.
 function findUp(start) {
@@ -858,9 +1170,22 @@ function fromRange(r) {
 }
 
 function toDocumentSymbol(s) {
-    const sym = new vscode.DocumentSymbol(s.name, '', s.kind, toRange(s.range), toRange(s.selectionRange));
+    // LSP SymbolKind is 1-based; VSCode's is 0-based.
+    const sym = new vscode.DocumentSymbol(
+        s.name,
+        '',
+        Math.max(0, (s.kind || 1) - 1),
+        toRange(s.range),
+        toRange(s.selectionRange)
+    );
     if (s.children) sym.children = s.children.map(toDocumentSymbol);
     return sym;
+}
+
+function toSelectionRange(s) {
+    const r = new vscode.SelectionRange(toRange(s.range));
+    if (s.parent) r.parent = toSelectionRange(s.parent);
+    return r;
 }
 
 // t picks a message based on the editor's display language.

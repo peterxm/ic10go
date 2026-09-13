@@ -12,23 +12,28 @@
 |------|------|
 | 语法高亮 | `.icg` 专用语法；`.ic`/`.ic10` 有 IC10 汇编语法 |
 | 语义高亮 | 语义 token：函数 / 变量 / 设备端口 / logic type / 内建 / 枚举 |
-| 诊断 | 打开、编辑时实时显示编译错误，**含 128 行 / 4KiB / 90 字符超限** |
+| 诊断 | 打开、编辑时实时显示编译错误，**含 128 行 / 4KiB / 90 字符超限**；`.ic`/`.ic10` 也检查编辑器上限 |
 | 补全 | **上下文感知** + 签名与文档（见下） |
-| 悬停文档 | 内建函数**签名 + 用法说明**、逻辑类型含义、关键字与底层原语 |
-| 大纲 / 折叠 | 文档符号（函数、常量、变量、标签）+ 代码折叠 |
+| 悬停文档 | 内建函数**签名 + 用法说明**、逻辑类型含义、枚举成员（如 `Color.Purple = 11`、`DisplayMode.Percent`）、关键字与底层原语 |
+| 大纲 / 折叠 | 文档符号（函数、常量、变量、标签）+ 代码折叠；`.ic`/`.ic10` 显示标签大纲 |
 | 跳转定义 | `F12` / `Ctrl+点击` |
 | 查找引用 / 重命名 | `Shift+F12` / `F2`（单文件内所有引用） |
+| 同名高亮 | 光标处标识符的所有出现位置高亮 |
+| 智能扩选 | `Shift+Alt+→` 从标识符扩到行、代码块、整个文件 |
+| 跨文件符号 | `Ctrl+T` 搜索所有已打开 `.icg` 文件的函数 / 常量 / 变量 |
 | 参数提示 | 函数调用时显示签名，高亮当前参数 |
 | 快速修复 | 未知 logic/slot type 的"你是不是想写…"；缺 `main` 一键补上 |
+| 代码透镜 | 每个函数上方显示 **Compile to IC10** |
+| 文档链接 | 函数调用与 `data` 表引用可点击跳到声明行 |
 | 预算常驻 | **状态栏**实时显示当前 `.icg` 的 `行/字节/行长/寄存器` 预算（含数据段 `data a..b`；点击即编译）；文件末尾另有 inlay hint |
-| 格式化 | `Shift+Alt+F`（或保存时）调用 `ic10c fmt` |
+| 格式化 | `Shift+Alt+F`；`[icg]` 默认**保存时格式化**（可在设置中关闭） |
 | 数据段 | 命令 **“IC10 Go: 编译为 IC10”** 会自动识别 `data` 表：把一次性安装代码复制到剪贴板、并在旁边打开运行代码；`data` 表 / `switch ... table` 有语法高亮与补全 |
 | 片段 | `main`、`hyst`、`batchread`、`batchwrite`、`readlt`、`writelt`、`readdev`、`writedev`、`data`、`switchtable`、`func`、`const`、`slotread` 等 |
 
 **上下文感知补全**：
 - `d0.` → 该端口的 logic type；`d0.slot[0].` → 槽位属性
 - `batch.` → `read` / `readName` / `readSlot` / `write` …
-- `SorterInstruction.` / `LogicType.` → 枚举成员
+- `SorterInstruction.` / `LogicType.` / `DisplayMode.` / `Sound.` / `Color.` / `PowerMode.` → 枚举成员
 - 普通位置 → 当前文件的函数 / 常量 / 变量 / 标签 + 内建 + 设备端口
 
 **文档**（悬停与补全项）示例：
@@ -112,13 +117,17 @@ func main() {
 | `icg.stableIns` | `false` | 编译/运行时加 `--stable-ins`（稳定版 `ins` 参数顺序） |
 | `icg.noCheck` | `false` | 关闭设备 logic type 校验（`IC10C_NO_CHECK`） |
 | `icg.autoTable` | `false` | 编译时加 `--auto-table`：自动表化符合条件的常量 `switch`（需先跑安装代码） |
+| `icg.dataAccess` | `get` | 数据段安装代码访问芯片栈的方式：`get`（标准 IC host）/ `stack`（设备 host，如空调） |
+| `icg.runSteps` | `0` | VM 运行步数上限（`--steps`）；`0` 用编译器默认 1000 |
+| `icg.runTrace` | `false` | VM 运行时打印每条执行的指令（`--trace`） |
+| `icg.runSet` | `[]` | VM 运行前设置设备值，每项一条，如 `d0.Temperature=350`（可重复 `--set`） |
 
 ## 七、文件类型
 
 | 扩展名 | 语言 | 说明 |
 |--------|------|------|
 | `.icg` | `icg` | ic10c 源码，拥有全部语言功能 |
-| `.ic` / `.ic10` | `ic10` | 原生 IC10 汇编，高亮 + 反编译/压缩/注释命令 |
+| `.ic` / `.ic10` | `ic10` | 原生 IC10 汇编，高亮 + 标签大纲 + 编辑器上限诊断 + 反编译/压缩/注释命令 |
 
 ## 八、常见问题
 

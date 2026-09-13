@@ -2,13 +2,18 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.5.8",
+  "version": "0.5.11",
   "publisher": "ic10go",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "engines": {
     "vscode": "^1.70.0"
   },
   "categories": ["Programming Languages"],
+  "configurationDefaults": {
+    "[icg]": {
+      "editor.formatOnSave": true
+    }
+  },
   "main": "./extension.js",
   "activationEvents": [
     "onLanguage:icg",
@@ -75,6 +80,28 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "%icg.autoTable.desc%"
+        },
+        "icg.dataAccess": {
+          "type": "string",
+          "enum": ["get", "stack"],
+          "default": "get",
+          "markdownDescription": "%icg.dataAccess.desc%"
+        },
+        "icg.runSteps": {
+          "type": "number",
+          "default": 0,
+          "markdownDescription": "%icg.runSteps.desc%"
+        },
+        "icg.runTrace": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%icg.runTrace.desc%"
+        },
+        "icg.runSet": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "%icg.runSet.desc%"
         }
       }
     },

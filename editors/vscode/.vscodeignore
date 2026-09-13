@@ -1,0 +1,5 @@
+# Files that are useful in the repo but not in the packaged extension.
+install.sh
+smoke.js
+.vscodeignore
+**/*.map
