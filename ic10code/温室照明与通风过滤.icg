@@ -4,27 +4,23 @@
 // 照明：日光传感器（批量读 Activate）有光时关生长灯、开长日照灯。
 // 通风：按 PressureOutput 在 [PreMin, PreMax] 之间做滞回。
 // 过滤：出口压力低于 19000 时切到 Mode 1。
-
 const (
     PreMax = 48000
     PreMin = 42000
 
-    dGrowLight   = -1758710260 // 生长灯
+    dGrowLight = -1758710260  // 生长灯
     dLightSensor = 1076425094  // 日光传感器
-    dLongLight   = 797794350   // 长日照灯
+    dLongLight = 797794350  // 长日照灯
 )
 
 func main() {
-    var ventOn = 0 // 上一 tick 的通风状态，用于压力滞回
-
+    var ventOn = 0  // 上一 tick 的通风状态，用于压力滞回
     for {
         yield()
-
         // 日光传感器：有光 -> 关生长灯、开长日照灯
         sun := batch.read(dLightSensor, "Activate", "Average")
         batch.write(dGrowLight, "On", sun == 1)
-        batch.write(dLongLight, "On", 1) // 原脚本固定写 1
-
+        batch.write(dLongLight, "On", 1)  // 原脚本固定写 1
         ventOn = ventControl(ventOn)
         filterControl()
     }
