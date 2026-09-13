@@ -195,6 +195,11 @@ type lowerer struct {
 	labels       map[string]*ir.Block
 	// devices maps a const device alias to its port (d0..d5 / db).
 	devices map[string]string
+	// devScopes and dataScopes bind inlined function parameters that receive a
+	// device port or a data table (scoped so the same function can be inlined
+	// with different arguments).
+	devScopes  []map[string]string
+	dataScopes []map[string]*sema.DataTable
 	// labelDef and labelUse track low-level label definitions and references.
 	labelDef map[string]source.Pos
 	labelUse map[string]source.Pos
@@ -1440,7 +1445,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 
 	// User-defined functions take precedence over built-ins.
 	if fi, ok := l.info.Funcs[id.Name]; ok {
-		if l.outline[id.Name] {
+		if l.outline[id.Name] && !l.hasDeviceOrDataArg(call.Args) {
 			return l.outlineCall(id, fi, call.Args, needResult)
 		}
 		return l.inlineCall(id, fi, call.Args, needResult)
@@ -1647,7 +1652,21 @@ func (l *lowerer) inlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr, 
 	}
 
 	vals := make([]ir.Value, len(args))
+	devArgs := make([]string, len(args))
+	dataArgs := make([]*sema.DataTable, len(args))
+	isDev := make([]bool, len(args))
+	isData := make([]bool, len(args))
 	for i, a := range args {
+		if dev, ok := l.deviceName(a); ok {
+			devArgs[i], isDev[i] = dev, true
+			vals[i] = &ir.Const{V: 0}
+			continue
+		}
+		if t, ok := l.dataTable(a); ok {
+			dataArgs[i], isData[i] = t, true
+			vals[i] = &ir.Const{V: 0}
+			continue
+		}
 		vals[i] = l.lowerExpr(a)
 	}
 
@@ -1661,14 +1680,29 @@ func (l *lowerer) inlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr, 
 
 	scope := map[string]ir.Value{}
 	for i, p := range fi.Decl.Params {
+		if isDev[i] || isData[i] {
+			continue
+		}
 		r := l.b.NewReg(id.Name + "$" + p.Name.Name)
 		l.b.Emit(&ir.Assign{Dst: r, Src: vals[i]})
 		scope[p.Name.Name] = r
 	}
 	l.scopes = append(l.scopes, scope)
+	l.pushDevScope()
+	l.pushDataScope()
+	for i, p := range fi.Decl.Params {
+		if isDev[i] {
+			l.bindDev(p.Name.Name, devArgs[i])
+		}
+		if isData[i] {
+			l.bindData(p.Name.Name, dataArgs[i])
+		}
+	}
 
 	l.lowerStmtsCont(fi.Decl.Body.List, end)
 
+	l.popDataScope()
+	l.popDevScope()
 	l.scopes = l.scopes[:len(l.scopes)-1]
 	l.stack = l.stack[:len(l.stack)-1]
 	l.inline = l.inline[:len(l.inline)-1]
@@ -1791,6 +1825,39 @@ func (l *lowerer) lowerOutlined(name string) {
 func (l *lowerer) pushScope() { l.scopes = append(l.scopes, map[string]ir.Value{}) }
 func (l *lowerer) popScope()  { l.scopes = l.scopes[:len(l.scopes)-1] }
 
+// Device and data-table parameter scopes, pushed around inlined function bodies.
+func (l *lowerer) pushDevScope() { l.devScopes = append(l.devScopes, map[string]string{}) }
+func (l *lowerer) popDevScope()  { l.devScopes = l.devScopes[:len(l.devScopes)-1] }
+
+func (l *lowerer) bindDev(name, dev string) { l.devScopes[len(l.devScopes)-1][name] = dev }
+
+func (l *lowerer) lookupDev(name string) (string, bool) {
+	for i := len(l.devScopes) - 1; i >= 0; i-- {
+		if d, ok := l.devScopes[i][name]; ok {
+			return d, true
+		}
+	}
+	return "", false
+}
+
+func (l *lowerer) pushDataScope() {
+	l.dataScopes = append(l.dataScopes, map[string]*sema.DataTable{})
+}
+func (l *lowerer) popDataScope() { l.dataScopes = l.dataScopes[:len(l.dataScopes)-1] }
+
+func (l *lowerer) bindData(name string, t *sema.DataTable) {
+	l.dataScopes[len(l.dataScopes)-1][name] = t
+}
+
+func (l *lowerer) lookupData(name string) (*sema.DataTable, bool) {
+	for i := len(l.dataScopes) - 1; i >= 0; i-- {
+		if t, ok := l.dataScopes[i][name]; ok {
+			return t, true
+		}
+	}
+	return nil, false
+}
+
 func (l *lowerer) bind(name string, v ir.Value) {
 	l.scopes[len(l.scopes)-1][name] = v
 }
@@ -1830,11 +1897,29 @@ func (l *lowerer) deviceName(e ast.Expr) (string, bool) {
 		return d.Name, true
 	}
 	if id, ok := e.(*ast.Ident); ok {
+		if dev, ok := l.lookupDev(id.Name); ok {
+			return dev, true
+		}
 		if dev, ok := l.devices[id.Name]; ok {
 			return dev, true
 		}
 	}
 	return "", false
+}
+
+// hasDeviceOrDataArg reports whether any call argument is a device port or a
+// data table. Such arguments cannot be passed in registers, so the call must be
+// inlined even when the function is otherwise outlined.
+func (l *lowerer) hasDeviceOrDataArg(args []ast.Expr) bool {
+	for _, a := range args {
+		if _, ok := l.deviceName(a); ok {
+			return true
+		}
+		if _, ok := l.dataTable(a); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // isPure reports whether an expression has no observable side effects, so it is
@@ -1939,6 +2024,9 @@ func (l *lowerer) dataTable(e ast.Expr) (*sema.DataTable, bool) {
 	id, ok := e.(*ast.Ident)
 	if !ok {
 		return nil, false
+	}
+	if t, ok := l.lookupData(id.Name); ok {
+		return t, true
 	}
 	if _, bound := l.lookup(id.Name); bound {
 		return nil, false

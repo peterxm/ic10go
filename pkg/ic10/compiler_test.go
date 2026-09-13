@@ -322,6 +322,37 @@ func TestModeEnumConstants(t *testing.T) {
 	}
 }
 
+func TestDeviceAndTableParams(t *testing.T) {
+	src := []byte("const sensor = d0\n" +
+		"data T = [ 10, 20, 30 ]\n\n" +
+		"func sumSlots(dev, first, last) num {\n" +
+		"    n := 0\n" +
+		"    for i := first; i < last; i++ {\n" +
+		"        n += dev.slot[i].Occupied\n" +
+		"    }\n" +
+		"    return n\n" +
+		"}\n\n" +
+		"func load(tbl) {\n" +
+		"    for i := 0; i < 3; i++ {\n" +
+		"        put(db, i, tbl[i])\n" +
+		"    }\n" +
+		"}\n\n" +
+		"func main() {\n" +
+		"    if sumSlots(sensor, 2, 4) > 0 {\n" +
+		"        load(T)\n" +
+		"    }\n" +
+		"}\n")
+	code, diags, err := ic10.Compile("test.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("compile: diags=%v err=%v", diags.Diags, err)
+	}
+	for _, want := range []string{"ls r0 d0 r1 Occupied", "put db 0 r0", "get r0 db 509"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("missing %q in:\n%s", want, code)
+		}
+	}
+}
+
 func TestDeviceAlias(t *testing.T) {
 	src := []byte("const sensor = d0\nconst pump = sensor\nconst host = db\nfunc main() {\n    d1.Setting = sensor.Temperature\n    pump.On = 1\n    d2.Setting = sensor.slot[0].Occupied\n    put(host, 0, 1)\n    d0.On = isSet(sensor)\n}\n")
 	code, diags, err := ic10.Compile("test.icg", src)

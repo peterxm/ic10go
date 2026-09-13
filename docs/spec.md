@@ -156,6 +156,26 @@ func clampTemp(x num) num {
 - **编译期展开**：函数是编译期抽象，会被内联或编译成 `jal` 子程序，因此**不支持递归**。
 - 无函数重载、无闭包、无多返回值。
 - `return` 可省略类型（推导）。
+- **参数可以是设备或 `data` 表**：调用点按实参类型绑定，同一个函数可用不同设备 /
+  表调用（每次都内联，因为设备端口与数据段基址是编译期符号，不能放进寄存器）：
+
+```go
+func occupied(dev, first, last) num {
+    n := 0
+    for i := first; i < last; i++ { n += dev.slot[i].Occupied }
+    return n
+}
+
+func loadRoute(route) {
+    for i := 0; i < 12; i++ { put(db, i, route[i]) }
+}
+
+func main() {
+    if occupied(d0, 2, 102) > 0 { loadRoute(MyTable) }
+}
+```
+
+  带设备 / 表实参的调用**强制内联**（即使该函数原本会被外提为子程序）。
 
 ### 4.4 数据表（持久栈数据段）
 
