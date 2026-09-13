@@ -16,6 +16,7 @@ coverage.txt
 
 # Third-party content (not licensed for redistribution, kept locally only)
 /Stationeers_IC10_参考文档.md
+/testdata/screenshot/
 /experiments/data-segment/barsiel_*.icg
 /experiments/data-segment/ingame-airlock/*.ic
 
