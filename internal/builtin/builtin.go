@@ -1,5 +1,9 @@
 // Package builtin holds compile-time tables: IC10 logic types, slot types and
 // built-in function signatures.
+//
+// The LogicType / LogicSlotType / EnumConstants tables were verified against
+// Stationeers Hotfix v0.2.6428.27798 (2026-08-13). Game updates can add, rename
+// or remove enum members, so re-check these tables after each game update.
 package builtin
 
 import (
