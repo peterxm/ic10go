@@ -308,7 +308,7 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 		return
 	}
 	code, diags, err := ic10.Compile(uri, []byte(text))
-	var items []lspDiagnostic
+	items := []lspDiagnostic{}
 	for _, d := range diags.Diags {
 		line := d.Pos.Line - 1
 		if line < 0 {
