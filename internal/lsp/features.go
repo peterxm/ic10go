@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"ic10go/internal/ast"
@@ -70,6 +71,88 @@ func (s *Server) documentSymbol(w *bufio.Writer, id json.RawMessage, params json
 		return
 	}
 	reply(w, id, documentSymbolsFor(s.docs[p.TextDocument.URI]))
+}
+
+// codeLens offers a "Compile to IC10" action above every function.
+func (s *Server) codeLens(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p textDocumentOnlyParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		reply(w, id, []any{})
+		return
+	}
+	text := s.docs[p.TextDocument.URI]
+	var out []any
+	for _, sym := range documentSymbolsFor(text) {
+		if sym.Kind != 12 { // Function
+			continue
+		}
+		out = append(out, map[string]any{
+			"range": sym.SelectionRange,
+			"command": map[string]any{
+				"title":   "Compile to IC10",
+				"command": "icg.compile",
+			},
+		})
+	}
+	reply(w, id, out)
+}
+
+// documentLink links function calls and data-table references to the line of
+// their declaration in the same document.
+func (s *Server) documentLink(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p textDocumentOnlyParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		reply(w, id, []any{})
+		return
+	}
+	reply(w, id, documentLinksFor(p.TextDocument.URI, s.docs[p.TextDocument.URI]))
+}
+
+func documentLinksFor(uri, text string) []any {
+	tree := parseText(text)
+	if tree == nil {
+		return nil
+	}
+	decls := map[string]int{} // name -> 0-based declaration line
+	for _, d := range tree.Decls {
+		switch d := d.(type) {
+		case *ast.FuncDecl:
+			decls[d.Name.Name] = d.Name.Pos().Line - 1
+		case *ast.DataDecl:
+			decls[d.Name.Name] = d.Name.Pos().Line - 1
+		}
+	}
+	if len(decls) == 0 {
+		return nil
+	}
+	file := source.NewFile("", []byte(text))
+	diags := &diag.Bag{}
+	toks := lexer.Tokenize(file, diags)
+	var out []any
+	for i, t := range toks {
+		if t.Kind != token.Ident {
+			continue
+		}
+		if i > 0 && (toks[i-1].Kind == token.Dot || toks[i-1].Kind == token.Func || toks[i-1].Kind == token.Data) {
+			continue
+		}
+		line, ok := decls[t.Text]
+		if !ok {
+			continue
+		}
+		isCall := i+1 < len(toks) && toks[i+1].Kind == token.LParen
+		isIndex := i+1 < len(toks) && toks[i+1].Kind == token.LBracket
+		if !isCall && !isIndex {
+			continue
+		}
+		start := offsetToLSP(text, t.Pos.Offset)
+		end := lspPosition{Line: start.Line, Character: start.Character + utf16Len(t.Text)}
+		out = append(out, map[string]any{
+			"range":  lspRange{Start: start, End: end},
+			"target": fmt.Sprintf("%s#L%d", uri, line+1),
+		})
+	}
+	return out
 }
 
 func documentSymbolsFor(text string) []documentSymbol {
@@ -249,6 +332,152 @@ func (s *Server) references(w *bufio.Writer, id json.RawMessage, params json.Raw
 		locs = append(locs, map[string]any{"uri": p.TextDocument.URI, "range": r})
 	}
 	reply(w, id, locs)
+}
+
+// documentHighlight highlights every occurrence of the identifier under the
+// cursor in the current document.
+func (s *Server) documentHighlight(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p struct {
+		TextDocument struct {
+			URI string `json:"uri"`
+		} `json:"textDocument"`
+		Position lspPosition `json:"position"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		reply(w, id, []any{})
+		return
+	}
+	text := s.docs[p.TextDocument.URI]
+	word := wordAt(text, p.Position)
+	if word == "" {
+		reply(w, id, []any{})
+		return
+	}
+	var out []any
+	for _, r := range identifierRanges(text, word) {
+		out = append(out, map[string]any{"range": r, "kind": 1}) // Text
+	}
+	reply(w, id, out)
+}
+
+// selectionRange expands the selection from the identifier under the cursor out
+// to the line, enclosing braces and the whole document.
+func (s *Server) selectionRange(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p struct {
+		TextDocument struct {
+			URI string `json:"uri"`
+		} `json:"textDocument"`
+		Positions []lspPosition `json:"positions"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		reply(w, id, []any{})
+		return
+	}
+	text := s.docs[p.TextDocument.URI]
+	out := make([]any, 0, len(p.Positions))
+	for _, pos := range p.Positions {
+		out = append(out, selectionRangeFor(text, pos))
+	}
+	reply(w, id, out)
+}
+
+func selectionRangeFor(text string, pos lspPosition) any {
+	off := posToOffset(text, pos)
+	if off > len(text) {
+		off = len(text)
+	}
+	var ranges []lspRange
+
+	// Identifier under the cursor.
+	start, end := off, off
+	for start > 0 && isWordByte(text[start-1]) {
+		start--
+	}
+	for end < len(text) && isWordByte(text[end]) {
+		end++
+	}
+	if end > start {
+		ranges = append(ranges, lspRange{offsetToLSP(text, start), offsetToLSP(text, end)})
+	}
+
+	// Whole line.
+	lineStart := strings.LastIndexByte(text[:off], '\n') + 1
+	lineEnd := len(text)
+	if i := strings.IndexByte(text[off:], '\n'); i >= 0 {
+		lineEnd = off + i
+	}
+	if lineEnd > lineStart {
+		ranges = append(ranges, lspRange{offsetToLSP(text, lineStart), offsetToLSP(text, lineEnd)})
+	}
+
+	// Enclosing brace pairs, innermost first.
+	ranges = append(ranges, enclosingBraceRanges(text, off)...)
+
+	// Whole document.
+	ranges = append(ranges, lspRange{offsetToLSP(text, 0), offsetToLSP(text, len(text))})
+
+	// Build the parent chain: ranges[0] is the innermost, its parent the next.
+	var node any
+	for i := len(ranges) - 1; i >= 0; i-- {
+		n := map[string]any{"range": ranges[i]}
+		if node != nil {
+			n["parent"] = node
+		}
+		node = n
+	}
+	return node
+}
+
+// enclosingBraceRanges returns the `{...}` spans containing off, innermost
+// first.
+func enclosingBraceRanges(text string, off int) []lspRange {
+	var stack []int
+	var out []lspRange
+	for i := 0; i < len(text); i++ {
+		switch text[i] {
+		case '{':
+			stack = append(stack, i)
+		case '}':
+			if len(stack) == 0 {
+				continue
+			}
+			open := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if open <= off && off <= i {
+				out = append(out, lspRange{offsetToLSP(text, open), offsetToLSP(text, i+1)})
+			}
+		}
+	}
+	return out
+}
+
+// workspaceSymbol searches the symbols of every open document.
+func (s *Server) workspaceSymbol(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p struct {
+		Query string `json:"query"`
+	}
+	_ = json.Unmarshal(params, &p)
+	query := strings.ToLower(p.Query)
+	var out []any
+	for uri, text := range s.docs {
+		for _, sym := range documentSymbolsFor(text) {
+			if query != "" && !strings.Contains(strings.ToLower(sym.Name), query) {
+				continue
+			}
+			out = append(out, map[string]any{
+				"name": sym.Name,
+				"kind": sym.Kind,
+				"location": map[string]any{
+					"uri":   uri,
+					"range": sym.SelectionRange,
+				},
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].(map[string]any)["name"].(string) < out[j].(map[string]any)["name"].(string)
+	})
+	reply(w, id, out)
 }
 
 func identifierRanges(text, word string) []lspRange {
@@ -573,27 +802,70 @@ func (s *Server) semanticTokens(w *bufio.Writer, id json.RawMessage, params json
 		reply(w, id, map[string]any{"data": []int{}})
 		return
 	}
-	reply(w, id, map[string]any{"data": semanticTokensFor(s.docs[p.TextDocument.URI])})
+	reply(w, id, map[string]any{"data": encodeSemanticTokens(semanticTokensFor(s.docs[p.TextDocument.URI]))})
 }
 
-func semanticTokensFor(text string) []int {
+func (s *Server) semanticTokensRange(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p struct {
+		TextDocument struct {
+			URI string `json:"uri"`
+		} `json:"textDocument"`
+		Range lspRange `json:"range"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		reply(w, id, map[string]any{"data": []int{}})
+		return
+	}
+	var filtered []semanticToken
+	for _, t := range semanticTokensFor(s.docs[p.TextDocument.URI]) {
+		if tokenInRange(t, p.Range) {
+			filtered = append(filtered, t)
+		}
+	}
+	reply(w, id, map[string]any{"data": encodeSemanticTokens(filtered)})
+}
+
+type semanticToken struct {
+	line, char, length, typ int
+}
+
+// encodeSemanticTokens turns absolute tokens into the LSP delta encoding.
+func encodeSemanticTokens(toks []semanticToken) []int {
+	var data []int
+	prevLine, prevChar := 0, 0
+	for _, t := range toks {
+		if t.length <= 0 {
+			continue
+		}
+		dl := t.line - prevLine
+		dc := t.char
+		if dl == 0 {
+			dc = t.char - prevChar
+		}
+		data = append(data, dl, dc, t.length, t.typ, 0)
+		prevLine, prevChar = t.line, t.char
+	}
+	return data
+}
+
+func tokenInRange(t semanticToken, r lspRange) bool {
+	if t.line < r.Start.Line || t.line > r.End.Line {
+		return false
+	}
+	if t.line == r.Start.Line && t.char < r.Start.Character {
+		return false
+	}
+	if t.line == r.End.Line && t.char > r.End.Character {
+		return false
+	}
+	return true
+}
+
+func semanticTokensFor(text string) []semanticToken {
 	file := source.NewFile("", []byte(text))
 	diags := &diag.Bag{}
 	toks := lexer.Tokenize(file, diags)
-	var data []int
-	prevLine, prevChar := 0, 0
-	emit := func(pos lspPosition, length, typ int) {
-		if length <= 0 {
-			return
-		}
-		dl := pos.Line - prevLine
-		dc := pos.Character
-		if dl == 0 {
-			dc = pos.Character - prevChar
-		}
-		data = append(data, dl, dc, length, typ, 0)
-		prevLine, prevChar = pos.Line, pos.Character
-	}
+	var out []semanticToken
 	for i, t := range toks {
 		pos := offsetToLSP(text, t.Pos.Offset)
 		length := utf16Len(t.Text)
@@ -624,9 +896,11 @@ func semanticTokensFor(text string) []int {
 		default:
 			typ = semanticTokenIndex["operator"]
 		}
-		emit(pos, length, typ)
+		if length > 0 {
+			out = append(out, semanticToken{line: pos.Line, char: pos.Character, length: length, typ: typ})
+		}
 	}
-	return data
+	return out
 }
 
 // ---------------------------------------------------------------------------

@@ -123,6 +123,59 @@ var LogicTypeDocs = map[string]Doc{
 	"TotalSlots":        {"TotalSlots", "Total number of slots.", "槽位总数。"},
 }
 
+// EnumDocs documents enum receivers used as `Receiver.Member` constants.
+var EnumDocs = map[string]Doc{
+	"Color":              {"Color", "Device color (LogicType.Color).", "设备颜色（LogicType.Color）。"},
+	"PowerMode":          {"PowerMode", "Area Power Controller charge state.", "区域电源控制器充电状态。"},
+	"DisplayMode":        {"DisplayMode", "LED display readout mode.", "LED 显示器读数模式。"},
+	"Sound":              {"Sound", "Speaker / klaxon alert (game enum SoundAlert).", "扬声器/警报音效（游戏枚举 SoundAlert）。"},
+	"SorterInstruction":  {"SorterInstruction", "Logic sorter filter instruction.", "逻辑分类器过滤指令。"},
+	"SlotClass":          {"SlotClass", "Slot class.", "槽位类别。"},
+	"SortingClass":       {"SortingClass", "Item sorting class.", "物品分类类别。"},
+	"ReagentMode":        {"ReagentMode", "Reagent query mode.", "反应物查询模式。"},
+	"PrinterInstruction": {"PrinterInstruction", "Printer instruction.", "打印机指令。"},
+}
+
+// EnumMemberDocs documents individual enum members (keyed "Receiver.Member").
+var EnumMemberDocs = map[string]Doc{
+	"Color.Blue":   {"Color.Blue", "Blue", "蓝色"},
+	"Color.Gray":   {"Color.Gray", "Gray", "灰色"},
+	"Color.Green":  {"Color.Green", "Green", "绿色"},
+	"Color.Orange": {"Color.Orange", "Orange", "橙色"},
+	"Color.Red":    {"Color.Red", "Red", "红色"},
+	"Color.Yellow": {"Color.Yellow", "Yellow", "黄色"},
+	"Color.White":  {"Color.White", "White", "白色"},
+	"Color.Black":  {"Color.Black", "Black", "黑色"},
+	"Color.Brown":  {"Color.Brown", "Brown", "棕色"},
+	"Color.Khaki":  {"Color.Khaki", "Khaki", "卡其"},
+	"Color.Pink":   {"Color.Pink", "Pink", "粉色"},
+	"Color.Purple": {"Color.Purple", "Purple", "紫色"},
+
+	"PowerMode.Idle":        {"PowerMode.Idle", "Idle", "空闲"},
+	"PowerMode.Discharged":  {"PowerMode.Discharged", "Discharged", "已放完"},
+	"PowerMode.Discharging": {"PowerMode.Discharging", "Discharging", "放电中"},
+	"PowerMode.Charging":    {"PowerMode.Charging", "Charging", "充电中"},
+	"PowerMode.Charged":     {"PowerMode.Charged", "Charged", "已充满"},
+
+	"DisplayMode.Default":    {"DisplayMode.Default", "Default", "默认"},
+	"DisplayMode.Percent":    {"DisplayMode.Percent", "Percent", "百分比"},
+	"DisplayMode.Power":      {"DisplayMode.Power", "Power", "功率"},
+	"DisplayMode.Kelvin":     {"DisplayMode.Kelvin", "Kelvin", "开尔文"},
+	"DisplayMode.Celsius":    {"DisplayMode.Celsius", "Celsius", "摄氏度"},
+	"DisplayMode.Meters":     {"DisplayMode.Meters", "Meters", "米"},
+	"DisplayMode.Credits":    {"DisplayMode.Credits", "Credits", "信用点"},
+	"DisplayMode.Seconds":    {"DisplayMode.Seconds", "Seconds", "秒"},
+	"DisplayMode.Minutes":    {"DisplayMode.Minutes", "Minutes", "分钟"},
+	"DisplayMode.Days":       {"DisplayMode.Days", "Days", "天"},
+	"DisplayMode.String":     {"DisplayMode.String", "String (custom text)", "字符串（自定义文本）"},
+	"DisplayMode.Fahrenheit": {"DisplayMode.Fahrenheit", "Fahrenheit", "华氏度"},
+	"DisplayMode.Litres":     {"DisplayMode.Litres", "Litres", "升"},
+	"DisplayMode.Mol":        {"DisplayMode.Mol", "Mol", "摩尔"},
+	"DisplayMode.Pa":         {"DisplayMode.Pa", "Pascals", "帕斯卡"},
+	"DisplayMode.Newtons":    {"DisplayMode.Newtons", "Newtons", "牛顿"},
+	"DisplayMode.Degrees":    {"DisplayMode.Degrees", "Degrees", "角度"},
+}
+
 // KeywordDocs documents the language keywords and low-level control flow.
 var KeywordDocs = map[string]Doc{
 	"func":     {"func name(params) type { ... }", "Function; fully inlined, no recursion.", "函数；全内联，不支持递归。"},

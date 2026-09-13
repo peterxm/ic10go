@@ -94,10 +94,15 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 					"hoverProvider":              true,
 					"definitionProvider":         true,
 					"documentSymbolProvider":     true,
+					"documentHighlightProvider":  true,
+					"selectionRangeProvider":     true,
+					"workspaceSymbolProvider":    true,
 					"foldingRangeProvider":       true,
 					"referencesProvider":         true,
 					"renameProvider":             true,
 					"codeActionProvider":         true,
+					"codeLensProvider":           map[string]any{},
+					"documentLinkProvider":       map[string]any{},
 					"inlayHintProvider":          true,
 					"signatureHelpProvider": map[string]any{
 						"triggerCharacters": []string{"(", ","},
@@ -107,7 +112,8 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 							"tokenTypes":     semanticTokenTypes,
 							"tokenModifiers": []string{},
 						},
-						"full": true,
+						"full":  true,
+						"range": true,
 					},
 				},
 				"serverInfo": map[string]any{"name": "ic10c", "version": version.Short()},
@@ -134,6 +140,16 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 			s.definition(writer, msg.ID, msg.Params)
 		case "textDocument/documentSymbol":
 			s.documentSymbol(writer, msg.ID, msg.Params)
+		case "textDocument/codeLens":
+			s.codeLens(writer, msg.ID, msg.Params)
+		case "textDocument/documentLink":
+			s.documentLink(writer, msg.ID, msg.Params)
+		case "textDocument/documentHighlight":
+			s.documentHighlight(writer, msg.ID, msg.Params)
+		case "textDocument/selectionRange":
+			s.selectionRange(writer, msg.ID, msg.Params)
+		case "workspace/symbol":
+			s.workspaceSymbol(writer, msg.ID, msg.Params)
 		case "textDocument/foldingRange":
 			s.foldingRange(writer, msg.ID, msg.Params)
 		case "textDocument/references":
@@ -146,6 +162,8 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 			s.codeAction(writer, msg.ID, msg.Params)
 		case "textDocument/semanticTokens/full":
 			s.semanticTokens(writer, msg.ID, msg.Params)
+		case "textDocument/semanticTokens/range":
+			s.semanticTokensRange(writer, msg.ID, msg.Params)
 		case "textDocument/inlayHint":
 			s.inlayHint(writer, msg.ID, msg.Params)
 		default:
@@ -280,6 +298,7 @@ type lspDiagnostic struct {
 	Range    lspRange `json:"range"`
 	Severity int      `json:"severity"`
 	Source   string   `json:"source"`
+	Code     string   `json:"code,omitempty"`
 	Message  string   `json:"message"`
 }
 
@@ -299,10 +318,23 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 		if ch < 0 {
 			ch = 0
 		}
+		end := lspPosition{line, ch}
+		if d.End.IsValid() {
+			el := d.End.Line - 1
+			if el < 0 {
+				el = 0
+			}
+			ec := d.End.Col - 1
+			if ec < 0 {
+				ec = 0
+			}
+			end = lspPosition{el, ec}
+		}
 		items = append(items, lspDiagnostic{
-			Range:    lspRange{Start: lspPosition{line, ch}, End: lspPosition{line, ch}},
+			Range:    lspRange{Start: lspPosition{line, ch}, End: end},
 			Severity: severity(int(d.Severity)),
 			Source:   "ic10c",
+			Code:     d.Code,
 			Message:  d.Msg,
 		})
 	}
@@ -665,6 +697,14 @@ func (s *Server) hover(w *bufio.Writer, id json.RawMessage, params json.RawMessa
 		return
 	}
 	text := s.docs[p.TextDocument.URI]
+	if recv, member := enumMemberAt(text, p.Position); recv != "" {
+		if content := s.enumMemberHover(recv, member); content != "" {
+			reply(w, id, map[string]any{
+				"contents": map[string]any{"kind": "markdown", "value": content},
+			})
+			return
+		}
+	}
 	content := s.hoverFor(text, wordAt(text, p.Position))
 	if content == "" {
 		reply(w, id, nil)
@@ -717,6 +757,64 @@ func docText(d builtin.Doc, zh bool) string {
 		return "```icg\n" + d.Signature + "\n```\n\n" + desc
 	}
 	return desc
+}
+
+// enumMemberAt returns the enum receiver and member when pos sits on a member
+// access such as `Color.Purple`.
+func enumMemberAt(text string, pos lspPosition) (string, string) {
+	off := posToOffset(text, pos)
+	start := off
+	for start > 0 && isWordByte(text[start-1]) {
+		start--
+	}
+	end := off
+	for end < len(text) && isWordByte(text[end]) {
+		end++
+	}
+	if start == 0 || text[start-1] != '.' {
+		return "", ""
+	}
+	member := text[start:end]
+	j := start - 1
+	rEnd := j
+	for j > 0 && isWordByte(text[j-1]) {
+		j--
+	}
+	recv := text[j:rEnd]
+	if recv == "" || member == "" {
+		return "", ""
+	}
+	return recv, member
+}
+
+// enumMemberHover renders `Receiver.Member = value` plus any documented text.
+func (s *Server) enumMemberHover(recv, member string) string {
+	key := recv + "." + member
+	v, ok := builtin.EnumConstants[key]
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("```icg\n")
+	b.WriteString(key)
+	b.WriteString(" = ")
+	b.WriteString(strconv.FormatFloat(v, 'g', -1, 64))
+	b.WriteString("\n```")
+	if d, ok := builtin.EnumMemberDocs[key]; ok {
+		b.WriteString("\n\n")
+		b.WriteString(pickLang(d, s.zh))
+	} else if d, ok := builtin.EnumDocs[recv]; ok {
+		b.WriteString("\n\n")
+		b.WriteString(pickLang(d, s.zh))
+	}
+	return b.String()
+}
+
+func pickLang(d builtin.Doc, zh bool) string {
+	if zh {
+		return d.ZH
+	}
+	return d.EN
 }
 
 func (s *Server) hoverFor(text, word string) string {

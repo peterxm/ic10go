@@ -36,6 +36,89 @@ func TestDiagnostics(t *testing.T) {
 	}
 }
 
+func TestDiagnosticCode(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"c.icg","text":"func main() { x := d0.NotARealType }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "unknown-logic-type") {
+		t.Errorf("diagnostic code not published:\n%s", out)
+	}
+}
+
+func TestDocumentHighlight(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"h.icg","text":"func main() { x := 1\n    d0.Setting = x }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/documentHighlight","params":{"textDocument":{"uri":"h.icg"},"position":{"line":0,"character":14}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"kind":1`) {
+		t.Errorf("no document highlights returned:\n%s", out)
+	}
+}
+
+func TestSelectionRange(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"s.icg","text":"func main() {\n    x := 1\n}"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/selectionRange","params":{"textDocument":{"uri":"s.icg"},"positions":[{"line":1,"character":5}]}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"parent"`) {
+		t.Errorf("selection range has no parent chain:\n%s", out)
+	}
+}
+
+func TestWorkspaceSymbol(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"w.icg","text":"func helper() {}\nfunc main() { helper() }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"workspace/symbol","params":{"query":"help"}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "helper") {
+		t.Errorf("workspace symbol missing:\n%s", out)
+	}
+}
+
+func TestSemanticTokensRange(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"t.icg","text":"func main() { d0.On = 1 }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/range","params":{"textDocument":{"uri":"t.icg"},"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":22}}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"data"`) {
+		t.Errorf("no range semantic tokens returned:\n%s", out)
+	}
+}
+
+func TestCodeLens(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"l.icg","text":"func main() { yield() }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/codeLens","params":{"textDocument":{"uri":"l.icg"}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "icg.compile") {
+		t.Errorf("no code lens returned:\n%s", out)
+	}
+}
+
+func TestDocumentLink(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"d.icg","text":"data T = [1, 2]\nfunc helper() {}\nfunc main() { d0.Setting = T[0]\n    helper() }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/documentLink","params":{"textDocument":{"uri":"d.icg"}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "#L1") || !strings.Contains(out, "#L2") {
+		t.Errorf("document links missing:\n%s", out)
+	}
+}
+
 func TestCompletion(t *testing.T) {
 	out := runServer(t,
 		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
@@ -70,6 +153,18 @@ func TestHover(t *testing.T) {
 	)
 	if !strings.Contains(out, "Kelvin") {
 		t.Errorf("hover did not describe the logic type:\n%s", out)
+	}
+}
+
+func TestHoverEnumMember(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"e.icg","text":"func main() { d0.Color = Color.Purple }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"e.icg"},"position":{"line":0,"character":33}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "Color.Purple") || !strings.Contains(out, "11") {
+		t.Errorf("hover did not describe the enum member:\n%s", out)
 	}
 }
 
