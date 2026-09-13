@@ -125,16 +125,16 @@ func (p *parser) parseConstDecl() []ast.Decl {
 			}
 			pos := p.cur().Pos
 			name := p.parseIdent()
-			p.expect(token.Assign)
-			val := p.parseExpr()
+			opTok := p.expect(token.Assign)
+			val := p.parseAssignRHS(opTok)
 			decls = append(decls, &ast.ConstDecl{NodeBase: base(pos), Name: name, Value: val, Group: true})
 		}
 		p.expect(token.RParen)
 		return decls
 	}
 	name := p.parseIdent()
-	p.expect(token.Assign)
-	val := p.parseExpr()
+	opTok := p.expect(token.Assign)
+	val := p.parseAssignRHS(opTok)
 	return []ast.Decl{&ast.ConstDecl{NodeBase: base(kw.Pos), Name: name, Value: val}}
 }
 
@@ -172,8 +172,8 @@ func (p *parser) parseVarDecls() []ast.Decl {
 			name := p.parseIdent()
 			d := &ast.VarDecl{NodeBase: base(pos), Name: name, Group: true}
 			if p.at(token.Assign) {
-				p.advance()
-				d.Value = p.parseExpr()
+				opTok := p.advance()
+				d.Value = p.parseAssignRHS(opTok)
 			}
 			decls = append(decls, d)
 		}
@@ -183,8 +183,8 @@ func (p *parser) parseVarDecls() []ast.Decl {
 	name := p.parseIdent()
 	d := &ast.VarDecl{NodeBase: base(kw.Pos), Name: name}
 	if p.at(token.Assign) {
-		p.advance()
-		d.Value = p.parseExpr()
+		opTok := p.advance()
+		d.Value = p.parseAssignRHS(opTok)
 	}
 	return []ast.Decl{d}
 }
@@ -310,14 +310,36 @@ func (p *parser) parseSimpleStmt() ast.Stmt {
 		token.PlusAssign, token.MinusAssign, token.StarAssign, token.SlashAssign,
 		token.PercentAssign, token.AmpAssign, token.PipeAssign, token.CaretAssign,
 		token.ShlAssign, token.ShrAssign:
-		op := p.advance().Kind
-		rhs := p.parseExpr()
-		return &ast.AssignStmt{NodeBase: base(pos), Lhs: x, Op: op, Rhs: rhs}
+		opTok := p.advance()
+		rhs := p.parseAssignRHS(opTok)
+		return &ast.AssignStmt{NodeBase: base(pos), Lhs: x, Op: opTok.Kind, Rhs: rhs}
 	case token.PlusPlus, token.MinusMinus:
 		op := p.advance().Kind
 		return &ast.IncDecStmt{NodeBase: base(pos), X: x, Op: op}
 	}
 	return &ast.ExprStmt{NodeBase: base(pos), X: x}
+}
+
+// parseAssignRHS parses the right-hand side of an assignment. When the next
+// token cannot begin an expression (e.g. the RHS was left empty and the next
+// line starts a new statement), it reports the error at the assignment operator
+// rather than at that unrelated token.
+func (p *parser) parseAssignRHS(op token.Token) ast.Expr {
+	if !startsExpr(p.cur().Kind) {
+		p.errorf(op.Pos, "expected expression after %q", op.Text)
+	}
+	return p.parseExpr()
+}
+
+// startsExpr reports whether a token of this kind can begin an expression.
+func startsExpr(k token.Kind) bool {
+	switch k {
+	case token.Ident, token.Number, token.String, token.Device,
+		token.True, token.False, token.NaN, token.PInf, token.NInf,
+		token.LParen, token.Not, token.Tilde, token.Minus, token.Plus:
+		return true
+	}
+	return false
 }
 
 func (p *parser) parseIf() ast.Stmt {

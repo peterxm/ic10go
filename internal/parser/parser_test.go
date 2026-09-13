@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"strings"
 	"testing"
 
 	"ic10go/internal/ast"
@@ -93,6 +94,34 @@ func TestParseErrors(t *testing.T) {
 	_, diags := parse(t, "func f( { }\n")
 	if !diags.HasErrors() {
 		t.Fatal("expected errors")
+	}
+}
+
+func TestAssignMissingRHS(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		line int
+	}{
+		{"assign", "func main() {\n    d0.Mode =\n    for {\n        yield()\n    }\n}\n", 2},
+		{"define", "func main() {\n    x :=\n}\n", 2},
+		{"var", "var g =\nfunc main() {}\n", 1},
+		{"const", "const C =\nfunc main() {}\n", 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, diags := parse(t, c.src)
+			if !diags.HasErrors() {
+				t.Fatal("expected an error")
+			}
+			d := diags.Diags[0]
+			if !strings.Contains(d.Msg, "expected expression after") {
+				t.Errorf("msg = %q, want missing-RHS message", d.Msg)
+			}
+			if d.Pos.Line != c.line {
+				t.Errorf("error reported on line %d, want %d", d.Pos.Line, c.line)
+			}
+		})
 	}
 }
 
