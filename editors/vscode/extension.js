@@ -55,6 +55,9 @@ class LspClient {
         this.nextId = 1;
         this.pending = new Map();
         this.initialized = false;
+        // Version of the running server we already auto-restarted from, so a
+        // rebuilt ic10c binary is picked up at most once per stale version.
+        this.autoRestartedFrom = '';
         this.output = vscode.window.createOutputChannel('IC10 Go');
         this.diags = vscode.languages.createDiagnosticCollection('icg');
         this.ic10Diags = vscode.languages.createDiagnosticCollection('ic10');
@@ -204,12 +207,33 @@ class LspClient {
                 this.initialized = true;
                 this.notify('initialized', {});
                 this.registerSemanticTokens(result);
-                this.checkServerVersion((result && result.serverInfo && result.serverInfo.version) || '');
+                const running = (result && result.serverInfo && result.serverInfo.version) || '';
+                this.checkServerVersion(running);
+                this.ensureCurrentBinary(running);
                 for (const doc of vscode.workspace.textDocuments) {
                     if (doc.languageId === 'icg') this.sendDidOpen(doc);
                 }
             })
             .catch((err) => this.output.appendLine(`initialize failed: ${err.message}`));
+    }
+
+    // ensureCurrentBinary restarts the server when the ic10c binary on disk is
+    // newer than the process that answered initialize (for example after a
+    // rebuild while the editor stayed open). Without this the stale process
+    // keeps serving diagnostics from the old compiler.
+    async ensureCurrentBinary(runningVersion) {
+        if (this.autoRestartedFrom === runningVersion) return;
+        const res = await this.execCli(['version']);
+        const diskVersion = parseVersionFromVersionOutput(res.stdout);
+        const running = parseVersion(runningVersion);
+        const disk = parseVersion(diskVersion);
+        if (!running || !disk) return;
+        if (running[0] === disk[0] && running[1] === disk[1] && running[2] === disk[2]) return;
+        this.autoRestartedFrom = runningVersion;
+        this.output.appendLine(
+            `running language server ${runningVersion} differs from on-disk ic10c ${diskVersion}; restarting`
+        );
+        this.restart();
     }
 
     // checkServerVersion warns when ic10c is older than MIN_SERVER_VERSION.
@@ -1122,6 +1146,13 @@ function parseVersion(v) {
     const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || ''));
     if (!m) return undefined;
     return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+// parseVersionFromVersionOutput extracts the version from `ic10c version`
+// output (its first line is "ic10c X.Y.Z").
+function parseVersionFromVersionOutput(out) {
+    const m = /ic10c\s+(\S+)/.exec(String(out || ''));
+    return m ? m[1] : '';
 }
 
 // versionLess reports whether a < b for [major, minor, patch] tuples.

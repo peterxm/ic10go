@@ -136,7 +136,7 @@ func main() {
 - **悬停一直显示"正在加载"**：旧版扩展/编译器的已知问题，已在 0.5.4 修复——请更新 `ic10c` 与扩展后重载。
 - **含 `data` 表的程序停机 / 行为不对**：数据段要先安装——点“IC10 Go: 编译为 IC10”，扩展会把「安装代码」复制到剪贴板：先贴入 IC 运行一次，再用旁边预览里的运行代码覆盖；设备 host（空调等）需改用 `--data-access stack` 生成。
 - **始终报 `no main function found`**：确认文件确实有 `func main()`；若文件带 UTF-8 BOM，旧版编译器会解析失败（0.5.4 起已支持 BOM）。
-- **改了编译器后行为没变**：运行 `IC10 Go: Restart Language Server`。
+- **改了编译器后行为没变**：扩展会在启动时比较运行中的 server 版本与磁盘上的 `ic10c`，不一致会自动重启；也可手动运行 `IC10 Go: Restart Language Server`。
 - **查看日志**：输出面板（`Ctrl+Shift+U`）选择 `IC10 Go`。
 
 ## 九、工作原理
