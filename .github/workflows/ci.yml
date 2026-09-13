@@ -22,3 +22,19 @@ jobs:
         run: go test ./...
       - name: differential (extra seeds)
         run: go test ./pkg/ic10 -run 'TestDifferential' -count=1
+
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: syntax check
+        run: node --check editors/vscode/extension.js
+      - name: smoke test
+        run: node editors/vscode/smoke.js
+      - name: package vsix
+        run: |
+          cd editors/vscode
+          npx --yes @vscode/vsce package --allow-missing-repository
