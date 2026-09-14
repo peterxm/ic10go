@@ -92,10 +92,10 @@ func (t *Call) Key() string {
 
 func (t *Call) returnBlock() *Block { return t.Return }
 
-func (t *JmpRA) Successors() []*Block { return nil }
-func (t *JmpRA) Uses() []Value        { return nil }
+func (t *JmpRA) Successors() []*Block    { return nil }
+func (t *JmpRA) Uses() []Value           { return nil }
 func (t *JmpRA) Redirect(*Block, *Block) {}
-func (t *JmpRA) Key() string          { return "jmpra" }
+func (t *JmpRA) Key() string             { return "jmpra" }
 
 func (t *JmpDyn) Successors() []*Block { return t.Table }
 func (t *JmpDyn) Uses() []Value        { return []Value{t.Target} }
@@ -112,10 +112,10 @@ func (t *JmpDyn) Key() string { return "jmpdyn|" + valueKey(t.Target) }
 // Ret and conditional terminators
 // ---------------------------------------------------------------------------
 
-func (t *Ret) Successors() []*Block { return nil }
-func (t *Ret) Uses() []Value        { return appendUse(nil, t.Value) }
+func (t *Ret) Successors() []*Block    { return nil }
+func (t *Ret) Uses() []Value           { return appendUse(nil, t.Value) }
 func (t *Ret) Redirect(*Block, *Block) {}
-func (t *Ret) Key() string          { return "ret|" + valueKey(t.Value) }
+func (t *Ret) Key() string             { return "ret|" + valueKey(t.Value) }
 
 func (t *Br) Successors() []*Block {
 	// Visit the false edge first so the true target becomes the fall-through.
