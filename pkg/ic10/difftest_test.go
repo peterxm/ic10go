@@ -244,7 +244,7 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		g.simple(sb, ind)
 		return
 	}
-	switch g.rng.Intn(21) {
+	switch g.rng.Intn(22) {
 	case 0, 1:
 		g.simple(sb, ind)
 	case 2, 3:
@@ -282,7 +282,13 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 	case 15:
 		fmt.Fprintf(sb, "%s%s = read(%s, %s)\n", ind, g.varName(), g.devPort(), g.expr(2))
 	case 16, 17:
-		fmt.Fprintf(sb, "%sif %s {\n", ind, g.expr(2))
+		if g.rng.Intn(2) == 0 {
+			iv := fmt.Sprintf("i%d", g.loops)
+			g.loops++
+			fmt.Fprintf(sb, "%sif %s := %s; %s {\n", ind, iv, g.expr(2), g.expr(2))
+		} else {
+			fmt.Fprintf(sb, "%sif %s {\n", ind, g.expr(2))
+		}
 		savedStack := g.stack
 		g.block(sb, depth+1, 1+g.rng.Intn(2))
 		g.stack = savedStack
@@ -296,7 +302,11 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		iv := fmt.Sprintf("i%d", g.loops)
 		g.loops++
 		g.loopDepth++
-		fmt.Fprintf(sb, "%sfor %s := 0; %s < %d; %s++ {\n", ind, iv, iv, 1+g.rng.Intn(4), iv)
+		if g.rng.Intn(2) == 0 {
+			fmt.Fprintf(sb, "%sfor %s := range %d {\n", ind, iv, 1+g.rng.Intn(4))
+		} else {
+			fmt.Fprintf(sb, "%sfor %s := 0; %s < %d; %s++ {\n", ind, iv, iv, 1+g.rng.Intn(4), iv)
+		}
 		savedStack := g.stack
 		g.block(sb, depth+1, 1+g.rng.Intn(2))
 		g.stack = savedStack
@@ -317,13 +327,43 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		fmt.Fprintf(sb, "%sif %s < %d {\n", ind, gv, 1+g.rng.Intn(3))
 		fmt.Fprintf(sb, "%s    goto %s\n", ind, lbl)
 		fmt.Fprintf(sb, "%s}\n", ind)
+	case 20:
+		if g.inFunc {
+			g.simple(sb, ind)
+			return
+		}
+		// A labeled loop with a labeled break/continue.
+		lbl := fmt.Sprintf("L%d", g.labels)
+		g.labels++
+		iv := fmt.Sprintf("i%d", g.loops)
+		g.loops++
+		g.loopDepth++
+		fmt.Fprintf(sb, "%slabel %s:\n", ind, lbl)
+		fmt.Fprintf(sb, "%sfor %s := 0; %s < %d; %s++ {\n", ind, iv, iv, 2+g.rng.Intn(3), iv)
+		if g.rng.Intn(2) == 0 {
+			fmt.Fprintf(sb, "%s    break %s\n", ind, lbl)
+		} else {
+			fmt.Fprintf(sb, "%s    continue %s\n", ind, lbl)
+		}
+		g.loopDepth--
+		fmt.Fprintf(sb, "%s}\n", ind)
 	default:
 		ncase := 2 + g.rng.Intn(9) // 2..10 dense cases
-		fmt.Fprintf(sb, "%sswitch %s {\n", ind, g.expr(2))
+		if g.rng.Intn(2) == 0 {
+			sv := fmt.Sprintf("s%d", g.loops)
+			g.loops++
+			fmt.Fprintf(sb, "%sswitch %s := %s; %s {\n", ind, sv, g.expr(2), g.expr(2))
+		} else {
+			fmt.Fprintf(sb, "%sswitch %s {\n", ind, g.expr(2))
+		}
 		g.switchDepth++
 		savedStack := g.stack
 		for ci := 0; ci < ncase; ci++ {
-			fmt.Fprintf(sb, "%scase %d:\n", ind, ci)
+			if ci == 0 && g.rng.Intn(2) == 0 {
+				fmt.Fprintf(sb, "%scase 0..1:\n", ind)
+			} else {
+				fmt.Fprintf(sb, "%scase %d:\n", ind, ci)
+			}
 			g.block(sb, depth+1, 1)
 			g.stack = savedStack
 		}

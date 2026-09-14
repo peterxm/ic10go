@@ -151,6 +151,14 @@ for i := 0; i < 10; i++ {
     sum += i
 }
 
+for i := range 10 {          // i = 0..9
+    sum += i
+}
+
+for i, v := range Display {  // 遍历 data 表
+    sum += v
+}
+
 for d0.Activate {
     yield()
 }
@@ -162,6 +170,15 @@ case 2, 3:
     d1.On = 0
 default:
     d1.On = -1
+}
+
+if x := d0.Setting; x > 0 {  // 带初始化
+    d1.On = 1
+}
+
+switch x := d0.Setting; x {  // 带初始化的 switch
+case 0..9:                   // 闭区间 case
+    d1.On = 1
 }
 ```
 

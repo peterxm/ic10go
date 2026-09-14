@@ -201,6 +201,9 @@ func localSymbols(text string, stmts []ast.Stmt) []documentSymbol {
 		case *ast.LabelStmt:
 			out = append(out, documentSymbol{Name: st.Name.Name, Kind: 20, Range: lineRange(text, st.Name.Pos().Offset), SelectionRange: nameRange(text, st.Name.Name, st.Name.Pos().Offset)})
 		case *ast.IfStmt:
+			if st.Init != nil {
+				out = append(out, localSymbols(text, []ast.Stmt{st.Init})...)
+			}
 			if st.Then != nil {
 				out = append(out, localSymbols(text, st.Then.List)...)
 			}
@@ -214,7 +217,14 @@ func localSymbols(text string, stmts []ast.Stmt) []documentSymbol {
 			if st.Body != nil {
 				out = append(out, localSymbols(text, st.Body.List)...)
 			}
+		case *ast.RangeStmt:
+			if st.Body != nil {
+				out = append(out, localSymbols(text, st.Body.List)...)
+			}
 		case *ast.SwitchStmt:
+			if st.Init != nil {
+				out = append(out, localSymbols(text, []ast.Stmt{st.Init})...)
+			}
 			for _, c := range st.Cases {
 				out = append(out, localSymbols(text, c.Body)...)
 			}
@@ -891,7 +901,7 @@ func semanticTokensFor(text string) []semanticToken {
 			} else {
 				typ = semanticTokenIndex["variable"]
 			}
-		case t.Kind >= token.Const && t.Kind <= token.NInf:
+		case t.Kind >= token.Const && t.Kind <= token.Range:
 			typ = semanticTokenIndex["keyword"]
 		default:
 			typ = semanticTokenIndex["operator"]

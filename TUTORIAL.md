@@ -345,9 +345,17 @@ for d0.Activate {     // while
 for i := 0; i < 10; i++ {   // 三段式
     sum += i
 }
+
+for i := range 10 {         // i = 0..9
+    sum += i
+}
+
+for i, v := range Recipe {  // 遍历 data 表：v = Recipe[i]
+    sum += v
+}
 ```
 
-- 支持 `break` / `continue`。
+- 支持 `break` / `continue`；嵌套循环可用标签跳出外层：`label Outer:` 写在循环前，`break Outer` / `continue Outer`。
 - **长循环里一定要 `yield()`**，否则芯片会在一个 tick 内空转（见第 11 节）。
 
 ### 6.7 `switch`
@@ -360,6 +368,11 @@ case 2, 3:
     d1.On = 0
 default:
     d1.On = -1
+}
+
+switch x := d0.Setting; x {   // 带初始化
+case 0..9:                    // 闭区间
+    d1.On = 1
 }
 ```
 

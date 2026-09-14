@@ -465,6 +465,7 @@ func baseCompletionItems() []completionItem {
 		ci("const", 14, "declaration"), ci("data", 14, "data table"), ci("var", 14, "declaration"), ci("func", 3, "declaration"),
 		ci("if", 14, ""), ci("else", 14, ""), ci("for", 14, ""), ci("switch", 14, ""),
 		ci("case", 14, ""), ci("default", 14, ""), ci("break", 14, ""), ci("continue", 14, ""),
+		ci("range", 14, "for range loop"),
 		ci("return", 14, ""), ci("label", 14, ""), ci("goto", 14, ""), ci("call", 14, ""), ci("ret", 14, ""),
 		ci("table", 14, "switch modifier"),
 		ci("true", 12, ""), ci("false", 12, ""), ci("nan", 12, ""), ci("pinf", 12, ""), ci("ninf", 12, ""),
@@ -634,6 +635,9 @@ func collectStmtSymbols(stmts []ast.Stmt, add func(string, int, string)) {
 		case *ast.LabelStmt:
 			add(s.Name.Name, 2, "label")
 		case *ast.IfStmt:
+			if s.Init != nil {
+				collectStmtSymbols([]ast.Stmt{s.Init}, add)
+			}
 			if s.Then != nil {
 				collectStmtSymbols(s.Then.List, add)
 			}
@@ -647,7 +651,14 @@ func collectStmtSymbols(stmts []ast.Stmt, add func(string, int, string)) {
 			if s.Body != nil {
 				collectStmtSymbols(s.Body.List, add)
 			}
+		case *ast.RangeStmt:
+			if s.Body != nil {
+				collectStmtSymbols(s.Body.List, add)
+			}
 		case *ast.SwitchStmt:
+			if s.Init != nil {
+				collectStmtSymbols([]ast.Stmt{s.Init}, add)
+			}
 			for _, c := range s.Cases {
 				collectStmtSymbols(c.Body, add)
 			}

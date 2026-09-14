@@ -111,6 +111,7 @@ type IncDecStmt struct {
 
 type IfStmt struct {
 	NodeBase
+	Init Stmt // may be nil
 	Cond Expr
 	Then *BlockStmt
 	Else Stmt // *BlockStmt, *IfStmt, or nil
@@ -124,6 +125,16 @@ type ForStmt struct {
 	Body *BlockStmt
 }
 
+// RangeStmt is `for key [, value] := range X { ... }`. X is an integer count
+// (0..X-1) or a `data` table (value binds Table[key]).
+type RangeStmt struct {
+	NodeBase
+	Key   *Ident
+	Value *Ident // may be nil
+	X     Expr
+	Body  *BlockStmt
+}
+
 type CaseClause struct {
 	NodeBase
 	Exprs   []Expr // empty when Default
@@ -133,14 +144,21 @@ type CaseClause struct {
 
 type SwitchStmt struct {
 	NodeBase
+	Init  Stmt // may be nil
 	Tag   Expr // may be nil
 	Table bool // `switch tag table { ... }`: auto-table into the data segment
 	Cases []*CaseClause
 }
 
-type BreakStmt struct{ NodeBase }
+type BreakStmt struct {
+	NodeBase
+	Label *Ident // may be nil
+}
 
-type ContinueStmt struct{ NodeBase }
+type ContinueStmt struct {
+	NodeBase
+	Label *Ident // may be nil
+}
 
 // DeclStmt wraps a const/var declaration used inside a block.
 type DeclStmt struct {
@@ -180,6 +198,7 @@ func (*AssignStmt) stmtNode()   {}
 func (*IncDecStmt) stmtNode()   {}
 func (*IfStmt) stmtNode()       {}
 func (*ForStmt) stmtNode()      {}
+func (*RangeStmt) stmtNode()    {}
 func (*SwitchStmt) stmtNode()   {}
 func (*BreakStmt) stmtNode()    {}
 func (*ContinueStmt) stmtNode() {}
@@ -269,6 +288,13 @@ type TernaryExpr struct {
 	Else Expr
 }
 
+// RangeExpr is a `lo..hi` inclusive interval, only valid as a switch case value.
+type RangeExpr struct {
+	NodeBase
+	Lo Expr
+	Hi Expr
+}
+
 func (*Ident) exprNode()        {}
 func (*NumberLit) exprNode()    {}
 func (*StringLit) exprNode()    {}
@@ -282,3 +308,4 @@ func (*CallExpr) exprNode()     {}
 func (*SelectorExpr) exprNode() {}
 func (*IndexExpr) exprNode()    {}
 func (*TernaryExpr) exprNode()  {}
+func (*RangeExpr) exprNode()    {}

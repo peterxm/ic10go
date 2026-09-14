@@ -254,6 +254,10 @@ func (p *printer) stmt(s Stmt) {
 		p.write(s.Op.String())
 	case *IfStmt:
 		p.write("if ")
+		if s.Init != nil {
+			p.stmt(s.Init)
+			p.write("; ")
+		}
 		p.expr(s.Cond)
 		p.write(" ")
 		p.block(s.Then)
@@ -288,8 +292,24 @@ func (p *printer) stmt(s Stmt) {
 		}
 		p.write(" ")
 		p.block(s.Body)
+	case *RangeStmt:
+		p.write("for ")
+		p.write(s.Key.Name)
+		if s.Value != nil {
+			p.write(", ")
+			p.write(s.Value.Name)
+		}
+		p.write(" := range ")
+		p.expr(s.X)
+		p.write(" ")
+		p.block(s.Body)
 	case *SwitchStmt:
 		p.write("switch")
+		if s.Init != nil {
+			p.write(" ")
+			p.stmt(s.Init)
+			p.write(";")
+		}
 		if s.Tag != nil {
 			p.write(" ")
 			p.expr(s.Tag)
@@ -325,8 +345,16 @@ func (p *printer) stmt(s Stmt) {
 		p.write("}")
 	case *BreakStmt:
 		p.write("break")
+		if s.Label != nil {
+			p.write(" ")
+			p.write(s.Label.Name)
+		}
 	case *ContinueStmt:
 		p.write("continue")
+		if s.Label != nil {
+			p.write(" ")
+			p.write(s.Label.Name)
+		}
 	case *LabelStmt:
 		p.write("label ")
 		p.write(s.Name.Name)
@@ -408,5 +436,9 @@ func (p *printer) expr(e Expr) {
 		p.expr(e.Then)
 		p.write(" : ")
 		p.expr(e.Else)
+	case *RangeExpr:
+		p.expr(e.Lo)
+		p.write("..")
+		p.expr(e.Hi)
 	}
 }

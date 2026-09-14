@@ -259,6 +259,9 @@ func (l *Lexer) scan() token.Token {
 	case ',':
 		return mk(token.Comma, ",", 1)
 	case '.':
+		if l.peekAt(1) == '.' {
+			return mk(token.DotDot, "..", 2)
+		}
 		return mk(token.Dot, ".", 1)
 	case ';':
 		return mk(token.Semicolon, ";", 1)

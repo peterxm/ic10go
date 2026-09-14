@@ -120,5 +120,24 @@
       "}"
     ],
     "description": "if / else"
+  },
+  "For range": {
+    "prefix": "forrange",
+    "body": [
+      "for ${1:i} := range ${2:5} {",
+      "    $0",
+      "}"
+    ],
+    "description": "for range over a count or a data table"
+  },
+  "Switch interval": {
+    "prefix": "switchrange",
+    "body": [
+      "switch ${1:x} {",
+      "case ${2:0}..${3:9}: ${4:target} = ${5:0}",
+      "default: ${4:target} = ${6:0}",
+      "}"
+    ],
+    "description": "switch with an inclusive interval case"
   }
 }

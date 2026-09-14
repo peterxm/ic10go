@@ -34,6 +34,7 @@ const (
 	NaN
 	PInf
 	NInf
+	Range
 
 	// Operators and punctuation
 	Plus
@@ -80,6 +81,7 @@ const (
 	RBracket
 	Comma
 	Dot
+	DotDot
 	Semicolon
 )
 
@@ -106,6 +108,7 @@ var keywords = map[string]Kind{
 	"nan":      NaN,
 	"pinf":     PInf,
 	"ninf":     NInf,
+	"range":    Range,
 }
 
 // Lookup maps an identifier to its keyword kind, or Ident.
@@ -149,6 +152,7 @@ var kindNames = map[Kind]string{
 	NaN:           "nan",
 	PInf:          "pinf",
 	NInf:          "ninf",
+	Range:         "range",
 	Plus:          "+",
 	Minus:         "-",
 	Star:          "*",
@@ -193,6 +197,7 @@ var kindNames = map[Kind]string{
 	RBracket:      "]",
 	Comma:         ",",
 	Dot:           ".",
+	DotDot:        "..",
 	Semicolon:     ";",
 }
 

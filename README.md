@@ -11,7 +11,7 @@
 
 - **寄存器复用**：活跃性分析 + 图着色（Chaitin-Briggs）+ 拷贝合并；寄存器不足时自动溢出到 IC10 栈。
 - **面向 128 行 / 4 KiB 约束**：不生成 `alias` / `define` / 注释 / 空行 / 标签，跳转用绝对行号。
-- **现代语法**：`:=`、`if/for/switch`、函数（编译期内联 / 外提，按体积决策）、设备属性 `d0.On`、槽位 `d0.slot[i].X`、批量 IO、通道。
+- **现代语法**：`:=`、`if/for/switch`、`for range`（含遍历 `data` 表）、`case lo..hi` 区间、`if/switch` 初始化语句、带标签的 `break/continue`、函数（编译期内联 / 外提，按体积决策）、设备属性 `d0.On`、槽位 `d0.slot[i].X`、批量 IO、通道。
 - **持久栈数据段**：`data` 表把大块常量 / 查表放进芯片持久栈，`switch ... table` 自动表化，突破 128 行预算。
 - **编译期求值**：常量折叠、`hash()` 的 CRC-32、单位字面量（温度 `20c`/`68f`→K、压力 `20.1MPa`/`101.3kPa`→kPa）、逻辑类型校验。
 - **快速开发工具链**：`build` / `run` / `fmt` / `disasm` / `decompile` / `stats` / `lsp`，以及内置最小解释器。
@@ -52,7 +52,7 @@ j 1
 
 **M0 已完成**：lexer / parser / AST / 诊断 / CLI 骨架。
 **M1 已完成**：sema（名字解析、常量求值）、lower（AST→三地址 IR、内联 / 外提）、regalloc（活跃性 + 图着色 + 拷贝合并 + 溢出，寄存器复用）、codegen（指令选择、空块消除、逆后序布局、绝对行号、限额校验）。
-**M2 已完成**：IR 优化器（块内拷贝/常量传播、全局常量传播、常量折叠、代数化简、全局 CSE（可用表达式，含跨基本块设备读 CSE）、select 转换、冗余设备/槽位/批量读消除、存储转发、常量分支折叠、循环不变量外提（含设备读）、尾块合并、死存储消除、活跃性死代码消除、不可达块删除）、比较-分支融合、`&&`/`||`→`min`/`max`（含纯函数）、**函数外提 / 特化**（内联与 `jal` 按体积取短，常量实参调用点内联折叠）。
+**M2 已完成**：IR 优化器（块内拷贝/常量传播、全局常量传播、常量折叠、代数化简、全局 CSE（可用表达式，含跨基本块设备读 CSE）、select 转换、冗余设备/槽位/批量读消除、存储转发、常量分支折叠、循环不变量外提（含设备读）、尾块合并、死存储消除、活跃性死代码消除、不可达块删除）、比较-分支融合、`&&`/`||`→`min`/`max`（含纯函数）、**函数外提 / 特化**（内联与 `jal` 按体积取短，常量实参调用点内联折叠）。**便利语法**：`for i := range n` / `for i, v := range Table`、`case lo..hi` 区间、`if`/`switch` 初始化语句、带标签的 `break`/`continue`（`label Outer:`）。
 **M3 已完成**：批量 IO（`batch.read/readName/readSlot/readNameSlot/write/writeName/writeSlot`）、网络通道 `d.channel[conn][ch]`、栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr`、`isSet/isUnset/rmap`、`approx/approxZero`、`str("...")` 显示字符串、动态 logicType `read/write`、动态设备寄存器 `readDev/writeDev`（IC10 `drN`）、`LogicType.X` 枚举名透传、补充 logic type、**持久栈数据段**（`data` 表 / `switch ... table` / loader+runtime 两段流程 / 版本哨兵 / `--data-access` / `--data-layout` / `--unsafe` / `--auto-table`）。
 **M5 已完成**：测试用最小 IC10 解释器 `internal/vm`（寄存器 / 栈 / 设备 / 槽位 / 通道 / 批量 / 分支 / 标签与绝对行号），配套端到端语义测试与常量折叠差分测试；并经 `ic10c run` 暴露给用户调试。
 **M4 已完成**：`ic10c stats`（行/字节/寄存器预算）、`ic10c fmt`（格式化，支持 `-w`，保留注释/分组/空行/`data` 表）、`ic10c disasm`（旧 IC10 反汇编注释）、`ic10c decompile`（IC10 → `.icg`，支持 `-s` 结构化）、`ic10c minify`（压缩现有 IC10 行数）、`ic10c run`（内置 VM 执行）、`ic10c lsp`（诊断 / 上下文补全 / 格式化 / hover / 定义 / 大纲 / 折叠 / 引用 / 重命名 / 参数提示 / 快速修复 / 语义高亮 / 预算内联）、VSCode 扩展（`.icg` 与 `.ic`/`.ic10` 支持、片段、编译预览并自动处理数据段安装代码、VM 运行、反编译/压缩/注释命令）。

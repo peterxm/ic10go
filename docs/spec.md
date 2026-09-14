@@ -35,7 +35,7 @@ ident = letter { letter | digit | "_" }
 
 ```
 const  data  var   func  if    else  for    break  continue
-return switch case  default
+return switch case  default  range
 true   false nan   pinf  ninf
 ```
 
@@ -76,7 +76,7 @@ true   false nan   pinf  ninf
 ```
 +  -  *  /  %  &  |  ^  ~  <<  >>  ==  !=  <  <=  >  >=  &&  ||  !
 =  :=  +=  -=  *=  /=  %=  &=  |=  ^=  <<=  >>=
-?  :  (  )  {  }  [  ]  ,  .  ;
+?  :  (  )  {  }  [  ]  ,  .  ..  ;
 ```
 
 ---
@@ -228,6 +228,7 @@ d2.slot[0].Harvest = 1
 if cond { ... }
 if cond { ... } else { ... }
 if cond { ... } else if cond2 { ... } else { ... }
+if x := expr; cond { ... }        // 带初始化语句，x 的作用域限于该 if
 ```
 
 编译期优化：若两分支仅对**同一左值**赋常量且无副作用，折叠为 `select`（1 行）。
@@ -238,9 +239,13 @@ if cond { ... } else if cond2 { ... } else { ... }
 for { ... }                       // 无限循环
 for cond { ... }                  // while
 for i := 0; i < 10; i++ { ... }   // 三段式
+for i := range 10 { ... }         // i = 0..9
+for i := range Table { ... }      // 遍历 data 表的下标
+for i, v := range Table { ... }   // v = Table[i]
 ```
 
-- `break` / `continue`。
+- `range` 后接整数（编译期常量或运行时值，表示 `0..n-1`）或 `data` 表（长度编译期已知）。
+- `break` / `continue` 可带外层循环标签：`break Outer` / `continue Outer`（标签写在循环前的 `label Outer:`）。
 - 建议在长循环内显式调用 `yield()`。
 
 ### 5.4 switch
@@ -254,9 +259,16 @@ case 1, 2:
 default:
     ...
 }
+
+switch x := expr; x {       // 带初始化语句
+case 1..5:                  // 闭区间（含上下界）
+    ...
+case 6, 7:
+    ...
+}
 ```
 
-编译为比较链或跳转表（视情况）。
+编译为比较链或跳转表（视情况）。`case lo..hi` 是闭区间，lower 为两次边界比较；区间 case 会让该 `switch` 退出 `--auto-table` / `--jump-table`（它们要求稠密单值）。
 
 加 `table` 标记可把「常量 → 常量」的多路分支自动放进数据段（省行数）：
 
@@ -645,4 +657,4 @@ j 1
 | 递归 | 不支持（编译期展开 / 外提） |
 | 包 / import | 无（单文件） |
 | GC / 内存 | 无（寄存器 + 栈） |
-| `for range` | 无 |
+| `for range` | 支持：`for i := range n`、`for i, v := range Table` |

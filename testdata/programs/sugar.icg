@@ -1,0 +1,52 @@
+// Convenience syntax: range loops, switch case intervals, if/switch init and
+// labeled break/continue.
+
+func classify(x num) num {
+    switch x {
+    case 0:
+        return 0
+    case 1..9:
+        return 1
+    case 10..99:
+        return 2
+    default:
+        return 3
+    }
+}
+
+func main() {
+    var total = 0
+    for i := range 4 {
+        total += i
+    }
+
+    if scaled := total * 3; scaled > 10 {
+        d0.Setting = scaled
+    } else {
+        d0.Setting = total
+    }
+
+    switch y := classify(d1.Setting); y {
+    case 0:
+        d1.Mode = 0
+    case 1..2:
+        d1.Mode = 1
+    default:
+        d1.Mode = 2
+    }
+
+    var hits = 0
+    label Outer:
+    for i := 0; i < 5; i++ {
+        for j := 0; j < 5; j++ {
+            if j == 2 {
+                continue Outer
+            }
+            hits += 1
+            if i == 3 {
+                break Outer
+            }
+        }
+    }
+    d2.Setting = hits
+}

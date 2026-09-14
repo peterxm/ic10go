@@ -320,6 +320,8 @@ func walkStmts(stmts []ast.Stmt, visit func(*ast.SwitchStmt)) {
 			}
 		case *ast.ForStmt:
 			walkStmts(s.Body.List, visit)
+		case *ast.RangeStmt:
+			walkStmts(s.Body.List, visit)
 		case *ast.SwitchStmt:
 			visit(s)
 			for _, c := range s.Cases {

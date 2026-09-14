@@ -97,6 +97,107 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+func TestForRange(t *testing.T) {
+	cases := []struct {
+		src   string
+		key   string
+		value string
+	}{
+		{"func f() { for i := range 5 {} }\n", "i", ""},
+		{"func f() { for i := range T {} }\n", "i", ""},
+		{"func f() { for i, v := range T {} }\n", "i", "v"},
+		{"func f() { for _, v := range T {} }\n", "_", "v"},
+	}
+	for _, c := range cases {
+		tree, diags := parse(t, c.src)
+		if diags.HasErrors() {
+			t.Fatalf("%q: errors: %v", c.src, diags.Diags)
+		}
+		fn := tree.Decls[0].(*ast.FuncDecl)
+		r, ok := fn.Body.List[0].(*ast.RangeStmt)
+		if !ok {
+			t.Fatalf("%q: stmt = %T, want *ast.RangeStmt", c.src, fn.Body.List[0])
+		}
+		if r.Key.Name != c.key {
+			t.Errorf("%q: key = %q, want %q", c.src, r.Key.Name, c.key)
+		}
+		if c.value == "" && r.Value != nil {
+			t.Errorf("%q: value = %q, want nil", c.src, r.Value.Name)
+		}
+		if c.value != "" && (r.Value == nil || r.Value.Name != c.value) {
+			t.Errorf("%q: value = %v, want %q", c.src, r.Value, c.value)
+		}
+	}
+}
+
+func TestForThreePartStillParses(t *testing.T) {
+	tree, diags := parse(t, "func f() { for i := 0; i < 10; i++ {} }\n")
+	if diags.HasErrors() {
+		t.Fatalf("errors: %v", diags.Diags)
+	}
+	fn := tree.Decls[0].(*ast.FuncDecl)
+	if _, ok := fn.Body.List[0].(*ast.ForStmt); !ok {
+		t.Fatalf("stmt = %T, want *ast.ForStmt", fn.Body.List[0])
+	}
+}
+
+func TestCaseRange(t *testing.T) {
+	tree, diags := parse(t, "func f() { switch x { case 1..5: d0.On = 1\n case 6, 7: d0.On = 0 } }\n")
+	if diags.HasErrors() {
+		t.Fatalf("errors: %v", diags.Diags)
+	}
+	fn := tree.Decls[0].(*ast.FuncDecl)
+	sw := fn.Body.List[0].(*ast.SwitchStmt)
+	if _, ok := sw.Cases[0].Exprs[0].(*ast.RangeExpr); !ok {
+		t.Fatalf("case 0 expr = %T, want *ast.RangeExpr", sw.Cases[0].Exprs[0])
+	}
+	if len(sw.Cases[1].Exprs) != 2 {
+		t.Fatalf("case 1 exprs = %d, want 2", len(sw.Cases[1].Exprs))
+	}
+}
+
+func TestIfAndSwitchInit(t *testing.T) {
+	tree, diags := parse(t, "func f() { if x := 1; x > 0 { d0.On = 1 } }\n")
+	if diags.HasErrors() {
+		t.Fatalf("if init errors: %v", diags.Diags)
+	}
+	fn := tree.Decls[0].(*ast.FuncDecl)
+	ifs := fn.Body.List[0].(*ast.IfStmt)
+	if ifs.Init == nil {
+		t.Fatal("if init = nil, want a statement")
+	}
+
+	tree, diags = parse(t, "func f() { switch y := 1; y { case 1: d0.On = 1 } }\n")
+	if diags.HasErrors() {
+		t.Fatalf("switch init errors: %v", diags.Diags)
+	}
+	fn = tree.Decls[0].(*ast.FuncDecl)
+	sw := fn.Body.List[0].(*ast.SwitchStmt)
+	if sw.Init == nil {
+		t.Fatal("switch init = nil, want a statement")
+	}
+	if sw.Tag == nil {
+		t.Fatal("switch tag = nil, want an expression")
+	}
+}
+
+func TestLabeledBreakContinue(t *testing.T) {
+	tree, diags := parse(t, "func f() { for { break Outer\n continue Inner } }\n")
+	if diags.HasErrors() {
+		t.Fatalf("errors: %v", diags.Diags)
+	}
+	fn := tree.Decls[0].(*ast.FuncDecl)
+	loop := fn.Body.List[0].(*ast.ForStmt)
+	br := loop.Body.List[0].(*ast.BreakStmt)
+	if br.Label == nil || br.Label.Name != "Outer" {
+		t.Fatalf("break label = %v, want Outer", br.Label)
+	}
+	co := loop.Body.List[1].(*ast.ContinueStmt)
+	if co.Label == nil || co.Label.Name != "Inner" {
+		t.Fatalf("continue label = %v, want Inner", co.Label)
+	}
+}
+
 func TestAssignMissingRHS(t *testing.T) {
 	cases := []struct {
 		name string

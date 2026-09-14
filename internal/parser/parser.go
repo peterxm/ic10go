@@ -222,6 +222,14 @@ func (p *parser) parseIdent() *ast.Ident {
 	return &ast.Ident{NodeBase: base(t.Pos), Name: t.Text}
 }
 
+// parseOptLabel parses an optional label after break/continue.
+func (p *parser) parseOptLabel() *ast.Ident {
+	if p.at(token.Ident) {
+		return p.parseIdent()
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Statements
 // ---------------------------------------------------------------------------
@@ -273,10 +281,10 @@ func (p *parser) parseStmt() ast.Stmt {
 		return p.parseSwitch()
 	case token.Break:
 		t := p.advance()
-		return &ast.BreakStmt{NodeBase: base(t.Pos)}
+		return &ast.BreakStmt{NodeBase: base(t.Pos), Label: p.parseOptLabel()}
 	case token.Continue:
 		t := p.advance()
-		return &ast.ContinueStmt{NodeBase: base(t.Pos)}
+		return &ast.ContinueStmt{NodeBase: base(t.Pos), Label: p.parseOptLabel()}
 	case token.Return:
 		return p.parseReturn()
 	case token.Label:
@@ -344,7 +352,23 @@ func startsExpr(k token.Kind) bool {
 
 func (p *parser) parseIf() ast.Stmt {
 	kw := p.expect(token.If)
-	cond := p.parseExpr()
+	if p.at(token.LBrace) {
+		p.errorf(p.cur().Pos, "expected condition, found %s", describe(p.cur()))
+	}
+	var init ast.Stmt
+	var cond ast.Expr
+	st := p.parseSimpleStmt()
+	if p.at(token.Semicolon) {
+		p.advance()
+		init = st
+		cond = p.parseExpr()
+	} else {
+		es, ok := st.(*ast.ExprStmt)
+		if !ok {
+			p.errorf(st.Pos(), "expected condition expression in if statement")
+		}
+		cond = es.X
+	}
 	then := p.parseBlock()
 	var els ast.Stmt
 	if p.at(token.Else) {
@@ -355,7 +379,7 @@ func (p *parser) parseIf() ast.Stmt {
 			els = p.parseBlock()
 		}
 	}
-	return &ast.IfStmt{NodeBase: base(kw.Pos), Cond: cond, Then: then, Else: els}
+	return &ast.IfStmt{NodeBase: base(kw.Pos), Init: init, Cond: cond, Then: then, Else: els}
 }
 
 func (p *parser) parseFor() ast.Stmt {
@@ -363,6 +387,10 @@ func (p *parser) parseFor() ast.Stmt {
 	if p.at(token.LBrace) {
 		body := p.parseBlock()
 		return &ast.ForStmt{NodeBase: base(kw.Pos), Body: body}
+	}
+
+	if r := p.tryParseRange(kw); r != nil {
+		return r
 	}
 
 	var first ast.Stmt
@@ -397,11 +425,57 @@ func (p *parser) parseFor() ast.Stmt {
 	return &ast.ForStmt{NodeBase: base(kw.Pos), Cond: cond, Body: body}
 }
 
+// tryParseRange recognizes `for key [, value] := range X { ... }`. It backtracks
+// when the tokens do not form a range clause (e.g. a three-part for).
+func (p *parser) tryParseRange(kw token.Token) *ast.RangeStmt {
+	if !p.at(token.Ident) {
+		return nil
+	}
+	save := p.pos
+	key := p.parseIdent()
+	var val *ast.Ident
+	if p.at(token.Comma) {
+		p.advance()
+		if !p.at(token.Ident) {
+			p.pos = save
+			return nil
+		}
+		val = p.parseIdent()
+	}
+	if !p.at(token.Define) {
+		p.pos = save
+		return nil
+	}
+	p.advance()
+	if !p.at(token.Range) {
+		p.pos = save
+		return nil
+	}
+	p.advance()
+	x := p.parseExpr()
+	body := p.parseBlock()
+	return &ast.RangeStmt{NodeBase: base(kw.Pos), Key: key, Value: val, X: x, Body: body}
+}
+
 func (p *parser) parseSwitch() ast.Stmt {
 	kw := p.expect(token.Switch)
+	var init ast.Stmt
 	var tag ast.Expr
 	if !p.at(token.LBrace) {
-		tag = p.parseExpr()
+		st := p.parseSimpleStmt()
+		if p.at(token.Semicolon) {
+			p.advance()
+			init = st
+			if !p.at(token.LBrace) && !(p.at(token.Ident) && p.cur().Text == "table") {
+				tag = p.parseExpr()
+			}
+		} else {
+			es, ok := st.(*ast.ExprStmt)
+			if !ok {
+				p.errorf(st.Pos(), "expected switch expression")
+			}
+			tag = es.X
+		}
 	}
 	table := false
 	if p.at(token.Ident) && p.cur().Text == "table" {
@@ -409,17 +483,17 @@ func (p *parser) parseSwitch() ast.Stmt {
 		table = true
 	}
 	p.expect(token.LBrace)
-	sw := &ast.SwitchStmt{NodeBase: base(kw.Pos), Tag: tag, Table: table}
+	sw := &ast.SwitchStmt{NodeBase: base(kw.Pos), Init: init, Tag: tag, Table: table}
 	for {
 		p.skipSemis()
 		switch p.cur().Kind {
 		case token.Case:
 			cpos := p.advance().Pos
 			c := &ast.CaseClause{NodeBase: base(cpos)}
-			c.Exprs = append(c.Exprs, p.parseExpr())
+			c.Exprs = append(c.Exprs, p.parseCaseValue())
 			for p.at(token.Comma) {
 				p.advance()
-				c.Exprs = append(c.Exprs, p.parseExpr())
+				c.Exprs = append(c.Exprs, p.parseCaseValue())
 			}
 			p.expect(token.Colon)
 			c.Body = p.parseCaseBody()
@@ -437,6 +511,18 @@ func (p *parser) parseSwitch() ast.Stmt {
 			p.errorf(p.cur().Pos, "expected case or default, found %s", describe(p.cur()))
 		}
 	}
+}
+
+// parseCaseValue parses a case value, which may be an inclusive interval
+// `lo..hi`.
+func (p *parser) parseCaseValue() ast.Expr {
+	lo := p.parseExpr()
+	if p.at(token.DotDot) {
+		pos := p.advance().Pos
+		hi := p.parseExpr()
+		return &ast.RangeExpr{NodeBase: base(pos), Lo: lo, Hi: hi}
+	}
+	return lo
 }
 
 func (p *parser) parseCaseBody() []ast.Stmt {

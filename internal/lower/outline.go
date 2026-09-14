@@ -117,7 +117,11 @@ func forEachCall(body *ast.BlockStmt, visit func(*ast.CallExpr)) {
 			}
 			stmt(v.Post)
 			stmt(v.Body)
+		case *ast.RangeStmt:
+			expr(v.X)
+			stmt(v.Body)
 		case *ast.SwitchStmt:
+			stmt(v.Init)
 			if v.Tag != nil {
 				expr(v.Tag)
 			}
@@ -161,13 +165,17 @@ func walkStmt(s ast.Stmt, visit func(ast.Stmt)) {
 			walkStmt(st, visit)
 		}
 	case *ast.IfStmt:
+		walkStmt(v.Init, visit)
 		walkStmt(v.Then, visit)
 		walkStmt(v.Else, visit)
 	case *ast.ForStmt:
 		walkStmt(v.Init, visit)
 		walkStmt(v.Post, visit)
 		walkStmt(v.Body, visit)
+	case *ast.RangeStmt:
+		walkStmt(v.Body, visit)
 	case *ast.SwitchStmt:
+		walkStmt(v.Init, visit)
 		for _, c := range v.Cases {
 			for _, st := range c.Body {
 				walkStmt(st, visit)

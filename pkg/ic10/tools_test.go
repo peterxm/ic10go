@@ -92,3 +92,42 @@ func TestFormatGroupsAndTableSwitch(t *testing.T) {
 		t.Errorf("not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", out, twice)
 	}
 }
+
+func TestFormatConvenienceSyntax(t *testing.T) {
+	src := []byte(`func main() {
+    for i := range 5 { d0.On = i }
+    for i, v := range T { d0.On = i + v }
+    if x := d0.Setting; x > 3 { d1.On = 1 }
+    switch y := d0.Setting; y {
+    case 1..5: d1.On = 1
+    case 6, 7: d1.On = 0
+    }
+    label Outer:
+    for {
+        break Outer
+    }
+}
+`)
+	out, diags, err := ic10.Format("t.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("diags=%v err=%v", diags.Diags, err)
+	}
+	for _, want := range []string{
+		"for i := range 5 {",
+		"for i, v := range T {",
+		"if x := d0.Setting; x > 3 {",
+		"switch y := d0.Setting; y {",
+		"case 1..5:",
+		"case 6, 7:",
+		"label Outer:",
+		"break Outer",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	twice, _, _ := ic10.Format("t.icg", []byte(out))
+	if out != twice {
+		t.Errorf("not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", out, twice)
+	}
+}

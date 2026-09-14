@@ -172,6 +172,7 @@ type inlineCtx struct {
 type loopCtx struct {
 	breakB    *ir.Block
 	continueB *ir.Block
+	label     string // name of the loop label (from a preceding `label Name:`)
 }
 
 type lowerer struct {
@@ -183,6 +184,9 @@ type lowerer struct {
 	inline []inlineCtx
 	loops  []loopCtx
 	stack  []string // names of functions currently being inlined
+	// pendingLoopLabel is the label of the loop about to be lowered (a
+	// `label Name:` immediately preceding a for/range/switch).
+	pendingLoopLabel string
 	// outline marks functions emitted once as subroutines instead of inlined.
 	outline  map[string]bool
 	outlined map[string]*outlinedFunc
@@ -234,9 +238,11 @@ func (l *lowerer) ensure() {
 }
 
 func (l *lowerer) lowerStmts(list []ast.Stmt) {
-	for _, s := range list {
+	for i, s := range list {
 		l.ensure()
+		l.noteLoopLabel(list, i)
 		l.lowerStmt(s)
+		l.pendingLoopLabel = ""
 	}
 }
 
@@ -251,14 +257,33 @@ func (l *lowerer) lowerBlock(b *ast.BlockStmt) {
 func (l *lowerer) lowerStmtsCont(list []ast.Stmt, cont *ir.Block) {
 	for i, s := range list {
 		l.ensure()
+		l.noteLoopLabel(list, i)
 		if i == len(list)-1 {
 			l.lowerStmtCont(s, cont)
+			l.pendingLoopLabel = ""
 			return
 		}
 		l.lowerStmt(s)
+		l.pendingLoopLabel = ""
 	}
 	if l.b.Cur().Term == nil {
 		l.b.SetTerm(&ir.Jmp{Target: cont})
+	}
+}
+
+// noteLoopLabel records a `label Name:` that immediately precedes a loop, so
+// the loop registers the label for `break Name` / `continue Name`.
+func (l *lowerer) noteLoopLabel(list []ast.Stmt, i int) {
+	if i == 0 {
+		return
+	}
+	lbl, ok := list[i-1].(*ast.LabelStmt)
+	if !ok {
+		return
+	}
+	switch list[i].(type) {
+	case *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt:
+		l.pendingLoopLabel = lbl.Name.Name
 	}
 }
 
@@ -296,20 +321,18 @@ func (l *lowerer) lowerStmt(s ast.Stmt) {
 		l.lowerIf(s)
 	case *ast.ForStmt:
 		l.lowerFor(s)
+	case *ast.RangeStmt:
+		l.lowerRange(s)
 	case *ast.SwitchStmt:
 		l.lowerSwitch(s)
 	case *ast.BreakStmt:
-		if len(l.loops) == 0 {
-			l.diags.Errorf(s.Pos(), "break outside of loop or switch")
-			return
+		if b := l.breakTarget(s.Label, s.Pos()); b != nil {
+			l.b.SetTerm(&ir.Jmp{Target: b})
 		}
-		l.b.SetTerm(&ir.Jmp{Target: l.loops[len(l.loops)-1].breakB})
 	case *ast.ContinueStmt:
-		if len(l.loops) == 0 || l.loops[len(l.loops)-1].continueB == nil {
-			l.diags.Errorf(s.Pos(), "continue outside of loop")
-			return
+		if b := l.continueTarget(s.Label, s.Pos()); b != nil {
+			l.b.SetTerm(&ir.Jmp{Target: b})
 		}
-		l.b.SetTerm(&ir.Jmp{Target: l.loops[len(l.loops)-1].continueB})
 	case *ast.ReturnStmt:
 		l.lowerReturn(s)
 	case *ast.LabelStmt:
@@ -324,6 +347,48 @@ func (l *lowerer) lowerStmt(s ast.Stmt) {
 	case *ast.RetStmt:
 		l.b.SetTerm(&ir.JmpRA{})
 	}
+}
+
+// breakTarget resolves a break to the innermost enclosing loop/switch, or to
+// the one named by the optional label.
+func (l *lowerer) breakTarget(label *ast.Ident, pos source.Pos) *ir.Block {
+	if label == nil {
+		if len(l.loops) == 0 {
+			l.diags.Errorf(pos, "break outside of loop or switch")
+			return nil
+		}
+		return l.loops[len(l.loops)-1].breakB
+	}
+	for i := len(l.loops) - 1; i >= 0; i-- {
+		if l.loops[i].label == label.Name {
+			return l.loops[i].breakB
+		}
+	}
+	l.diags.Errorf(pos, "no enclosing loop labeled %q", label.Name)
+	return nil
+}
+
+// continueTarget resolves a continue to the innermost enclosing loop, or to
+// the one named by the optional label.
+func (l *lowerer) continueTarget(label *ast.Ident, pos source.Pos) *ir.Block {
+	if label == nil {
+		if len(l.loops) == 0 || l.loops[len(l.loops)-1].continueB == nil {
+			l.diags.Errorf(pos, "continue outside of loop")
+			return nil
+		}
+		return l.loops[len(l.loops)-1].continueB
+	}
+	for i := len(l.loops) - 1; i >= 0; i-- {
+		if l.loops[i].label == label.Name {
+			if l.loops[i].continueB == nil {
+				l.diags.Errorf(pos, "cannot continue a switch labeled %q", label.Name)
+				return nil
+			}
+			return l.loops[i].continueB
+		}
+	}
+	l.diags.Errorf(pos, "no enclosing loop labeled %q", label.Name)
+	return nil
 }
 
 // useLabel records a reference to a label and returns its block.
@@ -562,6 +627,11 @@ func (l *lowerer) lowerIf(s *ast.IfStmt) {
 // chain lets identical branch tails (such as a call inlined into several
 // branches) share one terminator, which tail merging can then factor.
 func (l *lowerer) lowerIfCont(s *ast.IfStmt, endB *ir.Block) {
+	if s.Init != nil {
+		l.pushScope()
+		defer l.popScope()
+		l.lowerStmt(s.Init)
+	}
 	thenB := l.newBlock()
 	elseB := l.newBlock()
 	l.branchCond(s.Cond, thenB, elseB)
@@ -714,7 +784,7 @@ func unrollUnsafe(body *ast.BlockStmt, name string) bool {
 				unsafe = true
 			}
 		case *ast.BreakStmt, *ast.ContinueStmt, *ast.GotoStmt, *ast.CallStmt,
-			*ast.RetStmt, *ast.ReturnStmt, *ast.ForStmt:
+			*ast.RetStmt, *ast.ReturnStmt, *ast.ForStmt, *ast.RangeStmt:
 			unsafe = true
 		}
 	})
@@ -722,6 +792,8 @@ func unrollUnsafe(body *ast.BlockStmt, name string) bool {
 }
 
 func (l *lowerer) lowerFor(s *ast.ForStmt) {
+	label := l.pendingLoopLabel
+	l.pendingLoopLabel = ""
 	if l.tryUnrollFor(s) {
 		return
 	}
@@ -744,7 +816,7 @@ func (l *lowerer) lowerFor(s *ast.ForStmt) {
 	}
 
 	l.b.SetBlock(bodyB)
-	l.loops = append(l.loops, loopCtx{breakB: endB, continueB: postB})
+	l.loops = append(l.loops, loopCtx{breakB: endB, continueB: postB, label: label})
 	l.lowerBlock(s.Body)
 	l.loops = l.loops[:len(l.loops)-1]
 	if l.b.Cur().Term == nil {
@@ -763,16 +835,65 @@ func (l *lowerer) lowerFor(s *ast.ForStmt) {
 	l.popScope()
 }
 
+// lowerRange lowers `for key [, value] := range X`. X may be a `data` table
+// (value binds Table[key]) or a runtime count (0..X-1). It desugars to an
+// equivalent three-part for loop so the existing optimizer (small-loop
+// unrolling, Table[i] constant folding) applies unchanged.
+func (l *lowerer) lowerRange(s *ast.RangeStmt) {
+	base := ast.NodeBase{Pos_: s.Pos()}
+	bound := s.X
+	var valueExpr ast.Expr
+	if t, ok := l.dataTable(s.X); ok {
+		bound = &ast.NumberLit{NodeBase: base, Value: float64(len(t.Values))}
+		if s.Value != nil {
+			valueExpr = &ast.IndexExpr{
+				NodeBase: base,
+				X:        s.X,
+				Index:    &ast.Ident{NodeBase: ast.NodeBase{Pos_: s.Key.Pos()}, Name: s.Key.Name},
+			}
+		}
+	}
+	body := s.Body
+	if valueExpr != nil {
+		valueAssign := &ast.AssignStmt{
+			NodeBase: ast.NodeBase{Pos_: s.Value.Pos()},
+			Lhs:      s.Value,
+			Op:       token.Define,
+			Rhs:      valueExpr,
+		}
+		body = &ast.BlockStmt{NodeBase: base, List: append([]ast.Stmt{valueAssign}, s.Body.List...)}
+	}
+	l.lowerFor(&ast.ForStmt{
+		NodeBase: base,
+		Init: &ast.AssignStmt{
+			NodeBase: base,
+			Lhs:      s.Key,
+			Op:       token.Define,
+			Rhs:      &ast.NumberLit{NodeBase: base, Value: 0},
+		},
+		Cond: &ast.BinaryExpr{NodeBase: base, Op: token.Lt, X: s.Key, Y: bound},
+		Post: &ast.IncDecStmt{NodeBase: base, X: s.Key, Op: token.PlusPlus},
+		Body: body,
+	})
+}
+
 func (l *lowerer) lowerSwitch(s *ast.SwitchStmt) {
+	label := l.pendingLoopLabel
+	l.pendingLoopLabel = ""
+	if s.Init != nil {
+		l.pushScope()
+		defer l.popScope()
+		l.lowerStmt(s.Init)
+	}
 	if ts, ok := l.info.TableSwitches[s]; ok {
-		l.lowerTableSwitch(s, ts)
+		l.lowerTableSwitch(s, ts, label)
 		return
 	}
-	if l.opts.JumpTable && l.lowerJumpTable(s) {
+	if l.opts.JumpTable && l.lowerJumpTable(s, label) {
 		return
 	}
 	endB := l.newBlock()
-	l.loops = append(l.loops, loopCtx{breakB: endB})
+	l.loops = append(l.loops, loopCtx{breakB: endB, label: label})
 	defer func() { l.loops = l.loops[:len(l.loops)-1] }()
 
 	var tag ir.Value
@@ -796,21 +917,33 @@ func (l *lowerer) lowerSwitch(s *ast.SwitchStmt) {
 		if c.Default {
 			continue
 		}
-		for j, ce := range c.Exprs {
+		for _, ce := range c.Exprs {
 			l.ensure()
-			last := j == len(c.Exprs)-1
-			var next *ir.Block
-			if last {
-				next = l.newBlock() // fallthrough target, patched below
-			} else {
-				next = l.newBlock()
-			}
+			next := l.newBlock()
 			if s.Tag != nil {
-				v := l.lowerExpr(ce)
-				cmp := l.b.NewReg("swcmp")
-				l.b.Emit(&ir.Cmp{Cond: ir.Eq, Dst: cmp, A: tag, B: v})
-				l.b.SetTerm(&ir.Br{Cond: ir.NonZero, A: cmp, Then: bodyBlocks[i], Else: next})
+				if re, ok := ce.(*ast.RangeExpr); ok {
+					lo := l.lowerExpr(re.Lo)
+					hi := l.lowerExpr(re.Hi)
+					lt := l.b.NewReg("swlt")
+					l.b.Emit(&ir.Cmp{Cond: ir.Lt, Dst: lt, A: tag, B: lo})
+					mid := l.newBlock()
+					l.b.SetTerm(&ir.Br{Cond: ir.NonZero, A: lt, Then: next, Else: mid})
+					l.b.SetBlock(mid)
+					gt := l.b.NewReg("swgt")
+					l.b.Emit(&ir.Cmp{Cond: ir.Gt, Dst: gt, A: tag, B: hi})
+					l.b.SetTerm(&ir.Br{Cond: ir.NonZero, A: gt, Then: next, Else: bodyBlocks[i]})
+				} else {
+					v := l.lowerExpr(ce)
+					cmp := l.b.NewReg("swcmp")
+					l.b.Emit(&ir.Cmp{Cond: ir.Eq, Dst: cmp, A: tag, B: v})
+					l.b.SetTerm(&ir.Br{Cond: ir.NonZero, A: cmp, Then: bodyBlocks[i], Else: next})
+				}
 			} else {
+				if _, ok := ce.(*ast.RangeExpr); ok {
+					l.diags.Errorf(ce.Pos(), "range case requires a switch tag")
+					l.b.SetBlock(next)
+					continue
+				}
 				v := l.lowerExpr(ce)
 				l.b.SetTerm(&ir.Br{Cond: ir.NonZero, A: v, Then: bodyBlocks[i], Else: next})
 			}
@@ -847,7 +980,7 @@ const jumpTableMin = 8
 // lowerJumpTable lowers a dense integer switch to a computed jump through a
 // table of `j` instructions. It returns false when the switch is not a
 // candidate.
-func (l *lowerer) lowerJumpTable(s *ast.SwitchStmt) bool {
+func (l *lowerer) lowerJumpTable(s *ast.SwitchStmt, label string) bool {
 	if s.Tag == nil {
 		return false
 	}
@@ -903,7 +1036,7 @@ func (l *lowerer) lowerJumpTable(s *ast.SwitchStmt) bool {
 	}
 
 	endB := l.newBlock()
-	l.loops = append(l.loops, loopCtx{breakB: endB})
+	l.loops = append(l.loops, loopCtx{breakB: endB, label: label})
 	defer func() { l.loops = l.loops[:len(l.loops)-1] }()
 
 	tag := l.lowerExpr(s.Tag)
@@ -950,9 +1083,9 @@ func (l *lowerer) lowerJumpTable(s *ast.SwitchStmt) bool {
 
 // lowerTableSwitch lowers a `switch tag table` into a bounds check plus one
 // table read per assignment target.
-func (l *lowerer) lowerTableSwitch(s *ast.SwitchStmt, ts *sema.TableSwitch) {
+func (l *lowerer) lowerTableSwitch(s *ast.SwitchStmt, ts *sema.TableSwitch, label string) {
 	endB := l.newBlock()
-	l.loops = append(l.loops, loopCtx{breakB: endB})
+	l.loops = append(l.loops, loopCtx{breakB: endB, label: label})
 	defer func() { l.loops = l.loops[:len(l.loops)-1] }()
 
 	inB := l.newBlock()

@@ -30,7 +30,7 @@
     },
     "keywords": {
       "patterns": [
-        { "name": "keyword.control.icg", "match": "\\b(if|else|for|break|continue|return|switch|case|default)\\b" },
+        { "name": "keyword.control.icg", "match": "\\b(if|else|for|break|continue|return|switch|case|default|range)\\b" },
         { "name": "storage.type.icg", "match": "\\b(const|data|var|func)\\b" },
         { "name": "constant.language.icg", "match": "\\b(true|false|nan|pinf|ninf)\\b" },
         { "name": "keyword.other.icg", "match": "\\btable\\b" },
@@ -72,7 +72,7 @@
     },
     "operators": {
       "patterns": [
-        { "name": "keyword.operator.icg", "match": ":=|==|!=|<=|>=|&&|\\|\\||<<=|>>=|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<|>>|\\+\\+|--|[-+*/%&|^~!<>=?:]" }
+        { "name": "keyword.operator.icg", "match": "\\.\\.|:=|==|!=|<=|>=|&&|\\|\\||<<=|>>=|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<|>>|\\+\\+|--|[-+*/%&|^~!<>=?:]" }
       ]
     }
   }
