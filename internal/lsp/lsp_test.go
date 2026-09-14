@@ -168,6 +168,18 @@ func TestHoverEnumMember(t *testing.T) {
 	}
 }
 
+func TestHoverVariableType(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"v.icg","text":"func main() {\n    flag := d1.Temperature > 0\n    d0.On = flag\n}"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"v.icg"},"position":{"line":2,"character":13}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "type: `bool`") {
+		t.Errorf("hover did not show the variable type:\n%s", out)
+	}
+}
+
 func TestHoverBuiltin(t *testing.T) {
 	out := runServer(t,
 		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),

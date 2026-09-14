@@ -79,6 +79,13 @@ type Info struct {
 	TableSwitches map[*ast.SwitchStmt]*TableSwitch
 	// AutoTabled counts plain switches tabled by AutoTable.
 	AutoTabled int
+
+	// ExprTypes annotates every checked expression with its static type, and
+	// VarTypes every identifier with the type it resolved to. They are
+	// best-effort (used by the editor); the compiler itself treats every
+	// runtime value as a double.
+	ExprTypes map[ast.Expr]Type
+	VarTypes  map[*ast.Ident]Type
 }
 
 // Check resolves declarations and evaluates constants.
@@ -96,6 +103,8 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 		DataIndex:     map[string]*DataTable{},
 		Sentinel:      -1,
 		TableSwitches: map[*ast.SwitchStmt]*TableSwitch{},
+		ExprTypes:     map[ast.Expr]Type{},
+		VarTypes:      map[*ast.Ident]Type{},
 	}
 
 	for _, d := range file.Decls {
@@ -211,6 +220,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 
 	collectTableSwitches(info, diags, opts)
 	assignData(info, opts.FixedDataBase)
+	checkBodies(info, diags)
 	return info
 }
 

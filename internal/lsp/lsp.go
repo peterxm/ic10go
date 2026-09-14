@@ -17,6 +17,7 @@ import (
 	"ic10go/internal/diag"
 	"ic10go/internal/lexer"
 	"ic10go/internal/parser"
+	"ic10go/internal/sema"
 	"ic10go/internal/source"
 	"ic10go/internal/version"
 	"ic10go/pkg/ic10"
@@ -716,7 +717,18 @@ func (s *Server) hover(w *bufio.Writer, id json.RawMessage, params json.RawMessa
 			return
 		}
 	}
-	content := s.hoverFor(text, wordAt(text, p.Position))
+	word, start := wordAtOffset(text, p.Position)
+	content := s.hoverFor(text, word)
+	if t := exprTypeAt(text, word, start); t != sema.Any {
+		if content != "" {
+			content += "\n\n"
+		}
+		if s.zh {
+			content += "类型: `" + t.String() + "`"
+		} else {
+			content += "type: `" + t.String() + "`"
+		}
+	}
 	if content == "" {
 		reply(w, id, nil)
 		return
@@ -724,6 +736,25 @@ func (s *Server) hover(w *bufio.Writer, id json.RawMessage, params json.RawMessa
 	reply(w, id, map[string]any{
 		"contents": map[string]any{"kind": "markdown", "value": content},
 	})
+}
+
+// exprTypeAt returns the static type of the identifier named word starting at
+// byte offset start, if the type checker resolved it.
+func exprTypeAt(text, word string, start int) sema.Type {
+	if word == "" {
+		return sema.Any
+	}
+	tree := parseText(text)
+	if tree == nil {
+		return sema.Any
+	}
+	info := sema.Check(tree, &diag.Bag{})
+	for id, t := range info.VarTypes {
+		if id.Name == word && id.Pos().Offset == start {
+			return t
+		}
+	}
+	return sema.Any
 }
 
 func (s *Server) definition(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
@@ -742,6 +773,12 @@ func endPosition(text string) lspPosition {
 }
 
 func wordAt(text string, pos lspPosition) string {
+	w, _ := wordAtOffset(text, pos)
+	return w
+}
+
+// wordAtOffset returns the word under pos and its starting byte offset.
+func wordAtOffset(text string, pos lspPosition) (string, int) {
 	off := posToOffset(text, pos)
 	start := off
 	for start > 0 && isWordByte(text[start-1]) {
@@ -751,7 +788,7 @@ func wordAt(text string, pos lspPosition) string {
 	for end < len(text) && isWordByte(text[end]) {
 		end++
 	}
-	return text[start:end]
+	return text[start:end], start
 }
 
 func isWordByte(b byte) bool {
