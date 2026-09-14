@@ -156,6 +156,7 @@ func (c *typeChecker) declare(id *ast.Ident, t Type) {
 	}
 	scope[id.Name] = binding{typ: t, pos: id.Pos()}
 	c.info.VarTypes[id] = t
+	c.info.DeclTypes[id] = t
 }
 
 func (c *typeChecker) lookup(name string) (Type, bool) {

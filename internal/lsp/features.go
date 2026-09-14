@@ -4,6 +4,10 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -469,7 +473,12 @@ func (s *Server) workspaceSymbol(w *bufio.Writer, id json.RawMessage, params jso
 	_ = json.Unmarshal(params, &p)
 	query := strings.ToLower(p.Query)
 	var out []any
-	for uri, text := range s.docs {
+	seen := map[string]bool{}
+	collect := func(uri, text string) {
+		if seen[uri] {
+			return
+		}
+		seen[uri] = true
 		for _, sym := range documentSymbolsFor(text) {
 			if query != "" && !strings.Contains(strings.ToLower(sym.Name), query) {
 				continue
@@ -483,6 +492,27 @@ func (s *Server) workspaceSymbol(w *bufio.Writer, id json.RawMessage, params jso
 				},
 			})
 		}
+	}
+	for uri, text := range s.docs {
+		if strings.HasSuffix(uri, ".icg") {
+			collect(uri, text)
+		}
+	}
+	if s.root != "" {
+		_ = filepath.WalkDir(s.root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".icg") {
+				return nil
+			}
+			if strings.Contains(p, string(filepath.Separator)+".") {
+				return nil
+			}
+			data, rerr := os.ReadFile(p)
+			if rerr != nil {
+				return nil
+			}
+			collect("file://"+filepath.ToSlash(p), string(data))
+			return nil
+		})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].(map[string]any)["name"].(string) < out[j].(map[string]any)["name"].(string)
@@ -554,6 +584,40 @@ func validIdentifier(s string) bool {
 		return false
 	}
 	return token.Lookup(s) == token.Ident
+}
+
+// prepareRename validates that the position names a renamable identifier and
+// returns its range plus placeholder.
+func (s *Server) prepareRename(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p textDocumentParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		reply(w, id, nil)
+		return
+	}
+	text := s.docs[p.TextDocument.URI]
+	word := wordAt(text, p.Position)
+	if !validIdentifier(word) || len(identifierRanges(text, word)) == 0 {
+		reply(w, id, nil)
+		return
+	}
+	reply(w, id, map[string]any{
+		"range":       wordRangeAt(text, p.Position),
+		"placeholder": word,
+	})
+}
+
+// wordRangeAt returns the range of the word under pos.
+func wordRangeAt(text string, pos lspPosition) lspRange {
+	off := posToOffset(text, pos)
+	start := off
+	for start > 0 && isWordByte(text[start-1]) {
+		start--
+	}
+	end := off
+	for end < len(text) && isWordByte(text[end]) {
+		end++
+	}
+	return lspRange{Start: offsetToLSP(text, start), End: offsetToLSP(text, end)}
 }
 
 // ---------------------------------------------------------------------------
@@ -719,8 +783,9 @@ func (s *Server) codeAction(w *bufio.Writer, id json.RawMessage, params json.Raw
 
 func replaceAction(uri, title string, r lspRange, text string) any {
 	return map[string]any{
-		"title": title,
-		"kind":  "quickfix",
+		"title":       title,
+		"kind":        "quickfix",
+		"isPreferred": true,
 		"edit": map[string]any{
 			"changes": map[string]any{uri: []any{map[string]any{"range": r, "newText": text}}},
 		},
@@ -924,24 +989,140 @@ func (s *Server) inlayHint(w *bufio.Writer, id json.RawMessage, params json.RawM
 		return
 	}
 	text := s.docs[p.TextDocument.URI]
+	var hints []any
+
+	// Variable/parameter type hints from the sema type checker.
+	if tree := parseText(text); tree != nil {
+		info := sema.Check(tree, &diag.Bag{})
+		for ident, t := range info.DeclTypes {
+			if t == sema.Any {
+				continue
+			}
+			hints = append(hints, map[string]any{
+				"position": offsetToLSP(text, ident.Pos().Offset+len(ident.Name)),
+				"label":    ": " + t.String(),
+				"kind":     2, // Type
+			})
+		}
+	}
+
+	// Budget hint at the end of the file.
 	code, diags, err := ic10.Compile(p.TextDocument.URI, []byte(text))
-	if diags.HasErrors() || err != nil {
+	if err == nil && !diags.HasErrors() {
+		st := ic10.StatsOf(code)
+		label := fmt.Sprintf("  IC10: %d/%d 行 · %d/%d 字节 · %d/%d 寄存器", st.Lines, codegen.MaxLines, st.Bytes, codegen.MaxBytes, st.RegsUsed, 16)
+		if base, size, _, _ := ic10.DataStats(p.TextDocument.URI, []byte(text), ic10.Options{}); base >= 0 {
+			label += fmt.Sprintf(" · data %d..%d", base, base+size-1)
+		}
+		lastLine := strings.Count(text, "\n")
+		lastStart := strings.LastIndexByte(text, '\n') + 1
+		hints = append(hints, map[string]any{
+			"position": lspPosition{Line: lastLine, Character: utf16Len(text[lastStart:])},
+			"label":    label,
+			"kind":     1,
+		})
+	}
+
+	sort.SliceStable(hints, func(i, j int) bool {
+		a := hints[i].(map[string]any)["position"].(lspPosition)
+		b := hints[j].(map[string]any)["position"].(lspPosition)
+		if a.Line != b.Line {
+			return a.Line < b.Line
+		}
+		return a.Character < b.Character
+	})
+	reply(w, id, hints)
+}
+
+// colorNames maps the IC10 `Color` enum members to their RGB values (see
+// docs/target-ic10.md §5.5).
+var colorNames = []struct {
+	name    string
+	r, g, b float64
+}{
+	{"Blue", 0x21, 0x2A, 0xA5},
+	{"Gray", 0x7B, 0x7B, 0x7B},
+	{"Green", 0x3F, 0x9B, 0x39},
+	{"Orange", 0xFF, 0x66, 0x2B},
+	{"Red", 0xE7, 0x02, 0x00},
+	{"Yellow", 0xFF, 0xBC, 0x1B},
+	{"White", 0xE7, 0xE7, 0xE7},
+	{"Black", 0x08, 0x09, 0x08},
+	{"Brown", 0x63, 0x3C, 0x2B},
+	{"Khaki", 0x63, 0x63, 0x3F},
+	{"Pink", 0xE4, 0x1C, 0x99},
+	{"Purple", 0x73, 0x2C, 0xA7},
+}
+
+func colorRGB(name string) ([3]float64, bool) {
+	for _, c := range colorNames {
+		if c.name == name {
+			return [3]float64{c.r / 255, c.g / 255, c.b / 255}, true
+		}
+	}
+	return [3]float64{}, false
+}
+
+// documentColor reports the `Color.<Name>` enum members as color swatches.
+func (s *Server) documentColor(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p textDocumentOnlyParams
+	if err := json.Unmarshal(params, &p); err != nil {
 		reply(w, id, []any{})
 		return
 	}
-	st := ic10.StatsOf(code)
-	label := fmt.Sprintf("  IC10: %d/%d 行 · %d/%d 字节 · %d/%d 寄存器", st.Lines, codegen.MaxLines, st.Bytes, codegen.MaxBytes, st.RegsUsed, 16)
-	if base, size, _, _ := ic10.DataStats(p.TextDocument.URI, []byte(text), ic10.Options{}); base >= 0 {
-		label += fmt.Sprintf(" · data %d..%d", base, base+size-1)
+	text := s.docs[p.TextDocument.URI]
+	file := source.NewFile("", []byte(text))
+	diags := &diag.Bag{}
+	toks := lexer.Tokenize(file, diags)
+	var out []any
+	for i := 0; i+2 < len(toks); i++ {
+		if toks[i].Kind != token.Ident || toks[i].Text != "Color" ||
+			toks[i+1].Kind != token.Dot || toks[i+2].Kind != token.Ident {
+			continue
+		}
+		rgb, ok := colorRGB(toks[i+2].Text)
+		if !ok {
+			continue
+		}
+		out = append(out, map[string]any{
+			"range": lspRange{
+				Start: offsetToLSP(text, toks[i].Pos.Offset),
+				End:   offsetToLSP(text, toks[i+2].Pos.Offset+len(toks[i+2].Text)),
+			},
+			"color": map[string]any{"red": rgb[0], "green": rgb[1], "blue": rgb[2], "alpha": 1.0},
+		})
 	}
-	lastLine := strings.Count(text, "\n")
-	lastStart := strings.LastIndexByte(text, '\n') + 1
-	hint := map[string]any{
-		"position": lspPosition{Line: lastLine, Character: utf16Len(text[lastStart:])},
-		"label":    label,
-		"kind":     1,
+	reply(w, id, out)
+}
+
+// colorPresentation maps a picked colour back to the closest Color.<Name>.
+func (s *Server) colorPresentation(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var p struct {
+		Color struct {
+			Red   float64 `json:"red"`
+			Green float64 `json:"green"`
+			Blue  float64 `json:"blue"`
+		} `json:"color"`
 	}
-	reply(w, id, []any{hint})
+	if err := json.Unmarshal(params, &p); err != nil {
+		reply(w, id, []any{})
+		return
+	}
+	best := ""
+	bestDist := math.MaxFloat64
+	for _, c := range colorNames {
+		r, g, b := c.r/255, c.g/255, c.b/255
+		d := (r-p.Color.Red)*(r-p.Color.Red) + (g-p.Color.Green)*(g-p.Color.Green) + (b-p.Color.Blue)*(b-p.Color.Blue)
+		if d < bestDist {
+			bestDist = d
+			best = c.name
+		}
+	}
+	if best == "" {
+		reply(w, id, []any{})
+		return
+	}
+	reply(w, id, []any{map[string]any{"label": "Color." + best}})
 }
 
 // publishStats notifies the client of the compiled program's budget so it can

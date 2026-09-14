@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,7 +52,8 @@ type notification struct {
 // Server is a single-connection LSP server.
 type Server struct {
 	docs map[string]string
-	zh   bool // documentation language
+	zh   bool   // documentation language
+	root string // workspace root (filesystem path), for workspace symbols
 }
 
 // New returns a Server.
@@ -78,10 +80,23 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 		switch msg.Method {
 		case "initialize":
 			var init struct {
-				Locale string `json:"locale"`
+				Locale     string `json:"locale"`
+				RootURI    string `json:"rootUri"`
+				RootPath   string `json:"rootPath"`
+				Workspaces []struct {
+					URI string `json:"uri"`
+				} `json:"workspaceFolders"`
 			}
 			_ = json.Unmarshal(msg.Params, &init)
 			s.zh = strings.HasPrefix(strings.ToLower(init.Locale), "zh")
+			switch {
+			case len(init.Workspaces) > 0:
+				s.root = fileURIToPath(init.Workspaces[0].URI)
+			case init.RootURI != "":
+				s.root = fileURIToPath(init.RootURI)
+			default:
+				s.root = init.RootPath
+			}
 			reply(writer, msg.ID, map[string]any{
 				"capabilities": map[string]any{
 					"textDocumentSync": map[string]any{
@@ -90,6 +105,7 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 					},
 					"completionProvider": map[string]any{
 						"triggerCharacters": []string{"."},
+						"resolveProvider":   true,
 					},
 					"documentFormattingProvider": true,
 					"hoverProvider":              true,
@@ -100,11 +116,12 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 					"workspaceSymbolProvider":    true,
 					"foldingRangeProvider":       true,
 					"referencesProvider":         true,
-					"renameProvider":             true,
+					"renameProvider":             map[string]any{"prepareProvider": true},
 					"codeActionProvider":         true,
 					"codeLensProvider":           map[string]any{},
 					"documentLinkProvider":       map[string]any{},
 					"inlayHintProvider":          true,
+					"colorProvider":              true,
 					"signatureHelpProvider": map[string]any{
 						"triggerCharacters": []string{"(", ","},
 					},
@@ -167,6 +184,16 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 			s.semanticTokensRange(writer, msg.ID, msg.Params)
 		case "textDocument/inlayHint":
 			s.inlayHint(writer, msg.ID, msg.Params)
+		case "textDocument/prepareRename":
+			s.prepareRename(writer, msg.ID, msg.Params)
+		case "completionItem/resolve":
+			s.resolveCompletion(writer, msg.ID, msg.Params)
+		case "textDocument/documentColor":
+			s.documentColor(writer, msg.ID, msg.Params)
+		case "textDocument/colorPresentation":
+			s.colorPresentation(writer, msg.ID, msg.Params)
+		case "workspace/didChangeConfiguration":
+			// Settings are applied at process start (env); nothing to do here.
 		default:
 			if len(msg.ID) > 0 && string(msg.ID) != "null" {
 				replyError(writer, msg.ID, -32601, "method not found: "+msg.Method)
@@ -296,11 +323,31 @@ type lspRange struct {
 }
 
 type lspDiagnostic struct {
-	Range    lspRange `json:"range"`
-	Severity int      `json:"severity"`
-	Source   string   `json:"source"`
-	Code     string   `json:"code,omitempty"`
-	Message  string   `json:"message"`
+	Range              lspRange      `json:"range"`
+	Severity           int           `json:"severity"`
+	Source             string        `json:"source"`
+	Code               string        `json:"code,omitempty"`
+	CodeDescription    *codeDesc     `json:"codeDescription,omitempty"`
+	Tags               []int         `json:"tags,omitempty"`
+	RelatedInformation []relatedInfo `json:"relatedInformation,omitempty"`
+	Message            string        `json:"message"`
+}
+
+type codeDesc struct {
+	Href string `json:"href"`
+}
+
+type relatedInfo struct {
+	Location map[string]any `json:"location"`
+	Message  string         `json:"message"`
+}
+
+// codeDocURL returns a documentation link for a stable diagnostic code.
+func codeDocURL(code string) string {
+	if code == "" {
+		return ""
+	}
+	return "https://github.com/peterxm/ic10go/blob/main/docs/spec.md#" + code
 }
 
 func (s *Server) publish(w *bufio.Writer, uri string) {
@@ -331,13 +378,17 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 			}
 			end = lspPosition{el, ec}
 		}
-		items = append(items, lspDiagnostic{
+		item := lspDiagnostic{
 			Range:    lspRange{Start: lspPosition{line, ch}, End: end},
 			Severity: severity(int(d.Severity)),
 			Source:   "ic10c",
 			Code:     d.Code,
 			Message:  d.Msg,
-		})
+		}
+		if url := codeDocURL(d.Code); url != "" {
+			item.CodeDescription = &codeDesc{Href: url}
+		}
+		items = append(items, item)
 	}
 	if err != nil {
 		items = append(items, lspDiagnostic{
@@ -370,6 +421,7 @@ type completionItem struct {
 	Kind          int            `json:"kind"`
 	Detail        string         `json:"detail,omitempty"`
 	Documentation *markupContent `json:"documentation,omitempty"`
+	Data          any            `json:"data,omitempty"`
 }
 
 // ci builds a completion item (positional literals no longer compile with the
@@ -383,31 +435,60 @@ type markupContent struct {
 	Value string `json:"value"`
 }
 
-// attachDocs adds signature/detail and markdown documentation to completion
-// items that match a known builtin or logic type.
-func attachDocs(items []completionItem, zh bool) []completionItem {
+// attachDetail adds the builtin signature (detail) and a resolve payload to
+// completion items. The full markdown documentation is filled in lazily by
+// completionItem/resolve, keeping the initial list small.
+func attachDetail(items []completionItem) []completionItem {
 	for i := range items {
+		items[i].Data = map[string]any{"label": items[i].Label}
 		if items[i].Detail == "batch IO" {
 			if d, ok := builtin.BatchDocs[items[i].Label]; ok {
 				items[i].Detail = d.Signature
-				items[i].Documentation = &markupContent{Kind: "markdown", Value: docText(d, zh)}
 			}
 			continue
 		}
 		if d, ok := builtin.Docs[items[i].Label]; ok {
 			items[i].Detail = d.Signature
-			items[i].Documentation = &markupContent{Kind: "markdown", Value: docText(d, zh)}
-			continue
-		}
-		if d, ok := builtin.KeywordDocs[items[i].Label]; ok {
-			items[i].Documentation = &markupContent{Kind: "markdown", Value: docText(d, zh)}
-			continue
-		}
-		if d, ok := builtin.LogicTypeDocs[items[i].Label]; ok {
-			items[i].Documentation = &markupContent{Kind: "markdown", Value: docText(d, zh)}
 		}
 	}
 	return items
+}
+
+// resolveCompletion fills in the documentation for a completion item.
+func (s *Server) resolveCompletion(w *bufio.Writer, id json.RawMessage, params json.RawMessage) {
+	var item completionItem
+	if err := json.Unmarshal(params, &item); err != nil {
+		reply(w, id, nil)
+		return
+	}
+	label := item.Label
+	if m, ok := item.Data.(map[string]any); ok {
+		if l, ok := m["label"].(string); ok {
+			label = l
+		}
+	}
+	switch {
+	case hasDoc(builtin.Docs, label):
+		d, _ := builtin.Docs[label]
+		item.Detail = d.Signature
+		item.Documentation = &markupContent{Kind: "markdown", Value: docText(d, s.zh)}
+	case hasDoc(builtin.BatchDocs, label):
+		d, _ := builtin.BatchDocs[label]
+		item.Detail = d.Signature
+		item.Documentation = &markupContent{Kind: "markdown", Value: docText(d, s.zh)}
+	case hasDoc(builtin.KeywordDocs, label):
+		d, _ := builtin.KeywordDocs[label]
+		item.Documentation = &markupContent{Kind: "markdown", Value: docText(d, s.zh)}
+	case hasDoc(builtin.LogicTypeDocs, label):
+		d, _ := builtin.LogicTypeDocs[label]
+		item.Documentation = &markupContent{Kind: "markdown", Value: docText(d, s.zh)}
+	}
+	reply(w, id, item)
+}
+
+func hasDoc(m map[string]builtin.Doc, key string) bool {
+	_, ok := m[key]
+	return ok
 }
 
 // ---------------------------------------------------------------------------
@@ -420,7 +501,7 @@ func (s *Server) completion(w *bufio.Writer, id json.RawMessage, params json.Raw
 		reply(w, id, []any{})
 		return
 	}
-	reply(w, id, attachDocs(completionItemsFor(s.docs[p.TextDocument.URI], p.Position), s.zh))
+	reply(w, id, attachDetail(completionItemsFor(s.docs[p.TextDocument.URI], p.Position)))
 }
 
 // completionItemsFor returns context-aware completion items: after a device
@@ -952,6 +1033,25 @@ func location(uri string, lineIdx int, line, word string) any {
 // ---------------------------------------------------------------------------
 // JSON-RPC framing
 // ---------------------------------------------------------------------------
+
+// fileURIToPath converts a file:// URI to a filesystem path.
+func fileURIToPath(uri string) string {
+	if uri == "" {
+		return ""
+	}
+	u, err := url.Parse(uri)
+	if err != nil || u.Scheme != "file" {
+		return ""
+	}
+	p := u.Path
+	if p == "" {
+		p = u.Opaque
+	}
+	if decoded, err := url.PathUnescape(p); err == nil {
+		p = decoded
+	}
+	return p
+}
 
 func readMessage(r *bufio.Reader) ([]byte, error) {
 	length := -1

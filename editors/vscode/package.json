@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.5.12",
+  "version": "0.6.0",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -80,6 +80,32 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "%icg.autoTable.desc%"
+        },
+        "icg.jumpTable": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%icg.jumpTable.desc%"
+        },
+        "icg.relJump": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%icg.relJump.desc%"
+        },
+        "icg.fast": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%icg.fast.desc%"
+        },
+        "icg.unsafe": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%icg.unsafe.desc%"
+        },
+        "icg.dataLayout": {
+          "type": "string",
+          "enum": ["top", "middle"],
+          "default": "top",
+          "markdownDescription": "%icg.dataLayout.desc%"
         },
         "icg.dataAccess": {
           "type": "string",

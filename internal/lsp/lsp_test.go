@@ -180,6 +180,53 @@ func TestHoverVariableType(t *testing.T) {
 	}
 }
 
+func TestPrepareRename(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"p.icg","text":"func main() { x := 1\n d0.On = x }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/prepareRename","params":{"textDocument":{"uri":"p.icg"},"position":{"line":0,"character":15}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"placeholder":"x"`) {
+		t.Errorf("prepareRename did not return the identifier:\n%s", out)
+	}
+}
+
+func TestDocumentColor(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"c.icg","text":"func main() { d0.Color = Color.Red }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/documentColor","params":{"textDocument":{"uri":"c.icg"}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"red"`) || !strings.Contains(out, `"green"`) {
+		t.Errorf("documentColor did not return a swatch:\n%s", out)
+	}
+}
+
+func TestInlayTypeHints(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"ih.icg","text":"func main() { x := d0.Temperature\n d1.On = x > 0 }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/inlayHint","params":{"textDocument":{"uri":"ih.icg"}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `": num"`) || !strings.Contains(out, `"kind":2`) {
+		t.Errorf("inlay hints did not include the variable type:\n%s", out)
+	}
+}
+
+func TestDiagnosticCodeDescription(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"dc.icg","text":"func main() { d0.Bogus = 1 }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"unknown-logic-type"`) || !strings.Contains(out, `"codeDescription"`) {
+		t.Errorf("diagnostic did not carry a code description:\n%s", out)
+	}
+}
+
 func TestHoverBuiltin(t *testing.T) {
 	out := runServer(t,
 		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
@@ -197,10 +244,11 @@ func TestCompletionDocs(t *testing.T) {
 		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
 		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"cd.icg","text":"func main() { d0.Setting = sq"}}}`),
 		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":"cd.icg"},"position":{"line":0,"character":29}}}`),
-		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"completionItem/resolve","params":{"label":"sqrt","data":{"label":"sqrt"}}}`),
+		frame(`{"jsonrpc":"2.0","id":4,"method":"shutdown"}`),
 	)
-	if !strings.Contains(out, `"documentation"`) || !strings.Contains(out, "Square root") {
-		t.Errorf("completion did not include documentation:\n%s", out)
+	if !strings.Contains(out, "Square root") {
+		t.Errorf("resolved completion did not include documentation:\n%s", out)
 	}
 }
 

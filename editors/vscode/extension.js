@@ -80,9 +80,19 @@ class LspClient {
         this.disposables.push(
             vscode.workspace.onDidCloseTextDocument((d) => this.onClose(d))
         );
+        // noCheck is applied when the server is spawned (via IC10C_NO_CHECK),
+        // so a change to it needs a restart. The build/run flags are read live.
+        this.disposables.push(
+            vscode.workspace.onDidChangeConfiguration((e) => {
+                if (e.affectsConfiguration && e.affectsConfiguration('icg.noCheck')) {
+                    this.restart();
+                }
+            })
+        );
         this.disposables.push(
             vscode.languages.registerCompletionItemProvider('icg', {
                 provideCompletionItems: (doc, pos) => this.completion(doc, pos),
+                resolveCompletionItem: (item) => this.resolveCompletion(item),
             })
         );
         this.disposables.push(
@@ -117,6 +127,7 @@ class LspClient {
         );
         this.disposables.push(
             vscode.languages.registerRenameProvider('icg', {
+                prepareRename: (doc, pos) => this.prepareRename(doc, pos),
                 provideRenameEdits: (doc, pos, newName) => this.rename(doc, pos, newName),
             })
         );
@@ -168,6 +179,12 @@ class LspClient {
                 provideInlayHints: (doc) => this.inlayHints(doc),
             })
         );
+        this.disposables.push(
+            vscode.languages.registerColorProvider('icg', {
+                provideDocumentColors: (doc) => this.documentColors(doc),
+                provideColorPresentations: (doc, color) => this.colorPresentations(doc, color),
+            })
+        );
     }
 
     start() {
@@ -195,12 +212,21 @@ class LspClient {
             this.pending.clear();
         });
 
+        const folder = (vscode.workspace.workspaceFolders || [])[0];
         this.request('initialize', {
             processId: process.pid,
-            rootUri: null,
+            rootUri: folder ? folder.uri.toString() : null,
+            workspaceFolders: folder ? [{ uri: folder.uri.toString(), name: folder.name }] : null,
             locale: vscode.env.language,
             capabilities: {
-                textDocument: { completion: { completionItem: { snippetSupport: false } } },
+                textDocument: {
+                    completion: {
+                        completionItem: {
+                            snippetSupport: false,
+                            resolveSupport: { properties: ['documentation', 'detail'] },
+                        },
+                    },
+                },
             },
         })
             .then((result) => {
@@ -298,11 +324,30 @@ class LspClient {
             stableIns: c.get('stableIns'),
             noCheck: c.get('noCheck'),
             autoTable: c.get('autoTable'),
+            jumpTable: c.get('jumpTable'),
+            relJump: c.get('relJump'),
+            fast: c.get('fast'),
+            unsafe: c.get('unsafe'),
+            dataLayout: c.get('dataLayout'),
             dataAccess: c.get('dataAccess'),
             runSteps: c.get('runSteps'),
             runTrace: c.get('runTrace'),
             runSet: c.get('runSet'),
         };
+    }
+
+    // buildFlags returns the shared ic10c build/run options from the settings.
+    buildFlags(cfg) {
+        const flags = [];
+        if (cfg.stableIns) flags.push('--stable-ins');
+        if (cfg.autoTable) flags.push('--auto-table');
+        if (cfg.jumpTable) flags.push('--jump-table');
+        if (cfg.relJump) flags.push('--rel-jump');
+        if (cfg.fast) flags.push('--fast');
+        if (cfg.unsafe) flags.push('--unsafe');
+        if (cfg.dataLayout && cfg.dataLayout !== 'top') flags.push('--data-layout', cfg.dataLayout);
+        if (cfg.dataAccess && cfg.dataAccess !== 'get') flags.push('--data-access', cfg.dataAccess);
+        return flags;
     }
 
     // execCli runs the ic10c binary with the given arguments.
@@ -350,12 +395,7 @@ class LspClient {
         const doc = this.activeICG();
         if (!doc) return;
         await this.withTempFile(doc, async (tmp) => {
-            const buildArgs = ['build', '--json'];
-            if (this.config().stableIns) buildArgs.push('--stable-ins');
-            if (this.config().autoTable) buildArgs.push('--auto-table');
-            const access = this.config().dataAccess;
-            if (access && access !== 'get') buildArgs.push('--data-access', access);
-            buildArgs.push(tmp);
+            const buildArgs = ['build', '--json', ...this.buildFlags(this.config()), tmp];
             const build = await this.execCli(buildArgs);
 
             let result;
@@ -653,11 +693,32 @@ class LspClient {
                 if (i.documentation) {
                     item.documentation = new vscode.MarkdownString(i.documentation.value || '');
                 }
+                // Keep the resolve payload so documentation can be fetched lazily.
+                item._data = i.data;
                 return item;
             });
         } catch (err) {
             return [];
         }
+    }
+
+    // resolveCompletion fetches the documentation for a completion item.
+    async resolveCompletion(item) {
+        try {
+            const res = await this.request('completionItem/resolve', {
+                label: item.label,
+                data: item._data,
+            });
+            if (res) {
+                if (res.detail) item.detail = res.detail;
+                if (res.documentation) {
+                    item.documentation = new vscode.MarkdownString(res.documentation.value || '');
+                }
+            }
+        } catch (err) {
+            // keep the unresolved item
+        }
+        return item;
     }
 
     // -- formatting / hover / definition -----------------------------------
@@ -806,6 +867,19 @@ class LspClient {
         }
     }
 
+    async prepareRename(doc, pos) {
+        try {
+            const res = await this.request('textDocument/prepareRename', {
+                textDocument: { uri: doc.uri.toString() },
+                position: { line: pos.line, character: pos.character },
+            });
+            if (!res || !res.range) return undefined;
+            return { range: toRange(res.range), placeholder: res.placeholder };
+        } catch (err) {
+            return undefined;
+        }
+    }
+
     async rename(doc, pos, newName) {
         const res = await this.request('textDocument/rename', {
             textDocument: { uri: doc.uri.toString() },
@@ -924,6 +998,7 @@ class LspClient {
             });
             return (res || []).map((a) => {
                 const action = new vscode.CodeAction(a.title, vscode.CodeActionKind.QuickFix);
+                action.isPreferred = !!a.isPreferred;
                 const edit = new vscode.WorkspaceEdit();
                 const changes = (a.edit && a.edit.changes) || {};
                 for (const [uri, edits] of Object.entries(changes)) {
@@ -956,6 +1031,35 @@ class LspClient {
         }
     }
 
+    async documentColors(doc) {
+        try {
+            const res = await this.request('textDocument/documentColor', {
+                textDocument: { uri: doc.uri.toString() },
+            });
+            return (res || []).map(
+                (c) =>
+                    new vscode.ColorInformation(
+                        toRange(c.range),
+                        new vscode.Color(c.color.red, c.color.green, c.color.blue, c.color.alpha)
+                    )
+            );
+        } catch (err) {
+            return [];
+        }
+    }
+
+    async colorPresentations(doc, color) {
+        try {
+            const res = await this.request('textDocument/colorPresentation', {
+                textDocument: { uri: doc.uri.toString() },
+                color: { red: color.red, green: color.green, blue: color.blue, alpha: color.alpha },
+            });
+            return (res || []).map((p) => new vscode.ColorPresentation(p.label));
+        } catch (err) {
+            return [];
+        }
+    }
+
     // -- JSON-RPC -----------------------------------------------------------
 
     request(method, params) {
@@ -963,7 +1067,21 @@ class LspClient {
         this.flushChanges();
         const id = this.nextId++;
         return new Promise((resolve, reject) => {
-            this.pending.set(id, { resolve, reject });
+            // A hung or crashed server must not leave callers waiting forever.
+            const timer = setTimeout(() => {
+                this.pending.delete(id);
+                reject(new Error('language server request timed out: ' + method));
+            }, 15000);
+            this.pending.set(id, {
+                resolve: (v) => {
+                    clearTimeout(timer);
+                    resolve(v);
+                },
+                reject: (e) => {
+                    clearTimeout(timer);
+                    reject(e);
+                },
+            });
             this.send({ jsonrpc: '2.0', id, method, params });
         });
     }
@@ -1126,6 +1244,16 @@ class LspClient {
             if (d.code) diag.code = d.code;
             if (d.codeDescription && d.codeDescription.href) {
                 diag.codeDescription = { href: vscode.Uri.parse(d.codeDescription.href) };
+            }
+            if (d.tags) diag.tags = d.tags;
+            if (d.relatedInformation) {
+                diag.relatedInformation = d.relatedInformation.map(
+                    (ri) =>
+                        new vscode.DiagnosticRelatedInformation(
+                            new vscode.Location(vscode.Uri.parse(ri.location.uri), toRange(ri.location.range)),
+                            ri.message
+                        )
+                );
             }
             return diag;
         });

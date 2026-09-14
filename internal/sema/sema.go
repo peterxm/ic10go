@@ -81,11 +81,12 @@ type Info struct {
 	AutoTabled int
 
 	// ExprTypes annotates every checked expression with its static type, and
-	// VarTypes every identifier with the type it resolved to. They are
-	// best-effort (used by the editor); the compiler itself treats every
-	// runtime value as a double.
+	// VarTypes every identifier with the type it resolved to. DeclTypes covers
+	// declarations only (for type inlay hints). They are best-effort (used by
+	// the editor); the compiler itself treats every runtime value as a double.
 	ExprTypes map[ast.Expr]Type
 	VarTypes  map[*ast.Ident]Type
+	DeclTypes map[*ast.Ident]Type
 }
 
 // Check resolves declarations and evaluates constants.
@@ -105,6 +106,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 		TableSwitches: map[*ast.SwitchStmt]*TableSwitch{},
 		ExprTypes:     map[ast.Expr]Type{},
 		VarTypes:      map[*ast.Ident]Type{},
+		DeclTypes:     map[*ast.Ident]Type{},
 	}
 
 	for _, d := range file.Decls {

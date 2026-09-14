@@ -20,9 +20,11 @@
 | 查找引用 / 重命名 | `Shift+F12` / `F2`（单文件内所有引用） |
 | 同名高亮 | 光标处标识符的所有出现位置高亮 |
 | 智能扩选 | `Shift+Alt+→` 从标识符扩到行、代码块、整个文件 |
-| 跨文件符号 | `Ctrl+T` 搜索所有已打开 `.icg` 文件的函数 / 常量 / 变量 |
+| 跨文件符号 | `Ctrl+T` 搜索**工作区内所有 `.icg`**（含未打开）的函数 / 常量 / 变量 |
 | 参数提示 | 函数调用时显示签名，高亮当前参数 |
-| 快速修复 | 未知 logic/slot type 的"你是不是想写…"；缺 `main` 一键补上 |
+| 快速修复 | 未知 logic/slot type 的"你是不是想写…"（标为 preferred）；缺 `main` 一键补上 |
+| 类型提示 | 变量声明后显示 inlay hint 类型（`: num` / `: bool` / `: device` / `: data`） |
+| 颜色 | `Color.Red` 等枚举成员显示颜色色块，点选可换色 |
 | 代码透镜 | 每个函数上方显示 **Compile to IC10** |
 | 文档链接 | 函数调用与 `data` 表引用可点击跳到声明行 |
 | 预算常驻 | **状态栏**实时显示当前 `.icg` 的 `行/字节/行长/寄存器` 预算（含数据段 `data a..b`；点击即编译）；文件末尾另有 inlay hint |
@@ -117,6 +119,11 @@ func main() {
 | `icg.stableIns` | `false` | 编译/运行时加 `--stable-ins`（稳定版 `ins` 参数顺序） |
 | `icg.noCheck` | `false` | 关闭设备 logic type 校验（`IC10C_NO_CHECK`） |
 | `icg.autoTable` | `false` | 编译时加 `--auto-table`：自动表化符合条件的常量 `switch`（需先跑安装代码） |
+| `icg.jumpTable` | `false` | 编译时加 `--jump-table`：把稠密整数 `switch` 降为计算跳转表 |
+| `icg.relJump` | `false` | 编译时加 `--rel-jump`：生成相对跳转（`jr` / `br*`）以省字节（需真机验证） |
+| `icg.fast` | `false` | 编译时加 `--fast`：优先速度而非体积（展开更多循环） |
+| `icg.unsafe` | `false` | 编译时加 `--unsafe`：跳过数据段运行时校验以进一步压缩代码 |
+| `icg.dataLayout` | `top` | 数据段位置 `--data-layout`：`top`（默认）或 `middle` |
 | `icg.dataAccess` | `get` | 数据段安装代码访问芯片栈的方式：`get`（标准 IC host）/ `stack`（设备 host，如空调） |
 | `icg.runSteps` | `0` | VM 运行步数上限（`--steps`）；`0` 用编译器默认 1000 |
 | `icg.runTrace` | `false` | VM 运行时打印每条执行的指令（`--trace`） |
