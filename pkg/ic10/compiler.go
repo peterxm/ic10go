@@ -193,7 +193,10 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, di
 		return nil
 	}
 	if os.Getenv("IC10C_NO_OPT") == "" {
-		opt.Optimize(fn)
+		if err := opt.Optimize(fn); err != nil {
+			diags.Errorf(info.Main.Pos(), "internal error: %v", err)
+			return nil
+		}
 	}
 	return fn
 }

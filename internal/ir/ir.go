@@ -547,3 +547,14 @@ func (f *Function) NewBlock() *Block {
 	}
 	return b
 }
+
+// RemoveBlock removes b from the function's block list. It does not update any
+// terminator that references b; callers must redirect those first.
+func (f *Function) RemoveBlock(b *Block) {
+	for i, x := range f.Blocks {
+		if x == b {
+			f.Blocks = append(f.Blocks[:i], f.Blocks[i+1:]...)
+			return
+		}
+	}
+}
