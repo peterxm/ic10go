@@ -20,6 +20,9 @@ coverage.txt
 /experiments/data-segment/barsiel_*.icg
 /experiments/data-segment/ingame-airlock/*.ic
 
+# Local design notes (not distributed)
+/docs/architecture-improvement-plan.md
+
 # ic10code/: only the author's own (Chinese-named) scripts are tracked;
 # the rest is third-party community code kept locally only.
 /ic10code/**
