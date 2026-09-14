@@ -140,14 +140,15 @@ var Commands = []Command{
 				"standard output.\n\n" +
 				"The output favours size and speed over readability: no aliases,\n" +
 				"defines, comments, blank lines or labels are emitted, jumps use\n" +
-				"absolute line numbers, constants are inlined at compile time and\n" +
-				"CPU registers are reused by liveness. The IC10 editor limits\n" +
-				"(128 lines, 4096 bytes, 90 characters per line) are enforced.",
+				"absolute line numbers (relative with --rel-jump), constants are\n" +
+				"inlined at compile time and CPU registers are reused by liveness.\n" +
+				"The IC10 editor limits (128 lines, 4096 bytes, 90 characters per\n" +
+				"line) are enforced.",
 			ZH: "将 .icg 源码编译为 IC10 机器码并输出到标准输出。\n\n" +
 				"产物优先保证体积与执行效率，而非可读性：不生成 alias、define、\n" +
-				"注释、空行或标签，跳转使用绝对行号，常量在编译期内联，CPU 寄存器\n" +
-				"按活跃区间复用。编译前会校验 IC10 编辑器限制\n" +
-				"（128 行 / 4096 字节 / 每行 90 字符）。",
+				"注释、空行或标签，跳转默认使用绝对行号（--rel-jump 改为相对跳转），\n" +
+				"常量在编译期内联，CPU 寄存器按活跃区间复用。编译前会校验 IC10\n" +
+				"编辑器限制（128 行 / 4096 字节 / 每行 90 字符）。",
 		},
 		Flags: []Flag{
 			{Long: "--json", Desc: text{

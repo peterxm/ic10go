@@ -357,16 +357,19 @@ ic10go/
 - 循环不变量外提（含设备读）、尾块合并、死存储消除
 - DCE、全局 CSE（可用表达式）、比较-分支融合、`select` 化、逻辑化简
 - 内联 / 外提（按体积取短）、常量实参调用点内联折叠
+- 便利语法：`for i := range n` / `for i, v := range Table`、`case lo..hi` 区间、`if`/`switch` 初始化、带标签的 `break`/`continue`
+- 单指令比较：与常量 0 比较用 `s*z`/`b*z`；近似比较在条件中融合为 `bap/bna/bapz/bnaz`；`if cond { call L }` 融合为 `b<cond>al`
 - ⏳ 未实现（暂缓）：大小模型与 `define` 决策、强度削弱
 
 ### M3 领域特性 ✅
 - 槽位 `ls/ss`、通道 `ChannelN`
 - 批量 `lb/lbn/lbs/sb/sbn/sbs`
-- 栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr`
-- `approx` / `isSet` / `rmap` / NaN 支持、`ext/ins/sla/srl/rol/ror`
+- 栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr/clrById`
+- `approx/approxZero/notApprox/notApproxZero/logicalNor/isNotNaN`、`isSet`/`isUnset`/`rmap`/`readReagent`、NaN 支持、`ext/ins/sla/srl/rol/ror`
 - 底层控制流：`label/goto/call/ret`、`ra/sp`、`ireg/setIreg`、`jump(expr)`
 - 动态 logicType：`read(dev, lt)` / `write(dev, lt, v)`
 - 动态设备寄存器：`readDev(idx, lt)` / `writeDev(idx, lt, v)`（IC10 `drN`）
+- 相对跳转 `--rel-jump`（`jr`/`br*`，默认关闭）
 
 ### M4 工具链 ✅
 - `fmt`（保留注释、分组、空行、`data` 表与 `switch ... table`）、`stats`、`disasm`

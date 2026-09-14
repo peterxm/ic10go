@@ -65,8 +65,8 @@ var Docs = map[string]Doc{
 	"put":     {"put(dev, addr, v)", "Write a device memory address.", "写入设备内存地址。"},
 	"clr":     {"clr(dev)", "Clear a device.", "清空设备。"},
 	"clrById": {"clrById(id)", "Clear a device addressed by id (IC10 clrd).", "按设备 id 清空设备（IC10 clrd）。"},
-	"getd":    {"getd(id, addr)", "Read a device address by id.", "按设备 id 读取地址。"},
-	"putd":    {"putd(id, addr, v)", "Write a device address by id.", "按设备 id 写入地址。"},
+	"getd":    {"getd(id, addr)", "Read a device address by id (emits unified get).", "按设备 id 读取地址（生成统一 get）。"},
+	"putd":    {"putd(id, addr, v)", "Write a device address by id (emits unified put).", "按设备 id 写入地址（生成统一 put）。"},
 
 	"readReagent": {"readReagent(dev, mode, key)", "Read a device reagent (IC10 lr).", "读取设备反应物（IC10 lr）。"},
 	"logicalNor":  {"logicalNor(a, b)", "Bitwise NOR (IC10 nor).", "按位或非（IC10 nor）。"},

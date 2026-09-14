@@ -237,7 +237,7 @@ d1.On = d2.Pressure > MAXPRE
 
 ### 5.4 输出不可读是故意的
 
-编译器不生成 `alias`/`define`/注释/空行/标签，跳转用绝对行号，寄存器按需复用。
+编译器不生成 `alias`/`define`/注释/空行/标签，跳转默认用绝对行号（`--rel-jump` 改相对），寄存器按需复用。
 这是为了省下宝贵的行数——**不要试图手改编译产物**，要改就改 `.icg`。
 
 ---
@@ -502,9 +502,11 @@ if isStoreValid(d0, "On") { ... }             // d0 是否支持写 On
 ```go
 v := get(d0, addr)          // 读取设备内存地址
 put(d0, addr, value)        // 写入
-v = getd(id, addr)          // 按设备 id 而非端口
-putd(id, addr, value)
+v = getd(id, addr)          // 按设备 id 而非端口（生成统一 get）
+putd(id, addr, value)       // （生成统一 put）
 clr(d0)                     // 清空设备
+clrById(id)                 // 按设备 id 清空（clrd）
+readReagent(d0, ReagentMode.Contents, hash("Oxygen"))  // 读取反应物（lr）
 d2.Mode = rmap(d3, hash("Iron"))   // 反向映射试剂
 ```
 
