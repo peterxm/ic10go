@@ -83,6 +83,23 @@ func TestVMCondCallFusion(t *testing.T) {
 	}
 }
 
+func TestVMClrByIdInvalidatesLoads(t *testing.T) {
+	// clrById has a side effect, so a device read after it must not be
+	// commoned up with a read before it.
+	src := `func main() {
+    id := d2.ReferenceId
+    put(d2, 0, 5)
+    x := get(d2, 0)
+    clrById(id)
+    y := get(d2, 0)
+    d0.Setting = x * 1000 + y
+}`
+	m := runProgram(t, src, 100, func(m *vm.Machine) { m.Set("d2", "ReferenceId", 99) })
+	if got := m.Get("d0", "Setting"); got != 5000 {
+		t.Errorf("d0.Setting = %v, want 5000 (clrById must invalidate cached loads)", got)
+	}
+}
+
 func TestVMClrById(t *testing.T) {
 	src := `func main() {
     id := d0.ReferenceId

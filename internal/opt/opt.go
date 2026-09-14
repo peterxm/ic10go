@@ -157,7 +157,7 @@ func hasSideEffect(i ir.Instr) bool {
 		switch v.Name {
 		case "yield", "sleep", "hcf",
 			// Stack and device-stack writes are observable side effects.
-			"push", "pop", "poke", "put", "putd", "clr":
+			"push", "pop", "poke", "put", "putd", "clr", "clrById":
 			return true
 		}
 	}
@@ -1701,7 +1701,7 @@ func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool
 				barrier = true
 			case *ir.Builtin:
 				switch v.Name {
-				case "yield", "sleep", "hcf", "put", "putd", "poke", "push", "pop", "clr":
+				case "yield", "sleep", "hcf", "put", "putd", "poke", "push", "pop", "clr", "clrById":
 					barrier = true
 				}
 			}

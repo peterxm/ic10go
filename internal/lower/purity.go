@@ -34,7 +34,7 @@ func computePureFuncs(info *sema.Info) map[string]bool {
 var impureCalls = map[string]bool{
 	"yield": true, "sleep": true, "hcf": true,
 	"push": true, "pop": true, "poke": true,
-	"put": true, "putd": true, "clr": true,
+	"put": true, "putd": true, "clr": true, "clrById": true,
 	"write": true, "writeDev": true, "setIreg": true,
 }
 
