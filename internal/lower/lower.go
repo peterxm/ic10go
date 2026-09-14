@@ -153,6 +153,9 @@ func simplify(fn *ir.Function) {
 		return b
 	}
 	for _, b := range fn.Blocks {
+		// Only branch-like terminators are collapsed. Call/BrCall are excluded:
+		// codegen relies on their return block being laid out immediately after
+		// the call, so collapsing it through an empty trampoline would move it.
 		switch t := b.Term.(type) {
 		case *ir.Jmp:
 			t.Target = resolve(t.Target)

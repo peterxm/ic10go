@@ -121,23 +121,10 @@ func usesOf(i ir.Instr) []ir.Value {
 }
 
 func termUses(t ir.Term) []ir.Value {
-	switch v := t.(type) {
-	case *ir.Br:
-		return []ir.Value{v.A, v.B}
-	case *ir.BrApprox:
-		return []ir.Value{v.A, v.B, v.Tol}
-	case *ir.BrApproxZero:
-		return []ir.Value{v.A, v.Tol}
-	case *ir.BrCall:
-		return []ir.Value{v.A, v.B}
-	case *ir.Ret:
-		if v.Value != nil {
-			return []ir.Value{v.Value}
-		}
-	case *ir.JmpDyn:
-		return []ir.Value{v.Target}
+	if t == nil {
+		return nil
 	}
-	return nil
+	return t.Uses()
 }
 
 func hasSideEffect(i ir.Instr) bool {
@@ -1452,29 +1439,8 @@ func licm(fn *ir.Function) bool {
 func realSuccs(fn *ir.Function) map[*ir.Block][]*ir.Block {
 	succs := map[*ir.Block][]*ir.Block{}
 	for _, b := range fn.Blocks {
-		switch t := b.Term.(type) {
-		case *ir.Jmp:
-			succs[b] = []*ir.Block{t.Target}
-		case *ir.Goto:
-			succs[b] = []*ir.Block{t.Target}
-		case *ir.Call:
-			if t.Return != nil {
-				succs[b] = []*ir.Block{t.Target, t.Return}
-			} else {
-				succs[b] = []*ir.Block{t.Target}
-			}
-		case *ir.Br:
-			succs[b] = []*ir.Block{t.Then, t.Else}
-		case *ir.BrApprox:
-			succs[b] = []*ir.Block{t.Then, t.Else}
-		case *ir.BrApproxZero:
-			succs[b] = []*ir.Block{t.Then, t.Else}
-		case *ir.BrCall:
-			succs[b] = []*ir.Block{t.Target, t.Return}
-		case *ir.JmpDyn:
-			if len(t.Table) > 0 {
-				succs[b] = append([]*ir.Block{}, t.Table...)
-			}
+		if b.Term != nil {
+			succs[b] = b.Term.Successors()
 		}
 	}
 	return succs
@@ -1596,78 +1562,15 @@ func ensurePreheader(fn *ir.Function, lp *loop, preds map[*ir.Block][]*ir.Block)
 }
 
 func realTermSuccs(b *ir.Block) []*ir.Block {
-	switch t := b.Term.(type) {
-	case *ir.Jmp:
-		return []*ir.Block{t.Target}
-	case *ir.Goto:
-		return []*ir.Block{t.Target}
-	case *ir.Call:
-		return []*ir.Block{t.Target, t.Return}
-	case *ir.Br:
-		return []*ir.Block{t.Then, t.Else}
-	case *ir.BrApprox:
-		return []*ir.Block{t.Then, t.Else}
-	case *ir.BrApproxZero:
-		return []*ir.Block{t.Then, t.Else}
-	case *ir.BrCall:
-		return []*ir.Block{t.Target, t.Return}
-	case *ir.JmpDyn:
-		return t.Table
+	if b.Term == nil {
+		return nil
 	}
-	return nil
+	return b.Term.Successors()
 }
 
 func redirect(b *ir.Block, from, to *ir.Block) {
-	switch t := b.Term.(type) {
-	case *ir.Jmp:
-		if t.Target == from {
-			t.Target = to
-		}
-	case *ir.Goto:
-		if t.Target == from {
-			t.Target = to
-		}
-	case *ir.Call:
-		if t.Target == from {
-			t.Target = to
-		}
-		if t.Return == from {
-			t.Return = to
-		}
-	case *ir.Br:
-		if t.Then == from {
-			t.Then = to
-		}
-		if t.Else == from {
-			t.Else = to
-		}
-	case *ir.BrApprox:
-		if t.Then == from {
-			t.Then = to
-		}
-		if t.Else == from {
-			t.Else = to
-		}
-	case *ir.BrApproxZero:
-		if t.Then == from {
-			t.Then = to
-		}
-		if t.Else == from {
-			t.Else = to
-		}
-	case *ir.BrCall:
-		if t.Target == from {
-			t.Target = to
-		}
-		if t.Return == from {
-			t.Return = to
-		}
-	case *ir.JmpDyn:
-		for i, tb := range t.Table {
-			if tb == from {
-				t.Table[i] = to
-			}
-		}
+	if b.Term != nil {
+		b.Term.Redirect(from, to)
 	}
 }
 
@@ -2397,41 +2300,8 @@ func instrKey(i ir.Instr, reg func(*ir.Reg) string) string {
 // termKey returns a structural key for a terminator (block pointers are keyed
 // by their ID so identical control flow compares equal).
 func termKey(t ir.Term) string {
-	switch v := t.(type) {
-	case *ir.Jmp:
-		return "jmp|" + blockID(v.Target)
-	case *ir.Goto:
-		return "goto|" + blockID(v.Target)
-	case *ir.Ret:
-		return "ret|" + valKey(v.Value)
-	case *ir.Call:
-		return "call|" + blockID(v.Target) + "|" + blockID(v.Return)
-	case *ir.JmpRA:
-		return "jmpra"
-	case *ir.JmpDyn:
-		return "jmpdyn|" + valKey(v.Target)
-	case *ir.Br:
-		return "br|" + strconv.Itoa(int(v.Cond)) + "|" + valKey(v.A) + "|" + valKey(v.B) +
-			"|" + blockID(v.Then) + "|" + blockID(v.Else)
-	case *ir.BrValid:
-		return "brvalid|" + v.Dev + "|" + v.Logic + "|" + strconv.FormatBool(v.Store) +
-			"|" + blockID(v.Valid) + "|" + blockID(v.Invalid)
-	case *ir.BrApprox:
-		return "brapprox|" + strconv.FormatBool(v.Negate) + "|" + valKey(v.A) + "|" + valKey(v.B) +
-			"|" + valKey(v.Tol) + "|" + blockID(v.Then) + "|" + blockID(v.Else)
-	case *ir.BrApproxZero:
-		return "brapproxz|" + strconv.FormatBool(v.Negate) + "|" + valKey(v.A) + "|" + valKey(v.Tol) +
-			"|" + blockID(v.Then) + "|" + blockID(v.Else)
-	case *ir.BrCall:
-		return "brcall|" + strconv.Itoa(int(v.Cond)) + "|" + valKey(v.A) + "|" + valKey(v.B) +
-			"|" + blockID(v.Target) + "|" + blockID(v.Return)
+	if t == nil {
+		return "?"
 	}
-	return "?"
-}
-
-func blockID(b *ir.Block) string {
-	if b == nil {
-		return "-"
-	}
-	return strconv.Itoa(b.ID)
+	return t.Key()
 }

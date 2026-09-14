@@ -378,41 +378,14 @@ func rpo(fn *ir.Function) []*ir.Block {
 			return
 		}
 		visited[b] = true
-		switch t := b.Term.(type) {
-		case *ir.Jmp:
-			dfs(t.Target)
-		case *ir.Goto:
-			dfs(t.Target)
-		case *ir.Call:
-			// Visit the callee first so that the return block ends up laid out
-			// immediately after the call; the IC10 return address (pc+1) then
-			// points at it.
-			dfs(t.Target)
-			dfs(t.Return)
-		case *ir.JmpDyn:
-			for _, tb := range t.Table {
-				dfs(tb)
+		// Successors are returned in the preferred layout order: visiting them
+		// in sequence (then reversing) puts the intended block last, i.e. as the
+		// fall-through. Call/BrCall visit the callee first so the return block
+		// lands right after the call.
+		if b.Term != nil {
+			for _, s := range b.Term.Successors() {
+				dfs(s)
 			}
-		case *ir.BrValid:
-			// Branch on invalid to Invalid, so lay out Valid as the fall-through.
-			dfs(t.Invalid)
-			dfs(t.Valid)
-		case *ir.Br:
-			// Visit the false edge first so that the true target ends up as the
-			// fall-through block after reversing.
-			dfs(t.Else)
-			dfs(t.Then)
-		case *ir.BrApprox:
-			dfs(t.Else)
-			dfs(t.Then)
-		case *ir.BrApproxZero:
-			dfs(t.Else)
-			dfs(t.Then)
-		case *ir.BrCall:
-			// Visit the callee first so the continuation (Return) is laid out
-			// immediately after the branch; the callee's `j ra` resumes there.
-			dfs(t.Target)
-			dfs(t.Return)
 		}
 		order = append(order, b)
 	}

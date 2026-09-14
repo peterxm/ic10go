@@ -133,21 +133,14 @@ func useDefInstr(i ir.Instr) (use, def []*ir.Reg) {
 }
 
 func termUses(t ir.Term) []*ir.Reg {
-	switch v := t.(type) {
-	case *ir.Br:
-		return append(valuesRegs(v.A), valuesRegs(v.B)...)
-	case *ir.BrApprox:
-		return append(append(valuesRegs(v.A), valuesRegs(v.B)...), valuesRegs(v.Tol)...)
-	case *ir.BrApproxZero:
-		return append(valuesRegs(v.A), valuesRegs(v.Tol)...)
-	case *ir.BrCall:
-		return append(valuesRegs(v.A), valuesRegs(v.B)...)
-	case *ir.Ret:
-		return valuesRegs(v.Value)
-	case *ir.JmpDyn:
-		return valuesRegs(v.Target)
+	if t == nil {
+		return nil
 	}
-	return nil
+	var regs []*ir.Reg
+	for _, v := range t.Uses() {
+		regs = append(regs, valuesRegs(v)...)
+	}
+	return regs
 }
 
 func instrRegs(i ir.Instr) []*ir.Reg {
@@ -535,31 +528,12 @@ func (s *spiller) rewriteInstr(ins ir.Instr, out *[]ir.Instr) {
 }
 
 func (s *spiller) rewriteTerm(t ir.Term, out *[]ir.Instr) {
-	switch v := t.(type) {
-	case *ir.Br:
-		v.A = s.loadIfSpilled(v.A, out)
-		if v.B != nil {
-			v.B = s.loadIfSpilled(v.B, out)
-		}
-	case *ir.BrApprox:
-		v.A = s.loadIfSpilled(v.A, out)
-		v.B = s.loadIfSpilled(v.B, out)
-		v.Tol = s.loadIfSpilled(v.Tol, out)
-	case *ir.BrApproxZero:
-		v.A = s.loadIfSpilled(v.A, out)
-		v.Tol = s.loadIfSpilled(v.Tol, out)
-	case *ir.BrCall:
-		v.A = s.loadIfSpilled(v.A, out)
-		if v.B != nil {
-			v.B = s.loadIfSpilled(v.B, out)
-		}
-	case *ir.Ret:
-		if v.Value != nil {
-			v.Value = s.loadIfSpilled(v.Value, out)
-		}
-	case *ir.JmpDyn:
-		v.Target = s.loadIfSpilled(v.Target, out)
+	if t == nil {
+		return
 	}
+	t.RewriteUses(func(v ir.Value) ir.Value {
+		return s.loadIfSpilled(v, out)
+	})
 }
 
 func instrDef(i ir.Instr) *ir.Reg {

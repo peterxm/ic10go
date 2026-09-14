@@ -353,7 +353,7 @@ func (c Cond) Invert() Cond {
 	return c
 }
 
-type Term interface{ isTerm() }
+// Term is defined in term.go (with Successors/Uses/Redirect/Key).
 
 type Jmp struct{ Target *Block }
 
@@ -461,46 +461,17 @@ func (f *Function) BuildCFG() {
 		b.Preds = nil
 		b.Succs = nil
 	}
-	for _, b := range f.Blocks {
-		switch t := b.Term.(type) {
-		case *Jmp:
-			b.Succs = append(b.Succs, t.Target)
-		case *Goto:
-			b.Succs = append(b.Succs, t.Target)
-		case *Call:
-			b.Succs = append(b.Succs, t.Target)
-			if t.Return != nil {
-				b.Succs = append(b.Succs, t.Return)
-			}
-		case *Br:
-			b.Succs = append(b.Succs, t.Then, t.Else)
-		case *BrValid:
-			b.Succs = append(b.Succs, t.Valid, t.Invalid)
-		case *BrApprox:
-			b.Succs = append(b.Succs, t.Then, t.Else)
-		case *BrApproxZero:
-			b.Succs = append(b.Succs, t.Then, t.Else)
-		case *BrCall:
-			b.Succs = append(b.Succs, t.Target, t.Return)
-		case *JmpDyn:
-			// A jump table transfers to every case block. A computed jump with
-			// no table has unknown successors, so it gets none.
-			b.Succs = append(b.Succs, t.Table...)
-		}
-	}
 	// A ret (JmpRA) can return to any call site, so it may transfer control to
 	// any call's return block. Modelling this keeps values written by a callee
 	// live after the call.
 	var returns []*Block
 	for _, b := range f.Blocks {
-		switch c := b.Term.(type) {
-		case *Call:
-			if c.Return != nil {
-				returns = append(returns, c.Return)
-			}
-		case *BrCall:
-			if c.Return != nil {
-				returns = append(returns, c.Return)
+		if b.Term != nil {
+			b.Succs = append(b.Succs, b.Term.Successors()...)
+		}
+		if hr, ok := b.Term.(interface{ returnBlock() *Block }); ok {
+			if r := hr.returnBlock(); r != nil {
+				returns = append(returns, r)
 			}
 		}
 	}
