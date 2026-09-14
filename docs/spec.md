@@ -447,15 +447,19 @@ batch.writeSlot(hash("StructureBattery"), 0, "ChargeRatio", 1)       // sbs
 ### 7.7 设备栈 / 按 id
 
 ```go
-get(d0, addr)          // get
-put(d0, addr, value)   // put
-getd(id, addr)         // getd
-putd(id, addr, value)  // putd
+get(d0, addr)          // get：按端口
+put(d0, addr, value)   // put：按端口
+getd(id, addr)         // get：按设备 id（生成统一 get，不再生成过期的 getd）
+putd(id, addr, value)  // put：按设备 id（生成统一 put）
 clr(d0)                // clr
 clrById(id)            // clrd：按设备 id 清空
 rmap(d0, reagentHash)  // rmap
 readReagent(d0, ReagentMode.Contents, key)  // lr：读取反应物
 ```
+
+> `getd` / `putd` 是 `.icg` 的按 id 形式；游戏里独立的 `getd`/`putd` 指令已弃用
+> （编辑器划线、百科不列），因此编译器改为生成统一的 `get` / `put`
+> （它们的 device 操作数现在可接受 id）。
 
 > 在标准 IC host 上，`db` 的栈就是芯片自身的栈：`get/put(db, addr)` 与
 > `push/pop/poke/peek` 访问同一块内存（真机已验证）。栈是**持久**的，跨代码

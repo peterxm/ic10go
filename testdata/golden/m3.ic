@@ -17,8 +17,8 @@ sapz r0 r2 0.01
 s d2 Pressure r0
 get r0 d3 0
 put d3 0 r0
-getd r0 12345 0
-putd 12345 0 r0
+get r0 12345 0
+put 12345 0 r0
 clr d3
 lb r1 -400115994 Charge 1
 lb r0 -400115994 Ratio 0

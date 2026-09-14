@@ -133,6 +133,18 @@ func (m *Machine) Device(name string) *Device {
 // index).
 func (m *Machine) dev(s string) *Device { return m.Device(m.devName(s)) }
 
+// deviceArg resolves a get/put device operand: a port (d0..d5/db) or device
+// register (drN) selects the port, otherwise the operand is a device id.
+func (m *Machine) deviceArg(s string) *Device {
+	if s == "db" || (len(s) == 2 && s[0] == 'd' && s[1] >= '0' && s[1] <= '5') {
+		return m.dev(s)
+	}
+	if len(s) >= 3 && s[0] == 'd' && s[1] == 'r' {
+		return m.dev(s)
+	}
+	return m.deviceByID(mustNum(m, s))
+}
+
 // devName resolves device-register operands (dr15, drr0) to a port name and
 // returns other operands unchanged.
 func (m *Machine) devName(s string) string {
@@ -565,11 +577,11 @@ func (m *Machine) execOp(ins *Instr) error {
 	case "get":
 		dst, _ := m.reg(a[0])
 		addr, _ := m.num(a[2])
-		m.Regs[dst] = m.dev(a[1]).Stack[int(addr)]
+		m.Regs[dst] = m.deviceArg(a[1]).Stack[int(addr)]
 		return nil
 	case "put":
 		addr, _ := m.num(a[1])
-		m.dev(a[0]).Stack[int(addr)] = mustNum(m, a[2])
+		m.deviceArg(a[0]).Stack[int(addr)] = mustNum(m, a[2])
 		return nil
 	case "getd":
 		dst, _ := m.reg(a[0])

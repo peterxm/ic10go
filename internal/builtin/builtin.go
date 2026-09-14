@@ -25,10 +25,11 @@ var EnumConstants = map[string]float64{
 	"SorterInstruction.FilterSortingClassCompare": 4,
 	"SlotClass.Battery":                           1,
 	"SortingClass.Ores":                           1,
-	// ReagentMode: Contents / Required / Recipe = 0 / 1 / 2 (reference doc).
-	"ReagentMode.Contents": 0,
-	"ReagentMode.Required": 1,
-	"ReagentMode.Recipe":   2,
+	// ReagentMode: Contents / Required / Recipe / TotalContents = 0 / 1 / 2 / 3.
+	"ReagentMode.Contents":      0,
+	"ReagentMode.Required":      1,
+	"ReagentMode.Recipe":        2,
+	"ReagentMode.TotalContents": 3,
 	// PrinterInstruction: 8-bit OP codes; verify against the game.
 	"PrinterInstruction.ExecuteRecipe":      1,
 	"PrinterInstruction.WaitUntilNextValid": 2,
@@ -301,8 +302,10 @@ func init() {
 	add("put", 3, false, "put")
 	add("clr", 1, false, "clr")
 	add("clrById", 1, false, "clrd")
-	add("getd", 2, true, "getd")
-	add("putd", 3, false, "putd")
+	// The unified get/put accept a device port, register or id; emit them for
+	// the by-id forms too (the standalone getd/putd are deprecated in game).
+	add("getd", 2, true, "get")
+	add("putd", 3, false, "put")
 
 	// Device reagent read (first argument is a device): lr r? device mode key.
 	add("readReagent", 3, true, "lr")

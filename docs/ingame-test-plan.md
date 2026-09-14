@@ -119,6 +119,10 @@ func main() {
 
 期望 LED：`123000`（清空前读到 123，清空后读到 0）。
 
+> 编译产物为 `put <id> 10 123` / `clrd <id>` / `get <id> 10 0`：`getd`/`putd`
+> 在游戏里已弃用（编辑器划线），编译器改用统一的 `get`/`put`（其 device 操作数
+> 现在接受设备 id）。`clrd` 仍是当前指令。
+
 ### 2.4 `readReagent`（IC10 `lr`，可选）
 
 需要一个含反应物的设备（熔炉、气体混合器等）接 `d2`。`key` 用试剂 hash：
@@ -134,6 +138,7 @@ func main() {
 
 期望：LED 显示该设备中氧气的含量（具体数值取决于设备状态）。
 > 若设备无该试剂，读数为 0。此测试主要确认不报错、能读取。
+> `ReagentMode` 可取 `Contents`(0) / `Required`(1) / `Recipe`(2) / `TotalContents`(3)。
 
 ---
 

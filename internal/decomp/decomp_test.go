@@ -195,6 +195,24 @@ nor r1 r2 r3
 	}
 }
 
+func TestDecompileUnifiedGetPut(t *testing.T) {
+	// The unified get/put take a port or an id; only the port form maps to the
+	// .icg get/put builtins, the id form maps to getd/putd.
+	src := "get r0 d0 5\nput d0 5 r1\nget r2 r1 5\nput r1 5 r2\n"
+	code, warns, err := Decompile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	for _, want := range []string{"get(d0, 5)", "put(d0, 5, r1)", "getd(r1, 5)", "putd(r1, 5, r2)"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("output missing %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestDecompileSanitizesLabelsAndNumbers(t *testing.T) {
 	// IC10 labels may contain '-'/'+'; IC10 floats may omit the leading digit.
 	src := `move r0 .85

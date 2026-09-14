@@ -21,9 +21,9 @@ s d1 Mode 2
 bapz r4 0.001 22
 s d1 Mode 3
 l r0 d2 ReferenceId
-putd r0 0 5
+put r0 0 5
 clrd r0
-getd r0 r0 0
+get r0 r0 0
 s d2 Setting r0
 lr r0 d4 0 1866552090
 s d3 Setting r0

@@ -117,7 +117,8 @@
 | `batch.writeSlot` | `sbs` |
 | `isSet(d)` | `sdse` |
 | `isUnset(d)` | `sdns` |
-| `get / put / getd / putd / clr / rmap` | 同名指令 |
+| `get / put / clr / rmap` | 同名指令 |
+| `getd(id, addr)` / `putd(id, addr, v)` | 统一 `get` / `put`（device 操作数接受 id；独立的 `getd`/`putd` 已弃用） |
 | `clrById(id)` | `clrd` |
 | `readReagent(dev, mode, key)` | `lr` |
 

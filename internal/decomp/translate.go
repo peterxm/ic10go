@@ -112,9 +112,15 @@ func (d *decompiler) translate(l icLine) []string {
 	case "rmap":
 		return []string{d.assignDst(l.args[0], fmt.Sprintf("rmap(%s, %s)", d.resolve(l.args[1]), d.a(l, 2)))}
 	case "get":
-		return []string{d.assignDst(l.args[0], fmt.Sprintf("get(%s, %s)", d.resolve(l.args[1]), d.a(l, 2)))}
+		if isPortOperand(d.resolve(l.args[1])) {
+			return []string{d.assignDst(l.args[0], fmt.Sprintf("get(%s, %s)", d.resolve(l.args[1]), d.a(l, 2)))}
+		}
+		return []string{d.assignDst(l.args[0], fmt.Sprintf("getd(%s, %s)", d.a(l, 1), d.a(l, 2)))}
 	case "put":
-		return []string{fmt.Sprintf("put(%s, %s, %s)", d.resolve(l.args[0]), d.a(l, 1), d.a(l, 2))}
+		if isPortOperand(d.resolve(l.args[0])) {
+			return []string{fmt.Sprintf("put(%s, %s, %s)", d.resolve(l.args[0]), d.a(l, 1), d.a(l, 2))}
+		}
+		return []string{fmt.Sprintf("putd(%s, %s, %s)", d.a(l, 0), d.a(l, 1), d.a(l, 2))}
 	case "getd":
 		return []string{d.assignDst(l.args[0], fmt.Sprintf("getd(%s, %s)", d.a(l, 1), d.a(l, 2)))}
 	case "putd":
@@ -347,6 +353,15 @@ func channelAccess(dev, logic string) (string, bool) {
 		return "", false
 	}
 	return fmt.Sprintf("%s.channel[%s][%s]", parts[0], parts[1], idx), true
+}
+
+// isPortOperand reports whether a device operand is a fixed port name
+// (d0..d5 / db) rather than a device id.
+func isPortOperand(s string) bool {
+	if s == "db" {
+		return true
+	}
+	return len(s) == 2 && s[0] == 'd' && s[1] >= '0' && s[1] <= '5'
 }
 
 func modeText(s string) string {
