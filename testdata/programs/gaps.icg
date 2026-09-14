@@ -1,0 +1,25 @@
+// IC10 instructions that Go-like operators do not express directly:
+// clrById (clrd), readReagent (lr), logicalNor (nor), notApprox / notApproxZero
+// / isNotNaN (sna / snaz / snanz) and approximate branch fusion (bap/bna/bapz/bnaz).
+
+func main() {
+    a := d0.Setting
+    b := d1.Setting
+
+    d2.Setting = logicalNor(a, b)
+    d3.Setting = notApprox(a, b, 0.001)
+    d4.Setting = notApproxZero(a, 0.001)
+    d5.Setting = isNotNaN(a)
+
+    if approx(a, b, 0.001) { d0.Mode = 1 } else { d0.Mode = 2 }
+    if notApprox(a, b, 0.001) { d1.Mode = 1 }
+    if approxZero(a, 0.001) { d1.Mode = 2 }
+    if notApproxZero(a, 0.001) { d1.Mode = 3 }
+
+    id := d2.ReferenceId
+    putd(id, 0, 5)
+    clrById(id)
+    d2.Setting = getd(id, 0)
+
+    d3.Setting = readReagent(d4, ReagentMode.Contents, hash("Oxygen"))
+}

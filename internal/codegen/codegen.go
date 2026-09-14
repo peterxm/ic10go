@@ -135,6 +135,34 @@ func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, e
 				add(branchText(t.Cond, t.A, t.B, colors)+" ", t.Then, b.Func)
 				add("j ", t.Else, b.Func)
 			}
+		case *ir.BrApprox:
+			m, im := "bap", "bna"
+			if t.Negate {
+				m, im = "bna", "bap"
+			}
+			switch {
+			case t.Else == next:
+				add(approxText(m, t.A, t.B, t.Tol, colors)+" ", t.Then, b.Func)
+			case t.Then == next:
+				add(approxText(im, t.A, t.B, t.Tol, colors)+" ", t.Else, b.Func)
+			default:
+				add(approxText(m, t.A, t.B, t.Tol, colors)+" ", t.Then, b.Func)
+				add("j ", t.Else, b.Func)
+			}
+		case *ir.BrApproxZero:
+			m, im := "bapz", "bnaz"
+			if t.Negate {
+				m, im = "bnaz", "bapz"
+			}
+			switch {
+			case t.Else == next:
+				add(approxZeroText(m, t.A, t.Tol, colors)+" ", t.Then, b.Func)
+			case t.Then == next:
+				add(approxZeroText(im, t.A, t.Tol, colors)+" ", t.Else, b.Func)
+			default:
+				add(approxZeroText(m, t.A, t.Tol, colors)+" ", t.Then, b.Func)
+				add("j ", t.Else, b.Func)
+			}
 		}
 	}
 
@@ -317,6 +345,12 @@ func rpo(fn *ir.Function) []*ir.Block {
 			// fall-through block after reversing.
 			dfs(t.Else)
 			dfs(t.Then)
+		case *ir.BrApprox:
+			dfs(t.Else)
+			dfs(t.Then)
+		case *ir.BrApproxZero:
+			dfs(t.Else)
+			dfs(t.Then)
 		}
 		order = append(order, b)
 	}
@@ -347,10 +381,15 @@ func renderInstr(ins ir.Instr, colors map[*ir.Reg]int) (string, bool) {
 			return "seqz " + regName(v.Dst, colors) + " " + valueText(v.A, colors), true
 		}
 	case *ir.Cmp:
-		m := cmpMnemonic(v.Cond)
 		if v.B == nil {
-			return m + " " + regName(v.Dst, colors) + " " + valueText(v.A, colors), true
+			return cmpMnemonic(v.Cond) + " " + regName(v.Dst, colors) + " " + valueText(v.A, colors), true
 		}
+		if isZeroConst(v.B) {
+			if m, ok := zeroCmpMnemonic(v.Cond); ok {
+				return m + " " + regName(v.Dst, colors) + " " + valueText(v.A, colors), true
+			}
+		}
+		m := cmpMnemonic(v.Cond)
 		return m + " " + regName(v.Dst, colors) + " " + valueText(v.A, colors) +
 			" " + valueText(v.B, colors), true
 	case *ir.Select:
@@ -442,11 +481,72 @@ func renderBuiltin(v *ir.Builtin, colors map[*ir.Reg]int) string {
 }
 
 func branchText(c ir.Cond, a, b ir.Value, colors map[*ir.Reg]int) string {
-	m := branchMnemonic(c)
 	if b == nil {
-		return m + " " + valueText(a, colors)
+		return branchMnemonic(c) + " " + valueText(a, colors)
 	}
+	if isZeroConst(b) {
+		if m, ok := zeroBranchMnemonic(c); ok {
+			return m + " " + valueText(a, colors)
+		}
+	}
+	m := branchMnemonic(c)
 	return m + " " + valueText(a, colors) + " " + valueText(b, colors)
+}
+
+// isZeroConst reports whether v is the numeric constant 0 (not nan/raw).
+func isZeroConst(v ir.Value) bool {
+	c, ok := v.(*ir.Const)
+	return ok && c.Special == "" && c.Raw == "" && c.V == 0
+}
+
+// approxText renders a bap/bna instruction (a, b, tol) without its target.
+func approxText(m string, a, b, tol ir.Value, colors map[*ir.Reg]int) string {
+	return m + " " + valueText(a, colors) + " " + valueText(b, colors) + " " + valueText(tol, colors)
+}
+
+// approxZeroText renders a bapz/bnaz instruction (a, tol) without its target.
+func approxZeroText(m string, a, tol ir.Value, colors map[*ir.Reg]int) string {
+	return m + " " + valueText(a, colors) + " " + valueText(tol, colors)
+}
+
+// zeroCmpMnemonic maps a comparison with the constant 0 to IC10's single
+// operand s*z form (seqz, snez, sltz, slez, sgtz, sgez).
+func zeroCmpMnemonic(c ir.Cond) (string, bool) {
+	switch c {
+	case ir.Eq, ir.Zero:
+		return "seqz", true
+	case ir.Ne, ir.NonZero:
+		return "snez", true
+	case ir.Lt:
+		return "sltz", true
+	case ir.Le:
+		return "slez", true
+	case ir.Gt:
+		return "sgtz", true
+	case ir.Ge:
+		return "sgez", true
+	}
+	return "", false
+}
+
+// zeroBranchMnemonic maps a comparison with the constant 0 to IC10's single
+// operand b*z form (beqz, bnez, bltz, blez, bgtz, bgez).
+func zeroBranchMnemonic(c ir.Cond) (string, bool) {
+	switch c {
+	case ir.Eq, ir.Zero:
+		return "beqz", true
+	case ir.Ne, ir.NonZero:
+		return "bnez", true
+	case ir.Lt:
+		return "bltz", true
+	case ir.Le:
+		return "blez", true
+	case ir.Gt:
+		return "bgtz", true
+	case ir.Ge:
+		return "bgez", true
+	}
+	return "", false
 }
 
 func cmpMnemonic(c ir.Cond) string {

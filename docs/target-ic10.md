@@ -82,9 +82,12 @@
 | `min max clamp lerp` | 同名指令 |
 | `sin cos tan asin acos atan atan2` | 同名指令 |
 | `& \| ^ ~` | `and or xor not` |
+| `logicalNor(a, b)` | `nor` |
 | `<< >>` | `sll sra` |
 | `== != < <= > >=` | `seq sne slt sle sgt sge` |
+| 与常量 0 比较 | 单操作数 `seqz/snez/sltz/slez/sgtz/sgez`（分支用 `beqz/bnez/bltz/blez/bgtz/bgez`） |
 | `!` | `seqz` |
+| `approx/notApprox/approxZero/notApproxZero`（作为条件） | `bap/bna/bapz/bnaz`（融合） |
 | `c ? a : b` | `select` |
 | `yield sleep hcf` | 同名指令 |
 | `push pop peek poke` | 同名指令 |
@@ -113,6 +116,8 @@
 | `isSet(d)` | `sdse` |
 | `isUnset(d)` | `sdns` |
 | `get / put / getd / putd / clr / rmap` | 同名指令 |
+| `clrById(id)` | `clrd` |
+| `readReagent(dev, mode, key)` | `lr` |
 
 ### 4.3 分支
 

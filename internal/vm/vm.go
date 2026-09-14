@@ -32,17 +32,20 @@ type Device struct {
 	Values   map[string]float64
 	Slots    map[int]map[string]float64
 	Stack    []float64
+	// Reagents models IC10 `lr` (read reagent), keyed by the third operand.
+	Reagents map[float64]float64
 	// NoStore lists logic types the device refuses to store (bdnvs).
 	NoStore map[string]bool
 }
 
 func newDevice(name string) *Device {
 	return &Device{
-		Name:    name,
-		Values:  map[string]float64{},
-		Slots:   map[int]map[string]float64{},
-		Stack:   make([]float64, stackSize),
-		NoStore: map[string]bool{},
+		Name:     name,
+		Values:   map[string]float64{},
+		Slots:    map[int]map[string]float64{},
+		Stack:    make([]float64, stackSize),
+		Reagents: map[float64]float64{},
+		NoStore:  map[string]bool{},
 	}
 }
 
@@ -443,7 +446,7 @@ func (m *Machine) execOp(ins *Instr) error {
 		return nil
 	case "add", "sub", "mul", "div", "mod", "pow", "atan2", "min", "max":
 		return m.binOp(ins.Op, a[0], a[1], a[2])
-	case "and", "or", "xor", "sll", "sra", "srl", "sla", "rol", "ror":
+	case "and", "or", "xor", "nor", "sll", "sra", "srl", "sla", "rol", "ror":
 		return m.bitOp(ins.Op, a[0], a[1], a[2])
 	case "not":
 		return m.setDst(a[0], float64(^int64(mustNum(m, a[1]))))
@@ -488,6 +491,11 @@ func (m *Machine) execOp(ins *Instr) error {
 	case "l":
 		dst, _ := m.reg(a[0])
 		m.Regs[dst] = m.dev(a[1]).Values[m.logicName(a[2])]
+		return nil
+	case "lr":
+		dst, _ := m.reg(a[0])
+		key := mustNum(m, a[3])
+		m.Regs[dst] = m.dev(a[1]).Reagents[key]
 		return nil
 	case "s":
 		logic := m.logicName(a[1])
@@ -583,6 +591,16 @@ func (m *Machine) execOp(ins *Instr) error {
 		}
 		d.Stack = make([]float64, stackSize)
 		return nil
+	case "clrd":
+		d := m.deviceByID(mustNum(m, a[0]))
+		if d.Name == "db" {
+			for i := range d.Stack {
+				d.Stack[i] = 0
+			}
+			return nil
+		}
+		d.Stack = make([]float64, stackSize)
+		return nil
 	}
 	return fmt.Errorf("unsupported instruction %q", ins.Op)
 }
@@ -651,6 +669,8 @@ func (m *Machine) bitOp(op, dst, x, y string) error {
 		r = a | int64(mustNum(m, y))
 	case "xor":
 		r = a ^ int64(mustNum(m, y))
+	case "nor":
+		r = ^(a | int64(mustNum(m, y)))
 	case "sll":
 		r = a << b
 	case "sra":

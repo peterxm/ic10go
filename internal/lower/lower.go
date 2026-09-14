@@ -159,6 +159,12 @@ func simplify(fn *ir.Function) {
 		case *ir.Br:
 			t.Then = resolve(t.Then)
 			t.Else = resolve(t.Else)
+		case *ir.BrApprox:
+			t.Then = resolve(t.Then)
+			t.Else = resolve(t.Else)
+		case *ir.BrApproxZero:
+			t.Then = resolve(t.Then)
+			t.Else = resolve(t.Else)
 		}
 	}
 	fn.BuildCFG()
@@ -1197,23 +1203,49 @@ func (l *lowerer) branchCond(e ast.Expr, thenB, elseB *ir.Block) {
 		inner = un.X
 	}
 	if call, ok := inner.(*ast.CallExpr); ok {
-		if id, ok := call.Fun.(*ast.Ident); ok && (id.Name == "isLoadValid" || id.Name == "isStoreValid") {
-			dev, logic, ok := l.validArgs(call)
-			if !ok {
+		if id, ok := call.Fun.(*ast.Ident); ok {
+			switch id.Name {
+			case "isLoadValid", "isStoreValid":
+				dev, logic, ok := l.validArgs(call)
+				if !ok {
+					return
+				}
+				valid, invalid := thenB, elseB
+				if neg {
+					valid, invalid = elseB, thenB
+				}
+				l.b.SetTerm(&ir.BrValid{
+					Dev:     dev,
+					Logic:   logic,
+					Store:   id.Name == "isStoreValid",
+					Valid:   valid,
+					Invalid: invalid,
+				})
 				return
+			case "approx", "notApprox":
+				if len(call.Args) == 3 {
+					l.b.SetTerm(&ir.BrApprox{
+						A:      l.lowerExpr(call.Args[0]),
+						B:      l.lowerExpr(call.Args[1]),
+						Tol:    l.lowerExpr(call.Args[2]),
+						Negate: neg != (id.Name == "notApprox"),
+						Then:   thenB,
+						Else:   elseB,
+					})
+					return
+				}
+			case "approxZero", "notApproxZero":
+				if len(call.Args) == 2 {
+					l.b.SetTerm(&ir.BrApproxZero{
+						A:      l.lowerExpr(call.Args[0]),
+						Tol:    l.lowerExpr(call.Args[1]),
+						Negate: neg != (id.Name == "notApproxZero"),
+						Then:   thenB,
+						Else:   elseB,
+					})
+					return
+				}
 			}
-			valid, invalid := thenB, elseB
-			if neg {
-				valid, invalid = elseB, thenB
-			}
-			l.b.SetTerm(&ir.BrValid{
-				Dev:     dev,
-				Logic:   logic,
-				Store:   id.Name == "isStoreValid",
-				Valid:   valid,
-				Invalid: invalid,
-			})
-			return
 		}
 	}
 	cond, a, b := l.lowerCond(e)
@@ -1636,6 +1668,7 @@ var batchModes = map[string]float64{
 var deviceFirstArg = map[string]bool{
 	"isSet": true, "isUnset": true, "rmap": true,
 	"get": true, "put": true, "clr": true,
+	"readReagent": true,
 }
 
 // lowerBatchCall handles the batch.read / batch.write family.

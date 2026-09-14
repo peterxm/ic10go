@@ -71,6 +71,9 @@ func (d *decompiler) translate(l icLine) []string {
 			return []string{d.assignDst(l.args[0], fmt.Sprintf("read(%s, %s)", d.resolve(l.args[1]), d.a(l, 2)))}
 		}
 		return []string{d.assignDst(l.args[0], d.deviceRead(l.args[1], l.args[2]))}
+	case "lr":
+		return []string{d.assignDst(l.args[0], fmt.Sprintf("readReagent(%s, %s, %s)",
+			d.resolve(l.args[1]), reagentMode(d.a(l, 2)), d.a(l, 3)))}
 	case "s":
 		if d.isDynLogic(l.args[1]) {
 			if reg, ok := d.deviceRegArg(l.args[0]); ok {
@@ -118,10 +121,14 @@ func (d *decompiler) translate(l icLine) []string {
 		return []string{fmt.Sprintf("putd(%s, %s, %s)", d.a(l, 0), d.a(l, 1), d.a(l, 2))}
 	case "clr":
 		return []string{"clr(" + d.resolve(l.args[0]) + ")"}
+	case "clrd":
+		return []string{"clrById(" + d.a(l, 0) + ")"}
 	case "select":
 		return []string{d.assignDst(l.args[0], fmt.Sprintf("(%s != 0 ? %s : %s)", d.a(l, 1), d.a(l, 2), d.a(l, 3)))}
 	case "not":
 		return []string{d.assignDst(l.args[0], "~"+d.a(l, 1))}
+	case "nor":
+		return []string{d.assignDst(l.args[0], fmt.Sprintf("logicalNor(%s, %s)", d.a(l, 1), d.a(l, 2)))}
 	}
 
 	if op, ok := binOps[l.op]; ok {
@@ -347,4 +354,17 @@ func modeText(s string) string {
 		return modeNames[v]
 	}
 	return strings.Trim(s, "\"")
+}
+
+// reagentMode renders the IC10 lr mode operand as a ReagentMode enum name.
+func reagentMode(s string) string {
+	switch strings.TrimSpace(s) {
+	case "0":
+		return "ReagentMode.Contents"
+	case "1":
+		return "ReagentMode.Required"
+	case "2":
+		return "ReagentMode.Recipe"
+	}
+	return s
 }

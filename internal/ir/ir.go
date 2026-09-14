@@ -396,14 +396,32 @@ type BrValid struct {
 	Invalid *Block
 }
 
-func (*Jmp) isTerm()     {}
-func (*Br) isTerm()      {}
-func (*Ret) isTerm()     {}
-func (*Goto) isTerm()    {}
-func (*Call) isTerm()    {}
-func (*JmpRA) isTerm()   {}
-func (*JmpDyn) isTerm()  {}
-func (*BrValid) isTerm() {}
+// BrApprox branches when a ≈ b within tol (IC10 bap) or, when Negate is set,
+// when a is not ≈ b (IC10 bna). It takes three operands, so it cannot use Br.
+type BrApprox struct {
+	A, B, Tol  Value
+	Negate     bool
+	Then, Else *Block
+}
+
+// BrApproxZero branches when a ≈ 0 within tol (IC10 bapz) or, when Negate is
+// set, when a is not ≈ 0 (IC10 bnaz).
+type BrApproxZero struct {
+	A, Tol     Value
+	Negate     bool
+	Then, Else *Block
+}
+
+func (*Jmp) isTerm()          {}
+func (*Br) isTerm()           {}
+func (*Ret) isTerm()          {}
+func (*Goto) isTerm()         {}
+func (*Call) isTerm()         {}
+func (*JmpRA) isTerm()        {}
+func (*JmpDyn) isTerm()       {}
+func (*BrValid) isTerm()      {}
+func (*BrApprox) isTerm()     {}
+func (*BrApproxZero) isTerm() {}
 
 // ---------------------------------------------------------------------------
 // Blocks and functions
@@ -446,6 +464,14 @@ func (f *Function) BuildCFG() {
 			b.Succs = append(b.Succs, t.Then, t.Else)
 		case *BrValid:
 			b.Succs = append(b.Succs, t.Valid, t.Invalid)
+		case *BrApprox:
+			b.Succs = append(b.Succs, t.Then, t.Else)
+		case *BrApproxZero:
+			b.Succs = append(b.Succs, t.Then, t.Else)
+		case *JmpDyn:
+			// A jump table transfers to every case block. A computed jump with
+			// no table has unknown successors, so it gets none.
+			b.Succs = append(b.Succs, t.Table...)
 		}
 	}
 	// A ret (JmpRA) can return to any call site, so it may transfer control to

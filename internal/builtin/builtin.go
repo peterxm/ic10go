@@ -300,6 +300,17 @@ func init() {
 	add("get", 2, true, "get")
 	add("put", 3, false, "put")
 	add("clr", 1, false, "clr")
+	add("clrById", 1, false, "clrd")
 	add("getd", 2, true, "getd")
 	add("putd", 3, false, "putd")
+
+	// Device reagent read (first argument is a device): lr r? device mode key.
+	add("readReagent", 3, true, "lr")
+
+	// Bitwise and approximate comparison forms that IC10 has but Go-like
+	// operators do not express in a single instruction.
+	add("logicalNor", 2, true, "nor")
+	add("notApprox", 3, true, "sna")
+	add("notApproxZero", 2, true, "snaz")
+	add("isNotNaN", 1, true, "snanz")
 }

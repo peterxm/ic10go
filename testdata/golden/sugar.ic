@@ -5,7 +5,7 @@ j 5
 s d0 Setting 6
 l r0 d1 Setting
 move r1 r0
-seq r0 r0 0
+seqz r0 r0
 beqz r0 11
 move r0 0
 j 24
@@ -23,7 +23,7 @@ move r0 2
 j 24
 move r0 1
 move r1 r0
-seq r0 r0 0
+seqz r0 r0
 beqz r0 29
 s d1 Mode 0
 j 36

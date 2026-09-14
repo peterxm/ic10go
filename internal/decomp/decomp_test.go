@@ -172,6 +172,29 @@ func TestDecompileComputedJump(t *testing.T) {
 	}
 }
 
+func TestDecompileNewBuiltins(t *testing.T) {
+	src := `lr r0 d0 0 5
+clrd 99
+nor r1 r2 r3
+`
+	code, warns, err := Decompile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	for _, want := range []string{
+		"readReagent(d0, ReagentMode.Contents, 5)",
+		"clrById(99)",
+		"logicalNor(r2, r3)",
+	} {
+		if !strings.Contains(code, want) {
+			t.Errorf("output missing %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestDecompileSanitizesLabelsAndNumbers(t *testing.T) {
 	// IC10 labels may contain '-'/'+'; IC10 floats may omit the leading digit.
 	src := `move r0 .85

@@ -273,14 +273,14 @@ func regNum(s string) int {
 
 // destOps lists instructions whose first argument is a register destination.
 var destOps = map[string]bool{
-	"move": true, "l": true, "ls": true, "lb": true, "lbn": true, "lbs": true, "lbns": true,
+	"move": true, "l": true, "lr": true, "ls": true, "lb": true, "lbn": true, "lbs": true, "lbns": true,
 	"pop": true, "peek": true, "get": true, "getd": true, "rmap": true, "sdse": true, "sdns": true,
 	"not": true, "abs": true, "sgn": true, "sqrt": true, "exp": true, "log": true,
 	"floor": true, "ceil": true, "round": true, "trunc": true, "rand": true,
 	"sin": true, "cos": true, "tan": true, "asin": true, "acos": true, "atan": true,
 	"add": true, "sub": true, "mul": true, "div": true, "mod": true, "pow": true,
 	"atan2": true, "min": true, "max": true, "sla": true, "srl": true, "rol": true,
-	"ror": true, "and": true, "or": true, "xor": true, "sll": true, "sra": true,
+	"ror": true, "and": true, "or": true, "xor": true, "nor": true, "sll": true, "sra": true,
 	"seq": true, "sne": true, "slt": true, "sle": true, "sgt": true, "sge": true,
 	"seqz": true, "snez": true, "sltz": true, "slez": true, "sgtz": true, "sgez": true,
 	"snan": true, "snanz": true, "sap": true, "sna": true, "sapz": true, "snaz": true,

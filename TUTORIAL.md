@@ -840,10 +840,13 @@ abs sgn sqrt exp log pow ceil floor round trunc rand min max clamp lerp
 sin cos tan asin acos atan atan2
 push(x)  y := pop()  z := peek()  poke(addr, v)
 approx(a, b, tol)  approxZero(a, tol)
-nan  pinf  ninf  isNaN(x)
+notApprox(a, b, tol)  notApproxZero(a, tol)
+nan  pinf  ninf  isNaN(x)  isNotNaN(x)
 hash("...")  str("...")
 read(dev, lt)  write(dev, lt, v)
 isSet(dev)  isUnset(dev)  isLoadValid(dev, "lt")  isStoreValid(dev, "lt")
+clr(dev)  clrById(id)  readReagent(dev, ReagentMode.Contents, key)
+logicalNor(a, b)   // 按位或非（nor）
 rol(a, b)  ror(a, b)  sla(a, b)  srl(a, b)   // 旋转 / 移位（位运算，整数语义）
 ```
 

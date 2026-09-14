@@ -404,7 +404,7 @@ func (g *gen) expr(depth int) string {
 	if depth <= 0 {
 		return g.atom()
 	}
-	switch g.rng.Intn(16) {
+	switch g.rng.Intn(17) {
 	case 0:
 		return g.atom()
 	case 1:
@@ -435,6 +435,10 @@ func (g *gen) expr(depth int) string {
 		return fmt.Sprintf("ins(%s, 0, 8)", g.expr(depth-1))
 	case 14:
 		return fmt.Sprintf("ext(%s, 0, 8)", g.expr(depth-1))
+	case 15:
+		return fmt.Sprintf("approx(%s, %s, %s)", g.expr(depth-1), g.expr(depth-1), g.expr(depth-1))
+	case 16:
+		return fmt.Sprintf("notApprox(%s, %s, %s)", g.expr(depth-1), g.expr(depth-1), g.expr(depth-1))
 	default:
 		return g.atom()
 	}

@@ -52,8 +52,11 @@ var Docs = map[string]Doc{
 	"peek": {"peek()", "Read the top of the stack.", "读取栈顶（不弹出）。"},
 	"poke": {"poke(addr, v)", "Write v to stack address addr.", "把 v 写到栈地址 addr。"},
 
-	"approx":     {"approx(a, b, tol)", "1 if a ≈ b within tol.", "在容差 tol 内 a ≈ b 时为 1。"},
-	"approxZero": {"approxZero(a, tol)", "1 if a ≈ 0 within tol.", "在容差 tol 内 a ≈ 0 时为 1。"},
+	"approx":        {"approx(a, b, tol)", "1 if a ≈ b within tol.", "在容差 tol 内 a ≈ b 时为 1。"},
+	"approxZero":    {"approxZero(a, tol)", "1 if a ≈ 0 within tol.", "在容差 tol 内 a ≈ 0 时为 1。"},
+	"notApprox":     {"notApprox(a, b, tol)", "1 if a is not ≈ b within tol (IC10 sna).", "在容差 tol 内 a 不≈ b 时为 1（IC10 sna）。"},
+	"notApproxZero": {"notApproxZero(a, tol)", "1 if a is not ≈ 0 within tol (IC10 snaz).", "在容差 tol 内 a 不≈ 0 时为 1（IC10 snaz）。"},
+	"isNotNaN":      {"isNotNaN(x)", "1 if x is not NaN (IC10 snanz).", "x 不是 NaN 时为 1（IC10 snanz）。"},
 
 	"isSet":   {"isSet(dev)", "1 if the device is connected.", "设备已连接时为 1。"},
 	"isUnset": {"isUnset(dev)", "1 if the device is not connected.", "设备未连接时为 1。"},
@@ -61,8 +64,12 @@ var Docs = map[string]Doc{
 	"get":     {"get(dev, addr)", "Read a device memory address.", "读取设备内存地址。"},
 	"put":     {"put(dev, addr, v)", "Write a device memory address.", "写入设备内存地址。"},
 	"clr":     {"clr(dev)", "Clear a device.", "清空设备。"},
+	"clrById": {"clrById(id)", "Clear a device addressed by id (IC10 clrd).", "按设备 id 清空设备（IC10 clrd）。"},
 	"getd":    {"getd(id, addr)", "Read a device address by id.", "按设备 id 读取地址。"},
 	"putd":    {"putd(id, addr, v)", "Write a device address by id.", "按设备 id 写入地址。"},
+
+	"readReagent": {"readReagent(dev, mode, key)", "Read a device reagent (IC10 lr).", "读取设备反应物（IC10 lr）。"},
+	"logicalNor":  {"logicalNor(a, b)", "Bitwise NOR (IC10 nor).", "按位或非（IC10 nor）。"},
 
 	"read":         {"read(dev, lt)", "Read a device logic type chosen at runtime.", "读取运行期决定的 logic type。"},
 	"write":        {"write(dev, lt, v)", "Write a device logic type chosen at runtime.", "写入运行期决定的 logic type。"},

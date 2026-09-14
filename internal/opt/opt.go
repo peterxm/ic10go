@@ -124,6 +124,10 @@ func termUses(t ir.Term) []ir.Value {
 	switch v := t.(type) {
 	case *ir.Br:
 		return []ir.Value{v.A, v.B}
+	case *ir.BrApprox:
+		return []ir.Value{v.A, v.B, v.Tol}
+	case *ir.BrApproxZero:
+		return []ir.Value{v.A, v.Tol}
 	case *ir.Ret:
 		if v.Value != nil {
 			return []ir.Value{v.Value}
@@ -1459,6 +1463,14 @@ func realSuccs(fn *ir.Function) map[*ir.Block][]*ir.Block {
 			}
 		case *ir.Br:
 			succs[b] = []*ir.Block{t.Then, t.Else}
+		case *ir.BrApprox:
+			succs[b] = []*ir.Block{t.Then, t.Else}
+		case *ir.BrApproxZero:
+			succs[b] = []*ir.Block{t.Then, t.Else}
+		case *ir.JmpDyn:
+			if len(t.Table) > 0 {
+				succs[b] = append([]*ir.Block{}, t.Table...)
+			}
 		}
 	}
 	return succs
@@ -1589,6 +1601,12 @@ func realTermSuccs(b *ir.Block) []*ir.Block {
 		return []*ir.Block{t.Target, t.Return}
 	case *ir.Br:
 		return []*ir.Block{t.Then, t.Else}
+	case *ir.BrApprox:
+		return []*ir.Block{t.Then, t.Else}
+	case *ir.BrApproxZero:
+		return []*ir.Block{t.Then, t.Else}
+	case *ir.JmpDyn:
+		return t.Table
 	}
 	return nil
 }
@@ -1616,6 +1634,26 @@ func redirect(b *ir.Block, from, to *ir.Block) {
 		}
 		if t.Else == from {
 			t.Else = to
+		}
+	case *ir.BrApprox:
+		if t.Then == from {
+			t.Then = to
+		}
+		if t.Else == from {
+			t.Else = to
+		}
+	case *ir.BrApproxZero:
+		if t.Then == from {
+			t.Then = to
+		}
+		if t.Else == from {
+			t.Else = to
+		}
+	case *ir.JmpDyn:
+		for i, tb := range t.Table {
+			if tb == from {
+				t.Table[i] = to
+			}
 		}
 	}
 }
@@ -2365,6 +2403,12 @@ func termKey(t ir.Term) string {
 	case *ir.BrValid:
 		return "brvalid|" + v.Dev + "|" + v.Logic + "|" + strconv.FormatBool(v.Store) +
 			"|" + blockID(v.Valid) + "|" + blockID(v.Invalid)
+	case *ir.BrApprox:
+		return "brapprox|" + strconv.FormatBool(v.Negate) + "|" + valKey(v.A) + "|" + valKey(v.B) +
+			"|" + valKey(v.Tol) + "|" + blockID(v.Then) + "|" + blockID(v.Else)
+	case *ir.BrApproxZero:
+		return "brapproxz|" + strconv.FormatBool(v.Negate) + "|" + valKey(v.A) + "|" + valKey(v.Tol) +
+			"|" + blockID(v.Then) + "|" + blockID(v.Else)
 	}
 	return "?"
 }

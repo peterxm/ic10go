@@ -39,7 +39,7 @@
     },
     "builtins": {
       "patterns": [
-        { "name": "support.function.icg", "match": "\\b(yield|sleep|hcf|abs|sgn|sqrt|exp|log|floor|ceil|round|trunc|rand|sin|cos|tan|asin|acos|atan|atan2|pow|min|max|clamp|lerp|hash|str|isNaN|approx|approxZero|isSet|isUnset|rmap|get|put|getd|putd|clr|push|pop|peek|poke|read|write|readDev|writeDev)\\b" }
+        { "name": "support.function.icg", "match": "\\b(yield|sleep|hcf|abs|sgn|sqrt|exp|log|floor|ceil|round|trunc|rand|sin|cos|tan|asin|acos|atan|atan2|pow|min|max|clamp|lerp|hash|str|isNaN|isNotNaN|approx|approxZero|notApprox|notApproxZero|logicalNor|isSet|isUnset|rmap|get|put|getd|putd|clr|clrById|readReagent|push|pop|peek|poke|read|write|readDev|writeDev)\\b" }
       ]
     },
     "enums": {

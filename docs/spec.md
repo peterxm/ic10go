@@ -452,7 +452,9 @@ put(d0, addr, value)   // put
 getd(id, addr)         // getd
 putd(id, addr, value)  // putd
 clr(d0)                // clr
+clrById(id)            // clrd：按设备 id 清空
 rmap(d0, reagentHash)  // rmap
+readReagent(d0, ReagentMode.Contents, key)  // lr：读取反应物
 ```
 
 > 在标准 IC host 上，`db` 的栈就是芯片自身的栈：`get/put(db, addr)` 与
@@ -477,6 +479,9 @@ rmap(d0, reagentHash)  // rmap
 `abs sgn sqrt exp log pow ceil floor round trunc rand min max clamp lerp`
 以及三角 `sin cos tan asin acos atan atan2`。
 
+位运算：`& | ^ ~ << >>`（映射 `and or xor not sll sra`），以及
+`logicalNor(a, b)`（`nor`）、`sla/srl/rol/ror`、`ext/ins`。
+
 ### 8.3 栈
 
 ```go
@@ -491,7 +496,12 @@ poke(addr, v)
 ```go
 approx(a, b, tol)      // sap
 approxZero(a, tol)     // sapz
+notApprox(a, b, tol)   // sna
+notApproxZero(a, tol)  // snaz
 ```
+
+在 `if` / `for` 条件中直接使用上述调用会融合为单条近似分支
+`bap` / `bna` / `bapz` / `bnaz`（`!approx(...)` 同样融合）。
 
 ### 8.5 特殊值
 
@@ -500,6 +510,7 @@ approxZero(a, tol)     // sapz
 | `nan` | 安静 NaN |
 | `pinf` / `ninf` | 正/负无穷 |
 | `isNaN(x)` | `snan` |
+| `isNotNaN(x)` | `snanz` |
 
 ### 8.6 编译期
 
