@@ -227,6 +227,10 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 
 	lines, start = removeRedundantJumps(lines, start)
 
+	if err := checkCallLayout(blocks, lines, start); err != nil {
+		return "", nil, err
+	}
+
 	var sb strings.Builder
 	for i, ln := range lines {
 		text, target := ln.text, ""
@@ -256,6 +260,34 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 		return "", report, err
 	}
 	return code, report, nil
+}
+
+// checkCallLayout asserts that a Call/BrCall return block is laid out
+// immediately after the call, which is what makes the IC10 return address
+// (pc+1) point at the continuation. A violation is a compiler bug.
+func checkCallLayout(blocks []*ir.Block, lines []line, start map[*ir.Block]int) error {
+	for i, b := range blocks {
+		var ret *ir.Block
+		switch t := b.Term.(type) {
+		case *ir.Call:
+			ret = t.Return
+		case *ir.BrCall:
+			ret = t.Return
+		default:
+			continue
+		}
+		if ret == nil {
+			continue
+		}
+		end := len(lines)
+		if i+1 < len(blocks) {
+			end = start[blocks[i+1]]
+		}
+		if start[ret] != end {
+			return fmt.Errorf("internal error: return block %d of block %d is not laid out after the call", ret.ID, b.ID)
+		}
+	}
+	return nil
 }
 
 // removeRedundantJumps rewrites "b<cond> ... T" followed by "j J" into the
