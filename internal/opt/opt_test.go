@@ -63,7 +63,7 @@ func TestCSEInvalidatedOnRedefinition(t *testing.T) {
 	globalCSE(b.Fn())
 	var found ir.Instr
 	for _, ins := range b.Fn().Blocks[0].Instrs {
-		if d := defOf(ins); d == t2 {
+		if d := ir.DefOf(ins); d == t2 {
 			found = ins
 		}
 	}

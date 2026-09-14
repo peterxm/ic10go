@@ -50,166 +50,14 @@ func tryColor(fn *ir.Function, k int) (map[*ir.Reg]int, bool) {
 
 func tryColorPartial(fn *ir.Function, k int) (map[*ir.Reg]int, map[*ir.Reg]bool) {
 	fn.BuildCFG()
-	_, out := liveness(fn)
+	_, out := ir.Liveness(fn)
 	graph := interference(fn, out)
 	return colorGraph(fn, graph, k)
 }
 
-func valuesRegs(v ir.Value) []*ir.Reg {
-	if r, ok := v.(*ir.Reg); ok {
-		return []*ir.Reg{r}
-	}
-	return nil
-}
-
-func useDefInstr(i ir.Instr) (use, def []*ir.Reg) {
-	switch v := i.(type) {
-	case *ir.Assign:
-		use = valuesRegs(v.Src)
-		def = []*ir.Reg{v.Dst}
-	case *ir.Bin:
-		use = append(valuesRegs(v.A), valuesRegs(v.B)...)
-		def = []*ir.Reg{v.Dst}
-	case *ir.Un:
-		use = valuesRegs(v.A)
-		def = []*ir.Reg{v.Dst}
-	case *ir.Cmp:
-		use = append(valuesRegs(v.A), valuesRegs(v.B)...)
-		def = []*ir.Reg{v.Dst}
-	case *ir.Select:
-		use = append(valuesRegs(v.Cond), valuesRegs(v.Then)...)
-		use = append(use, valuesRegs(v.Else)...)
-		def = []*ir.Reg{v.Dst}
-	case *ir.Load:
-		def = []*ir.Reg{v.Dst}
-	case *ir.Store:
-		use = valuesRegs(v.Src)
-	case *ir.LoadSlot:
-		use = valuesRegs(v.Index)
-		def = []*ir.Reg{v.Dst}
-	case *ir.StoreSlot:
-		use = append(valuesRegs(v.Index), valuesRegs(v.Src)...)
-	case *ir.LoadDyn:
-		use = append(valuesRegs(v.DevPtr), valuesRegs(v.Logic)...)
-		def = []*ir.Reg{v.Dst}
-	case *ir.StoreDyn:
-		use = append(valuesRegs(v.DevPtr), valuesRegs(v.Logic)...)
-		use = append(use, valuesRegs(v.Src)...)
-	case *ir.Builtin:
-		for _, a := range v.Args {
-			use = append(use, valuesRegs(a)...)
-		}
-		if v.Dst != nil {
-			def = []*ir.Reg{v.Dst}
-			// ins reads its destination (IC10 read-modify-write).
-			if v.Name == "ins" {
-				use = append(use, v.Dst)
-			}
-		}
-	case *ir.Batch:
-		use = append(use, valuesRegs(v.Device)...)
-		use = append(use, valuesRegs(v.Name)...)
-		use = append(use, valuesRegs(v.Slot)...)
-		use = append(use, valuesRegs(v.Mode)...)
-		use = append(use, valuesRegs(v.Src)...)
-		if v.Dst != nil {
-			def = []*ir.Reg{v.Dst}
-		}
-	case *ir.LoadSpecial:
-		def = []*ir.Reg{v.Dst}
-	case *ir.StoreSpecial:
-		use = valuesRegs(v.Src)
-	case *ir.LoadIndirect:
-		use = valuesRegs(v.Ptr)
-		def = []*ir.Reg{v.Dst}
-	case *ir.StoreIndirect:
-		use = append(valuesRegs(v.Ptr), valuesRegs(v.Src)...)
-	case *ir.LoadSpill:
-		def = []*ir.Reg{v.Dst}
-	case *ir.StoreSpill:
-		use = valuesRegs(v.Src)
-	}
-	return use, def
-}
-
-func termUses(t ir.Term) []*ir.Reg {
-	if t == nil {
-		return nil
-	}
-	var regs []*ir.Reg
-	for _, v := range t.Uses() {
-		regs = append(regs, valuesRegs(v)...)
-	}
-	return regs
-}
-
 func instrRegs(i ir.Instr) []*ir.Reg {
-	use, def := useDefInstr(i)
+	use, def := ir.DefUse(i)
 	return append(append([]*ir.Reg{}, use...), def...)
-}
-
-func liveness(fn *ir.Function) (in, out map[*ir.Block]map[*ir.Reg]bool) {
-	use := map[*ir.Block]map[*ir.Reg]bool{}
-	def := map[*ir.Block]map[*ir.Reg]bool{}
-	for _, b := range fn.Blocks {
-		u, d := computeUseDef(b)
-		use[b], def[b] = u, d
-	}
-	in = map[*ir.Block]map[*ir.Reg]bool{}
-	out = map[*ir.Block]map[*ir.Reg]bool{}
-	for _, b := range fn.Blocks {
-		in[b] = map[*ir.Reg]bool{}
-		out[b] = map[*ir.Reg]bool{}
-	}
-
-	for changed := true; changed; {
-		changed = false
-		for i := len(fn.Blocks) - 1; i >= 0; i-- {
-			b := fn.Blocks[i]
-			newOut := map[*ir.Reg]bool{}
-			for _, s := range b.Succs {
-				for r := range in[s] {
-					newOut[r] = true
-				}
-			}
-			newIn := map[*ir.Reg]bool{}
-			for r := range use[b] {
-				newIn[r] = true
-			}
-			for r := range newOut {
-				if !def[b][r] {
-					newIn[r] = true
-				}
-			}
-			if !sameSet(newOut, out[b]) || !sameSet(newIn, in[b]) {
-				changed = true
-			}
-			out[b], in[b] = newOut, newIn
-		}
-	}
-	return in, out
-}
-
-func computeUseDef(b *ir.Block) (map[*ir.Reg]bool, map[*ir.Reg]bool) {
-	use := map[*ir.Reg]bool{}
-	def := map[*ir.Reg]bool{}
-	for _, ins := range b.Instrs {
-		u, d := useDefInstr(ins)
-		for _, r := range u {
-			if !def[r] {
-				use[r] = true
-			}
-		}
-		for _, r := range d {
-			def[r] = true
-		}
-	}
-	for _, r := range termUses(b.Term) {
-		if !def[r] {
-			use[r] = true
-		}
-	}
-	return use, def
 }
 
 func interference(fn *ir.Function, liveOut map[*ir.Block]map[*ir.Reg]bool) map[*ir.Reg]map[*ir.Reg]bool {
@@ -232,11 +80,11 @@ func interference(fn *ir.Function, liveOut map[*ir.Block]map[*ir.Reg]bool) map[*
 		for r := range liveOut[b] {
 			live[r] = true
 		}
-		for _, r := range termUses(b.Term) {
+		for _, r := range ir.TermUses(b.Term) {
 			live[r] = true
 		}
 		for i := len(b.Instrs) - 1; i >= 0; i-- {
-			u, d := useDefInstr(b.Instrs[i])
+			u, d := ir.DefUse(b.Instrs[i])
 			for _, dr := range d {
 				for r := range live {
 					if r != dr {
@@ -263,7 +111,7 @@ func allRegs(fn *ir.Function) map[*ir.Reg]bool {
 				nodes[r] = true
 			}
 		}
-		for _, r := range termUses(b.Term) {
+		for _, r := range ir.TermUses(b.Term) {
 			nodes[r] = true
 		}
 	}
@@ -443,7 +291,7 @@ func spillCosts(fn *ir.Function) map[*ir.Reg]int {
 	cost := map[*ir.Reg]int{}
 	for _, b := range fn.Blocks {
 		for _, ins := range b.Instrs {
-			u, d := useDefInstr(ins)
+			u, d := ir.DefUse(ins)
 			for _, r := range u {
 				cost[r]++
 			}
@@ -451,7 +299,7 @@ func spillCosts(fn *ir.Function) map[*ir.Reg]int {
 				cost[r]++
 			}
 		}
-		for _, r := range termUses(b.Term) {
+		for _, r := range ir.TermUses(b.Term) {
 			cost[r]++
 		}
 	}
@@ -537,7 +385,7 @@ func (s *spiller) rewriteTerm(t ir.Term, out *[]ir.Instr) {
 }
 
 func instrDef(i ir.Instr) *ir.Reg {
-	_, def := useDefInstr(i)
+	_, def := ir.DefUse(i)
 	if len(def) == 1 {
 		return def[0]
 	}
@@ -627,16 +475,4 @@ func replaceInstrUses(i ir.Instr, f func(ir.Value) ir.Value) {
 	case *ir.StoreSpill:
 		v.Src = f(v.Src)
 	}
-}
-
-func sameSet(a, b map[*ir.Reg]bool) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k := range a {
-		if !b[k] {
-			return false
-		}
-	}
-	return true
 }

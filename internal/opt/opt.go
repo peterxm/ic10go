@@ -80,93 +80,6 @@ func Optimize(fn *ir.Function) error {
 // Introspection helpers
 // ---------------------------------------------------------------------------
 
-func defOf(i ir.Instr) *ir.Reg {
-	switch v := i.(type) {
-	case *ir.Assign:
-		return v.Dst
-	case *ir.Bin:
-		return v.Dst
-	case *ir.Un:
-		return v.Dst
-	case *ir.Cmp:
-		return v.Dst
-	case *ir.Select:
-		return v.Dst
-	case *ir.Load:
-		return v.Dst
-	case *ir.LoadSlot:
-		return v.Dst
-	case *ir.LoadDyn:
-		return v.Dst
-	case *ir.Builtin:
-		return v.Dst
-	case *ir.Batch:
-		return v.Dst
-	case *ir.LoadSpecial:
-		return v.Dst
-	case *ir.LoadIndirect:
-		return v.Dst
-	}
-	return nil
-}
-
-func usesOf(i ir.Instr) []ir.Value {
-	var u []ir.Value
-	add := func(vs ...ir.Value) {
-		for _, v := range vs {
-			if v != nil {
-				u = append(u, v)
-			}
-		}
-	}
-	switch v := i.(type) {
-	case *ir.Assign:
-		add(v.Src)
-	case *ir.Bin:
-		add(v.A, v.B)
-	case *ir.Un:
-		add(v.A)
-	case *ir.Cmp:
-		add(v.A, v.B)
-	case *ir.Select:
-		add(v.Cond, v.Then, v.Else)
-	case *ir.Store:
-		add(v.Src)
-	case *ir.LoadSlot:
-		add(v.Index)
-	case *ir.StoreSlot:
-		add(v.Index, v.Src)
-	case *ir.LoadDyn:
-		add(v.DevPtr, v.Logic)
-	case *ir.StoreDyn:
-		add(v.DevPtr, v.Logic, v.Src)
-	case *ir.Builtin:
-		for _, a := range v.Args {
-			add(a)
-		}
-		// ins reads its destination (IC10 read-modify-write).
-		if v.Name == "ins" && v.Dst != nil {
-			add(v.Dst)
-		}
-	case *ir.Batch:
-		add(v.Device, v.Name, v.Slot, v.Mode, v.Src)
-	case *ir.StoreSpecial:
-		add(v.Src)
-	case *ir.LoadIndirect:
-		add(v.Ptr)
-	case *ir.StoreIndirect:
-		add(v.Ptr, v.Src)
-	}
-	return u
-}
-
-func termUses(t ir.Term) []ir.Value {
-	if t == nil {
-		return nil
-	}
-	return t.Uses()
-}
-
 func hasSideEffect(i ir.Instr) bool {
 	switch v := i.(type) {
 	case *ir.Store, *ir.StoreSlot:
@@ -203,7 +116,7 @@ func propagate(fn *ir.Function) bool {
 				b.Instrs[idx] = f
 				changed = true
 			}
-			d := defOf(ins)
+			d := ir.DefOf(ins)
 			if d == nil {
 				continue
 			}
@@ -277,7 +190,7 @@ func constProp(fn *ir.Function) bool {
 				b.Instrs[idx] = f
 				rewritten = true
 			}
-			d := defOf(ins)
+			d := ir.DefOf(ins)
 			if d == nil {
 				continue
 			}
@@ -312,7 +225,7 @@ func meetPreds(b *ir.Block, out map[*ir.Block]map[*ir.Reg]*ir.Const) map[*ir.Reg
 func transfer(b *ir.Block, in map[*ir.Reg]*ir.Const) map[*ir.Reg]*ir.Const {
 	state := copyConstMap(in)
 	for _, ins := range b.Instrs {
-		d := defOf(ins)
+		d := ir.DefOf(ins)
 		if d == nil {
 			continue
 		}
@@ -732,7 +645,7 @@ func redundantLoads(fn *ir.Function) bool {
 			}
 			// A redefinition of a register used as a load index invalidates
 			// every load keyed on it.
-			if d := defOf(ins); d != nil {
+			if d := ir.DefOf(ins); d != nil {
 				invalidateReg(d)
 			}
 			switch v := ins.(type) {
@@ -890,7 +803,7 @@ func globalCSE(fn *ir.Function) bool {
 		}
 		for idx, ins := range b.Instrs {
 			key, operands, dev, ok := exprKey(ins)
-			d := defOf(ins)
+			d := ir.DefOf(ins)
 			if ok {
 				if e, found := avail[key]; found && d != e.reg {
 					b.Instrs[idx] = &ir.Assign{Dst: d, Src: e.reg}
@@ -1020,7 +933,7 @@ func transferAvail(b *ir.Block, in map[string]availExpr) map[string]availExpr {
 	}
 	for _, ins := range b.Instrs {
 		key, operands, dev, ok := exprKey(ins)
-		d := defOf(ins)
+		d := ir.DefOf(ins)
 		if d != nil {
 			invalidate(d)
 		}
@@ -1258,37 +1171,23 @@ func selectCond(br *ir.Br) (val ir.Value, swap, needCmp bool) {
 	return nil, false, true
 }
 
-func useDef(i ir.Instr) (use, def []*ir.Reg) {
-	for _, v := range usesOf(i) {
-		if r, ok := v.(*ir.Reg); ok {
-			use = append(use, r)
-		}
-	}
-	if d := defOf(i); d != nil {
-		def = []*ir.Reg{d}
-	}
-	return use, def
-}
-
 // dce removes pure instructions whose result is not live, including dead stores
 // to registers that are overwritten before use.
 func dce(fn *ir.Function) bool {
 	fn.BuildCFG()
-	liveIn, liveOut := liveness(fn)
+	liveIn, liveOut := ir.Liveness(fn)
 	changed := false
 	for _, b := range fn.Blocks {
 		live := map[*ir.Reg]bool{}
 		for r := range liveOut[b] {
 			live[r] = true
 		}
-		for _, v := range termUses(b.Term) {
-			if r, ok := v.(*ir.Reg); ok {
-				live[r] = true
-			}
+		for _, r := range ir.TermUses(b.Term) {
+			live[r] = true
 		}
 		for i := len(b.Instrs) - 1; i >= 0; i-- {
 			ins := b.Instrs[i]
-			u, d := useDef(ins)
+			u, d := ir.DefUse(ins)
 			if !hasSideEffect(ins) && len(d) == 1 && !live[d[0]] {
 				b.Instrs = append(b.Instrs[:i], b.Instrs[i+1:]...)
 				changed = true
@@ -1304,76 +1203,6 @@ func dce(fn *ir.Function) bool {
 	}
 	_ = liveIn
 	return changed
-}
-
-func liveness(fn *ir.Function) (in, out map[*ir.Block]map[*ir.Reg]bool) {
-	use := map[*ir.Block]map[*ir.Reg]bool{}
-	def := map[*ir.Block]map[*ir.Reg]bool{}
-	for _, b := range fn.Blocks {
-		u := map[*ir.Reg]bool{}
-		d := map[*ir.Reg]bool{}
-		for _, ins := range b.Instrs {
-			iu, id := useDef(ins)
-			for _, r := range iu {
-				if !d[r] {
-					u[r] = true
-				}
-			}
-			for _, r := range id {
-				d[r] = true
-			}
-		}
-		for _, v := range termUses(b.Term) {
-			if r, ok := v.(*ir.Reg); ok && !d[r] {
-				u[r] = true
-			}
-		}
-		use[b], def[b] = u, d
-	}
-	in = map[*ir.Block]map[*ir.Reg]bool{}
-	out = map[*ir.Block]map[*ir.Reg]bool{}
-	for _, b := range fn.Blocks {
-		in[b] = map[*ir.Reg]bool{}
-		out[b] = map[*ir.Reg]bool{}
-	}
-	for changed := true; changed; {
-		changed = false
-		for i := len(fn.Blocks) - 1; i >= 0; i-- {
-			b := fn.Blocks[i]
-			newOut := map[*ir.Reg]bool{}
-			for _, s := range b.Succs {
-				for r := range in[s] {
-					newOut[r] = true
-				}
-			}
-			newIn := map[*ir.Reg]bool{}
-			for r := range use[b] {
-				newIn[r] = true
-			}
-			for r := range newOut {
-				if !def[b][r] {
-					newIn[r] = true
-				}
-			}
-			if !sameSet(newOut, out[b]) || !sameSet(newIn, in[b]) {
-				changed = true
-			}
-			out[b], in[b] = newOut, newIn
-		}
-	}
-	return in, out
-}
-
-func sameSet(a, b map[*ir.Reg]bool) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k := range a {
-		if !b[k] {
-			return false
-		}
-	}
-	return true
 }
 
 // ---------------------------------------------------------------------------
@@ -1444,7 +1273,7 @@ type loop struct {
 func licm(fn *ir.Function) bool {
 	fn.BuildCFG()
 	// A call (jal) can modify any variable and returns via "j ra" to any call
-	// site. realSuccs below deliberately omits those return edges, so the loop
+	// site. ir.Successors deliberately omits those return edges, so the loop
 	// analysis would not see a callee's writes; hoisting would then treat a
 	// variable written by the callee as loop-invariant. Skip LICM entirely
 	// when the function uses call/ret.
@@ -1453,10 +1282,10 @@ func licm(fn *ir.Function) bool {
 			return false
 		}
 	}
-	liveIn, _ := liveness(fn)
-	succs := realSuccs(fn)
-	preds := buildPreds(fn, succs)
-	dom := dominators(fn, preds)
+	liveIn, _ := ir.Liveness(fn)
+	succs := ir.Successors(fn)
+	preds := ir.Preds(fn)
+	dom := ir.Dominators(fn)
 	loops := findLoops(fn, succs, dom, preds)
 	changed := false
 	for _, lp := range loops {
@@ -1480,67 +1309,6 @@ func licm(fn *ir.Function) bool {
 		fn.BuildCFG()
 	}
 	return changed
-}
-
-// realSuccs returns control-flow successors, ignoring the conservative
-// JmpRA-to-return edges used only for liveness.
-func realSuccs(fn *ir.Function) map[*ir.Block][]*ir.Block {
-	succs := map[*ir.Block][]*ir.Block{}
-	for _, b := range fn.Blocks {
-		if b.Term != nil {
-			succs[b] = b.Term.Successors()
-		}
-	}
-	return succs
-}
-
-func buildPreds(fn *ir.Function, succs map[*ir.Block][]*ir.Block) map[*ir.Block][]*ir.Block {
-	preds := map[*ir.Block][]*ir.Block{}
-	for _, b := range fn.Blocks {
-		for _, s := range succs[b] {
-			preds[s] = append(preds[s], b)
-		}
-	}
-	return preds
-}
-
-func dominators(fn *ir.Function, preds map[*ir.Block][]*ir.Block) map[*ir.Block]map[*ir.Block]bool {
-	all := map[*ir.Block]bool{}
-	for _, b := range fn.Blocks {
-		all[b] = true
-	}
-	dom := map[*ir.Block]map[*ir.Block]bool{}
-	for _, b := range fn.Blocks {
-		if b == fn.Entry {
-			dom[b] = map[*ir.Block]bool{b: true}
-		} else {
-			dom[b] = copySet(all)
-		}
-	}
-	for changed := true; changed; {
-		changed = false
-		for _, b := range fn.Blocks {
-			if b == fn.Entry {
-				continue
-			}
-			ps := preds[b]
-			var nd map[*ir.Block]bool
-			if len(ps) == 0 {
-				nd = map[*ir.Block]bool{}
-			} else {
-				nd = copySet(dom[ps[0]])
-				for _, p := range ps[1:] {
-					nd = intersectSet(nd, dom[p])
-				}
-			}
-			nd[b] = true
-			if !setEqual(nd, dom[b]) {
-				dom[b] = nd
-				changed = true
-			}
-		}
-	}
-	return dom
 }
 
 func findLoops(fn *ir.Function, succs map[*ir.Block][]*ir.Block, dom map[*ir.Block]map[*ir.Block]bool, preds map[*ir.Block][]*ir.Block) []*loop {
@@ -1597,7 +1365,7 @@ func ensurePreheader(fn *ir.Function, lp *loop, preds map[*ir.Block][]*ir.Block)
 			outside = append(outside, p)
 		}
 	}
-	if len(outside) == 1 && len(realTermSuccs(outside[0])) == 1 {
+	if len(outside) == 1 && len(outside[0].Term.Successors()) == 1 {
 		return outside[0], outside, false
 	}
 	if len(outside) == 0 {
@@ -1609,13 +1377,6 @@ func ensurePreheader(fn *ir.Function, lp *loop, preds map[*ir.Block][]*ir.Block)
 		redirect(p, h, pre)
 	}
 	return pre, outside, true
-}
-
-func realTermSuccs(b *ir.Block) []*ir.Block {
-	if b.Term == nil {
-		return nil
-	}
-	return b.Term.Successors()
 }
 
 func redirect(b *ir.Block, from, to *ir.Block) {
@@ -1665,20 +1426,17 @@ func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool
 		useBlocks := map[*ir.Reg][]*ir.Block{}
 		for _, b := range fn.Blocks {
 			for _, ins := range b.Instrs {
-				if d := defOf(ins); d != nil && lp.blocks[b] {
+				if d := ir.DefOf(ins); d != nil && lp.blocks[b] {
 					definedSet[d] = true
 					defCount[d]++
 				}
-				for _, v := range usesOf(ins) {
-					if r, ok := v.(*ir.Reg); ok {
-						useBlocks[r] = append(useBlocks[r], b)
-					}
-				}
-			}
-			for _, v := range termUses(b.Term) {
-				if r, ok := v.(*ir.Reg); ok {
+				u, _ := ir.DefUse(ins)
+				for _, r := range u {
 					useBlocks[r] = append(useBlocks[r], b)
 				}
+			}
+			for _, r := range ir.TermUses(b.Term) {
+				useBlocks[r] = append(useBlocks[r], b)
 			}
 		}
 		moved := false
@@ -1688,7 +1446,7 @@ func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool
 			}
 			kept := b.Instrs[:0]
 			for _, ins := range b.Instrs {
-				d := defOf(ins)
+				d := ir.DefOf(ins)
 				// Hoisting a register that is defined more than once in the
 				// loop is unsound: a use could observe a different definition
 				// on some iteration.
@@ -1737,7 +1495,7 @@ func dominatesAllUses(b *ir.Block, d *ir.Reg, useBlocks map[*ir.Reg][]*ir.Block,
 // at the loop header. Hoisting such a definition would change its value on
 // iterations that did not originally execute it.
 func definesLiveIn(i ir.Instr, liveIn map[*ir.Reg]bool) bool {
-	d := defOf(i)
+	d := ir.DefOf(i)
 	return d != nil && liveIn[d]
 }
 
@@ -1770,42 +1528,13 @@ func hoistableLoad(i ir.Instr) (string, bool) {
 }
 
 func usesAny(i ir.Instr, defined map[*ir.Reg]bool) bool {
-	for _, v := range usesOf(i) {
-		if r, ok := v.(*ir.Reg); ok && defined[r] {
+	u, _ := ir.DefUse(i)
+	for _, r := range u {
+		if defined[r] {
 			return true
 		}
 	}
 	return false
-}
-
-func copySet(s map[*ir.Block]bool) map[*ir.Block]bool {
-	c := make(map[*ir.Block]bool, len(s))
-	for k := range s {
-		c[k] = true
-	}
-	return c
-}
-
-func intersectSet(a, b map[*ir.Block]bool) map[*ir.Block]bool {
-	c := map[*ir.Block]bool{}
-	for k := range a {
-		if b[k] {
-			c[k] = true
-		}
-	}
-	return c
-}
-
-func setEqual(a, b map[*ir.Block]bool) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k := range a {
-		if !b[k] {
-			return false
-		}
-	}
-	return true
 }
 
 // ---------------------------------------------------------------------------
