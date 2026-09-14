@@ -140,6 +140,8 @@ func termUses(t ir.Term) []*ir.Reg {
 		return append(append(valuesRegs(v.A), valuesRegs(v.B)...), valuesRegs(v.Tol)...)
 	case *ir.BrApproxZero:
 		return append(valuesRegs(v.A), valuesRegs(v.Tol)...)
+	case *ir.BrCall:
+		return append(valuesRegs(v.A), valuesRegs(v.B)...)
 	case *ir.Ret:
 		return valuesRegs(v.Value)
 	case *ir.JmpDyn:
@@ -546,6 +548,11 @@ func (s *spiller) rewriteTerm(t ir.Term, out *[]ir.Instr) {
 	case *ir.BrApproxZero:
 		v.A = s.loadIfSpilled(v.A, out)
 		v.Tol = s.loadIfSpilled(v.Tol, out)
+	case *ir.BrCall:
+		v.A = s.loadIfSpilled(v.A, out)
+		if v.B != nil {
+			v.B = s.loadIfSpilled(v.B, out)
+		}
 	case *ir.Ret:
 		if v.Value != nil {
 			v.Value = s.loadIfSpilled(v.Value, out)

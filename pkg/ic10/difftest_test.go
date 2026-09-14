@@ -17,7 +17,7 @@ import (
 // catches optimisation bugs (e.g. a wrong hoist or a bad common-subexpression
 // merge) that unit tests miss.
 func TestDifferentialRandom(t *testing.T) {
-	for _, opts := range []ic10.Options{{}, {StableInsOrder: true}, {JumpTable: true}, {Fast: true}} {
+	for _, opts := range []ic10.Options{{}, {StableInsOrder: true}, {JumpTable: true}, {Fast: true}, {RelJump: true}} {
 		name := "default"
 		if opts.StableInsOrder {
 			name = "stable-ins"
@@ -27,6 +27,9 @@ func TestDifferentialRandom(t *testing.T) {
 		}
 		if opts.Fast {
 			name = "fast"
+		}
+		if opts.RelJump {
+			name = "rel-jump"
 		}
 		t.Run(name, func(t *testing.T) {
 			runDifferential(t, opts, 1500, genProgram, false)
@@ -154,6 +157,7 @@ type gen struct {
 	tableLen    int
 	loops       int
 	labels      int
+	callees     []string
 	loopDepth   int
 	switchDepth int
 	inFunc      bool
@@ -197,6 +201,7 @@ func genProgram(seed int64) string {
 		g.stack++
 	}
 	g.block(&sb, 1, 2+g.rng.Intn(2))
+	g.flushCallees(&sb)
 	sb.WriteString("}\n")
 	return sb.String()
 }
@@ -228,6 +233,7 @@ func genDataProgram(seed int64) string {
 		g.stack++
 	}
 	g.block(&sb, 1, 2+g.rng.Intn(2))
+	g.flushCallees(&sb)
 	sb.WriteString("}\n")
 	return sb.String()
 }
@@ -238,13 +244,25 @@ func (g *gen) block(sb *strings.Builder, depth, n int) {
 	}
 }
 
+// flushCallees emits a halt followed by the low-level callee routines collected
+// while generating main, so main's fall-through does not enter them.
+func (g *gen) flushCallees(sb *strings.Builder) {
+	if len(g.callees) == 0 {
+		return
+	}
+	sb.WriteString("    jump(9999)\n")
+	for _, c := range g.callees {
+		sb.WriteString(c)
+	}
+}
+
 func (g *gen) stmt(sb *strings.Builder, depth int) {
 	ind := strings.Repeat("    ", depth)
 	if depth >= 4 { // cap nesting so the unoptimized form still fits 128 lines
 		g.simple(sb, ind)
 		return
 	}
-	switch g.rng.Intn(22) {
+	switch g.rng.Intn(23) {
 	case 0, 1:
 		g.simple(sb, ind)
 	case 2, 3:
@@ -347,6 +365,20 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		}
 		g.loopDepth--
 		fmt.Fprintf(sb, "%s}\n", ind)
+	case 21:
+		if g.inFunc {
+			g.simple(sb, ind)
+			return
+		}
+		// A conditional low-level call: `if cond { call C }`.
+		name := fmt.Sprintf("C%d", g.labels)
+		g.labels++
+		fmt.Fprintf(sb, "%sif %s { call %s }\n", ind, g.expr(2), name)
+		var body strings.Builder
+		fmt.Fprintf(&body, "    label %s:\n", name)
+		fmt.Fprintf(&body, "    %s += 1\n", g.varName())
+		body.WriteString("    ret\n")
+		g.callees = append(g.callees, body.String())
 	default:
 		ncase := 2 + g.rng.Intn(9) // 2..10 dense cases
 		if g.rng.Intn(2) == 0 {

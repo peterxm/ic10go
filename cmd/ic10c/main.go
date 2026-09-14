@@ -161,6 +161,7 @@ func cmdBuild(args []string) int {
 	autoTable := false
 	jumpTable := false
 	fast := false
+	relJump := false
 	dataAccessStack := false
 	dataLayout := ""
 	dataOut := ""
@@ -174,6 +175,8 @@ func cmdBuild(args []string) int {
 			jumpTable = true
 		case "--fast":
 			fast = true
+		case "--rel-jump":
+			relJump = true
 		case "--unsafe":
 			unsafe = true
 		case "--auto-table":
@@ -233,6 +236,7 @@ func cmdBuild(args []string) int {
 		AutoTable:       autoTable,
 		JumpTable:       jumpTable,
 		Fast:            fast,
+		RelJump:         relJump,
 		DataAccessStack: dataAccessStack,
 		DataLayout:      dataLayout,
 	}

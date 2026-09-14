@@ -1,0 +1,11 @@
+// Conditional call fusion: `if cond { call L }` lowers to one b<cond>al branch.
+
+func main() {
+    if d0.Setting > 0 { call inc }
+    d1.Setting = d2.Setting
+    goto done
+    label inc:
+    d2.Setting = d2.Setting + 1
+    ret
+    label done:
+}

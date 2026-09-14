@@ -128,6 +128,8 @@ func termUses(t ir.Term) []ir.Value {
 		return []ir.Value{v.A, v.B, v.Tol}
 	case *ir.BrApproxZero:
 		return []ir.Value{v.A, v.Tol}
+	case *ir.BrCall:
+		return []ir.Value{v.A, v.B}
 	case *ir.Ret:
 		if v.Value != nil {
 			return []ir.Value{v.Value}
@@ -1467,6 +1469,8 @@ func realSuccs(fn *ir.Function) map[*ir.Block][]*ir.Block {
 			succs[b] = []*ir.Block{t.Then, t.Else}
 		case *ir.BrApproxZero:
 			succs[b] = []*ir.Block{t.Then, t.Else}
+		case *ir.BrCall:
+			succs[b] = []*ir.Block{t.Target, t.Return}
 		case *ir.JmpDyn:
 			if len(t.Table) > 0 {
 				succs[b] = append([]*ir.Block{}, t.Table...)
@@ -1605,6 +1609,8 @@ func realTermSuccs(b *ir.Block) []*ir.Block {
 		return []*ir.Block{t.Then, t.Else}
 	case *ir.BrApproxZero:
 		return []*ir.Block{t.Then, t.Else}
+	case *ir.BrCall:
+		return []*ir.Block{t.Target, t.Return}
 	case *ir.JmpDyn:
 		return t.Table
 	}
@@ -1648,6 +1654,13 @@ func redirect(b *ir.Block, from, to *ir.Block) {
 		}
 		if t.Else == from {
 			t.Else = to
+		}
+	case *ir.BrCall:
+		if t.Target == from {
+			t.Target = to
+		}
+		if t.Return == from {
+			t.Return = to
 		}
 	case *ir.JmpDyn:
 		for i, tb := range t.Table {
@@ -2409,6 +2422,9 @@ func termKey(t ir.Term) string {
 	case *ir.BrApproxZero:
 		return "brapproxz|" + strconv.FormatBool(v.Negate) + "|" + valKey(v.A) + "|" + valKey(v.Tol) +
 			"|" + blockID(v.Then) + "|" + blockID(v.Else)
+	case *ir.BrCall:
+		return "brcall|" + strconv.Itoa(int(v.Cond)) + "|" + valKey(v.A) + "|" + valKey(v.B) +
+			"|" + blockID(v.Target) + "|" + blockID(v.Return)
 	}
 	return "?"
 }

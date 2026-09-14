@@ -1,10 +1,87 @@
 package ic10_test
 
 import (
+	"strings"
 	"testing"
 
 	"ic10go/internal/vm"
+	"ic10go/pkg/ic10"
 )
+
+// runProgramOpts compiles src with explicit options and runs it in the VM.
+func runProgramOpts(t *testing.T, src string, opts ic10.Options, steps int, setup func(m *vm.Machine)) *vm.Machine {
+	t.Helper()
+	code, diags, err := ic10.CompileWithOptions("t.icg", []byte(src), opts)
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	m := vm.New()
+	if setup != nil {
+		setup(m)
+	}
+	if err := m.Load(code); err != nil {
+		t.Fatalf("vm load: %v", err)
+	}
+	if err := m.Run(steps); err != nil && err != vm.ErrStepLimit {
+		t.Fatalf("vm run: %v", err)
+	}
+	return m
+}
+
+func TestVMRelJump(t *testing.T) {
+	src := `func main() {
+    var acc = 0
+    for i := 0; i < 5; i++ {
+        if i < 2 { acc += 1 } else { acc += 2 }
+        if d0.Setting > 0 { acc += 10 }
+    }
+    switch d0.Setting {
+    case 0..3: acc += 100
+    default: acc += 200
+    }
+    d1.Setting = acc
+}`
+	setup := func(m *vm.Machine) { m.Set("d0", "Setting", 1) }
+	abs := runProgramOpts(t, src, ic10.Options{}, 500, setup)
+	rel := runProgramOpts(t, src, ic10.Options{RelJump: true}, 500, setup)
+	if abs.Get("d1", "Setting") != rel.Get("d1", "Setting") {
+		t.Errorf("rel-jump differs from absolute: %v vs %v",
+			rel.Get("d1", "Setting"), abs.Get("d1", "Setting"))
+	}
+	if got := rel.Get("d1", "Setting"); got != 158 {
+		t.Errorf("rel-jump result = %v, want 158", got)
+	}
+}
+
+func TestVMCondCallFusion(t *testing.T) {
+	src := `func main() {
+    if d0.Setting > 0 { call inc }
+    d1.Setting = d2.Setting
+    goto done
+    label inc:
+    d2.Setting = d2.Setting + 1
+    ret
+    label done:
+}`
+	code, diags, err := ic10.Compile("t.icg", []byte(src))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(code, "al ") {
+		t.Errorf("expected a fused conditional call (b<cond>al), got:\n%s", code)
+	}
+	m := runProgramOpts(t, src, ic10.Options{}, 50, func(m *vm.Machine) { m.Set("d0", "Setting", 1) })
+	if got := m.Get("d2", "Setting"); got != 1 {
+		t.Errorf("taken: d2 = %v, want 1", got)
+	}
+	if got := m.Get("d1", "Setting"); got != 1 {
+		t.Errorf("taken: d1 = %v, want 1", got)
+	}
+	m = runProgramOpts(t, src, ic10.Options{}, 50, func(m *vm.Machine) { m.Set("d0", "Setting", 0) })
+	if got := m.Get("d2", "Setting"); got != 0 {
+		t.Errorf("not taken: d2 = %v, want 0", got)
+	}
+}
 
 func TestVMClrById(t *testing.T) {
 	src := `func main() {

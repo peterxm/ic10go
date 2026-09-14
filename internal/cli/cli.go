@@ -125,6 +125,11 @@ var fastFlag = Flag{Long: "--fast", Desc: text{
 	ZH: "优先运行速度而非体积（展开更多循环）",
 }}
 
+var relJumpFlag = Flag{Long: "--rel-jump", Desc: text{
+	EN: "emit relative jumps (jr / br*) instead of absolute ones (smaller; verify in game)",
+	ZH: "生成相对跳转（jr / br*）而非绝对跳转（更小，需真机验证）",
+}}
+
 // Commands is the ordered command table.
 var Commands = []Command{
 	{
@@ -173,6 +178,7 @@ var Commands = []Command{
 			autoTableFlag,
 			jumpTableFlag,
 			fastFlag,
+			relJumpFlag,
 			{Long: "--data-access", Arg: "get|stack", Desc: text{
 				EN: "read the data segment via get/put db (default, IC host) or poke/peek (device host)",
 				ZH: "数据段读写方式：get（默认，IC host）或 stack（poke/peek，兼容设备 host）",

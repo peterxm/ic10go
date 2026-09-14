@@ -66,7 +66,9 @@
 | `for { body }` | `body` + `j <loop>` |
 | `for c { body }` | `<loop>` + 反向条件跳出 + body + `j <loop>` |
 
-> 是否可用相对跳转 `jr` / `br-` 以缩短字节数，待 VM 验证语义后启用。
+> `--rel-jump` 把绝对跳转改为相对跳转（`jr` / `br*`），省字节；相对基准
+> （相对当前行还是下一行）需真机验证，默认关闭。近似比较在条件中会融合为
+> `bap/bna/bapz/bnaz`；`if cond { call L }` 会融合为单条 `b<cond>al`。
 
 ---
 

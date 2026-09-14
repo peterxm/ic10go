@@ -52,6 +52,10 @@ type Options struct {
 	// Fast prefers runtime speed over size: it unrolls more loops (at the cost
 	// of program size). Off by default.
 	Fast bool
+	// RelJump emits relative jumps (jr / br*) instead of absolute ones to save
+	// bytes. Off by default; requires the game's relative-jump base to match
+	// the VM (relative to the jump's own line).
+	RelJump bool
 }
 
 // fixedDataBase returns the fixed data base for the selected layout, or 0 for
@@ -143,7 +147,7 @@ func generate(fn *ir.Function, info *sema.Info, opts Options) (string, error) {
 	if opt.MergeTailsColored(fn, colors) {
 		fn.BuildCFG()
 	}
-	return codegen.Generate(fn, colors)
+	return codegen.GenerateWithOptions(fn, colors, codegen.Options{RelJump: opts.RelJump})
 }
 
 // parseAndCheck lexes, parses and type-checks the source. It returns a nil Info

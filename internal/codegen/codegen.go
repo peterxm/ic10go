@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ic10go/internal/builtin"
+	"ic10go/internal/ic10asm"
 	"ic10go/internal/ir"
 )
 
@@ -16,6 +17,30 @@ const (
 	MaxBytes   = 4096
 	MaxLineLen = 90
 )
+
+// relativeJump rewrites an absolute jump/branch line (whose text ends with a
+// space before the target) into its relative form, returning the new text and
+// the relative offset. It reports false for instructions without a verified
+// relative form (bdnvl/bdnvs).
+func relativeJump(text string, off int) (string, string, bool) {
+	mnemonic, rest, found := strings.Cut(text, " ")
+	if !found {
+		return text, "", false
+	}
+	if mnemonic == "j" {
+		return "jr " + rest, strconv.Itoa(off), true
+	}
+	if strings.HasPrefix(mnemonic, "b") {
+		cond := mnemonic[1:]
+		if cond == "dnvl" || cond == "dnvs" {
+			return text, "", false
+		}
+		if _, _, withRA, ok := ic10asm.BranchInfo(mnemonic); ok && !withRA {
+			return "br" + cond + " " + rest, strconv.Itoa(off), true
+		}
+	}
+	return text, "", false
+}
 
 // spillScratch is the physical register reserved for spill loads when the
 // allocator had to spill (the allocator then uses one fewer register).
@@ -33,16 +58,34 @@ type Report struct {
 	ByFunc map[string]int
 }
 
+// Options controls code generation.
+type Options struct {
+	// RelJump emits relative jumps (IC10 jr / br*) instead of absolute ones,
+	// saving bytes. It requires the game's relative-jump base to match the VM
+	// (relative to the jump's own line).
+	RelJump bool
+}
+
 // Generate renders a function to IC10 code and validates the result against the
 // IC10 editor limits.
 func Generate(fn *ir.Function, colors map[*ir.Reg]int) (string, error) {
-	code, _, err := GenerateReport(fn, colors)
+	return GenerateWithOptions(fn, colors, Options{})
+}
+
+// GenerateWithOptions is Generate with explicit options.
+func GenerateWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Options) (string, error) {
+	code, _, err := GenerateReportWithOptions(fn, colors, opts)
 	return code, err
 }
 
 // GenerateReport is Generate plus a per-function line breakdown, used by the
 // size report to show which functions cost the most lines.
 func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, error) {
+	return GenerateReportWithOptions(fn, colors, Options{})
+}
+
+// GenerateReportWithOptions is GenerateReport with explicit options.
+func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Options) (string, *Report, error) {
 	blocks := rpo(fn)
 	// Move halt (Ret) blocks to the end of the layout. A Ret emits no line, so
 	// a jump to one that is followed by an outlined function body would resolve
@@ -163,6 +206,10 @@ func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, e
 				add(approxZeroText(m, t.A, t.Tol, colors)+" ", t.Then, b.Func)
 				add("j ", t.Else, b.Func)
 			}
+		case *ir.BrCall:
+			// Conditional call: branch with the return address to the callee;
+			// the continuation is laid out right after this line.
+			add(branchCallText(t.Cond, t.A, t.B, colors)+" ", t.Target, b.Func)
 		}
 	}
 
@@ -181,11 +228,21 @@ func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, e
 	lines, start = removeRedundantJumps(lines, start)
 
 	var sb strings.Builder
-	for _, ln := range lines {
-		sb.WriteString(ln.text)
+	for i, ln := range lines {
+		text, target := ln.text, ""
 		if ln.target != nil {
-			sb.WriteString(strconv.Itoa(start[ln.target]))
+			if opts.RelJump {
+				if rt, off, ok := relativeJump(ln.text, start[ln.target]-i); ok {
+					text, target = rt, off
+				} else {
+					target = strconv.Itoa(start[ln.target])
+				}
+			} else {
+				target = strconv.Itoa(start[ln.target])
+			}
 		}
+		sb.WriteString(text)
+		sb.WriteString(target)
 		sb.WriteByte('\n')
 	}
 	code := sb.String()
@@ -351,6 +408,11 @@ func rpo(fn *ir.Function) []*ir.Block {
 		case *ir.BrApproxZero:
 			dfs(t.Else)
 			dfs(t.Then)
+		case *ir.BrCall:
+			// Visit the callee first so the continuation (Return) is laid out
+			// immediately after the branch; the callee's `j ra` resumes there.
+			dfs(t.Target)
+			dfs(t.Return)
 		}
 		order = append(order, b)
 	}
@@ -491,6 +553,19 @@ func branchText(c ir.Cond, a, b ir.Value, colors map[*ir.Reg]int) string {
 	}
 	m := branchMnemonic(c)
 	return m + " " + valueText(a, colors) + " " + valueText(b, colors)
+}
+
+// branchCallText renders a conditional-call branch (IC10 b<cond>al).
+func branchCallText(c ir.Cond, a, b ir.Value, colors map[*ir.Reg]int) string {
+	if b == nil {
+		return branchMnemonic(c) + "al " + valueText(a, colors)
+	}
+	if isZeroConst(b) {
+		if m, ok := zeroBranchMnemonic(c); ok {
+			return m + "al " + valueText(a, colors)
+		}
+	}
+	return branchMnemonic(c) + "al " + valueText(a, colors) + " " + valueText(b, colors)
 }
 
 // isZeroConst reports whether v is the numeric constant 0 (not nan/raw).

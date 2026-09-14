@@ -412,6 +412,17 @@ type BrApproxZero struct {
 	Then, Else *Block
 }
 
+// BrCall conditionally calls a label: when Cond holds it jumps to Target with
+// the return address set (IC10 b<cond>al), otherwise it falls through to
+// Return. Return must be laid out immediately after the branch so that the
+// callee's `j ra` resumes at the continuation.
+type BrCall struct {
+	Cond   Cond
+	A, B   Value
+	Target *Block // callee entry
+	Return *Block // continuation / fall-through
+}
+
 func (*Jmp) isTerm()          {}
 func (*Br) isTerm()           {}
 func (*Ret) isTerm()          {}
@@ -422,6 +433,7 @@ func (*JmpDyn) isTerm()       {}
 func (*BrValid) isTerm()      {}
 func (*BrApprox) isTerm()     {}
 func (*BrApproxZero) isTerm() {}
+func (*BrCall) isTerm()       {}
 
 // ---------------------------------------------------------------------------
 // Blocks and functions
@@ -468,6 +480,8 @@ func (f *Function) BuildCFG() {
 			b.Succs = append(b.Succs, t.Then, t.Else)
 		case *BrApproxZero:
 			b.Succs = append(b.Succs, t.Then, t.Else)
+		case *BrCall:
+			b.Succs = append(b.Succs, t.Target, t.Return)
 		case *JmpDyn:
 			// A jump table transfers to every case block. A computed jump with
 			// no table has unknown successors, so it gets none.
@@ -479,8 +493,15 @@ func (f *Function) BuildCFG() {
 	// live after the call.
 	var returns []*Block
 	for _, b := range f.Blocks {
-		if c, ok := b.Term.(*Call); ok && c.Return != nil {
-			returns = append(returns, c.Return)
+		switch c := b.Term.(type) {
+		case *Call:
+			if c.Return != nil {
+				returns = append(returns, c.Return)
+			}
+		case *BrCall:
+			if c.Return != nil {
+				returns = append(returns, c.Return)
+			}
 		}
 	}
 	if len(returns) > 0 {

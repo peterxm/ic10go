@@ -623,9 +623,51 @@ func (l *lowerer) lowerReturn(s *ast.ReturnStmt) {
 }
 
 func (l *lowerer) lowerIf(s *ast.IfStmt) {
+	if s.Else == nil && s.Init == nil && l.tryLowerCondCall(s) {
+		return
+	}
 	endB := l.newBlock()
 	l.lowerIfCont(s, endB)
 	l.b.SetBlock(endB)
+}
+
+// tryLowerCondCall lowers `if cond { call L }` (no else) to a single
+// conditional call (IC10 b<cond>al). It reports false when the shape does not
+// match or the condition is a branch-only builtin.
+func (l *lowerer) tryLowerCondCall(s *ast.IfStmt) bool {
+	if len(s.Then.List) != 1 {
+		return false
+	}
+	call, ok := s.Then.List[0].(*ast.CallStmt)
+	if !ok {
+		return false
+	}
+	if !condCallSupported(s.Cond) {
+		return false
+	}
+	endB := l.newBlock()
+	target := l.useLabel(call.Name.Name, call.Name.Pos())
+	cond, a, b := l.lowerCond(s.Cond)
+	l.b.SetTerm(&ir.BrCall{Cond: cond, A: a, B: b, Target: target, Return: endB})
+	l.b.SetBlock(endB)
+	return true
+}
+
+// condCallSupported reports whether a condition can be lowered with lowerCond
+// (i.e. it is not one of the branch-only validity builtins).
+func condCallSupported(e ast.Expr) bool {
+	inner := e
+	if un, ok := e.(*ast.UnaryExpr); ok && un.Op == token.Not {
+		inner = un.X
+	}
+	if call, ok := inner.(*ast.CallExpr); ok {
+		if id, ok := call.Fun.(*ast.Ident); ok {
+			if id.Name == "isLoadValid" || id.Name == "isStoreValid" {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // lowerIfCont lowers an if/else-if chain so that every branch converges on the
