@@ -171,3 +171,34 @@ func TestDecompileComputedJump(t *testing.T) {
 		t.Errorf("computed jump not translated:\n%s", code)
 	}
 }
+
+func TestDecompileSanitizesLabelsAndNumbers(t *testing.T) {
+	// IC10 labels may contain '-'/'+'; IC10 floats may omit the leading digit.
+	src := `move r0 .85
+mul r1 r0 .9
+mul r1 r1 -.5
+blt r0 5 Y-
+j Y+
+Y-:
+move r0 1
+Y+:
+move r1 2
+`
+	code, warns, err := Decompile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	for _, want := range []string{"0.85", "0.9", "-0.5", "label Y_:", "label Y__2:", "goto Y_", "goto Y__2"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("output missing %q:\n%s", want, code)
+		}
+	}
+	for _, bad := range []string{"Y-", "Y+", " .85", " .9", " -.5"} {
+		if strings.Contains(code, bad) {
+			t.Errorf("output contains invalid token %q:\n%s", bad, code)
+		}
+	}
+}

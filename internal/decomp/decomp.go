@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"ic10go/internal/ic10asm"
 )
@@ -36,6 +37,7 @@ type decompiler struct {
 	labelAt    map[int]string
 	endLabels  []string
 	declared   map[string]bool
+	usedLabels map[string]bool
 	tmpN       int
 	warnings   []Warning
 }
@@ -59,6 +61,7 @@ func decompile(src string, structured bool) (string, []Warning, error) {
 		labelsAt:   map[int][]string{},
 		nameToLine: map[string]int{},
 		labelAt:    map[int]string{},
+		usedLabels: map[string]bool{},
 	}
 
 	raw := strings.Split(src, "\n")
@@ -70,8 +73,10 @@ func decompile(src string, structured bool) (string, []Warning, error) {
 		}
 		if ic10asm.IsLabel(text) {
 			name := strings.TrimSuffix(text, ":")
-			d.labelsAt[i] = append(d.labelsAt[i], name)
+			clean := d.cleanLabel(name)
+			d.labelsAt[i] = append(d.labelsAt[i], clean)
 			d.nameToLine[name] = i
+			d.nameToLine[clean] = i
 			lines = append(lines, icLine{num: i, raw: text})
 			continue
 		}
@@ -105,7 +110,7 @@ func decompile(src string, structured bool) (string, []Warning, error) {
 			d.labelAt[t] = names[0]
 			continue
 		}
-		name := fmt.Sprintf("L%d", t)
+		name := d.cleanLabel(fmt.Sprintf("L%d", t))
 		if next, ok := d.nextLine(lines, t); ok && next == t {
 			d.labelAt[t] = name
 			continue
@@ -186,8 +191,38 @@ func (d *decompiler) operand(s string) string {
 	if isIndirect(s) {
 		return "ireg(" + strings.TrimPrefix(s, "r") + ")"
 	}
-	return normalizeCall(s)
+	return normalizeCall(normalizeNumber(s))
 }
+
+// normalizeNumber rewrites IC10 float literals that .icg's lexer rejects:
+// leading-dot (.85) and trailing-dot (1.) forms.
+func normalizeNumber(s string) string {
+	i := 0
+	if i < len(s) && (s[i] == '+' || s[i] == '-') {
+		i++
+	}
+	rest := s[i:]
+	if rest == "" {
+		return s
+	}
+	if rest[0] == '.' {
+		if len(rest) > 1 && isDigitByte(rest[1]) {
+			return s[:i] + "0" + rest
+		}
+		return s
+	}
+	if rest[len(rest)-1] == '.' {
+		for j := 0; j < len(rest)-1; j++ {
+			if !isDigitByte(rest[j]) {
+				return s
+			}
+		}
+		return s[:len(s)-1]
+	}
+	return s
+}
+
+func isDigitByte(c byte) bool { return c >= '0' && c <= '9' }
 
 // normalizeCall lower-cases the IC10 HASH()/STR() functions to the .icg names.
 func normalizeCall(s string) string {
@@ -365,6 +400,32 @@ func (d *decompiler) labelOf(line int) string {
 		return name
 	}
 	return fmt.Sprintf("L%d", line)
+}
+
+// cleanLabel turns an IC10 label name into a valid, unique .icg identifier.
+// IC10 labels may contain characters such as '-' or '.' that .icg rejects.
+func (d *decompiler) cleanLabel(raw string) string {
+	var b strings.Builder
+	for _, r := range raw {
+		if r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	s := b.String()
+	if s == "" {
+		s = "L"
+	}
+	if r := rune(s[0]); !(r == '_' || unicode.IsLetter(r)) {
+		s = "L" + s
+	}
+	base := s
+	for i := 2; d.usedLabels[s]; i++ {
+		s = fmt.Sprintf("%s_%d", base, i)
+	}
+	d.usedLabels[s] = true
+	return s
 }
 
 // nextLine returns the smallest emitted instruction line at or after t.
