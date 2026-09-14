@@ -90,11 +90,12 @@ func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Ba
 		return "", diags, nil
 	}
 
-	plan := lower.PlanOutlines(info)
+	noCheck, noOutline, noOpt := envSwitches()
+	plan := lower.PlanOutlines(info, noOutline)
 	best := ""
 	var bestErr error
 	run := func(outline map[string]bool) {
-		fn := lowerAndOptimize(info, opts, outline, diags)
+		fn := lowerAndOptimize(info, opts, outline, noCheck, noOpt, diags)
 		if fn == nil || diags.HasErrors() {
 			return
 		}
@@ -179,8 +180,16 @@ func parseAndCheck(name string, src []byte, opts Options) (*sema.Info, *diag.Bag
 	return info, diags
 }
 
+// envSwitches reads the legacy environment switches once at the public API
+// boundary. Compiler internals take explicit options.
+func envSwitches() (noCheck, noOutline, noOpt bool) {
+	return os.Getenv("IC10C_NO_CHECK") != "",
+		os.Getenv("IC10C_NO_OUTLINE") != "",
+		os.Getenv("IC10C_NO_OPT") != ""
+}
+
 // lowerAndOptimize lowers a checked program to IR and runs the optimiser.
-func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, diags *diag.Bag) *ir.Function {
+func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, noCheck, noOpt bool, diags *diag.Bag) *ir.Function {
 	fn := lower.Lower(info, diags, lower.Options{
 		StableInsOrder:  opts.StableInsOrder,
 		DataCheck:       !opts.NoDataCheck && !opts.Unsafe,
@@ -188,11 +197,12 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, di
 		Outline:         outline,
 		JumpTable:       opts.JumpTable,
 		Fast:            opts.Fast,
+		NoCheck:         noCheck,
 	})
 	if diags.HasErrors() {
 		return nil
 	}
-	if os.Getenv("IC10C_NO_OPT") == "" {
+	if !noOpt {
 		if err := opt.Optimize(fn); err != nil {
 			diags.Errorf(info.Main.Pos(), "internal error: %v", err)
 			return nil

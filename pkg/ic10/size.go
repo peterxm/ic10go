@@ -29,11 +29,12 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 		return nil, fmt.Errorf("compile failed")
 	}
 
-	plan := lower.PlanOutlines(info)
+	noCheck, noOutline, noOpt := envSwitches()
+	plan := lower.PlanOutlines(info, noOutline)
 	bestTotal := -1
 	var best *SizeReport
 	try := func(outline map[string]bool) {
-		fn := lowerAndOptimize(info, opts, outline, diags)
+		fn := lowerAndOptimize(info, opts, outline, noCheck, noOpt, diags)
 		if fn == nil {
 			return
 		}

@@ -4,7 +4,6 @@ package lower
 
 import (
 	"math"
-	"os"
 	"strconv"
 	"strings"
 
@@ -37,6 +36,8 @@ type Options struct {
 	JumpTable bool
 	// Fast prefers runtime speed over size: it unrolls more loops.
 	Fast bool
+	// NoCheck disables logic-type validation.
+	NoCheck bool
 }
 
 // emitDataCheck verifies the persistent data segment is installed: it reads the
@@ -82,7 +83,7 @@ func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 		devices:      info.Devices,
 		labelDef:     map[string]source.Pos{},
 		labelUse:     map[string]source.Pos{},
-		noCheck:      os.Getenv("IC10C_NO_CHECK") != "",
+		noCheck:      opts.NoCheck,
 		opts:         opts,
 		outline:      opts.Outline,
 		outlined:     map[string]*outlinedFunc{},

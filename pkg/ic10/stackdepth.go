@@ -20,7 +20,8 @@ func MaxStackDepth(name string, src []byte, opts Options) (depth int, unbounded 
 		}
 		return 0, false, fmt.Errorf("no IR produced")
 	}
-	fn := lowerAndOptimize(info, opts, lower.PlanOutlines(info), diags)
+	noCheck, noOutline, noOpt := envSwitches()
+	fn := lowerAndOptimize(info, opts, lower.PlanOutlines(info, noOutline), noCheck, noOpt, diags)
 	if fn == nil {
 		return 0, false, fmt.Errorf("compile failed")
 	}

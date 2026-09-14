@@ -1,8 +1,6 @@
 package lower
 
 import (
-	"os"
-
 	"ic10go/internal/ast"
 	"ic10go/internal/ir"
 	"ic10go/internal/sema"
@@ -18,7 +16,7 @@ type outlinedFunc struct {
 	result   *ir.Reg
 }
 
-// planOutlines chooses which user functions to outline. Inlining duplicates a
+// PlanOutlines chooses which user functions to outline. Inlining duplicates a
 // function body at every call site; outlining costs a `jal` plus argument moves
 // per call but emits the body once. That trade favours outlining when a
 // function is called several times and has a non-trivial body.
@@ -26,8 +24,8 @@ type outlinedFunc struct {
 // Only leaf functions (no calls to other user functions) without low-level
 // labels are eligible: nesting outlined functions would clobber IC10's single
 // return-address register, and labels are global.
-func PlanOutlines(info *sema.Info) map[string]bool {
-	if os.Getenv("IC10C_NO_OUTLINE") != "" {
+func PlanOutlines(info *sema.Info, noOutline bool) map[string]bool {
+	if noOutline {
 		return nil
 	}
 	calls := map[string]int{}
