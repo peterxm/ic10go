@@ -52,7 +52,7 @@ j 1
 
 **M0 已完成**：lexer / parser / AST / 诊断 / CLI 骨架。
 **M1 已完成**：sema（名字解析、常量求值）、lower（AST→三地址 IR、内联 / 外提）、regalloc（活跃性 + 图着色 + 拷贝合并 + 溢出，寄存器复用）、codegen（指令选择、空块消除、逆后序布局、绝对行号、限额校验）。
-**M2 已完成**：IR 优化器（块内拷贝/常量传播、全局常量传播、常量折叠、代数化简、全局 CSE（可用表达式，含跨基本块设备读 CSE）、select 转换、冗余设备/槽位/批量读消除、存储转发、常量分支折叠、循环不变量外提（含设备读）、尾块合并、死存储消除、活跃性死代码消除、不可达块删除）、比较-分支融合、`&&`/`||`→`min`/`max`（含纯函数）、**函数外提 / 特化**（内联与 `jal` 按体积取短，常量实参调用点内联折叠）。**便利语法**：`for i := range n` / `for i, v := range Table`、`case lo..hi` 区间、`if`/`switch` 初始化语句、带标签的 `break`/`continue`（`label Outer:`）。
+**M2 已完成**：IR 优化器（块内拷贝/常量传播、全局常量传播、常量折叠、代数化简、全局 CSE（可用表达式，含跨基本块设备读 CSE）、select 转换、冗余设备/槽位/批量读消除、存储转发、常量分支折叠、循环不变量外提（含设备读）、尾块合并、死存储消除、活跃性死代码消除、不可达块删除）、比较-分支融合、`&&`/`||`→`min`/`max`（含纯函数）、**函数外提 / 特化**（内联与 `jal` 按体积取短，常量实参调用点内联折叠）。**架构加固**：终结符统一接口、`ir.Verify` 校验器、`DefUse/Liveness/Dominators` 共享分析、pass 注册表 + 收敛诊断、内建语义单一来源（`builtin.Sem`）、sema 函数体类型检查。**便利语法**：`for i := range n` / `for i, v := range Table`、`case lo..hi` 区间、`if`/`switch` 初始化语句、带标签的 `break`/`continue`（`label Outer:`）。
 **M3 已完成**：批量 IO（`batch.read/readName/readSlot/readNameSlot/write/writeName/writeSlot`）、网络通道 `d.channel[conn][ch]`、栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr/clrById`、`isSet/isUnset/rmap/readReagent`、`approx/approxZero/notApprox/notApproxZero/logicalNor/isNotNaN`、`str("...")` 显示字符串、动态 logicType `read/write`、动态设备寄存器 `readDev/writeDev`（IC10 `drN`）、`LogicType.X` 枚举名透传、补充 logic type、**持久栈数据段**（`data` 表 / `switch ... table` / loader+runtime 两段流程 / 版本哨兵 / `--data-access` / `--data-layout` / `--unsafe` / `--auto-table`）。
 **M5 已完成**：测试用最小 IC10 解释器 `internal/vm`（寄存器 / 栈 / 设备 / 槽位 / 通道 / 批量 / 分支 / 标签与绝对行号），配套端到端语义测试与常量折叠差分测试；并经 `ic10c run` 暴露给用户调试。
 **M4 已完成**：`ic10c stats`（行/字节/寄存器预算）、`ic10c fmt`（格式化，支持 `-w`，保留注释/分组/空行/`data` 表）、`ic10c disasm`（旧 IC10 反汇编注释）、`ic10c decompile`（IC10 → `.icg`，支持 `-s` 结构化）、`ic10c minify`（压缩现有 IC10 行数）、`ic10c run`（内置 VM 执行）、`ic10c lsp`（诊断 / 上下文补全 / 格式化 / hover / 定义 / 大纲 / 折叠 / 引用 / 重命名 / 参数提示 / 快速修复 / 语义高亮 / 预算内联）、VSCode 扩展（`.icg` 与 `.ic`/`.ic10` 支持、片段、编译预览并自动处理数据段安装代码、VM 运行、反编译/压缩/注释命令）。
@@ -107,6 +107,7 @@ go test ./...
 - VM 端到端：编译后在 `internal/vm` 中执行并断言设备状态
 - 差分/随机：`TestDifferentialRandom` 随机生成 2000 个 `.icg`（含 `const`、函数、`if/else`、`for`/`range`、`switch`（含区间 case）、`break/continue`（含标签）、`label`/`goto`/`call`/`ret`、栈、批量、槽位、动态 `read/write`、`ins/ext`、近似比较），分别用优化与 `IC10C_NO_OPT` 编译（并覆盖 `--stable-ins`/`--jump-table`/`--fast`/`--rel-jump` 与 `data` 表），在 VM 中运行并对比设备写入序列（优化的回归安全网）
 - 覆盖：寄存器复用、比较融合、select、死代码消除、批量聚合、栈、通道、槽位、真实脚本 `solar_tracker`
+- 前端/IR：`internal/ir` 的 `Verify`/`DefUse`/`Liveness` 单测，`internal/sema` 的函数体类型检查单测（含 `str` 显示串等不误报用例）
 - 工具：`fmt` 幂等性、`stats`、`disasm`、LSP 诊断与补全
 - 真实脚本：`ic10code/` 下的每个 `.ic`/`.ic10` 都做**反编译→重编译→设备写入序列对比**（`TestIc10CodeRoundTrip`）与 **minify 等价性**（`TestMinifyIc10Code`）；第三方脚本仅本地保留，缺失时自动跳过
 - 数据段：`data` 表端到端（loader→runtime、版本哨兵、`--data-access stack`、`--data-layout middle`、`--auto-table`），见 `pkg/ic10/data_test.go` 与 `experiments/data-segment/`

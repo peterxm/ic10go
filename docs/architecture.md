@@ -39,7 +39,7 @@
                           └──────┬──────┘
                                  ▼
                           ┌─────────────┐
-                          │  regalloc   │  活跃性 + 线性扫描 + 合并 + 溢出
+                          │  regalloc   │  活跃性 + 图着色 + 合并 + 溢出
                           └──────┬──────┘
                                  ▼
                           ┌─────────────┐
@@ -69,12 +69,16 @@
 ### 3.2 sema（语义分析）
 
 - 作用域链与符号表；检测未定义变量、重复声明。
-- 类型检查：`num` / `bool` / `device` / `void`。
+- 顶层声明校验 + **函数体类型检查**：推断并记录表达式类型
+  （`Info.ExprTypes` / `VarTypes`），报告未知类型名、同块重复声明、
+  非 void 函数缺返回、把 device/data/str/void 当数值用等。
+  未定义标识符与未标注（设备/data）参数按 `Any` 处理，保持保守。
 - 内建表校验（可开关 `-no-check`）：
   - 设备逻辑类型名合法性
   - 槽位类型名合法性
   - 批量模式名合法性
 - 标记常量、内联 / 外提候选函数。
+- sema 报错会短路 lower，因此类型检查与 lower 的诊断不重复。
 
 ### 3.3 lower（AST → IR）
 
@@ -85,7 +89,10 @@
 
 ### 3.4 opt（优化）
 
-见第 5 节。
+- pass 注册表 + 固定点迭代；`IC10C_DUMP_PASSES=1` 打印每轮哪个 pass 变化，
+  并在每个 pass 后校验 IR。
+- 每轮开始/结束用 `ir.Verify` 检查结构不变量（终结符、块引用、可达性）。
+- 见第 5 节。
 
 ### 3.5 regalloc（寄存器分配）
 
@@ -128,6 +135,15 @@ type Block struct {
     Preds  []*Block
 }
 ```
+
+- **终结符统一接口**（`internal/ir/term.go`）：每个终结符实现
+  `Successors / Uses / Redirect / RewriteUses / Key`，`BuildCFG`、
+  opt、regalloc、codegen 均走该接口，不再各自 switch。
+- **校验器**（`internal/ir/verify.go`）：`Verify` 检查结构不变量，
+  `VerifyReachable` 另查可达性；`Optimize` 前后运行。
+- **共享分析**（`internal/ir/analysis.go`）：`DefUse` / `TermUses` /
+  `Liveness` / `Successors` / `Preds` / `Dominators` 由 opt 与
+  regalloc 共用，避免两份实现分歧。
 
 指令集（示意）：
 
@@ -195,12 +211,12 @@ Ret
 - 每条指令的 `live-in` / `live-out`。
 - 虚拟寄存器 `v` 的区间 = `[首次定义位置, 最后使用位置]`。
 
-### 6.2 线性扫描
+### 6.2 图着色（Chaitin-Briggs）
 
-1. 按起点排序区间。
-2. 维护 active 集合与空闲寄存器池（`r0..r15`）。
-3. 区间过期即归还寄存器。
-4. 分配编号最小的空闲寄存器，最大化复用。
+1. 由活跃性构造干涉图（同时在活的两个虚拟寄存器之间连边）。
+2. 优先合并拷贝相关的寄存器（union-find，仅在不冲突时），消除 `move`。
+3. 简化 / 溢出 / 着色：优先分配到编号最小的空闲物理寄存器 `r0..r15`，
+   复用率最高；无法着色时按代价选择溢出。
 
 ### 6.3 合并
 
@@ -312,8 +328,8 @@ ic10go/
     lexer/
     ast/          // AST + 打印机/格式化
     parser/
-    sema/         // 名字解析、常量求值
-    ir/           // 指令、块、CFG
+    sema/         // 名字解析、常量求值、函数体类型检查
+    ir/           // 指令、块、CFG、终结符接口、校验器、共享分析
     lower/        // AST → IR、内联 / 外提
     opt/          // 优化通道
     regalloc/     // 图着色 + 拷贝合并 + 溢出
@@ -359,6 +375,7 @@ ic10go/
 - 内联 / 外提（按体积取短）、常量实参调用点内联折叠
 - 便利语法：`for i := range n` / `for i, v := range Table`、`case lo..hi` 区间、`if`/`switch` 初始化、带标签的 `break`/`continue`
 - 单指令比较：与常量 0 比较用 `s*z`/`b*z`；近似比较在条件中融合为 `bap/bna/bapz/bnaz`；`if cond { call L }` 融合为 `b<cond>al`
+- 架构加固：终结符统一接口、`ir.Verify` 校验器、`DefUse/Liveness/Dominators` 共享分析、pass 注册表 + 收敛诊断、内建语义单一事实来源（`builtin.Sem`）
 - ⏳ 未实现（暂缓）：大小模型与 `define` 决策、强度削弱
 
 ### M3 领域特性 ✅
