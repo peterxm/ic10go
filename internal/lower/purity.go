@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"ic10go/internal/ast"
+	"ic10go/internal/builtin"
 	"ic10go/internal/sema"
 )
 
@@ -28,14 +29,6 @@ func computePureFuncs(info *sema.Info) map[string]bool {
 		}
 	}
 	return pure
-}
-
-// impureCalls are builtins that change observable state.
-var impureCalls = map[string]bool{
-	"yield": true, "sleep": true, "hcf": true,
-	"push": true, "pop": true, "poke": true,
-	"put": true, "putd": true, "clr": true, "clrById": true,
-	"write": true, "writeDev": true, "setIreg": true,
 }
 
 func bodyImpure(body *ast.BlockStmt, pure map[string]bool) bool {
@@ -74,7 +67,7 @@ func exprImpure(e ast.Expr, pure map[string]bool) bool {
 		}
 		switch fun := call.Fun.(type) {
 		case *ast.Ident:
-			if impureCalls[fun.Name] {
+			if builtin.SemOf(fun.Name).SideEffect {
 				impure = true
 				return
 			}

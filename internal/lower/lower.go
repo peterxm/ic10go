@@ -1672,7 +1672,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		}
 		args := make([]ir.Value, len(call.Args))
 		for i, a := range call.Args {
-			if i == 0 && deviceFirstArg[id.Name] {
+			if i == 0 && builtin.SemOf(id.Name).DeviceArg >= 0 {
 				d, ok := l.deviceName(a)
 				if !ok {
 					l.diags.Errorf(a.Pos(), "%s expects a device as its first argument", id.Name)
@@ -1707,13 +1707,6 @@ var batchModes = map[string]float64{
 	"Sum":     1,
 	"Minimum": 2,
 	"Maximum": 3,
-}
-
-// deviceFirstArg lists built-ins whose first argument is a device port.
-var deviceFirstArg = map[string]bool{
-	"isSet": true, "isUnset": true, "rmap": true,
-	"get": true, "put": true, "clr": true,
-	"readReagent": true,
 }
 
 // lowerBatchCall handles the batch.read / batch.write family.
@@ -2163,12 +2156,10 @@ func (l *lowerer) isPure(e ast.Expr) bool {
 		if _, isFunc := l.info.Funcs[id.Name]; isFunc {
 			return l.pureFuncs[id.Name]
 		}
-		f, ok := builtin.Funcs[id.Name]
-		if !ok {
+		if _, ok := builtin.Funcs[id.Name]; !ok {
 			return false
 		}
-		switch f.Name {
-		case "yield", "sleep", "hcf":
+		if builtin.SemOf(id.Name).SideEffect {
 			return false
 		}
 		for _, a := range x.Args {

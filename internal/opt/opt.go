@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ic10go/internal/builtin"
 	"ic10go/internal/ir"
 )
 
@@ -180,12 +181,7 @@ func hasSideEffect(i ir.Instr) bool {
 			return true
 		}
 	case *ir.Builtin:
-		switch v.Name {
-		case "yield", "sleep", "hcf",
-			// Stack and device-stack writes are observable side effects.
-			"push", "pop", "poke", "put", "putd", "clr", "clrById":
-			return true
-		}
+		return builtin.SemOf(v.Name).SideEffect
 	}
 	return false
 }
@@ -1121,16 +1117,21 @@ func loadWrite(i ir.Instr) (dev string, all bool) {
 			return "", true
 		}
 	case *ir.Builtin:
-		if !hasSideEffect(v) {
-			return "", false
-		}
-		if v.Name == "put" && len(v.Args) == 3 {
-			if d, ok := v.Args[0].(*ir.Device); ok {
-				return d.Name, false
+		sem := builtin.SemOf(v.Name)
+		if sem.WritesDev {
+			if sem.DeviceArg >= 0 && sem.DeviceArg < len(v.Args) {
+				if d, ok := v.Args[sem.DeviceArg].(*ir.Device); ok {
+					return d.Name, false
+				}
 			}
+			// putd/poke/push/pop/clr/clrById may change any device or slot.
+			return "", true
 		}
-		// putd/poke/push/pop/clr/yield/sleep/hcf may change anything.
-		return "", true
+		if sem.Barrier {
+			// yield/sleep/hcf: time passes, so any device may change.
+			return "", true
+		}
+		return "", false
 	}
 	return "", false
 }
@@ -1652,8 +1653,7 @@ func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool
 			case *ir.StoreDyn, *ir.StoreIndirect:
 				barrier = true
 			case *ir.Builtin:
-				switch v.Name {
-				case "yield", "sleep", "hcf", "put", "putd", "poke", "push", "pop", "clr", "clrById":
+				if builtin.SemOf(v.Name).Barrier {
 					barrier = true
 				}
 			}
