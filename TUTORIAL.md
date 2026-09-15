@@ -875,6 +875,7 @@ rol(a, b)  ror(a, b)  sla(a, b)  srl(a, b)   // 旋转 / 移位（位运算，�
 ic10c build   f.icg          # 编译
 ic10c run     f.icg          # 内置 VM 运行
 ic10c stats   f.icg          # 预算报告
+ic10c graph   f.icg          # 源码级控制流图（Mermaid）
 ic10c fmt -w  f.icg          # 格式化
 ic10c decompile -s f.ic      # 反编译为 .icg
 ic10c minify  f.ic           # 压缩行数
