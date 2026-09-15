@@ -294,22 +294,28 @@ var Commands = []Command{
 		Examples: []string{"ic10c size blink.icg"},
 	},
 	{
-		Name: "graph", Args: "[--no-lines] [--full] [-o FILE] <file.icg>",
+		Name: "graph", Args: "[--level source|ir] [--func NAME] [--no-lines] [--full] [-o FILE] <file.icg>",
 		Summary: text{EN: "print the control-flow graph as Mermaid", ZH: "输出 Mermaid 控制流图"},
 		Long: text{
-			EN: "Compile the file and print its IR control-flow graph (basic blocks)\n" +
-				"as a Mermaid `flowchart TD`. Paste it into a Mermaid renderer, or use\n" +
-				"the VSCode command \"IC10 Go: Show CFG\".",
-			ZH: "编译文件并以 Mermaid `flowchart TD` 打印其 IR 控制流图（基本块）。\n" +
-				"可粘贴到 Mermaid 渲染器，或用 VSCode 命令 “IC10 Go: Show CFG”。",
+			EN: "Print the control flow as a Mermaid `flowchart TD`.\n" +
+				"--level source (default) draws the source control flow: nodes show the\n" +
+				"original statements, conditions and branches, grouped per function.\n" +
+				"--level ir draws the compiler's IR basic blocks instead. Paste the output\n" +
+				"into a Mermaid renderer, or use the VSCode command \"IC10 Go: Show CFG\".",
+			ZH: "以 Mermaid `flowchart TD` 打印控制流。\n" +
+				"--level source（默认）画源码控制流：节点是原始语句、条件与分支，按函数分组。\n" +
+				"--level ir 改画编译器的 IR 基本块。可粘贴到 Mermaid 渲染器，或用 VSCode\n" +
+				"命令 “IC10 Go: Show CFG”。",
 		},
 		Flags: []Flag{
-			{Long: "--no-lines", Desc: text{EN: "hide the IC10 line annotation", ZH: "隐藏 IC10 行号标注"}},
-			{Long: "--full", Desc: text{EN: "show every instruction (default truncates long blocks)", ZH: "显示全部指令（默认截断长块）"}},
+			{Long: "--level", Arg: "source|ir", Desc: text{EN: "source control flow (default) or IR basic blocks", ZH: "源码控制流（默认）或 IR 基本块"}},
+			{Long: "--func", Arg: "NAME", Desc: text{EN: "source level: draw only this function", ZH: "源码级：只画该函数"}},
+			{Long: "--no-lines", Desc: text{EN: "hide the source line annotation", ZH: "隐藏源码行号标注"}},
+			{Long: "--full", Desc: text{EN: "source: one node per statement; ir: show every instruction", ZH: "源码：每句一个节点；ir：显示全部指令"}},
 			{Short: "-o", Long: "--out", Arg: "FILE", Desc: text{EN: "write to FILE instead of stdout", ZH: "写入 FILE 而非标准输出"}},
 			dataLayoutFlag, unsafeFlag, autoTableFlag, commonHelp,
 		},
-		Examples: []string{"ic10c graph blink.icg", "ic10c graph --no-lines blink.icg", "ic10c graph -o blink.mmd blink.icg"},
+		Examples: []string{"ic10c graph blink.icg", "ic10c graph --func main blink.icg", "ic10c graph --level ir blink.icg", "ic10c graph -o blink.mmd blink.icg"},
 	},
 	{
 		Name: "fmt", Args: "[-w] [--no-align] <file.icg|.ic|.ic10>",

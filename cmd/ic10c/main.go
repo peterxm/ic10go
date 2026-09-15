@@ -16,6 +16,7 @@ import (
 	"ic10go/internal/decomp"
 	"ic10go/internal/diag"
 	"ic10go/internal/disasm"
+	"ic10go/internal/flow"
 	"ic10go/internal/ic10asm"
 	"ic10go/internal/lexer"
 	"ic10go/internal/lsp"
@@ -651,6 +652,8 @@ func isNativeIC10(path string) bool {
 }
 
 func cmdGraph(args []string) int {
+	level := "source"
+	funcName := ""
 	showLines := true
 	full := false
 	out := ""
@@ -660,6 +663,16 @@ func cmdGraph(args []string) int {
 	var files []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "--level":
+			if i+1 < len(args) {
+				level = args[i+1]
+				i++
+			}
+		case "--func":
+			if i+1 < len(args) {
+				funcName = args[i+1]
+				i++
+			}
 		case "--no-lines":
 			showLines = false
 		case "--full":
@@ -692,26 +705,45 @@ func cmdGraph(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	res, diags, err := ic10.Graph(files[0], data, opts)
-	if rc := report(source.NewFile(files[0], data), diags); rc != 0 {
-		return rc
+
+	var text string
+	if level == "ir" {
+		res, diags, err := ic10.Graph(files[0], data, opts)
+		if rc := report(source.NewFile(files[0], data), diags); rc != 0 {
+			return rc
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		if res == nil {
+			fmt.Fprintln(os.Stderr, "ic10c: no control-flow graph produced")
+			return 1
+		}
+		maxInstr := 8
+		if full {
+			maxInstr = 0
+		}
+		text = cfg.Mermaid(res.Fn, res.Order, res.Start, res.Colors, cfg.Options{
+			ShowLines: showLines,
+			MaxInstr:  maxInstr,
+		})
+	} else {
+		tree, diags, err := ic10.Flow(files[0], data, opts)
+		if rc := report(source.NewFile(files[0], data), diags); rc != 0 {
+			return rc
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		if tree == nil {
+			fmt.Fprintln(os.Stderr, "ic10c: no control-flow graph produced")
+			return 1
+		}
+		text = flow.Mermaid(tree, flow.Options{Func: funcName, ShowLine: showLines, Coalesce: !full})
 	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "ic10c:", err)
-		return 1
-	}
-	if res == nil {
-		fmt.Fprintln(os.Stderr, "ic10c: no control-flow graph produced")
-		return 1
-	}
-	maxInstr := 8
-	if full {
-		maxInstr = 0
-	}
-	text := cfg.Mermaid(res.Fn, res.Order, res.Start, res.Colors, cfg.Options{
-		ShowLines: showLines,
-		MaxInstr:  maxInstr,
-	})
+
 	if out != "" {
 		if err := os.WriteFile(out, []byte(text), 0o644); err != nil {
 			fmt.Fprintln(os.Stderr, "ic10c:", err)

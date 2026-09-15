@@ -19,6 +19,52 @@ func FormatComments(f *File, comments []source.Comment) string {
 	return p.b.String()
 }
 
+// ExprString renders an expression as a compact single-line string.
+func ExprString(e Expr) string {
+	if e == nil {
+		return ""
+	}
+	p := &printer{}
+	p.expr(e)
+	return collapseSpace(p.b.String())
+}
+
+// StmtString renders a statement as a compact single-line string.
+func StmtString(s Stmt) string {
+	if s == nil {
+		return ""
+	}
+	p := &printer{}
+	p.stmt(s)
+	return collapseSpace(p.b.String())
+}
+
+// collapseSpace collapses runs of whitespace outside string literals to a
+// single space, so a multi-line rendering becomes one line.
+func collapseSpace(s string) string {
+	var b strings.Builder
+	inStr := false
+	space := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '"':
+			inStr = !inStr
+			b.WriteByte(c)
+			space = false
+		case !inStr && (c == ' ' || c == '\t' || c == '\n' || c == '\r'):
+			space = true
+		default:
+			if space && b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			space = false
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
 type printer struct {
 	b        strings.Builder
 	indent   int

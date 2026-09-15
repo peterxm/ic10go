@@ -400,7 +400,7 @@ ic10go/
 - `fmt`（保留注释、分组、空行、`data` 表与 `switch ... table`；原生 `.ic`/`.ic10` 重排+列对齐）、`stats`、`disasm`
 - `decompile`（IC10 → `.icg`，含 `-s` 结构化）
 - `minify`（现有 IC10 → 更少行，语义不变：去注释/内联 define/去标签/去不可达）
-- `graph`（IR 基本块控制流图 → Mermaid `flowchart`，标注 IC10 行号与分支边）
+- `graph`（控制流图 → Mermaid `flowchart`；默认**源码级**：AST 语句/条件/分支，按函数分组，`--level ir` 为 IR 基本块）
 - `run`（编译后在内置 VM 中执行，`--steps`/`--set`/`--trace`）
 - LSP（诊断 / 补全 / 格式化 / hover / 定义 / 预制体 / 原生 IC10）、VSCode 扩展
 
