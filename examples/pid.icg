@@ -1,0 +1,43 @@
+// PID 控制器：把 d1（传感器）的测量值稳定到 Setpoint，输出写到 d0.Setting（执行器）。
+//
+// 固定 dt = 1 tick（每个 yield 一拍）；含死区、积分抗饱和与输出限幅。
+// Kp / Ki / Kd 需要按被控对象整定。
+
+const (
+    Kp       = 2.0
+    Ki       = 0.1
+    Kd       = 0.5
+    Setpoint = 300.0
+    OutMin   = 0.0
+    OutMax   = 100.0
+    IntMin   = -100.0
+    IntMax   = 100.0
+    Deadband = 0.5
+)
+
+func main() {
+    integral := 0.0
+    prev := 0.0
+    for {
+        yield()
+        e := Setpoint - d1.Temperature
+
+        // 死区：误差很小时不动作，抑制抖动
+        if e > -Deadband && e < Deadband {
+            e = 0
+        }
+
+        // 积分 + 抗饱和
+        integral = integral + e
+        if integral > IntMax { integral = IntMax }
+        if integral < IntMin { integral = IntMin }
+
+        // PID 输出 + 限幅
+        out := Kp*e + Ki*integral + Kd*(e-prev)
+        if out > OutMax { out = OutMax }
+        if out < OutMin { out = OutMin }
+
+        d0.Setting = out
+        prev = e
+    }
+}

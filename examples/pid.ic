@@ -1,0 +1,41 @@
+# PID 控制器（手写 IC10）：d1.Temperature -> d0.Setting
+# 固定 dt = 1 tick；含死区、抗积分饱和、输出限幅。
+# 寄存器：r0=e  r1=measured  r2=out  r3=prev  r4=integral
+
+alias sensor d1
+alias actuator d0
+
+move r4 0                    # integral = 0
+move r3 0                    # prev error = 0
+loop:
+yield
+l r1 sensor Temperature
+sub r0 300 r1                # e = Setpoint - measured
+
+# 死区：|e| < 0.5 时把 e 置 0
+sgt r5 r0 -0.5
+slt r6 r0 0.5
+and r5 r5 r6                 # r5 = in deadband
+seqz r5 r5                   # r5 = not in deadband
+mul r0 r0 r5                 # e = e * r5
+
+# integral += e，并抗饱和
+add r4 r4 r0
+min r4 r4 100
+max r4 r4 -100
+
+# out = Kp*e + Ki*integral + Kd*(e - prev)
+mul r2 r0 2.0                # Kp*e
+mul r5 r4 0.1                # Ki*I
+add r2 r2 r5
+sub r5 r0 r3                 # e - prev
+mul r5 r5 0.5                # Kd*D
+add r2 r2 r5
+
+# 输出限幅
+min r2 r2 100
+max r2 r2 0
+
+s actuator Setting r2
+move r3 r0                   # prev = e
+j loop
