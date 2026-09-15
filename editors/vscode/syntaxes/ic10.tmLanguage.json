@@ -36,7 +36,7 @@
       "patterns": [
         {
           "name": "constant.other.enum.ic10",
-          "match": "\\b(SorterInstruction|PrinterInstruction|TraderInstruction|ConditionOperation|ReagentMode|LogicReagentMode|SlotClass|SortingClass|SorterStack|PrinterStack|Stack|Sound|DisplayMode|PowerMode|Color|LogicType)\\.[A-Za-z_][A-Za-z0-9_]*"
+          "match": "\\b(SorterInstruction|PrinterInstruction|TraderInstruction|ConditionOperation|ReagentMode|LogicReagentMode|SlotClass|SortingClass|SorterStack|PrinterStack|Stack|Sound|DisplayMode|SettingDisplayMode|PowerMode|Color|LogicType|LogicSlotType|LogicBatchMethod|AirCon|AirControl|DaylightSensorMode|ElevatorMode|EntityState|FiltrationMode|GasType|HashType|NodeType|ReEntryProfile|RobotMode|RocketMode|ShuttleType|TransmitterMode|Vent)\\.[A-Za-z_][A-Za-z0-9_]*"
         }
       ]
     },

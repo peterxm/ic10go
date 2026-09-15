@@ -191,6 +191,10 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 | Sum | 1 |
 | Minimum | 2 |
 | Maximum | 3 |
+| Count | 4 |
+
+> 也可用 `LogicBatchMethod.*` 常量。`batch.read/write` 的 mode 实参接受模式名
+> 字符串、裸名（`Average` 等）或数字。
 
 ### 5.5 枚举常量
 
@@ -233,6 +237,14 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
     （LED 显示器读数模式）
   - `Sound.None`(0) / `Alarm2`(1) … `Alarm1`(45)（扬声器/警报；游戏枚举
     `SoundAlert`，IC10 前缀为 `Sound`）
+  - 设备 `Mode` 类枚举：`AirCon.*` / `AirControl.*` / `Vent.*` / `FiltrationMode.*` /
+    `ElevatorMode.*` / `RobotMode.*` / `DaylightSensorMode.*` / `SettingDisplayMode.*`
+  - 其它：`EntityState.*` / `GasType.*`（31 项） / `HashType.*` / `LogicBatchMethod.*` /
+    `LogicSlotType.*`（0..32） / `NodeType.*` / `ReEntryProfile.*` / `RocketMode.*` /
+    `ShuttleType.*` / `TransmitterMode.*`
+
+> 数学常量 `pi` / `deg2rad` / `rad2deg` / `epsilon` 按游戏常量**原样输出**，
+> 由汇编器解析；`nan` / `pinf` / `ninf` 是特殊字面量。
 
 > 枚举数值核对自 Stationeers 社区 Wiki（Logic Sorter，2026-09-05）与游戏类型导出
 > `github.com/Stationeers-ic/ic10`（`src/Defines/consts.ts`）。枚举名与数值随游戏

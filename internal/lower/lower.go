@@ -1206,6 +1206,11 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 		if v, ok := builtin.EnumConstants[e.Name]; ok {
 			return &ir.Const{V: v}
 		}
+		// Game numeric constants (pi / deg2rad / ...) are emitted verbatim so
+		// the game resolves their exact value.
+		if builtin.RawConstants[e.Name] {
+			return &ir.Const{Raw: e.Name}
+		}
 		if isSpecialReg(e.Name) {
 			r := l.b.NewReg(e.Name)
 			l.b.Emit(&ir.LoadSpecial{Dst: r, Name: e.Name})
@@ -1822,6 +1827,7 @@ var batchModes = map[string]float64{
 	"Sum":     1,
 	"Minimum": 2,
 	"Maximum": 3,
+	"Count":   4,
 }
 
 // packField is one bit-field of a device stack instruction.

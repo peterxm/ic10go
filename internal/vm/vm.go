@@ -1019,6 +1019,8 @@ func (m *Machine) batchMode(s string) float64 {
 		return 2
 	case "Maximum":
 		return 3
+	case "Count":
+		return 4
 	}
 	return mustNum(m, s)
 }
@@ -1059,6 +1061,8 @@ func aggregate(mode int, vals []float64) float64 {
 			max = math.Max(max, v)
 		}
 		return max
+	case 4: // Count: number of matching devices.
+		return float64(len(vals))
 	}
 	return 0
 }

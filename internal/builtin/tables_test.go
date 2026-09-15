@@ -75,10 +75,34 @@ func TestSorterEnumConstants(t *testing.T) {
 		"SorterStack.Size":                        32,
 		"PrinterStack.StackPointer":               63,
 		"PrinterStack.MissingRecipeReagent":       54,
+		// Device mode / misc enums synced from the live game.
+		"AirCon.Cold":                 0,
+		"AirControl.Pressure":         2,
+		"ElevatorMode.Upward":         1,
+		"EntityState.Decay":           3,
+		"FiltrationMode.Active":       1,
+		"GasType.Oxygen":              1,
+		"HashType.GasLiquid":          1,
+		"LogicBatchMethod.Count":      4,
+		"LogicSlotType.Occupied":      1,
+		"NodeType.LaunchPad":          4,
+		"ReEntryProfile.High":         3,
+		"RobotMode.Follow":            1,
+		"RocketMode.Survey":           3,
+		"SettingDisplayMode.String":   1,
+		"ShuttleType.Large":           5,
+		"TransmitterMode.Active":      1,
+		"Vent.Inward":                 1,
+		"DaylightSensorMode.Vertical": 2,
 	}
 	for k, v := range cases {
 		if got := EnumConstants[k]; got != v {
 			t.Errorf("EnumConstants[%q] = %v, want %v", k, got, v)
+		}
+	}
+	for _, name := range []string{"pi", "deg2rad", "rad2deg", "epsilon"} {
+		if !RawConstants[name] {
+			t.Errorf("RawConstants missing %q", name)
 		}
 	}
 }

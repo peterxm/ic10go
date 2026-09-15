@@ -444,7 +444,8 @@ batch.writeName(hash("StructureBattery"), hash("Bank 1"), "On", 1)   // sbn
 batch.writeSlot(hash("StructureBattery"), 0, "ChargeRatio", 1)       // sbs
 ```
 
-- 批量模式字符串：`"Average"`(0) `"Sum"`(1) `"Minimum"`(2) `"Maximum"`(3)。
+- 批量模式字符串：`"Average"`(0) `"Sum"`(1) `"Minimum"`(2) `"Maximum"`(3) `"Count"`(4)；
+  也可用裸名（`Sum`）或 `LogicBatchMethod.*` 常量。
 - `hash("...")` 在编译期计算 CRC-32。
 
 ### 7.7 设备栈 / 按 id

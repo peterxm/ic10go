@@ -228,12 +228,173 @@ var EnumConstants = map[string]float64{
 	"Sound.PollutantsDetected":  43,
 	"Sound.HighCarbonDioxide":   44,
 	"Sound.Alarm1":              45,
+	// AirCon (game enum, 2 members).
+	"AirCon.Cold": 0,
+	"AirCon.Hot":  1,
+	// AirControl (game enum, 4 members).
+	"AirControl.Draught":  4,
+	"AirControl.None":     0,
+	"AirControl.Offline":  1,
+	"AirControl.Pressure": 2,
+	// DaylightSensorMode (game enum, 3 members).
+	"DaylightSensorMode.Default":    0,
+	"DaylightSensorMode.Horizontal": 1,
+	"DaylightSensorMode.Vertical":   2,
+	// ElevatorMode (game enum, 3 members).
+	"ElevatorMode.Downward":   2,
+	"ElevatorMode.Stationary": 0,
+	"ElevatorMode.Upward":     1,
+	// EntityState (game enum, 4 members).
+	"EntityState.Alive":       0,
+	"EntityState.Dead":        1,
+	"EntityState.Decay":       3,
+	"EntityState.Unconscious": 2,
+	// FiltrationMode (game enum, 2 members).
+	"FiltrationMode.Active": 1,
+	"FiltrationMode.Idle":   0,
+	// GasType (game enum, 31 members).
+	"GasType.Air":                    3,
+	"GasType.CarbonDioxide":          4,
+	"GasType.Fuel":                   9,
+	"GasType.Helium":                 1048576,
+	"GasType.Hydrazine":              131072,
+	"GasType.HydrochloricAcid":       16777216,
+	"GasType.Hydrogen":               16384,
+	"GasType.LiquidAlcohol":          524288,
+	"GasType.LiquidCarbonDioxide":    2048,
+	"GasType.LiquidHydrazine":        262144,
+	"GasType.LiquidHydrochloricAcid": 33554432,
+	"GasType.LiquidHydrogen":         32768,
+	"GasType.LiquidMethane":          512,
+	"GasType.LiquidNitrogen":         128,
+	"GasType.LiquidNitrousOxide":     8192,
+	"GasType.LiquidOxygen":           256,
+	"GasType.LiquidOzone":            134217728,
+	"GasType.LiquidPollutant":        4096,
+	"GasType.LiquidSilanol":          8388608,
+	"GasType.LiquidSodiumChloride":   2097152,
+	"GasType.Methane":                8,
+	"GasType.Nitrogen":               2,
+	"GasType.NitrousOxide":           64,
+	"GasType.Oxygen":                 1,
+	"GasType.Ozone":                  67108864,
+	"GasType.Pollutant":              16,
+	"GasType.PollutedWater":          65536,
+	"GasType.Silanol":                4194304,
+	"GasType.Steam":                  1024,
+	"GasType.Undefined":              0,
+	"GasType.Water":                  32,
+	// HashType (game enum, 2 members).
+	"HashType.GasLiquid": 1,
+	"HashType.Prefab":    0,
+	// LogicBatchMethod (game enum, 5 members).
+	"LogicBatchMethod.Average": 0,
+	"LogicBatchMethod.Count":   4,
+	"LogicBatchMethod.Maximum": 3,
+	"LogicBatchMethod.Minimum": 2,
+	"LogicBatchMethod.Sum":     1,
+	// LogicSlotType (game enum, 33 members).
+	"LogicSlotType.Charge":        10,
+	"LogicSlotType.ChargeRatio":   11,
+	"LogicSlotType.Class":         12,
+	"LogicSlotType.Damage":        4,
+	"LogicSlotType.Efficiency":    5,
+	"LogicSlotType.FilterType":    25,
+	"LogicSlotType.FreeSlots":     31,
+	"LogicSlotType.Growth":        7,
+	"LogicSlotType.HarvestedHash": 27,
+	"LogicSlotType.Health":        6,
+	"LogicSlotType.LineNumber":    19,
+	"LogicSlotType.Lock":          23,
+	"LogicSlotType.Mature":        16,
+	"LogicSlotType.MaturityRatio": 29,
+	"LogicSlotType.MaxQuantity":   15,
+	"LogicSlotType.Mode":          28,
+	"LogicSlotType.None":          0,
+	"LogicSlotType.OccupantHash":  2,
+	"LogicSlotType.Occupied":      1,
+	"LogicSlotType.On":            22,
+	"LogicSlotType.Open":          21,
+	"LogicSlotType.PrefabHash":    17,
+	"LogicSlotType.Pressure":      8,
+	"LogicSlotType.PressureAir":   14,
+	"LogicSlotType.PressureWaste": 13,
+	"LogicSlotType.Quantity":      3,
+	"LogicSlotType.ReferenceId":   26,
+	"LogicSlotType.Seeding":       18,
+	"LogicSlotType.SeedingRatio":  30,
+	"LogicSlotType.SortingClass":  24,
+	"LogicSlotType.Temperature":   9,
+	"LogicSlotType.TotalSlots":    32,
+	"LogicSlotType.Volume":        20,
+	// NodeType (game enum, 7 members).
+	"NodeType.Entry":             1,
+	"NodeType.Generated":         3,
+	"NodeType.LaunchPad":         4,
+	"NodeType.LowOrbitHub":       5,
+	"NodeType.LowOrbitLaunchPad": 6,
+	"NodeType.None":              0,
+	"NodeType.Static":            2,
+	// ReEntryProfile (game enum, 5 members).
+	"ReEntryProfile.High":   3,
+	"ReEntryProfile.Low":    1,
+	"ReEntryProfile.Max":    4,
+	"ReEntryProfile.Medium": 2,
+	"ReEntryProfile.None":   0,
+	// RobotMode (game enum, 7 members).
+	"RobotMode.Follow":       1,
+	"RobotMode.MoveToTarget": 2,
+	"RobotMode.None":         0,
+	"RobotMode.PathToTarget": 5,
+	"RobotMode.Roam":         3,
+	"RobotMode.StorageFull":  6,
+	"RobotMode.Unload":       4,
+	// RocketMode (game enum, 9 members).
+	"RocketMode.Chart":       5,
+	"RocketMode.Deploy":      6,
+	"RocketMode.Discover":    4,
+	"RocketMode.Invalid":     0,
+	"RocketMode.Mine":        2,
+	"RocketMode.None":        1,
+	"RocketMode.SurfaceScan": 7,
+	"RocketMode.Survey":      3,
+	"RocketMode.Transfer":    8,
+	// SettingDisplayMode (game enum, 2 members).
+	"SettingDisplayMode.Number": 0,
+	"SettingDisplayMode.String": 1,
+	// ShuttleType (game enum, 9 members).
+	"ShuttleType.Large":       5,
+	"ShuttleType.LargeGas":    6,
+	"ShuttleType.LargePlane":  8,
+	"ShuttleType.Medium":      3,
+	"ShuttleType.MediumGas":   4,
+	"ShuttleType.MediumPlane": 7,
+	"ShuttleType.None":        0,
+	"ShuttleType.Small":       1,
+	"ShuttleType.SmallGas":    2,
+	// TransmitterMode (game enum, 2 members).
+	"TransmitterMode.Active":  1,
+	"TransmitterMode.Passive": 0,
+	// Vent (game enum, 2 members).
+	"Vent.Inward":  1,
+	"Vent.Outward": 0,
 	// Stack sizes / fixed addresses (compiler conveniences, not game enums).
 	"Stack.Size":                        512, // IC chip persistent stack
 	"SorterStack.Size":                  32,  // Logic Sorter: 32 x 8-byte entries
 	"PrinterStack.Size":                 64,  // Printer stack entries
 	"PrinterStack.StackPointer":         63,  // PrinterInstruction.StackPointer address
 	"PrinterStack.MissingRecipeReagent": 54,  // first MissingRecipeReagent address
+}
+
+// RawConstants are IC10 numeric constants (the game's
+// ProgrammableChip.AllConstants) emitted verbatim, so the game resolves their
+// exact double value. `nan`, `pinf` and `ninf` are handled as special literals
+// by the lexer.
+var RawConstants = map[string]bool{
+	"pi":      true,
+	"deg2rad": true,
+	"rad2deg": true,
+	"epsilon": true,
 }
 
 // LogicTypes is the set of device logic type names understood by IC10. It

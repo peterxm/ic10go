@@ -37,6 +37,11 @@ var Docs = map[string]Doc{
 	"str":  {"str(\"...\")", "Display-string operand (IC10 STR).", "显示字符串操作数（IC10 STR）。"},
 	"raw":  {"raw(\"...\")", "Emit the argument verbatim as an IC10 operand.", "把参数原样作为 IC10 操作数输出。"},
 
+	"pi":      {"pi", "Math constant π (game constant).", "数学常量 π（游戏常量）。"},
+	"deg2rad": {"deg2rad", "Degrees → radians constant (game constant).", "角度转弧度常量（游戏常量）。"},
+	"rad2deg": {"rad2deg", "Radians → degrees constant (game constant).", "弧度转角度常量（游戏常量）。"},
+	"epsilon": {"epsilon", "Machine epsilon (smallest double, game constant).", "机器 epsilon（最小双精度值，游戏常量）。"},
+
 	"pow": {"pow(a, b)", "a to the power b.", "a 的 b 次幂。"},
 	"min": {"min(a, b)", "Smaller of a and b.", "a、b 中较小者。"},
 	"max": {"max(a, b)", "Larger of a and b.", "a、b 中较大者。"},
