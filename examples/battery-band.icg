@@ -1,0 +1,36 @@
+// 电池电量区间（滞回）控制：电量 < 10% 开始发电，> 30% 停止。
+//
+// 这是最简单的“启停”策略：电量在 10% ~ 30% 之间锯齿波动，发电机在满功率与
+// 停机之间切换。与 examples/battery-pid.icg（P + 前馈）和
+// examples/battery-pid-cascade.icg（级联 PI）的连续调节对照。
+//
+// 设备：
+//   d0 = 调压阀（Pressure Regulator）：写 Setting = 目标压力(kPa)
+//   d2 = 电池（Station Battery）：读 Ratio（电量 0..1）
+//
+// 优点：零调参、鲁棒。缺点：电量波动大、发电机频繁启停、燃料效率一般。
+
+const (
+    LowBand     = 0.10   // 低于此电量开始发电
+    HighBand    = 0.30   // 高于此电量停止发电
+    RunPressure = 3000.0 // 运行时调压阀压力 (kPa)，需实测
+)
+
+func main() {
+    on := 0.0
+    for {
+        yield()
+        charge := d2.Ratio
+        if charge < LowBand {
+            on = 1
+        }
+        if charge > HighBand {
+            on = 0
+        }
+        if on > 0 {
+            d0.Setting = RunPressure
+        } else {
+            d0.Setting = 0
+        }
+    }
+}

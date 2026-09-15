@@ -1,0 +1,69 @@
+// 电池电量控制：级联 PI + 前馈（软件实现，不使用硬件 PID）。
+//
+// 目标：电池电量稳定在 30%。设备同 examples/battery-pid.icg：
+//   d0 = 调压阀（写 Setting = 目标压力 kPa）
+//   d1 = Gas Fuel Generator（读 PowerGeneration W）
+//   d2 = 电池（读 Ratio 电量 0..1、PowerActual 放电 W）
+//
+// 结构：
+//   外环（慢）：电量误差 -> 目标功率（P）。
+//   内环（快）：功率误差 -> 调压阀压力（前馈映射 + PI），
+//              由内环吸收发电机的滞后与非线性，外环只管慢电量。
+//
+// 常量是占位值，必须按实测标定。
+
+const (
+    Target    = 0.30
+    Deadband  = 0.01
+    KpOuter   = 100000.0 // 电量误差 -> 功率 (W / 1.0)
+    PowerMax  = 20000.0  // 发电机满功率 (W)
+    PresMin   = 1000.0   // 最低运行压力 (kPa)
+    PresMax   = 5000.0   // 满功率压力 (kPa)
+    PresLimit = 6000.0   // 调压阀上限 (kPa)
+    KpInner   = 0.5      // 功率误差 -> 压力 (kPa/W)
+    KiInner   = 0.02     // 功率误差积分 -> 压力 (kPa/(W*tick))
+    IntLimit  = 5000.0   // 积分限幅（抗饱和）
+)
+
+func main() {
+    integral := 0.0
+    for {
+        yield()
+
+        // ---- 外环：电量 -> 目标功率 ----
+        charge := d2.Ratio
+        e := Target - charge
+        if e > -Deadband && e < Deadband {
+            e = 0
+        }
+        load := d1.PowerGeneration + d2.PowerActual
+        target := load + KpOuter*e
+        if target < 0 {
+            target = 0
+        }
+        if target > PowerMax {
+            target = PowerMax
+        }
+
+        // ---- 内环：目标功率 -> 压力（前馈 + PI）----
+        pFF := PresMin + (target/PowerMax)*(PresMax-PresMin)
+
+        perr := target - d1.PowerGeneration
+        integral = integral + perr
+        if integral > IntLimit {
+            integral = IntLimit
+        }
+        if integral < -IntLimit {
+            integral = -IntLimit
+        }
+
+        p := pFF + KpInner*perr + KiInner*integral
+        if p > PresLimit {
+            p = PresLimit
+        }
+        if p < 0 {
+            p = 0
+        }
+        d0.Setting = p
+    }
+}

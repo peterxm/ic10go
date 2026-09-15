@@ -1,0 +1,60 @@
+// 电池电量控制：P + 前馈（软件实现，不使用硬件 PID）。
+//
+// 目标：电池电量稳定在 30%。
+//
+// 设备：
+//   d0 = 调压阀（Pressure Regulator）：写 Setting = 目标压力(kPa)
+//   d1 = Gas Fuel Generator：读 PowerGeneration（当前发电功率 W）
+//   d2 = 电池（Station Battery）：读 Ratio（电量 0..1）、PowerActual（放电功率 W）
+//
+// 控制思路：
+//   前馈：发电机应产出 ≈ 当前总负载（= 发电机功率 + 电池放电功率），
+//         这样负载突变时立刻响应，电量几乎不漂。
+//   反馈：再用 P 项 Kp*(30% - 电量) 微调。
+//   最后把目标功率线性映射到调压阀压力并限幅。
+//
+// 为什么不用 D / 少用 I：电池电量是功率的积分，发电机又有滞后与死区，
+// 微分项对噪声/滞后无益，积分项会和对象自身的积分叠加导致振荡。
+//
+// 下面这些常量是占位值，必须按你的发电机/气路实测标定。
+
+const (
+    Target    = 0.30    // 目标电量
+    Deadband  = 0.01    // ±1% 死区，抑制抖动
+    Kp        = 100000.0 // 电量误差 -> 功率修正 (W / 1.0)，需整定
+    PowerMax  = 20000.0  // 发电机满功率 (W)
+    PresMin   = 1000.0   // 最低运行压力 (kPa)，需实测
+    PresMax   = 5000.0   // 满功率对应压力 (kPa)，需实测
+    PresLimit = 6000.0   // 调压阀输出上限 (kPa)，防越界
+)
+
+func main() {
+    for {
+        yield()
+
+        charge := d2.Ratio
+        e := Target - charge
+        if e > -Deadband && e < Deadband {
+            e = 0
+        }
+
+        // 前馈：当前总负载 ≈ 发电机出力 + 电池放电
+        load := d1.PowerGeneration + d2.PowerActual
+
+        // 目标功率 = 前馈 + P 反馈，并限幅到 [0, PowerMax]
+        target := load + Kp*e
+        if target < 0 {
+            target = 0
+        }
+        if target > PowerMax {
+            target = PowerMax
+        }
+
+        // 功率 -> 压力（线性映射），再限幅
+        p := PresMin + (target/PowerMax)*(PresMax-PresMin)
+        if p > PresLimit {
+            p = PresLimit
+        }
+        d0.Setting = p
+    }
+}
