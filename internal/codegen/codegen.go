@@ -84,8 +84,10 @@ func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, e
 	return GenerateReportWithOptions(fn, colors, Options{})
 }
 
-// GenerateReportWithOptions is GenerateReport with explicit options.
-func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Options) (string, *Report, error) {
+// layoutLines computes the codegen block order and the emitted lines before
+// branch targets are resolved to line numbers. It is shared by code generation
+// and by Layout (used for the control-flow graph).
+func layoutLines(fn *ir.Function, colors map[*ir.Reg]int) ([]*ir.Block, []line, map[*ir.Block]int) {
 	blocks := rpo(fn)
 	// Move halt (Ret) blocks to the end of the layout. A Ret emits no line, so
 	// a jump to one that is followed by an outlined function body would resolve
@@ -226,6 +228,18 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 	}
 
 	lines, start = removeRedundantJumps(lines, start)
+	return blocks, lines, start
+}
+
+// Layout returns the codegen block order and each block's 0-based start line.
+func Layout(fn *ir.Function, colors map[*ir.Reg]int) ([]*ir.Block, map[*ir.Block]int) {
+	blocks, _, start := layoutLines(fn, colors)
+	return blocks, start
+}
+
+// GenerateReportWithOptions is GenerateReport with explicit options.
+func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Options) (string, *Report, error) {
+	blocks, lines, start := layoutLines(fn, colors)
 
 	if err := checkCallLayout(blocks, lines, start); err != nil {
 		return "", nil, err
@@ -426,6 +440,12 @@ func rpo(fn *ir.Function) []*ir.Block {
 		order[i], order[j] = order[j], order[i]
 	}
 	return order
+}
+
+// InstrText renders one IR instruction as IC10 text. It is used by the
+// control-flow graph (ic10c graph) to label blocks.
+func InstrText(ins ir.Instr, colors map[*ir.Reg]int) (string, bool) {
+	return renderInstr(ins, colors)
 }
 
 func renderInstr(ins ir.Instr, colors map[*ir.Reg]int) (string, bool) {

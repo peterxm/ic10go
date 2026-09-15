@@ -20,5 +20,6 @@
   "cmd.decompile": "IC10 Go: Decompile IC10 to .icg",
   "cmd.minify": "IC10 Go: Minify IC10",
   "cmd.disasm": "IC10 Go: Annotate IC10 (disasm)",
-  "cmd.restartServer": "IC10 Go: Restart Language Server"
+  "cmd.restartServer": "IC10 Go: Restart Language Server",
+  "cmd.graph": "IC10 Go: Show CFG (Mermaid)"
 }

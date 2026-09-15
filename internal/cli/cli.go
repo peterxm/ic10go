@@ -294,6 +294,24 @@ var Commands = []Command{
 		Examples: []string{"ic10c size blink.icg"},
 	},
 	{
+		Name: "graph", Args: "[--no-lines] [--full] [-o FILE] <file.icg>",
+		Summary: text{EN: "print the control-flow graph as Mermaid", ZH: "输出 Mermaid 控制流图"},
+		Long: text{
+			EN: "Compile the file and print its IR control-flow graph (basic blocks)\n" +
+				"as a Mermaid `flowchart TD`. Paste it into a Mermaid renderer, or use\n" +
+				"the VSCode command \"IC10 Go: Show CFG\".",
+			ZH: "编译文件并以 Mermaid `flowchart TD` 打印其 IR 控制流图（基本块）。\n" +
+				"可粘贴到 Mermaid 渲染器，或用 VSCode 命令 “IC10 Go: Show CFG”。",
+		},
+		Flags: []Flag{
+			{Long: "--no-lines", Desc: text{EN: "hide the IC10 line annotation", ZH: "隐藏 IC10 行号标注"}},
+			{Long: "--full", Desc: text{EN: "show every instruction (default truncates long blocks)", ZH: "显示全部指令（默认截断长块）"}},
+			{Short: "-o", Long: "--out", Arg: "FILE", Desc: text{EN: "write to FILE instead of stdout", ZH: "写入 FILE 而非标准输出"}},
+			dataLayoutFlag, unsafeFlag, autoTableFlag, commonHelp,
+		},
+		Examples: []string{"ic10c graph blink.icg", "ic10c graph --no-lines blink.icg", "ic10c graph -o blink.mmd blink.icg"},
+	},
+	{
 		Name: "fmt", Args: "[-w] [--no-align] <file.icg|.ic|.ic10>",
 		Summary: text{EN: "format .icg / native IC10 source", ZH: "格式化 .icg / 原生 IC10 源码"},
 		Long: text{

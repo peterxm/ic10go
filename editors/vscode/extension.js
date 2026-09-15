@@ -38,6 +38,9 @@ function activate(context) {
     context.subscriptions.push(
         vscode.commands.registerCommand('icg.disasm', () => client.disasm())
     );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('icg.graph', () => client.showCfg())
+    );
     client.start();
 }
 
@@ -525,6 +528,33 @@ class LspClient {
     async disasm() {
         const doc = this.activeDoc(['ic10']);
         if (doc) await this.runTool(doc, ['disasm'], 'ic10');
+    }
+
+    // showCfg renders the control-flow graph (Mermaid) in the Markdown preview.
+    async showCfg() {
+        const doc = this.activeICG();
+        if (!doc) return;
+        await this.withTempFile(doc, async (tmp) => {
+            const res = await this.execCli(['graph', tmp]);
+            if (res.code !== 0) {
+                this.output.appendLine(`=== graph failed ===\n${res.stderr}`);
+                this.output.show(true);
+                vscode.window.showErrorMessage(
+                    t('IC10 Go: graph failed. See the "IC10 Go" output.', 'IC10 Go: 生成控制流图失败，详见 "IC10 Go" 输出面板。')
+                );
+                return;
+            }
+            const md = '```mermaid\n' + res.stdout + '```\n';
+            const preview = await vscode.workspace.openTextDocument({
+                content: md,
+                language: 'markdown',
+            });
+            await vscode.window.showTextDocument(preview, {
+                viewColumn: vscode.ViewColumn.Beside,
+                preview: true,
+            });
+            await vscode.commands.executeCommand('markdown.showPreview', preview.uri);
+        });
     }
 
     // -- native IC10 (.ic / .ic10) -----------------------------------------

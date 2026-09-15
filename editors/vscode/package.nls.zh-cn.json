@@ -20,5 +20,6 @@
   "cmd.decompile": "IC10 Go: 反编译为 .icg",
   "cmd.minify": "IC10 Go: 压缩 IC10",
   "cmd.disasm": "IC10 Go: 为 IC10 加注释（反汇编）",
-  "cmd.restartServer": "IC10 Go: 重启语言服务器"
+  "cmd.restartServer": "IC10 Go: 重启语言服务器",
+  "cmd.graph": "IC10 Go: 显示控制流图（Mermaid）"
 }

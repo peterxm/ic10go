@@ -116,6 +116,7 @@ func main() {
 | `IC10 Go: Decompile IC10 to .icg` | 把 `.ic`/`.ic10` 反编译为 `.icg`（结构化） |
 | `IC10 Go: Minify IC10` | 压缩 `.ic`/`.ic10` 行数 |
 | `IC10 Go: Annotate IC10 (disasm)` | 给 `.ic`/`.ic10` 加跳转目标注释 |
+| `IC10 Go: Show CFG (Mermaid)` | 编译 `.icg` 并在 Markdown 预览中显示 IR 基本块控制流图（Mermaid） |
 | `IC10 Go: Restart Language Server` | 重启语言服务器 |
 
 ## 六、设置

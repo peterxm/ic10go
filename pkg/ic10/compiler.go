@@ -130,25 +130,33 @@ func better(a, b string) bool {
 
 // generate runs register allocation and code generation for a lowered function.
 func generate(fn *ir.Function, info *sema.Info, opts Options) (string, error) {
+	code, _, err := generateColored(fn, info, opts)
+	return code, err
+}
+
+// generateColored is generate plus the register colouring, which the
+// control-flow graph needs to render instruction text.
+func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, map[*ir.Reg]int, error) {
 	reserved := info.DataSize
 	if fixedDataBase(opts) > 0 {
 		reserved = 0
 	}
 	colors, spillCount, err := regalloc.AllocateReservedSpills(fn, NumRegs, reserved)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if fixedDataBase(opts) > 0 && spillCount > 0 {
 		dataEnd := info.Sentinel + info.DataSize - 1
 		if bottom := sema.StackSize - spillCount; bottom <= dataEnd {
-			return "", fmt.Errorf("register spills (%d slots, down to %d) overlap the data segment [%d..%d]",
+			return "", nil, fmt.Errorf("register spills (%d slots, down to %d) overlap the data segment [%d..%d]",
 				spillCount, bottom, info.Sentinel, dataEnd)
 		}
 	}
 	if opt.MergeTailsColored(fn, colors) {
 		fn.BuildCFG()
 	}
-	return codegen.GenerateWithOptions(fn, colors, codegen.Options{RelJump: opts.RelJump})
+	code, err := codegen.GenerateWithOptions(fn, colors, codegen.Options{RelJump: opts.RelJump})
+	return code, colors, err
 }
 
 // parseAndCheck lexes, parses and type-checks the source. It returns a nil Info

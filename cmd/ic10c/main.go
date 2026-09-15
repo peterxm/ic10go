@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"ic10go/internal/ast"
+	"ic10go/internal/cfg"
 	"ic10go/internal/cli"
 	"ic10go/internal/codegen"
 	"ic10go/internal/decomp"
@@ -114,6 +115,8 @@ parse:
 		return cmdStats(args)
 	case "size":
 		return cmdSize(args)
+	case "graph":
+		return cmdGraph(args)
 	case "fmt":
 		return cmdFmt(args)
 	case "disasm":
@@ -645,6 +648,79 @@ func cmdFmt(args []string) int {
 // isNativeIC10 reports whether a path is a native IC10 source file.
 func isNativeIC10(path string) bool {
 	return strings.HasSuffix(path, ".ic") || strings.HasSuffix(path, ".ic10")
+}
+
+func cmdGraph(args []string) int {
+	showLines := true
+	full := false
+	out := ""
+	dataLayout := ""
+	unsafe := false
+	autoTable := false
+	var files []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--no-lines":
+			showLines = false
+		case "--full":
+			full = true
+		case "-o", "--out":
+			if i+1 < len(args) {
+				out = args[i+1]
+				i++
+			}
+		case "--data-layout":
+			if i+1 < len(args) {
+				dataLayout = args[i+1]
+				i++
+			}
+		case "--unsafe":
+			unsafe = true
+		case "--auto-table":
+			autoTable = true
+		default:
+			files = append(files, args[i])
+		}
+	}
+	if len(files) != 1 {
+		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "graph"))
+		return 2
+	}
+	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable}
+	data, err := os.ReadFile(files[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	res, diags, err := ic10.Graph(files[0], data, opts)
+	if rc := report(source.NewFile(files[0], data), diags); rc != 0 {
+		return rc
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if res == nil {
+		fmt.Fprintln(os.Stderr, "ic10c: no control-flow graph produced")
+		return 1
+	}
+	maxInstr := 8
+	if full {
+		maxInstr = 0
+	}
+	text := cfg.Mermaid(res.Fn, res.Order, res.Start, res.Colors, cfg.Options{
+		ShowLines: showLines,
+		MaxInstr:  maxInstr,
+	})
+	if out != "" {
+		if err := os.WriteFile(out, []byte(text), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		return 0
+	}
+	fmt.Print(text)
+	return 0
 }
 
 func cmdDisasm(args []string) int {
