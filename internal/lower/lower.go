@@ -1208,7 +1208,7 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 		}
 		// Game numeric constants (pi / deg2rad / ...) are emitted verbatim so
 		// the game resolves their exact value.
-		if builtin.RawConstants[e.Name] {
+		if _, ok := builtin.RawConstants[e.Name]; ok {
 			return &ir.Const{Raw: e.Name}
 		}
 		if isSpecialReg(e.Name) {

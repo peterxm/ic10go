@@ -387,14 +387,14 @@ var EnumConstants = map[string]float64{
 }
 
 // RawConstants are IC10 numeric constants (the game's
-// ProgrammableChip.AllConstants) emitted verbatim, so the game resolves their
-// exact double value. `nan`, `pinf` and `ninf` are handled as special literals
-// by the lexer.
-var RawConstants = map[string]bool{
-	"pi":      true,
-	"deg2rad": true,
-	"rad2deg": true,
-	"epsilon": true,
+// ProgrammableChip.AllConstants). The compiler emits the *name* verbatim so the
+// game resolves its exact double value; the test VM uses these numeric values.
+// `nan`, `pinf` and `ninf` are handled as special literals by the lexer.
+var RawConstants = map[string]float64{
+	"pi":      3.141592653589793,
+	"deg2rad": 0.0174532923847437,
+	"rad2deg": 57.2957801818848,
+	"epsilon": 2.220446049250313e-16,
 }
 
 // LogicTypes is the set of device logic type names understood by IC10. It

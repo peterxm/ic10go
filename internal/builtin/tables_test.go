@@ -101,7 +101,7 @@ func TestSorterEnumConstants(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"pi", "deg2rad", "rad2deg", "epsilon"} {
-		if !RawConstants[name] {
+		if _, ok := RawConstants[name]; !ok {
 			t.Errorf("RawConstants missing %q", name)
 		}
 	}

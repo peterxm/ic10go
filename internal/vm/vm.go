@@ -1,17 +1,34 @@
-// Package vm is a small IC10 interpreter used only for testing the compiler.
-// It models registers, the stack, device ports and batched device access well
-// enough to run compiler output and assert on resulting device state.
+// Package vm is a small IC10 interpreter used only for testing the compiler
+// (and exposed to users through `ic10c run`). It models registers, the stack,
+// device ports and batched device access well enough to run compiler output and
+// assert on resulting device state.
+//
+// It is deliberately lenient by default: unknown devices are auto-created and
+// unset values read as 0, so tests need little setup. Set Machine.Strict for
+// game-accurate device errors. Stack/operand misuse returns an error instead of
+// panicking.
 package vm
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 
 	"ic10go/internal/builtin"
 	"ic10go/internal/ic10asm"
+)
+
+// Error sentinels returned by the VM. Tests can assert on them with errors.Is.
+var (
+	ErrOperandCount    = errors.New("vm: wrong operand count")
+	ErrStackOverflow   = errors.New("vm: stack overflow")
+	ErrStackUnderflow  = errors.New("vm: stack underflow")
+	ErrDeviceNotFound  = errors.New("vm: device not found")
+	ErrUnknownDeviceID = errors.New("vm: unknown device id")
 )
 
 const (
@@ -81,16 +98,40 @@ type Machine struct {
 	// LogicByID maps IC10 logicType enum values to names, used to resolve
 	// runtime (register) logic type operands.
 	LogicByID map[int]string
+	// SelfDevice is the port the running chip is mounted on; reading its
+	// LineNumber returns the current line. Defaults to "db".
+	SelfDevice string
+	// Reagents maps a reagent hash to the prefab the device needs (rmap).
+	Reagents map[float64]float64
+	// Strict enables game-accurate device errors (DeviceNotFound /
+	// UnknownDeviceID) instead of the lenient test default.
+	Strict bool
+	// Seed seeds the deterministic rand() stream.
+	Seed int64
+	rng  *rand.Rand
 }
 
 // New returns an empty machine.
 func New() *Machine {
-	m := &Machine{Devices: map[string]*Device{}, Stack: make([]float64, stackSize), LogicByID: map[int]string{}}
+	m := &Machine{
+		Devices:    map[string]*Device{},
+		Stack:      make([]float64, stackSize),
+		LogicByID:  map[int]string{},
+		SelfDevice: "db",
+		Reagents:   map[float64]float64{},
+	}
 	for id, name := range builtin.LogicTypeNames {
 		m.LogicByID[id] = name
 	}
 	m.Regs[regSP] = 0
+	m.SetSeed(0)
 	return m
+}
+
+// SetSeed reseeds the deterministic rand() stream.
+func (m *Machine) SetSeed(seed int64) {
+	m.Seed = seed
+	m.rng = rand.New(rand.NewPCG(uint64(seed), 0x9E3779B97F4A7C15))
 }
 
 // logicName resolves a device logic type operand, which may be a name or a
@@ -135,14 +176,24 @@ func (m *Machine) dev(s string) *Device { return m.Device(m.devName(s)) }
 
 // deviceArg resolves a get/put device operand: a port (d0..d5/db) or device
 // register (drN) selects the port, otherwise the operand is a device id.
-func (m *Machine) deviceArg(s string) *Device {
+func (m *Machine) deviceArg(s string) (*Device, error) {
 	if s == "db" || (len(s) == 2 && s[0] == 'd' && s[1] >= '0' && s[1] <= '5') {
-		return m.dev(s)
+		d := m.dev(s)
+		return d, m.checkDevice(d)
 	}
 	if len(s) >= 3 && s[0] == 'd' && s[1] == 'r' {
-		return m.dev(s)
+		d := m.dev(s)
+		return d, m.checkDevice(d)
 	}
 	return m.deviceByID(mustNum(m, s))
+}
+
+// checkDevice enforces the strict device-connected check (a no-op by default).
+func (m *Machine) checkDevice(d *Device) error {
+	if m.Strict && !d.Set {
+		return fmt.Errorf("%w: %s", ErrDeviceNotFound, d.Name)
+	}
+	return nil
 }
 
 // devName resolves device-register operands (dr15, drr0) to a port name and
@@ -253,6 +304,9 @@ func Parse(src string) (*Program, error) {
 		Symbols: map[string]string{},
 	}
 	for k, v := range builtin.EnumConstants {
+		prog.Symbols[k] = strconv.FormatFloat(v, 'g', -1, 64)
+	}
+	for k, v := range builtin.RawConstants {
 		prog.Symbols[k] = strconv.FormatFloat(v, 'g', -1, 64)
 	}
 	for name, id := range builtin.LogicTypeIDs {
@@ -396,7 +450,74 @@ func (m *Machine) target(s string) (int, error) {
 // Execution
 // ---------------------------------------------------------------------------
 
+// opArity is the fixed operand count for every non-branch instruction the VM
+// understands. It is checked before dispatch so a malformed line returns an
+// error instead of panicking on an out-of-range operand index.
+var opArity = map[string]int{
+	"move": 2, "select": 4, "rand": 1, "not": 2, "neg": 2,
+	"add": 3, "sub": 3, "mul": 3, "div": 3, "mod": 3, "pow": 3, "atan2": 3, "min": 3, "max": 3,
+	"and": 3, "or": 3, "xor": 3, "nor": 3, "sll": 3, "sra": 3, "srl": 3, "sla": 3, "rol": 3, "ror": 3,
+	"ext": 4, "ins": 4, "clamp": 4, "lerp": 4,
+	"abs": 2, "sgn": 2, "sqrt": 2, "exp": 2, "log": 2, "floor": 2, "ceil": 2,
+	"round": 2, "trunc": 2, "sin": 2, "cos": 2, "tan": 2, "asin": 2, "acos": 2, "atan": 2,
+	"seq": 3, "sne": 3, "slt": 3, "sle": 3, "sgt": 3, "sge": 3,
+	"sap": 4, "sna": 4, "sapz": 3, "snaz": 3,
+	"seqz": 2, "snez": 2, "sltz": 2, "slez": 2, "sgtz": 2, "sgez": 2, "snan": 2, "snanz": 2,
+	"l": 3, "ld": 3, "sd": 3, "lr": 4, "s": 3, "ls": 4, "ss": 4,
+	"lb": 4, "lbn": 5, "lbs": 5, "lbns": 6,
+	"sb": 3, "sbn": 4, "sbs": 4,
+	"push": 1, "pop": 1, "peek": 1, "poke": 2,
+	"sdse": 2, "sdns": 2, "rmap": 3, "get": 3, "put": 3, "getd": 3, "putd": 3,
+	"clr": 1, "clrd": 1,
+	"yield": 0, "sleep": 1, "hcf": 0, "j": 1, "jal": 1, "jr": 1,
+}
+
+// checkArity validates the operand count of a non-branch instruction.
+func checkArity(ins *Instr) error {
+	n, ok := opArity[ins.Op]
+	if !ok {
+		return nil // unknown op: let execOp report it
+	}
+	if len(ins.Args) != n {
+		return fmt.Errorf("%w: %q expects %d operands, got %d", ErrOperandCount, ins.Op, n, len(ins.Args))
+	}
+	return nil
+}
+
+// checkBranchArity validates a branch's operand count from its condition.
+func checkBranchArity(ins *Instr) error {
+	cond, _, _, ok := ic10asm.BranchInfo(ins.Op)
+	if !ok {
+		return fmt.Errorf("unsupported branch %q", ins.Op)
+	}
+	if n := ic10asm.TargetIndex(cond) + 1; len(ins.Args) != n {
+		return fmt.Errorf("%w: %q expects %d operands, got %d", ErrOperandCount, ins.Op, n, len(ins.Args))
+	}
+	return nil
+}
+
+// stackAt validates a stack address against a stack's length.
+func stackAt(stack []float64, addr float64) (int, error) {
+	i := int(addr)
+	if i < 0 {
+		return 0, fmt.Errorf("%w: address %d", ErrStackUnderflow, i)
+	}
+	if i >= len(stack) {
+		return 0, fmt.Errorf("%w: address %d", ErrStackOverflow, i)
+	}
+	return i, nil
+}
+
 func (m *Machine) exec(ins *Instr, next *int) error {
+	if isBranch(ins.Op) {
+		if err := checkBranchArity(ins); err != nil {
+			return err
+		}
+		return m.execBranch(ins, next)
+	}
+	if err := checkArity(ins); err != nil {
+		return err
+	}
 	switch ins.Op {
 	case "yield":
 		m.Ticks++
@@ -484,7 +605,7 @@ func (m *Machine) execOp(ins *Instr) error {
 		"sin", "cos", "tan", "asin", "acos", "atan":
 		return m.unOp(ins.Op, a[0], a[1])
 	case "rand":
-		return m.setDst(a[0], 0)
+		return m.setDst(a[0], m.rng.Float64())
 	case "clamp":
 		v := mustNum(m, a[1])
 		lo := mustNum(m, a[2])
@@ -502,16 +623,43 @@ func (m *Machine) execOp(ins *Instr) error {
 		return m.cmpZeroOp(ins.Op, a[0], a[1])
 	case "l":
 		dst, _ := m.reg(a[0])
-		m.Regs[dst] = m.dev(a[1]).Values[m.logicName(a[2])]
+		d := m.dev(a[1])
+		if err := m.checkDevice(d); err != nil {
+			return err
+		}
+		logic := m.logicName(a[2])
+		if logic == "LineNumber" && d.Name == m.SelfDevice {
+			m.Regs[dst] = float64(ins.Line)
+			return nil
+		}
+		m.Regs[dst] = d.Values[logic]
 		return nil
 	case "ld":
 		dst, _ := m.reg(a[0])
-		m.Regs[dst] = m.deviceByID(mustNum(m, a[1])).Values[m.logicName(a[2])]
+		d, err := m.deviceByID(mustNum(m, a[1]))
+		if err != nil {
+			return err
+		}
+		if err := m.checkDevice(d); err != nil {
+			return err
+		}
+		logic := m.logicName(a[2])
+		if logic == "LineNumber" && d.Name == m.SelfDevice {
+			m.Regs[dst] = float64(ins.Line)
+			return nil
+		}
+		m.Regs[dst] = d.Values[logic]
 		return nil
 	case "sd":
+		d, err := m.deviceByID(mustNum(m, a[0]))
+		if err != nil {
+			return err
+		}
+		if err := m.checkDevice(d); err != nil {
+			return err
+		}
 		logic := m.logicName(a[1])
 		v := mustNum(m, a[2])
-		d := m.deviceByID(mustNum(m, a[0]))
 		d.Values[logic] = v
 		if m.OnWrite != nil {
 			m.OnWrite(d.Name, logic, v)
@@ -519,25 +667,45 @@ func (m *Machine) execOp(ins *Instr) error {
 		return nil
 	case "lr":
 		dst, _ := m.reg(a[0])
+		d := m.dev(a[1])
+		if err := m.checkDevice(d); err != nil {
+			return err
+		}
 		key := mustNum(m, a[3])
-		m.Regs[dst] = m.dev(a[1]).Reagents[key]
+		m.Regs[dst] = d.Reagents[key]
 		return nil
 	case "s":
+		d := m.dev(a[0])
+		if err := m.checkDevice(d); err != nil {
+			return err
+		}
 		logic := m.logicName(a[1])
 		v := mustNum(m, a[2])
-		m.dev(a[0]).Values[logic] = v
+		d.Values[logic] = v
 		if m.OnWrite != nil {
 			m.OnWrite(m.devName(a[0]), logic, v)
 		}
 		return nil
 	case "ls":
 		dst, _ := m.reg(a[0])
+		name := m.devName(a[1])
+		if err := m.checkDevice(m.Device(name)); err != nil {
+			return err
+		}
+		if a[3] == "LineNumber" && name == m.SelfDevice {
+			m.Regs[dst] = float64(ins.Line)
+			return nil
+		}
 		slot, _ := m.num(a[2])
-		m.Regs[dst] = m.GetSlot(m.devName(a[1]), int(slot), a[3])
+		m.Regs[dst] = m.GetSlot(name, int(slot), a[3])
 		return nil
 	case "ss":
+		name := m.devName(a[0])
+		if err := m.checkDevice(m.Device(name)); err != nil {
+			return err
+		}
 		slot, _ := m.num(a[1])
-		m.SetSlot(m.devName(a[0]), int(slot), a[2], mustNum(m, a[3]))
+		m.SetSlot(name, int(slot), a[2], mustNum(m, a[3]))
 		return nil
 	case "lb", "lbn", "lbs", "lbns":
 		return m.batchLoad(ins.Op, a)
@@ -547,7 +715,7 @@ func (m *Machine) execOp(ins *Instr) error {
 		v := mustNum(m, a[0])
 		sp := int(m.Regs[regSP])
 		if sp < 0 || sp >= stackSize {
-			return fmt.Errorf("stack overflow")
+			return fmt.Errorf("%w: sp=%d", ErrStackOverflow, sp)
 		}
 		m.Stack[sp] = v
 		m.Regs[regSP] = float64(sp + 1)
@@ -555,19 +723,22 @@ func (m *Machine) execOp(ins *Instr) error {
 	case "pop":
 		sp := int(m.Regs[regSP]) - 1
 		if sp < 0 {
-			return fmt.Errorf("stack underflow")
+			return fmt.Errorf("%w: sp=%d", ErrStackUnderflow, sp)
 		}
 		m.Regs[regSP] = float64(sp)
 		return m.setDst(a[0], m.Stack[sp])
 	case "peek":
 		sp := int(m.Regs[regSP]) - 1
 		if sp < 0 {
-			return fmt.Errorf("stack underflow")
+			return fmt.Errorf("%w: sp=%d", ErrStackUnderflow, sp)
 		}
 		return m.setDst(a[0], m.Stack[sp])
 	case "poke":
-		addr, _ := m.num(a[0])
-		m.Stack[int(addr)] = mustNum(m, a[1])
+		i, err := stackAt(m.Stack, mustNum(m, a[0]))
+		if err != nil {
+			return err
+		}
+		m.Stack[i] = mustNum(m, a[1])
 		return nil
 	case "sdse":
 		dst, _ := m.reg(a[0])
@@ -586,24 +757,54 @@ func (m *Machine) execOp(ins *Instr) error {
 		}
 		return nil
 	case "rmap":
-		return m.setDst(a[0], 0)
+		dst, _ := m.reg(a[0])
+		m.Regs[dst] = m.Reagents[mustNum(m, a[2])]
+		return nil
 	case "get":
 		dst, _ := m.reg(a[0])
-		addr, _ := m.num(a[2])
-		m.Regs[dst] = m.deviceArg(a[1]).Stack[int(addr)]
+		d, err := m.deviceArg(a[1])
+		if err != nil {
+			return err
+		}
+		i, err := stackAt(d.Stack, mustNum(m, a[2]))
+		if err != nil {
+			return err
+		}
+		m.Regs[dst] = d.Stack[i]
 		return nil
 	case "put":
-		addr, _ := m.num(a[1])
-		m.deviceArg(a[0]).Stack[int(addr)] = mustNum(m, a[2])
+		d, err := m.deviceArg(a[0])
+		if err != nil {
+			return err
+		}
+		i, err := stackAt(d.Stack, mustNum(m, a[1]))
+		if err != nil {
+			return err
+		}
+		d.Stack[i] = mustNum(m, a[2])
 		return nil
 	case "getd":
 		dst, _ := m.reg(a[0])
-		addr, _ := m.num(a[2])
-		m.Regs[dst] = m.deviceByID(mustNum(m, a[1])).Stack[int(addr)]
+		d, err := m.deviceByID(mustNum(m, a[1]))
+		if err != nil {
+			return err
+		}
+		i, err := stackAt(d.Stack, mustNum(m, a[2]))
+		if err != nil {
+			return err
+		}
+		m.Regs[dst] = d.Stack[i]
 		return nil
 	case "putd":
-		addr, _ := m.num(a[1])
-		m.deviceByID(mustNum(m, a[0])).Stack[int(addr)] = mustNum(m, a[2])
+		d, err := m.deviceByID(mustNum(m, a[0]))
+		if err != nil {
+			return err
+		}
+		i, err := stackAt(d.Stack, mustNum(m, a[1]))
+		if err != nil {
+			return err
+		}
+		d.Stack[i] = mustNum(m, a[2])
 		return nil
 	case "clr":
 		d := m.dev(a[0])
@@ -617,7 +818,10 @@ func (m *Machine) execOp(ins *Instr) error {
 		d.Stack = make([]float64, stackSize)
 		return nil
 	case "clrd":
-		d := m.deviceByID(mustNum(m, a[0]))
+		d, err := m.deviceByID(mustNum(m, a[0]))
+		if err != nil {
+			return err
+		}
 		if d.Name == "db" {
 			for i := range d.Stack {
 				d.Stack[i] = 0
@@ -630,13 +834,16 @@ func (m *Machine) execOp(ins *Instr) error {
 	return fmt.Errorf("unsupported instruction %q", ins.Op)
 }
 
-func (m *Machine) deviceByID(id float64) *Device {
+func (m *Machine) deviceByID(id float64) (*Device, error) {
 	for _, d := range m.order {
 		if v, ok := d.Values["ReferenceId"]; ok && v == id {
-			return d
+			return d, nil
 		}
 	}
-	return m.Device("db")
+	if m.Strict {
+		return nil, fmt.Errorf("%w: %v", ErrUnknownDeviceID, id)
+	}
+	return m.Device("db"), nil
 }
 
 func (m *Machine) setDst(reg string, v float64) error {

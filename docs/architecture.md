@@ -409,6 +409,8 @@ ic10go/
 - mock 设备模型（可脚本化读写逻辑类型）
 - 端到端测试：`.icg` → 编译 → VM 执行 → 断言设备状态
 - 作为优化器的语义回归基准
+- 健壮性：操作数 arity 与栈越界返回错误（不 panic）
+- 保真：游戏常量（`pi`/`deg2rad`/…）、`LineNumber`、确定性 `rand`、`rmap`、可选严格设备语义；详见 [`vm-improvements.md`](vm-improvements.md)
 
 ---
 
