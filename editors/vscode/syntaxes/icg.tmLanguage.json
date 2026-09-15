@@ -64,6 +64,7 @@
     },
     "numbers": {
       "patterns": [
+        { "name": "constant.numeric.unit.icg", "match": "\\b[0-9][0-9_]*(\\.[0-9_]+)?([eE][+-]?[0-9]+)?(GPa|MPa|kPa|kW|MW|ms|min|deg|rad|pct|bar|psi|Pa|W|s|h|%|c|C|f|F|k|K)(?![A-Za-z0-9_])" },
         { "name": "constant.numeric.hex.icg", "match": "\\b0[xX][0-9a-fA-F_]+" },
         { "name": "constant.numeric.binary.icg", "match": "\\b0[bB][01_]+" },
         { "name": "constant.numeric.float.icg", "match": "\\b[0-9][0-9_]*\\.[0-9_]+([eE][+-]?[0-9]+)?" },

@@ -244,6 +244,21 @@ func TestParseUnits(t *testing.T) {
 		{"101325Pa", 101.325},
 		{"1bar", 100},
 		{"1MPa", 1000},
+		// power -> W
+		{"1.5kW", 1500},
+		{"2MW", 2e6},
+		{"3W", 3},
+		// time -> s
+		{"500ms", 0.5},
+		{"2min", 120},
+		{"1h", 3600},
+		{"90s", 90},
+		// angle: no conversion
+		{"180deg", 180},
+		{"1rad", 1},
+		// ratio
+		{"50%", 0.5},
+		{"30pct", 0.3},
 		// plain numbers
 		{"42", 42},
 		{"0x1f", 31},

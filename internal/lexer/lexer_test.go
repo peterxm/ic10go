@@ -113,7 +113,7 @@ func TestOperators(t *testing.T) {
 }
 
 func TestUnitSuffix(t *testing.T) {
-	toks, diags := lex(t, "20c 68f 300k 1.5C 20.1MPa 101.3kPa 101325Pa 1bar 0x1f 0b10")
+	toks, diags := lex(t, "20c 68f 300k 1.5C 20.1MPa 101.3kPa 101325Pa 1bar 1.5kW 2MW 3W 500ms 2min 1h 90s 180deg 1rad 50% 30pct 0x1f 0b10")
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags.Diags)
 	}
@@ -123,7 +123,11 @@ func TestUnitSuffix(t *testing.T) {
 			texts = append(texts, tk.Text)
 		}
 	}
-	want := []string{"20c", "68f", "300k", "1.5C", "20.1MPa", "101.3kPa", "101325Pa", "1bar", "0x1f", "0b10"}
+	want := []string{
+		"20c", "68f", "300k", "1.5C", "20.1MPa", "101.3kPa", "101325Pa", "1bar",
+		"1.5kW", "2MW", "3W", "500ms", "2min", "1h", "90s", "180deg", "1rad", "50%", "30pct",
+		"0x1f", "0b10",
+	}
 	if len(texts) != len(want) {
 		t.Fatalf("number texts = %v, want %v", texts, want)
 	}
@@ -147,6 +151,32 @@ func TestUnitSuffixBoundary(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("kinds = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestPercentVsModulo(t *testing.T) {
+	// `50%` is a percent literal, but `50%2` / `50 % 2` are modulo because the
+	// `%` is followed by (or separated from) an operand.
+	cases := []struct {
+		in   string
+		want []token.Kind
+	}{
+		{"50%", []token.Kind{token.Number, token.Semicolon, token.EOF}},
+		{"50%2", []token.Kind{token.Number, token.Percent, token.Number, token.Semicolon, token.EOF}},
+		{"50 % 2", []token.Kind{token.Number, token.Percent, token.Number, token.Semicolon, token.EOF}},
+		{"a%2", []token.Kind{token.Ident, token.Percent, token.Number, token.Semicolon, token.EOF}},
+	}
+	for _, c := range cases {
+		toks, _ := lex(t, c.in)
+		got := kinds(toks)
+		if len(got) != len(c.want) {
+			t.Fatalf("%q: kinds = %v, want %v", c.in, got, c.want)
+		}
+		for i := range c.want {
+			if got[i] != c.want[i] {
+				t.Fatalf("%q: kinds = %v, want %v", c.in, got, c.want)
+			}
 		}
 	}
 }

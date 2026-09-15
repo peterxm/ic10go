@@ -6,14 +6,16 @@ import (
 )
 
 // Unit describes a numeric-literal suffix and its conversion into the game's
-// base unit: Kelvin for temperature, kPa for pressure.
+// base unit: Kelvin for temperature, kPa for pressure, W for power, seconds for
+// time, a 0..1 ratio for percent.
 type Unit struct {
 	Name    string
 	Convert func(float64) float64
 }
 
 // Units lists the recognized suffixes, longest first so that e.g. "kPa" is
-// preferred over "k".
+// preferred over "k". The lexer also requires the byte after a suffix to be a
+// non-identifier, so "20count" is not read as "20c".
 var Units = []Unit{
 	// pressure -> kPa
 	{"MPa", func(v float64) float64 { return v * 1000 }},
@@ -22,6 +24,22 @@ var Units = []Unit{
 	{"bar", func(v float64) float64 { return v * 100 }},
 	{"psi", func(v float64) float64 { return v * 6.894757293168361 }},
 	{"Pa", func(v float64) float64 { return v * 0.001 }},
+	// power -> W
+	{"kW", func(v float64) float64 { return v * 1000 }},
+	{"MW", func(v float64) float64 { return v * 1e6 }},
+	{"W", func(v float64) float64 { return v }},
+	// time -> s
+	{"ms", func(v float64) float64 { return v * 0.001 }},
+	{"min", func(v float64) float64 { return v * 60 }},
+	{"h", func(v float64) float64 { return v * 3600 }},
+	{"s", func(v float64) float64 { return v }},
+	// angle: readability only, no conversion (device angles are degrees; IC10
+	// trig takes radians, so convert explicitly when needed).
+	{"deg", func(v float64) float64 { return v }},
+	{"rad", func(v float64) float64 { return v }},
+	// ratio: 50% -> 0.5
+	{"pct", func(v float64) float64 { return v * 0.01 }},
+	{"%", func(v float64) float64 { return v * 0.01 }},
 	// temperature -> K
 	{"c", func(v float64) float64 { return v + 273.15 }},
 	{"C", func(v float64) float64 { return v + 273.15 }},
