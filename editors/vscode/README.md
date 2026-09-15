@@ -36,7 +36,7 @@
 - `d0.` → 该端口的 logic type；`d0.slot[0].` → 槽位属性
 - `batch.` → `read` / `readName` / `readSlot` / `write` …
 - `sorter.` / `printer.` → 设备栈指令构建器（`filterSortingClass`、`executeRecipe` …）
-- `SorterInstruction.` / `PrinterInstruction.` / `TraderInstruction.` / `ConditionOperation.` / `LogicReagentMode.` / `SorterStack.` / `PrinterStack.` / `LogicType.` / `DisplayMode.` / `Sound.` / `Color.` / `PowerMode.` → 枚举成员
+- `SorterInstruction.` / `PrinterInstruction.` / `TraderInstruction.` / `ConditionOperation.` / `LogicReagentMode.` / `SorterStack.` / `PrinterStack.` / `LogicType.` / `LogicSlotType.` / `LogicBatchMethod.` / `DisplayMode.` / `Sound.` / `Color.` / `PowerMode.` / `AirCon.` / `GasType.` / `RobotMode.` / `ShuttleType.` 等 → 枚举成员（补全项由 `EnumConstants` 自动派生）
 - 普通位置 → 当前文件的函数 / 常量 / 变量 / 标签 + 内建 + 设备端口
 
 **文档**（悬停与补全项）示例：
