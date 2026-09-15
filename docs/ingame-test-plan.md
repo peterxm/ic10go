@@ -131,14 +131,34 @@ func main() {
 func main() {
     for {
         yield()
-        d0.Setting = readReagent(d2, ReagentMode.Contents, hash("Oxygen"))
+        d0.Setting = readReagent(d2, LogicReagentMode.Contents, hash("Oxygen"))
     }
 }
 ```
 
 期望：LED 显示该设备中氧气的含量（具体数值取决于设备状态）。
 > 若设备无该试剂，读数为 0。此测试主要确认不报错、能读取。
-> `ReagentMode` 可取 `Contents`(0) / `Required`(1) / `Recipe`(2) / `TotalContents`(3)。
+> `LogicReagentMode` 可取 `Contents`(0) / `Required`(1) / `Recipe`(2) / `TotalContents`(3)。
+
+### 2.5 `readById` / `writeById`（IC10 `ld` / `sd`，可选）
+
+用同一个带 `ReferenceId` 的设备接 `d2`（如 Logic Sorter）。
+
+```go
+func main() {
+    for {
+        yield()
+        id := d2.ReferenceId
+        writeById(id, LogicType.On, 1)          // sd <id> On 1
+        v := readById(id, LogicType.On)          // ld <id> On
+        d2.stack[0] = v                          // put d2 0 v
+        d0.Setting = d2.stack[0]                 // get d2 0
+    }
+}
+```
+
+期望 LED：`1`（写入并读回 On，再经设备栈往返）。真机上确认 `ld` / `sd` 不报
+`DeviceNotFound`，且 `d2.stack[...]` 生成的 `get`/`put` 正常。
 
 ---
 

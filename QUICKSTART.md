@@ -136,6 +136,8 @@ d0.On = t > 300            // s d0 On (...)
 m := d2.slot[0].Mature     // ls r d2 0 Mature
 d2.slot[0].Harvest = 1     // ss d2 0 Harvest 1
 d0.channel[0][3] = t       // s d0:0 Channel3 t
+d0.stack[0] = 123          // put d0 0 123（设备内部栈）
+v := d0.stack[0]           // get d0 0
 ```
 
 ### 控制流
@@ -210,6 +212,8 @@ d2.Mode = rmap(d3, hash("Iron"))
 d0.On = isSet(d1)
 d0.Setting = approx(x, y, 0.1)
 d0.Setting = str("Ready!")
+d0.Setting = readById(id, LogicType.Temperature)   // 按 ReferenceId 读（ld）
+d0.Setting = raw("SomeGameConstant")               // 原样输出（枚举/关键字逃生口）
 ```
 
 完整语法见 [`docs/spec.md`](docs/spec.md)。

@@ -219,6 +219,9 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
     `JumpToAddress`(5) / `DeviceSetLock`(6) / `EjectReagent`(7) /
     `EjectAllReagents`(8) / `MissingRecipeReagent`(9)
   - `TraderInstruction.*`（Medium Satellite Dish，0..18）
+  - 栈容量 / 固定地址（编译器便利常量，非游戏枚举）：`Stack.Size`(512) /
+    `SorterStack.Size`(32) / `PrinterStack.Size`(64) / `PrinterStack.StackPointer`(63) /
+    `PrinterStack.MissingRecipeReagent`(54)
   - `Color.Blue`(0) / `Gray`(1) / `Green`(2) / `Orange`(3) / `Red`(4) / `Yellow`(5)
     / `White`(6) / `Black`(7) / `Brown`(8) / `Khaki`(9) / `Pink`(10) / `Purple`(11)
     （`LogicType.Color` 设备颜色；>11 视作 Purple，<0 视作 Blue）

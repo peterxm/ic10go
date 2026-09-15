@@ -500,15 +500,29 @@ if isStoreValid(d0, "On") { ... }             // d0 是否支持写 On
 ### 7.7 设备栈与按 id 访问
 
 ```go
-v := get(d0, addr)          // 读取设备内存地址
-put(d0, addr, value)        // 写入
-v = getd(id, addr)          // 按设备 id 而非端口（生成统一 get）
-putd(id, addr, value)       // （生成统一 put）
+v := d0.stack[addr]         // 读取设备栈（get 语法糖）
+d0.stack[addr] = value      // 写入设备栈（put 语法糖）
+id := d2.ReferenceId
+id.stack[0] = v             // 设备操作数也可为 id / 寄存器
+
+get(dev, addr)              // dev 可为端口 dN/db、设备 id 或保存 id 的寄存器
+put(dev, addr, value)
+getd(id, addr)              // 等价 get，按设备 id
+putd(id, addr, value)
 clr(d0)                     // 清空设备
 clrById(id)                 // 按设备 id 清空（clrd）
-readReagent(d0, ReagentMode.Contents, hash("Oxygen"))  // 读取反应物（lr）
+readById(id, LogicType.Temperature)   // 按 id 读逻辑类型（ld）
+writeById(id, LogicType.On, 1)        // 按 id 写逻辑类型（sd）
+readDevSlot(reg, i, Occupied)         // 运行期端口槽位（ls drN）
+writeDevSlot(reg, i, On, 1)           // （ss drN）
+readReagent(d0, LogicReagentMode.Contents, hash("Oxygen"))  // 读取反应物（lr）
 d2.Mode = rmap(d3, hash("Iron"))   // 反向映射试剂
 ```
+
+> 游戏的 `get` / `put` 的 device 操作数是 `d?|r?|id`；`getd`/`putd` 是按 id 的别名，
+> 编译器统一生成 `get` / `put`（独立的 `getd`/`putd` 已弃用）。分拣器 / 打印机的
+> 内部栈指令可用 `sorter.*` / `printer.*` 构建器打包，见
+> [`docs/spec.md`](docs/spec.md) §8.7。
 
 ### 7.8 持久栈数据段（进阶）
 
@@ -844,10 +858,12 @@ push(x)  y := pop()  z := peek()  poke(addr, v)
 approx(a, b, tol)  approxZero(a, tol)
 notApprox(a, b, tol)  notApproxZero(a, tol)
 nan  pinf  ninf  isNaN(x)  isNotNaN(x)
-hash("...")  str("...")
-read(dev, lt)  write(dev, lt, v)
+hash("...")  str("...")  raw("...")   // raw 原样输出 IC10 操作数（枚举/关键字逃生口）
+read(dev, lt)  write(dev, lt, v)  readById(id, lt)  writeById(id, lt, v)
 isSet(dev)  isUnset(dev)  isLoadValid(dev, "lt")  isStoreValid(dev, "lt")
-clr(dev)  clrById(id)  readReagent(dev, ReagentMode.Contents, key)
+get(dev, addr)  put(dev, addr, v)  clr(dev)  clrById(id)
+readDevSlot(reg, i, slt)  writeDevSlot(reg, i, slt, v)  // ls/ss drN
+readReagent(dev, LogicReagentMode.Contents, key)  rmap(dev, hash)
 logicalNor(a, b)   // 按位或非（nor）
 rol(a, b)  ror(a, b)  sla(a, b)  srl(a, b)   // 旋转 / 移位（位运算，整数语义）
 ```

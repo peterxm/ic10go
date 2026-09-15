@@ -258,10 +258,14 @@ Ret
 | `d.slot[i].X` | `ls d d i X` |
 | `d.slot[i].X = v` | `ss d i X v` |
 | `d.channel[c][n]` | `l d d:c Channel<n>` |
+| `d.stack[i]` / `d.stack[i] = v` | `get d i` / `put d i v` |
 | `read(d, lt)` / `write(d, lt, v)` | `l r d (r_lt)` / `s d (r_lt) v` |
+| `readById(id, lt)` / `writeById(id, lt, v)` | `ld r (id) (r_lt)` / `sd (id) (r_lt) v` |
 | `readDev(i, lt)` / `writeDev(i, lt, v)` | `l r drN (r_lt)` / `s drN (r_lt) v` |
+| `readDevSlot(i, n, slt)` / `writeDevSlot(i, n, slt, v)` | `ls r drN n slt` / `ss drN n slt v` |
 | `ireg(p)` / `setIreg(p, v)` | `move r rrN` / `move rrN r` |
 | `batch.read(...)` | `lb ...` |
+| `sorter.*` / `printer.*` | 编译期按位段打包为常量（再 `put` 到设备栈） |
 | `yield()` | `yield` |
 
 立即数策略：IC10 多数指令允许立即数操作数，常量直接内联，避免额外 `move`。
