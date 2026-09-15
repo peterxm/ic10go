@@ -297,6 +297,9 @@ func TestCompletionContext(t *testing.T) {
 		notWant string
 	}{
 		{"device logic type", "d0.", `{"line":0,"character":3}`, "Temperature", `"label":"func"`},
+		{"battery output power", "d2.", `{"line":0,"character":3}`, "PowerActual", `"label":"func"`},
+		{"battery input power", "d2.", `{"line":0,"character":3}`, "PowerPotential", `"label":"func"`},
+		{"generator power", "d1.", `{"line":0,"character":3}`, "PowerGeneration", `"label":"func"`},
 		{"batch method", "batch.", `{"line":0,"character":6}`, "readName", "Temperature"},
 		{"sorter method", "sorter.", `{"line":0,"character":7}`, "filterSortingClass", "Temperature"},
 		{"printer method", "printer.", `{"line":0,"character":8}`, "executeRecipe", "Temperature"},
@@ -605,5 +608,18 @@ func TestIC10Formatting(t *testing.T) {
 	out := openAndRequest(t, "f.ic", "move   r0   1\nadd r1 2 3\n", "textDocument/formatting", "")
 	if !strings.Contains(out, `"newText"`) || !strings.Contains(out, "move r0 1") {
 		t.Errorf("native IC10 formatting failed:\n%s", out)
+	}
+}
+
+func TestHoverBatteryPower(t *testing.T) {
+	src := "func main() { d2.Setting = d2.PowerActual + d2.PowerPotential }"
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"bp.icg","text":`+jsonString(src)+`}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"bp.icg"},"position":{"line":0,"character":34}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "PowerActual") {
+		t.Errorf("hover did not describe PowerActual:\n%s", out)
 	}
 }
