@@ -53,9 +53,14 @@
 sh editors/vscode/install.sh
 ```
 
-它会把扩展复制到 `~/.vscode/extensions/ic10go.icg-<版本>/`（版本读取自 `package.json`），并带上语法、片段与语言包。
+它优先用 `code` CLI 安装 `.vsix`（会同步更新 VSCode 的扩展注册表，避免旧版本
+指向已删除目录）；`code` 不可用时才回退为复制到
+`~/.vscode/extensions/ic10go.icg-<版本>/`（版本读取自 `package.json`）。
 
 然后按 `Ctrl+Shift+P` → **Developer: Reload Window** 重启 VSCode。
+
+> 回退复制**不会**更新注册表：若之前装过旧版本，请先在扩展视图卸载
+> `ic10go.icg`，或用 `code --install-extension <vsix> --force` 安装。
 
 ## 三、准备 `ic10c`
 

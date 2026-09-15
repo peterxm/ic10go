@@ -86,7 +86,7 @@ ic10c help   [command]        # 帮助（中英双语，-L en|zh 切换）
 编辑器：安装 VSCode 扩展获得语法高亮、诊断与补全：
 
 ```bash
-sh editors/vscode/install.sh   # 安装到 ~/.vscode/extensions
+sh editors/vscode/install.sh   # 优先用 code CLI 安装 .vsix，回退到复制到 ~/.vscode/extensions
 ```
 
 详见 [`editors/vscode/README.md`](editors/vscode/README.md)。
