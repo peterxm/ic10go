@@ -15,6 +15,7 @@ import (
 	"ic10go/internal/decomp"
 	"ic10go/internal/diag"
 	"ic10go/internal/disasm"
+	"ic10go/internal/ic10asm"
 	"ic10go/internal/lexer"
 	"ic10go/internal/lsp"
 	"ic10go/internal/minify"
@@ -590,11 +591,14 @@ func cmdSize(args []string) int {
 
 func cmdFmt(args []string) int {
 	write := false
+	noAlign := false
 	var files []string
 	for _, a := range args {
 		switch a {
 		case "-w", "--write":
 			write = true
+		case "--no-align":
+			noAlign = true
 		default:
 			files = append(files, a)
 		}
@@ -608,14 +612,24 @@ func cmdFmt(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	ic10Hint(files[0])
-	out, diags, err := ic10.Format(files[0], data)
-	if rc := report(source.NewFile(files[0], data), diags); rc != 0 {
-		return rc
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "ic10c:", err)
-		return 1
+	var out string
+	if isNativeIC10(files[0]) {
+		if noAlign {
+			out = ic10asm.Format(string(data))
+		} else {
+			out = ic10asm.FormatAligned(string(data))
+		}
+	} else {
+		ic10Hint(files[0])
+		formatted, diags, ferr := ic10.Format(files[0], data)
+		if rc := report(source.NewFile(files[0], data), diags); rc != 0 {
+			return rc
+		}
+		if ferr != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", ferr)
+			return 1
+		}
+		out = formatted
 	}
 	if write {
 		if err := os.WriteFile(files[0], []byte(out), 0o644); err != nil {
@@ -626,6 +640,11 @@ func cmdFmt(args []string) int {
 	}
 	fmt.Print(out)
 	return 0
+}
+
+// isNativeIC10 reports whether a path is a native IC10 source file.
+func isNativeIC10(path string) bool {
+	return strings.HasSuffix(path, ".ic") || strings.HasSuffix(path, ".ic10")
 }
 
 func cmdDisasm(args []string) int {

@@ -16,6 +16,7 @@ import (
 	"ic10go/internal/ast"
 	"ic10go/internal/builtin"
 	"ic10go/internal/diag"
+	"ic10go/internal/ic10asm"
 	"ic10go/internal/lexer"
 	"ic10go/internal/parser"
 	"ic10go/internal/sema"
@@ -350,9 +351,21 @@ func codeDocURL(code string) string {
 	return "https://github.com/peterxm/ic10go/blob/main/docs/spec.md#" + code
 }
 
+// isIC10URI reports whether a document URI is a native IC10 file (.ic/.ic10).
+func isIC10URI(uri string) bool {
+	return strings.HasSuffix(uri, ".ic") || strings.HasSuffix(uri, ".ic10")
+}
+
 func (s *Server) publish(w *bufio.Writer, uri string) {
 	text, ok := s.docs[uri]
 	if !ok {
+		return
+	}
+	if isIC10URI(uri) {
+		notify(w, "textDocument/publishDiagnostics", map[string]any{
+			"uri":         uri,
+			"diagnostics": ic10Diagnostics(text),
+		})
 		return
 	}
 	code, diags, err := ic10.Compile(uri, []byte(text))
@@ -421,7 +434,15 @@ type completionItem struct {
 	Kind          int            `json:"kind"`
 	Detail        string         `json:"detail,omitempty"`
 	Documentation *markupContent `json:"documentation,omitempty"`
+	TextEdit      *textEdit      `json:"textEdit,omitempty"`
 	Data          any            `json:"data,omitempty"`
+}
+
+// textEdit replaces a range with newText (used for completions inside strings,
+// where the default word range would not cover the typed prefix).
+type textEdit struct {
+	Range   lspRange `json:"range"`
+	NewText string   `json:"newText"`
 }
 
 // ci builds a completion item (positional literals no longer compile with the
@@ -440,7 +461,18 @@ type markupContent struct {
 // completionItem/resolve, keeping the initial list small.
 func attachDetail(items []completionItem) []completionItem {
 	for i := range items {
-		items[i].Data = map[string]any{"label": items[i].Label}
+		data, _ := items[i].Data.(map[string]any)
+		if data == nil {
+			data = map[string]any{}
+		}
+		if _, ok := data["label"]; !ok {
+			data["label"] = items[i].Label
+		}
+		items[i].Data = data
+		// Native IC10 items keep their own signature (see resolveCompletion).
+		if k, _ := data["kind"].(string); k == "ic10" {
+			continue
+		}
 		if items[i].Detail == "batch IO" {
 			if d, ok := builtin.BatchDocs[items[i].Label]; ok {
 				items[i].Detail = d.Signature
@@ -474,10 +506,26 @@ func (s *Server) resolveCompletion(w *bufio.Writer, id json.RawMessage, params j
 		return
 	}
 	label := item.Label
+	kind := ""
 	if m, ok := item.Data.(map[string]any); ok {
 		if l, ok := m["label"].(string); ok {
 			label = l
 		}
+		if k, ok := m["kind"].(string); ok {
+			kind = k
+		}
+	}
+	if kind == "ic10" {
+		if ins, ok := builtin.IC10Instructions[strings.ToLower(label)]; ok {
+			sig := strings.ToLower(label)
+			if ins.Sig != "" {
+				sig += " " + ins.Sig
+			}
+			item.Detail = sig
+			item.Documentation = &markupContent{Kind: "markdown", Value: "```ic10\n" + sig + "\n```\n\n" + ins.Desc}
+		}
+		reply(w, id, item)
+		return
 	}
 	switch {
 	case hasDoc(builtin.Docs, label):
@@ -509,6 +557,8 @@ func (s *Server) resolveCompletion(w *bufio.Writer, id json.RawMessage, params j
 		item.Documentation = &markupContent{Kind: "markdown", Value: fmt.Sprintf("constant `%s = %v`", label, builtin.RawConstants[label])}
 	case isBatchMode(label):
 		item.Documentation = &markupContent{Kind: "markdown", Value: fmt.Sprintf("batch mode `%s = %v`", label, builtin.BatchModes[label])}
+	case isPrefab(label):
+		item.Documentation = &markupContent{Kind: "markdown", Value: fmt.Sprintf("prefab `%s` (%s) = `%d`", label, builtin.Prefabs[label], int32(builtin.Hash(label)))}
 	}
 	reply(w, id, item)
 }
@@ -528,6 +578,10 @@ func (s *Server) completion(w *bufio.Writer, id json.RawMessage, params json.Raw
 		reply(w, id, []any{})
 		return
 	}
+	if isIC10URI(p.TextDocument.URI) {
+		reply(w, id, attachDetail(ic10CompletionItems(s.docs[p.TextDocument.URI], p.Position)))
+		return
+	}
 	reply(w, id, attachDetail(completionItemsFor(s.docs[p.TextDocument.URI], p.Position)))
 }
 
@@ -536,6 +590,10 @@ func (s *Server) completion(w *bufio.Writer, id json.RawMessage, params json.Raw
 // name its members, and elsewhere keywords plus the document's own symbols.
 func completionItemsFor(text string, pos lspPosition) []completionItem {
 	off := posToOffset(text, pos)
+	// Inside hash("…") / HASH("…") complete prefab names.
+	if start, prefix, ok := hashArgContext(text, off); ok {
+		return prefabItems(text, start, off, prefix)
+	}
 	i := off
 	for i > 0 && isWordByte(text[i-1]) {
 		i--
@@ -749,6 +807,115 @@ func isBatchMode(name string) bool {
 	return ok
 }
 
+func isPrefab(name string) bool {
+	_, ok := builtin.Prefabs[name]
+	return ok
+}
+
+// hashArgContext reports whether off is inside the string argument of a
+// hash("…") / HASH("…") call, returning the string content start offset and the
+// typed prefix.
+func hashArgContext(text string, off int) (int, string, bool) {
+	j := off - 1
+	for j >= 0 && text[j] != '"' && text[j] != '\n' {
+		j--
+	}
+	if j < 0 || text[j] != '"' {
+		return 0, "", false
+	}
+	start := j + 1
+	k := j - 1
+	for k >= 0 && (text[k] == ' ' || text[k] == '\t') {
+		k--
+	}
+	if k < 0 || text[k] != '(' {
+		return 0, "", false
+	}
+	k--
+	for k >= 0 && (text[k] == ' ' || text[k] == '\t') {
+		k--
+	}
+	end := k + 1
+	for k >= 0 && isWordByte(text[k]) {
+		k--
+	}
+	if fn := text[k+1 : end]; fn != "hash" && fn != "HASH" {
+		return 0, "", false
+	}
+	return start, text[start:off], true
+}
+
+// prefabItems completes prefab names inside a hash("…") string, replacing the
+// typed prefix via a text edit (the default word range is empty in a string).
+func prefabItems(text string, contentStart, off int, prefix string) []completionItem {
+	rng := lspRange{Start: offsetToLSP(text, contentStart), End: offsetToLSP(text, off)}
+	lp := strings.ToLower(prefix)
+	items := make([]completionItem, 0, 32)
+	for name, title := range builtin.Prefabs {
+		if lp != "" &&
+			!strings.Contains(strings.ToLower(name), lp) &&
+			!strings.Contains(strings.ToLower(title), lp) {
+			continue
+		}
+		items = append(items, completionItem{
+			Label:    name,
+			Kind:     21,
+			Detail:   title,
+			TextEdit: &textEdit{Range: rng, NewText: name},
+			Data:     map[string]any{"label": name},
+		})
+	}
+	sortItems(items)
+	return items
+}
+
+// prefabHashAt parses a numeric prefab hash at pos (decimal or $hex, with an
+// optional leading '-'), normalised to its unsigned 32-bit form.
+func prefabHashAt(text string, pos lspPosition) (uint32, bool) {
+	word, start := wordAtOffset(text, pos)
+	if word == "" {
+		return 0, false
+	}
+	neg := start > 0 && text[start-1] == '-'
+	var v uint64
+	var err error
+	if start > 0 && text[start-1] == '$' {
+		v, err = strconv.ParseUint(word, 16, 64)
+	} else {
+		v, err = strconv.ParseUint(word, 10, 64)
+	}
+	if err != nil {
+		return 0, false
+	}
+	if neg {
+		v = uint64(-int64(v))
+	}
+	return uint32(v), true
+}
+
+func (s *Server) prefabText(name, title string) string {
+	h := int32(builtin.Hash(name))
+	if s.zh {
+		return fmt.Sprintf("预制体 `%s`（%s）= `%d`\n\n`hash(\"%s\")`", name, title, h, name)
+	}
+	return fmt.Sprintf("prefab `%s` (%s) = `%d`\n\n`hash(\"%s\")`", name, title, h, name)
+}
+
+// prefabHoverAt returns hover text for a prefab name or numeric prefab hash.
+func (s *Server) prefabHoverAt(text string, pos lspPosition) string {
+	if word, _ := wordAtOffset(text, pos); word != "" {
+		if title, ok := builtin.Prefabs[word]; ok {
+			return s.prefabText(word, title)
+		}
+	}
+	if h, ok := prefabHashAt(text, pos); ok {
+		if name, ok := builtin.PrefabByHash[h]; ok {
+			return s.prefabText(name, builtin.Prefabs[name])
+		}
+	}
+	return ""
+}
+
 func isDevicePort(s string) bool {
 	if s == "db" {
 		return true
@@ -871,10 +1038,16 @@ func (s *Server) formatting(w *bufio.Writer, id json.RawMessage, params json.Raw
 		reply(w, id, []any{})
 		return
 	}
-	out, diags, err := ic10.Format(p.TextDocument.URI, []byte(text))
-	if diags.HasErrors() || err != nil {
-		reply(w, id, []any{})
-		return
+	var out string
+	if isIC10URI(p.TextDocument.URI) {
+		out = ic10asm.FormatAligned(text)
+	} else {
+		formatted, diags, err := ic10.Format(p.TextDocument.URI, []byte(text))
+		if diags.HasErrors() || err != nil {
+			reply(w, id, []any{})
+			return
+		}
+		out = formatted
 	}
 	reply(w, id, []any{map[string]any{
 		"range":   lspRange{Start: lspPosition{0, 0}, End: endPosition(text)},
@@ -889,6 +1062,16 @@ func (s *Server) hover(w *bufio.Writer, id json.RawMessage, params json.RawMessa
 		return
 	}
 	text := s.docs[p.TextDocument.URI]
+	if isIC10URI(p.TextDocument.URI) {
+		if content := s.ic10Hover(text, p.Position); content != "" {
+			reply(w, id, map[string]any{
+				"contents": map[string]any{"kind": "markdown", "value": content},
+			})
+			return
+		}
+		reply(w, id, nil)
+		return
+	}
 	if recv, member := enumMemberAt(text, p.Position); recv != "" {
 		if content := s.enumMemberHover(recv, member); content != "" {
 			reply(w, id, map[string]any{
@@ -896,6 +1079,12 @@ func (s *Server) hover(w *bufio.Writer, id json.RawMessage, params json.RawMessa
 			})
 			return
 		}
+	}
+	if content := s.prefabHoverAt(text, p.Position); content != "" {
+		reply(w, id, map[string]any{
+			"contents": map[string]any{"kind": "markdown", "value": content},
+		})
+		return
 	}
 	word, start := wordAtOffset(text, p.Position)
 	content := s.hoverFor(text, word)

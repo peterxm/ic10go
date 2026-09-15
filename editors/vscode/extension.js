@@ -90,18 +90,18 @@ class LspClient {
             })
         );
         this.disposables.push(
-            vscode.languages.registerCompletionItemProvider('icg', {
+            vscode.languages.registerCompletionItemProvider(['icg', 'ic10'], {
                 provideCompletionItems: (doc, pos) => this.completion(doc, pos),
                 resolveCompletionItem: (item) => this.resolveCompletion(item),
             })
         );
         this.disposables.push(
-            vscode.languages.registerDocumentFormattingEditProvider('icg', {
+            vscode.languages.registerDocumentFormattingEditProvider(['icg', 'ic10'], {
                 provideDocumentFormattingEdits: (doc) => this.formatting(doc),
             })
         );
         this.disposables.push(
-            vscode.languages.registerHoverProvider('icg', {
+            vscode.languages.registerHoverProvider(['icg', 'ic10'], {
                 provideHover: (doc, pos) => this.hover(doc, pos),
             })
         );
@@ -152,7 +152,7 @@ class LspClient {
             })
         );
         this.disposables.push(
-            vscode.languages.registerDocumentLinkProvider('icg', {
+            vscode.languages.registerDocumentLinkProvider(['icg', 'ic10'], {
                 provideDocumentLinks: (doc) => this.documentLinks(doc),
             })
         );
@@ -616,18 +616,25 @@ class LspClient {
     // -- document events ----------------------------------------------------
 
     onOpen(doc) {
-        if (doc.languageId === 'icg' && this.initialized) this.sendDidOpen(doc);
-        else if (doc.languageId === 'ic10') this.checkIC10(doc);
+        if (doc.languageId === 'icg') {
+            if (this.initialized) this.sendDidOpen(doc, 'icg');
+            return;
+        }
+        if (doc.languageId === 'ic10') {
+            this.checkIC10(doc);
+            if (this.initialized) this.sendDidOpen(doc, 'ic10');
+        }
     }
 
     onChange(e) {
         if (e.document.languageId === 'ic10') {
             this.checkIC10(e.document);
+        } else if (e.document.languageId !== 'icg') {
             return;
         }
-        if (e.document.languageId !== 'icg' || !this.initialized) return;
+        if (!this.initialized) return;
         // Send the whole document on each (debounced) change: full sync works
-        // with every ic10c version, and .icg files are tiny, so it is not worth
+        // with every ic10c version, and the files are tiny, so it is not worth
         // depending on incremental-sync support.
         this.pendingChanges.set(e.document.uri.toString(), e.document.getText());
         clearTimeout(this.changeTimer);
@@ -650,6 +657,13 @@ class LspClient {
     onClose(doc) {
         if (doc.languageId === 'ic10') {
             this.ic10Diags.delete(doc.uri);
+            this.diags.delete(doc.uri);
+            this.pendingChanges.delete(doc.uri.toString());
+            if (this.initialized) {
+                this.notify('textDocument/didClose', {
+                    textDocument: { uri: doc.uri.toString() },
+                });
+            }
             return;
         }
         if (doc.languageId !== 'icg') return;
@@ -664,11 +678,11 @@ class LspClient {
         }
     }
 
-    sendDidOpen(doc) {
+    sendDidOpen(doc, languageId = 'icg') {
         this.notify('textDocument/didOpen', {
             textDocument: {
                 uri: doc.uri.toString(),
-                languageId: 'icg',
+                languageId,
                 version: doc.version,
                 text: doc.getText(),
             },
@@ -692,6 +706,17 @@ class LspClient {
                 if (i.detail) item.detail = i.detail;
                 if (i.documentation) {
                     item.documentation = new vscode.MarkdownString(i.documentation.value || '');
+                }
+                // A textEdit replaces a range (used for completions inside strings).
+                if (i.textEdit) {
+                    const r = i.textEdit.range;
+                    item.range = new vscode.Range(
+                        r.start.line,
+                        r.start.character,
+                        r.end.line,
+                        r.end.character
+                    );
+                    if (i.textEdit.newText) item.insertText = i.textEdit.newText;
                 }
                 // Keep the resolve payload so documentation can be fetched lazily.
                 item._data = i.data;

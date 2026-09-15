@@ -518,3 +518,92 @@ func TestHoverDeviceAlias(t *testing.T) {
 		t.Errorf("hover should describe the device alias:\n%s", out)
 	}
 }
+
+func TestCompletionPrefabHashArg(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"p.icg","text":"hash(\"Iron\")"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":"p.icg"},"position":{"line":0,"character":10}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "ItemIronOre") {
+		t.Errorf("hash(\"...\") completion missing prefabs:\n%s", out)
+	}
+	if !strings.Contains(out, `"textEdit"`) {
+		t.Errorf("prefab completion should use a textEdit:\n%s", out)
+	}
+}
+
+func TestHoverPrefabName(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"pn.icg","text":"hash(\"ItemIronOre\")"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"pn.icg"},"position":{"line":0,"character":9}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "ItemIronOre") || !strings.Contains(out, "1758427767") {
+		t.Errorf("hover did not describe the prefab:\n%s", out)
+	}
+}
+
+func TestHoverPrefabHash(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"ph.icg","text":"func main() { d0.Setting = 1758427767 }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"ph.icg"},"position":{"line":0,"character":30}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "ItemIronOre") {
+		t.Errorf("hover on a prefab hash did not resolve the name:\n%s", out)
+	}
+}
+
+func TestIC10Completion(t *testing.T) {
+	out := openAndRequest(t, "t.ic", "add r0 1 2\n", "textDocument/completion",
+		`,"position":{"line":0,"character":2}`)
+	if !strings.Contains(out, `"label":"abs"`) || !strings.Contains(out, `"label":"HASH"`) {
+		t.Errorf("native IC10 completion missing instructions:\n%s", out)
+	}
+}
+
+func TestIC10Hover(t *testing.T) {
+	out := openAndRequest(t, "t.ic", "abs r0 -5\n", "textDocument/hover",
+		`,"position":{"line":0,"character":1}`)
+	if !strings.Contains(out, "absolute value") {
+		t.Errorf("native IC10 hover missing instruction description:\n%s", out)
+	}
+}
+
+func TestIC10UnknownInstruction(t *testing.T) {
+	out := openAndRequest(t, "t.ic", "foobar r0 1\n", "textDocument/hover",
+		`,"position":{"line":0,"character":1}`)
+	if !strings.Contains(out, "unknown IC10 instruction") {
+		t.Errorf("native IC10 diagnostics missing unknown-instruction error:\n%s", out)
+	}
+}
+
+func TestIC10PrefabInHash(t *testing.T) {
+	out := openAndRequest(t, "t.ic", `HASH("Iron")`, "textDocument/completion",
+		`,"position":{"line":0,"character":10}`)
+	if !strings.Contains(out, "ItemIronOre") {
+		t.Errorf("native IC10 HASH(\"...\") completion missing prefabs:\n%s", out)
+	}
+}
+
+func TestDocumentLinkPrefab(t *testing.T) {
+	out := openAndRequest(t, "d.icg", `func main() { d0.Setting = hash("ItemIronOre") }`, "textDocument/documentLink", "")
+	if !strings.Contains(out, "stationeers-wiki.com") || !strings.Contains(out, "search=") {
+		t.Errorf("hash(\"...\") should link to the wiki:\n%s", out)
+	}
+	out = openAndRequest(t, "d2.icg", "func main() { d0.Setting = 1758427767 }", "textDocument/documentLink", "")
+	if !strings.Contains(out, "stationeers-wiki.com") {
+		t.Errorf("a numeric prefab hash should link to the wiki:\n%s", out)
+	}
+}
+
+func TestIC10Formatting(t *testing.T) {
+	out := openAndRequest(t, "f.ic", "move   r0   1\nadd r1 2 3\n", "textDocument/formatting", "")
+	if !strings.Contains(out, `"newText"`) || !strings.Contains(out, "move r0 1") {
+		t.Errorf("native IC10 formatting failed:\n%s", out)
+	}
+}

@@ -115,3 +115,17 @@ func TestLogicTypeIDsCoverChannels(t *testing.T) {
 		}
 	}
 }
+
+func TestPrefabsAndInstructions(t *testing.T) {
+	if len(Prefabs) < 1000 {
+		t.Errorf("Prefabs has %d entries, want 1000+", len(Prefabs))
+	}
+	if got := PrefabByHash[Hash("ItemIronOre")]; got != "ItemIronOre" {
+		t.Errorf("PrefabByHash[Hash(ItemIronOre)] = %q, want ItemIronOre", got)
+	}
+	for _, n := range []string{"abs", "add", "and", "l", "s", "get", "put", "yield"} {
+		if _, ok := IC10Instructions[n]; !ok {
+			t.Errorf("IC10Instructions missing %q", n)
+		}
+	}
+}

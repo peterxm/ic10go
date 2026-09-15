@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"ic10go/internal/ast"
@@ -109,7 +111,87 @@ func (s *Server) documentLink(w *bufio.Writer, id json.RawMessage, params json.R
 		reply(w, id, []any{})
 		return
 	}
-	reply(w, id, documentLinksFor(p.TextDocument.URI, s.docs[p.TextDocument.URI]))
+	links := documentLinksFor(p.TextDocument.URI, s.docs[p.TextDocument.URI])
+	links = append(links, prefabLinksFor(s.docs[p.TextDocument.URI])...)
+	reply(w, id, links)
+}
+
+// wikiURL links a prefab display title to a community-wiki search.
+func wikiURL(title string) string {
+	return "https://stationeers-wiki.com/index.php?search=" + url.QueryEscape(title)
+}
+
+// prefabLinksFor links prefab names inside hash("…") / HASH("…") and numeric
+// prefab hashes to the community wiki.
+func prefabLinksFor(text string) []any {
+	var out []any
+	for _, fn := range []string{`hash("`, `HASH("`} {
+		idx := 0
+		for {
+			i := strings.Index(text[idx:], fn)
+			if i < 0 {
+				break
+			}
+			contentStart := idx + i + len(fn)
+			end := strings.IndexByte(text[contentStart:], '"')
+			if end < 0 {
+				break
+			}
+			name := text[contentStart : contentStart+end]
+			idx = contentStart + end
+			title, ok := builtin.Prefabs[name]
+			if !ok {
+				continue
+			}
+			start := offsetToLSP(text, contentStart)
+			stop := offsetToLSP(text, contentStart+end)
+			out = append(out, map[string]any{
+				"range":  lspRange{Start: start, End: stop},
+				"target": wikiURL(title),
+			})
+		}
+	}
+	file := source.NewFile("", []byte(text))
+	diags := &diag.Bag{}
+	for _, t := range lexer.Tokenize(file, diags) {
+		if t.Kind != token.Number {
+			continue
+		}
+		h, ok := parseNumToken(t.Text)
+		if !ok {
+			continue
+		}
+		name, ok := builtin.PrefabByHash[h]
+		if !ok {
+			continue
+		}
+		start := offsetToLSP(text, t.Pos.Offset)
+		end := lspPosition{Line: start.Line, Character: start.Character + utf16Len(t.Text)}
+		out = append(out, map[string]any{
+			"range":  lspRange{Start: start, End: end},
+			"target": wikiURL(builtin.Prefabs[name]),
+		})
+	}
+	return out
+}
+
+// parseNumToken parses an IC10 numeric literal (decimal / $hex / %binary) into
+// its unsigned 32-bit form.
+func parseNumToken(s string) (uint32, bool) {
+	var v uint64
+	var err error
+	switch {
+	case strings.HasPrefix(s, "$"):
+		v, err = strconv.ParseUint(s[1:], 16, 64)
+	case strings.HasPrefix(s, "%"):
+		v, err = strconv.ParseUint(strings.ReplaceAll(s[1:], "_", ""), 2, 64)
+	default:
+		v, err = strconv.ParseUint(s, 10, 64)
+	}
+	if err != nil {
+		return 0, false
+	}
+	return uint32(v), true
 }
 
 func documentLinksFor(uri, text string) []any {

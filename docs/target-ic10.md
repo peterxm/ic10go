@@ -250,7 +250,19 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 > `github.com/Stationeers-ic/ic10`（`src/Defines/consts.ts`）。枚举名与数值随游戏
 > 版本变动，更新后需重新核对；未知枚举会原样输出，故轻微变动不会报错。
 
-### 5.6 数据段布局
+### 5.6 预制体 / 指令表
+
+除枚举外，编译器/编辑器还带两张游戏数据表（`internal/builtin`，非编译输出）：
+
+- **`Prefabs` / `PrefabByHash`**：1700+ 预制体名 → 显示标题；hash 即 `Hash(name)`。
+  用于 `hash("…")` / `HASH("…")` 补全、数字 hash 反查与 Wiki 文档链接。
+- **`IC10Instructions`**：原生 IC10 指令的签名与游戏说明，用于 `.ic`/`.ic10`
+  的补全、悬停与未知指令诊断。
+
+> 数据源：游戏预制体列表与指令元数据（见 `Stationeers-ic` / `ic10emu`）；游戏
+> 更新后重新核对。
+
+### 5.7 数据段布局
 
 `data` 表放进芯片的持久栈（512 槽）：
 

@@ -294,24 +294,30 @@ var Commands = []Command{
 		Examples: []string{"ic10c size blink.icg"},
 	},
 	{
-		Name: "fmt", Args: "[-w] <file.icg>",
-		Summary: text{EN: "format .icg source", ZH: "格式化 .icg 源码"},
+		Name: "fmt", Args: "[-w] [--no-align] <file.icg|.ic|.ic10>",
+		Summary: text{EN: "format .icg / native IC10 source", ZH: "格式化 .icg / 原生 IC10 源码"},
 		Long: text{
-			EN: "Parse and re-print a .icg file in canonical form. Without -w the\n" +
-				"result is written to standard output.",
-			ZH: "将 .icg 文件解析并以规范格式重新打印。不加 -w 时结果输出到\n" +
-				"标准输出。",
+			EN: "Re-print source in canonical form: .icg is parsed and reprinted;\n" +
+				"native .ic/.ic10 files are reflowed (whitespace, labels, aligned\n" +
+				"columns). Without -w the result is written to standard output.",
+			ZH: "以规范格式重新打印源码：.icg 会解析后重排；原生 .ic/.ic10 会重排\n" +
+				"（空白、标签、列对齐）。不加 -w 时结果输出到标准输出。",
 		},
 		Flags: []Flag{
 			{Short: "-w", Long: "--write", Desc: text{
 				EN: "write the result back to the file",
 				ZH: "将结果写回文件",
 			}},
+			{Long: "--no-align", Desc: text{
+				EN: "native IC10: only normalise whitespace, do not align columns",
+				ZH: "原生 IC10：只规范空白，不做列对齐",
+			}},
 			commonHelp,
 		},
 		Examples: []string{
 			"ic10c fmt blink.icg",
 			"ic10c fmt -w blink.icg",
+			"ic10c fmt --no-align sorter.ic",
 		},
 	},
 	{
