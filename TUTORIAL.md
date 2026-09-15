@@ -435,7 +435,8 @@ d0.channel[0][2] = x + 1
 ### 7.4 批量 IO（多设备聚合）
 
 当同类型的多个设备接在**同一个数据口**上时，批量指令可以一次读取/写入它们，
-常用模式有 `Average` `Sum` `Minimum` `Maximum`。
+常用模式有 `Average`(0) `Sum`(1) `Minimum`(2) `Maximum`(3) `Count`(4)；也可用
+`LogicBatchMethod.*` 常量。
 
 ```go
 const batteries = -400115994   // "StructureBattery" 的类型哈希
@@ -857,7 +858,7 @@ sin cos tan asin acos atan atan2
 push(x)  y := pop()  z := peek()  poke(addr, v)
 approx(a, b, tol)  approxZero(a, tol)
 notApprox(a, b, tol)  notApproxZero(a, tol)
-nan  pinf  ninf  isNaN(x)  isNotNaN(x)
+nan  pinf  ninf  pi  deg2rad  rad2deg  epsilon  isNaN(x)  isNotNaN(x)
 hash("...")  str("...")  raw("...")   // raw 原样输出 IC10 操作数（枚举/关键字逃生口）
 read(dev, lt)  write(dev, lt, v)  readById(id, lt)  writeById(id, lt, v)
 isSet(dev)  isUnset(dev)  isLoadValid(dev, "lt")  isStoreValid(dev, "lt")

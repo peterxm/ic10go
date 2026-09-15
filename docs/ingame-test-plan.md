@@ -160,6 +160,26 @@ func main() {
 期望 LED：`1`（写入并读回 On，再经设备栈往返）。真机上确认 `ld` / `sd` 不报
 `DeviceNotFound`，且 `d2.stack[...]` 生成的 `get`/`put` 正常。
 
+### 2.6 游戏枚举与常量（可选）
+
+用一个支持 `Mode` 的设备接 `d0`（如空调），若干电池接数据口。
+
+```go
+func main() {
+    for {
+        yield()
+        d0.Mode = AirCon.Cold              // s d0 Mode 0
+        d0.Setting = pi                    // 原样输出 pi
+        d1.Setting = GasType.Oxygen        // s d1 Setting 1
+        d2.Setting = batch.read(hash("StructureBattery"), "Ratio", "Count")
+    }
+}
+```
+
+期望：`d0.Mode` 变为 Cold；`d2.Setting` 显示网络内电池**数量**（Count 模式）；
+`pi` / `GasType.Oxygen` 均不报未知标识符。真机上确认这些枚举名被汇编器接受
+（未知枚举会原样输出，若名字有误游戏会报错）。
+
 ---
 
 ## 3. 代码生成优化（应与第 1 节行为一致）

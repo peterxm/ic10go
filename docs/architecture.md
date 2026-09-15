@@ -278,7 +278,9 @@ Ret
 
 - **逻辑类型表**：`Temperature` `On` `Ratio` ... 用于校验。
 - **槽位类型表**：`Occupied` `Mature` ...
-- **批量模式表**：`Average`→0 等。
+- **批量模式表**：`Average`(0) `Sum`(1) `Minimum`(2) `Maximum`(3) `Count`(4)。
+- **游戏枚举表**（`EnumConstants`）：`SorterInstruction` / `PrinterInstruction` / `SlotClass` / `GasType` / `LogicSlotType` 等；未知 `Enum.Member` 原样输出。
+- **数学常量表**（`RawConstants`）：`pi` / `deg2rad` / `rad2deg` / `epsilon`，原样输出。
 - **prefab hash 表**（可选）：常用设备类型名 → CRC-32，支持 `hash("...")` 之外的直接名字。
 
 表的来源可以是手工整理，或后续从游戏数据生成。所有表均可独立更新以适配游戏版本。

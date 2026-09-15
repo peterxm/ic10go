@@ -199,8 +199,11 @@ func clamp(x num, lo num, hi num) num {
 ```go
 total := batch.read(hash("StructureBattery"), "Charge", "Sum")
 avg := batch.read(hash("StructureBattery"), "Ratio", "Average")
+count := batch.read(hash("StructureBattery"), "Ratio", "Count")  // 设备数量
 batch.writeName(1220484876, hash("Override"), "Open", 1)
 ```
+
+> 模式：`Average`(0) `Sum`(1) `Minimum`(2) `Maximum`(3) `Count`(4)，也可用 `LogicBatchMethod.*`。
 
 ### 内建函数
 
