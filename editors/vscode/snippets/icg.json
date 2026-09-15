@@ -135,7 +135,38 @@
       "    }",
       "}"
     ],
-    "description": "PID control loop (deadband, anti-windup, output clamp)"
+    "description": "software PID control loop (deadband, anti-windup, output clamp)"
+  },
+  "Hardware PID setup": {
+    "prefix": "piddev",
+    "body": [
+      "// 硬件 PID 控制器（StructureLogicPidController）：先把 IN 螺丝接测量设备、",
+      "// VAR 螺丝选跟踪参数；改动参数后需要再次 Reset = 1。",
+      "const (",
+      "    Setpoint = ${1:293.15}",
+      "    Kp       = ${2:2.0}",
+      "    Ki       = ${3:0.1}",
+      "    Kd       = ${4:0.5}",
+      "    OutMin   = ${5:-100.0}",
+      "    OutMax   = ${6:100.0}",
+      ")",
+      "",
+      "func main() {",
+      "    ${7:d0}.Setpoint = Setpoint",
+      "    ${7:d0}.ProportionalGain = Kp",
+      "    ${7:d0}.IntegralGain = Ki",
+      "    ${7:d0}.DerivativeGain = Kd",
+      "    ${7:d0}.Minimum = OutMin",
+      "    ${7:d0}.Maximum = OutMax",
+      "    ${7:d0}.On = 1",
+      "    ${7:d0}.Reset = 1",
+      "    for {",
+      "        yield()",
+      "        ${8:d1}.Setting = ${7:d0}.Setting // PID 输出；${7:d0}.Error 是误差",
+      "    }",
+      "}"
+    ],
+    "description": "hardware PID controller (StructureLogicPidController) setup"
   },
   "Batch read": {
     "prefix": "batchread",

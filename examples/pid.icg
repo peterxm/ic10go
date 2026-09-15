@@ -1,7 +1,10 @@
-// PID 控制器：把 d1（传感器）的测量值稳定到 Setpoint，输出写到 d0.Setting（执行器）。
+// 软件 PID 控制器：把 d1（传感器）的测量值稳定到 Setpoint，输出写到 d0.Setting（执行器）。
 //
 // 固定 dt = 1 tick（每个 yield 一拍）；含死区、积分抗饱和与输出限幅。
 // Kp / Ki / Kd 需要按被控对象整定。
+//
+// 注意：游戏有硬件 PID 设备（StructureLogicPidController）。能用硬件时优先用它，
+// 见 examples/pid-device.icg；本文件是需要在 IC 内自定义 PID 逻辑时的软件实现。
 
 const (
     Kp       = 2.0

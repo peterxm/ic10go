@@ -1,0 +1,35 @@
+// 硬件 PID 控制器（StructureLogicPidController，hash -1905534007）配置示例。
+//
+// 先在设备上把 IN 螺丝接到测量设备（如管道分析仪）、VAR 螺丝选要跟踪的参数
+// （温度/压力/…），再用下面这段 IC10 写入整定参数并发出一次 Reset 加载。
+//
+// 之后：
+//   d0.Setting = PID 输出（用户拿去驱动执行器：泵/加热器/…）
+//   d0.Error   = 当前误差（Setpoint - 测量值）
+// 改动参数后需要再次 d0.Reset = 1。
+
+const (
+    Setpoint = 293.15
+    Kp       = 2.0
+    Ki       = 0.1
+    Kd       = 0.5
+    OutMin   = -100.0
+    OutMax   = 100.0
+)
+
+func main() {
+    d0.Setpoint = Setpoint
+    d0.ProportionalGain = Kp
+    d0.IntegralGain = Ki
+    d0.DerivativeGain = Kd
+    d0.Minimum = OutMin
+    d0.Maximum = OutMax
+    d0.On = 1
+    d0.Reset = 1 // 加载参数
+
+    for {
+        yield()
+        // 把 PID 输出送给执行器（示例：d1 的 Setting）
+        d1.Setting = d0.Setting
+    }
+}
