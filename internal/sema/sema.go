@@ -532,21 +532,29 @@ func Eval(e ast.Expr, consts map[string]float64) (float64, bool) {
 	return 0, false
 }
 
-// EvalRaw evaluates an expression to a raw IC10 constant such as STR("...").
+// EvalRaw evaluates an expression to a raw IC10 constant: str("...") for a
+// display string, or raw("...") for a verbatim operand (the escape hatch for
+// game constants the compiler does not know).
 func EvalRaw(e ast.Expr) (string, bool) {
 	call, ok := e.(*ast.CallExpr)
 	if !ok {
 		return "", false
 	}
 	id, ok := call.Fun.(*ast.Ident)
-	if !ok || id.Name != "str" || len(call.Args) != 1 {
+	if !ok || len(call.Args) != 1 {
 		return "", false
 	}
 	s, ok := call.Args[0].(*ast.StringLit)
 	if !ok {
 		return "", false
 	}
-	return "STR(" + strconv.Quote(s.Value) + ")", true
+	switch id.Name {
+	case "str":
+		return "STR(" + strconv.Quote(s.Value) + ")", true
+	case "raw":
+		return s.Value, true
+	}
+	return "", false
 }
 
 func evalBinary(e *ast.BinaryExpr, consts map[string]float64) (float64, bool) {

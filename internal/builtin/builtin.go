@@ -1,9 +1,10 @@
 // Package builtin holds compile-time tables: IC10 logic types, slot types and
 // built-in function signatures.
 //
-// The LogicType / LogicSlotType / EnumConstants tables were verified against
-// Stationeers Hotfix v0.2.6428.27798 (2026-08-13). Game updates can add, rename
-// or remove enum members, so re-check these tables after each game update.
+// The LogicType / LogicSlotType tables were verified against Stationeers Hotfix
+// v0.2.6428.27798 (2026-08-13); EnumConstants against the Stationeers Community
+// Wiki (Logic Sorter, 2026-09-05). Game updates can add, rename or remove enum
+// members, so re-check these tables after each game update.
 package builtin
 
 import (
@@ -14,25 +15,134 @@ import (
 // Hash returns the CRC-32 checksum used by IC10's HASH() function.
 func Hash(s string) uint32 { return crc32.ChecksumIEEE([]byte(s)) }
 
-// EnumConstants are game enum constants that IC10 source may reference by their
-// dotted name (e.g. SorterInstruction.FilterPrefabHashEquals). Values follow
-// the Stationeers sorter instruction encoding and the reference doc; verify
-// against the game before relying on them for new work.
+// EnumConstants are game enum constants that IC10 source may reference by name.
+// Dotted names (e.g. SorterInstruction.FilterPrefabHashEquals) are resolved as
+// selectors; the CONDOP names are also accepted bare (Equals/Greater/Less/
+// NotEquals), matching the game assembler. Values are emitted as numbers, so
+// they do not depend on the game resolving the symbolic name. Verified against
+// the Stationeers Community Wiki (Logic Sorter, 2026-09-05) and the generated
+// game type dump at github.com/Stationeers-ic/ic10 (src/Defines/consts.ts);
+// re-check after game updates.
 var EnumConstants = map[string]float64{
+	// SorterInstruction OP codes (bits 0..7 of a Logic Sorter stack entry).
+	"SorterInstruction.None":                      0,
+	"SorterInstruction.NOP":                       0, // legacy alias for None
 	"SorterInstruction.FilterPrefabHashEquals":    1,
 	"SorterInstruction.FilterPrefabHashNotEquals": 2,
-	"SorterInstruction.FilterSlotTypeCompare":     3,
-	"SorterInstruction.FilterSortingClassCompare": 4,
-	"SlotClass.Battery":                           1,
-	"SortingClass.Ores":                           1,
-	// ReagentMode: Contents / Required / Recipe / TotalContents = 0 / 1 / 2 / 3.
+	"SorterInstruction.FilterSortingClassCompare": 3,
+	"SorterInstruction.FilterSlotTypeCompare":     4,
+	"SorterInstruction.FilterQuantityCompare":     5,
+	"SorterInstruction.LimitNextExecutionByCount": 6,
+	// Condition operation (bits 8..15 of the Filter*Compare instructions).
+	// The game exposes both a bare and a ConditionOperation.-prefixed name.
+	"ConditionOperation.Equals":    0,
+	"ConditionOperation.Greater":   1,
+	"ConditionOperation.Less":      2,
+	"ConditionOperation.NotEquals": 3,
+	"Equals":                       0,
+	"Greater":                      1,
+	"Less":                         2,
+	"NotEquals":                    3,
+	// SlotClass (slot type operand, bits 16..31 of FilterSlotTypeCompare).
+	"SlotClass.None":                 0,
+	"SlotClass.Helmet":               1,
+	"SlotClass.Suit":                 2,
+	"SlotClass.Back":                 3,
+	"SlotClass.GasFilter":            4,
+	"SlotClass.GasCanister":          5,
+	"SlotClass.Motherboard":          6,
+	"SlotClass.Circuitboard":         7,
+	"SlotClass.DataDisk":             8,
+	"SlotClass.Organ":                9,
+	"SlotClass.Ore":                  10,
+	"SlotClass.Plant":                11,
+	"SlotClass.Uniform":              12,
+	"SlotClass.Entity":               13,
+	"SlotClass.Battery":              14,
+	"SlotClass.Egg":                  15,
+	"SlotClass.Belt":                 16,
+	"SlotClass.Tool":                 17,
+	"SlotClass.Appliance":            18,
+	"SlotClass.Ingot":                19,
+	"SlotClass.Torpedo":              20,
+	"SlotClass.Cartridge":            21,
+	"SlotClass.AccessCard":           22,
+	"SlotClass.Magazine":             23,
+	"SlotClass.Circuit":              24,
+	"SlotClass.Bottle":               25,
+	"SlotClass.ProgrammableChip":     26,
+	"SlotClass.Glasses":              27,
+	"SlotClass.CreditCard":           28,
+	"SlotClass.DirtCanister":         29,
+	"SlotClass.SensorProcessingUnit": 30,
+	"SlotClass.LiquidCanister":       31,
+	"SlotClass.LiquidBottle":         32,
+	"SlotClass.Wreckage":             33,
+	"SlotClass.SoundCartridge":       34,
+	"SlotClass.DrillHead":            35,
+	"SlotClass.ScanningHead":         36,
+	"SlotClass.Flare":                37,
+	"SlotClass.Blocked":              38,
+	"SlotClass.SuitMod":              39,
+	"SlotClass.Crate":                40,
+	"SlotClass.Portables":            41,
+	"SlotClass.RocketPayload":        42,
+	"SlotClass.AutoInjector":         43,
+	// SortingClass (sorting class operand, bits 16..31 of FilterSortingClassCompare).
+	"SortingClass.Default":      0,
+	"SortingClass.Kits":         1,
+	"SortingClass.Tools":        2,
+	"SortingClass.Resources":    3,
+	"SortingClass.Food":         4,
+	"SortingClass.Clothing":     5,
+	"SortingClass.Appliances":   6,
+	"SortingClass.Atmospherics": 7,
+	"SortingClass.Storage":      8,
+	"SortingClass.Ores":         9,
+	"SortingClass.Ices":         10,
+	// LogicReagentMode: Contents / Required / Recipe / TotalContents = 0 / 1 / 2 / 3.
+	"LogicReagentMode.Contents":      0,
+	"LogicReagentMode.Required":      1,
+	"LogicReagentMode.Recipe":        2,
+	"LogicReagentMode.TotalContents": 3,
+	// ReagentMode is the legacy prefix kept for existing scripts.
 	"ReagentMode.Contents":      0,
 	"ReagentMode.Required":      1,
 	"ReagentMode.Recipe":        2,
 	"ReagentMode.TotalContents": 3,
-	// PrinterInstruction: 8-bit OP codes; verify against the game.
-	"PrinterInstruction.ExecuteRecipe":      1,
-	"PrinterInstruction.WaitUntilNextValid": 2,
+	// PrinterInstruction: 8-bit OP codes for printer/autolathe stack entries.
+	// StackPointer (addr 63) and MissingRecipeReagent (addr 54..62) are entries
+	// the device itself maintains.
+	"PrinterInstruction.None":                 0,
+	"PrinterInstruction.StackPointer":         1,
+	"PrinterInstruction.ExecuteRecipe":        2,
+	"PrinterInstruction.WaitUntilNextValid":   3,
+	"PrinterInstruction.JumpIfNextInvalid":    4,
+	"PrinterInstruction.JumpToAddress":        5,
+	"PrinterInstruction.DeviceSetLock":        6,
+	"PrinterInstruction.EjectReagent":         7,
+	"PrinterInstruction.EjectAllReagents":     8,
+	"PrinterInstruction.MissingRecipeReagent": 9,
+	// TraderInstruction: Medium Satellite Dish stack entries.
+	"TraderInstruction.None":                       0,
+	"TraderInstruction.WriteTraderData":            1,
+	"TraderInstruction.StrongestContactIdHash":     2,
+	"TraderInstruction.StrongestContactMetaData":   3,
+	"TraderInstruction.StrongestContactSignalData": 4,
+	"TraderInstruction.WriteTraderBuyData":         5,
+	"TraderInstruction.WriteTraderSellData":        6,
+	"TraderInstruction.TraderBuyThingData":         7,
+	"TraderInstruction.TraderBuyThingChildData":    8,
+	"TraderInstruction.TraderBuyGasData":           9,
+	"TraderInstruction.TraderSellThingData":        10,
+	"TraderInstruction.TraderSellGasData":          11,
+	"TraderInstruction.TraderSellThingChildData":   12,
+	"TraderInstruction.FilterPrefabHashEquals":     13,
+	"TraderInstruction.FilterPrefabHashNotEquals":  14,
+	"TraderInstruction.FilterSortingClassCompare":  15,
+	"TraderInstruction.FilterQuantityCompare":      16,
+	"TraderInstruction.FilterGasContains":          17,
+	"TraderInstruction.FilterGasNotContains":       18,
 	// Color: LogicType.Color device color (game enum ColorType). Values above 11
 	// clamp to Purple and values below 0 clamp to Blue.
 	"Color.Blue":   0,
@@ -118,6 +228,12 @@ var EnumConstants = map[string]float64{
 	"Sound.PollutantsDetected":  43,
 	"Sound.HighCarbonDioxide":   44,
 	"Sound.Alarm1":              45,
+	// Stack sizes / fixed addresses (compiler conveniences, not game enums).
+	"Stack.Size":                        512, // IC chip persistent stack
+	"SorterStack.Size":                  32,  // Logic Sorter: 32 x 8-byte entries
+	"PrinterStack.Size":                 64,  // Printer stack entries
+	"PrinterStack.StackPointer":         63,  // PrinterInstruction.StackPointer address
+	"PrinterStack.MissingRecipeReagent": 54,  // first MissingRecipeReagent address
 }
 
 // LogicTypes is the set of device logic type names understood by IC10. It

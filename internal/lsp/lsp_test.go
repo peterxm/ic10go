@@ -285,6 +285,12 @@ func TestCompletionContext(t *testing.T) {
 	}{
 		{"device logic type", "d0.", `{"line":0,"character":3}`, "Temperature", `"label":"func"`},
 		{"batch method", "batch.", `{"line":0,"character":6}`, "readName", "Temperature"},
+		{"sorter method", "sorter.", `{"line":0,"character":7}`, "filterSortingClass", "Temperature"},
+		{"printer method", "printer.", `{"line":0,"character":8}`, "executeRecipe", "Temperature"},
+		{"read by id builtin", "readBy", `{"line":0,"character":6}`, "readById", ""},
+		{"write by id builtin", "writeBy", `{"line":0,"character":7}`, "writeById", ""},
+		{"stack size enum", "SorterStack.", `{"line":0,"character":12}`, "Size", `"label":"func"`},
+		{"condition operation enum", "ConditionOperation.", `{"line":0,"character":19}`, "Equals", `"label":"func"`},
 		{"enum member", "SorterInstruction.", `{"line":0,"character":18}`, "FilterPrefabHashEquals", `"label":"func"`},
 		{"logic type member", "LogicType.", `{"line":0,"character":10}`, "Temperature", `"label":"func"`},
 		{"display mode member", "DisplayMode.", `{"line":0,"character":12}`, "Percent", `"label":"func"`},
@@ -405,6 +411,36 @@ func TestSemanticTokens(t *testing.T) {
 	out := openAndRequest(t, "st.icg", "func main() { d0.On = 1 }", "textDocument/semanticTokens/full", "")
 	if !strings.Contains(out, `"data":[`) || strings.Contains(out, `"data":[]`) {
 		t.Errorf("semantic tokens should be non-empty:\n%s", out)
+	}
+}
+
+// TestSemanticTokensForNewFeatures checks the namespaces/builtins/enums added
+// for device-stack programming are classified distinctly.
+func TestSemanticTokensForNewFeatures(t *testing.T) {
+	src := "func main() { put(d0, 0, sorter.filterSortingClass(Equals, SortingClass.Ores)); " +
+		"put(d1, 0, printer.executeRecipe(1, 2)); x := readById(1, LogicType.On); " +
+		"y := SorterInstruction.FilterPrefabHashEquals }"
+	got := map[string]string{}
+	for _, tk := range semanticTokensFor(src) {
+		if tk.char+tk.length <= len(src) {
+			got[src[tk.char:tk.char+tk.length]] = semanticTokenTypes[tk.typ]
+		}
+	}
+	want := map[string]string{
+		"sorter":                 "namespace",
+		"printer":                "namespace",
+		"filterSortingClass":     "property",
+		"executeRecipe":          "property",
+		"readById":               "builtin",
+		"SorterInstruction":      "enum",
+		"FilterPrefabHashEquals": "enumMember",
+		"LogicType":              "enum",
+		"On":                     "logicType", // logic types win over enumMember
+	}
+	for tok, typ := range want {
+		if got[tok] != typ {
+			t.Errorf("token %q type = %q, want %q", tok, got[tok], typ)
+		}
 	}
 }
 

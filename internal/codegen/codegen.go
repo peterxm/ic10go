@@ -467,16 +467,24 @@ func renderInstr(ins ir.Instr, colors map[*ir.Reg]int) (string, bool) {
 	case *ir.Store:
 		return "s " + v.Dev + " " + v.Logic + " " + valueText(v.Src, colors), true
 	case *ir.LoadSlot:
-		return "ls " + regName(v.Dst, colors) + " " + v.Dev + " " +
+		return "ls " + regName(v.Dst, colors) + " " + dynDev(v.Dev, v.DevPtr, colors) + " " +
 			valueText(v.Index, colors) + " " + v.Logic, true
 	case *ir.LoadDyn:
+		if v.DevID != nil {
+			return "ld " + regName(v.Dst, colors) + " " + valueText(v.DevID, colors) + " " +
+				valueText(v.Logic, colors), true
+		}
 		return "l " + regName(v.Dst, colors) + " " + dynDev(v.Dev, v.DevPtr, colors) + " " +
 			valueText(v.Logic, colors), true
 	case *ir.StoreDyn:
+		if v.DevID != nil {
+			return "sd " + valueText(v.DevID, colors) + " " + valueText(v.Logic, colors) + " " +
+				valueText(v.Src, colors), true
+		}
 		return "s " + dynDev(v.Dev, v.DevPtr, colors) + " " + valueText(v.Logic, colors) + " " +
 			valueText(v.Src, colors), true
 	case *ir.StoreSlot:
-		return "ss " + v.Dev + " " + valueText(v.Index, colors) + " " +
+		return "ss " + dynDev(v.Dev, v.DevPtr, colors) + " " + valueText(v.Index, colors) + " " +
 			v.Logic + " " + valueText(v.Src, colors), true
 	case *ir.Builtin:
 		return renderBuiltin(v, colors), true

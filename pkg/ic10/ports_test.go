@@ -137,6 +137,19 @@ func deviceState(m *vm.Machine) string {
 		for _, k := range keys {
 			fmt.Fprintf(&b, "%s.%s=%v;", n, k, d.Values[k])
 		}
+		// Include a device's memory stack (get/put target) so a port that
+		// writes the wrong stack instruction is caught, not just logic writes.
+		// Skip the IC host (db): its stack is the chip's own persistent stack,
+		// which the data segment and register spilling legitimately lay out
+		// differently from the original script.
+		if n == "db" {
+			continue
+		}
+		for i, v := range d.Stack {
+			if v != 0 {
+				fmt.Fprintf(&b, "%s.stack[%d]=%v;", n, i, v)
+			}
+		}
 	}
 	return b.String()
 }

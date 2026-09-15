@@ -447,6 +447,18 @@ func attachDetail(items []completionItem) []completionItem {
 			}
 			continue
 		}
+		if items[i].Detail == "sorter stack" {
+			if d, ok := builtin.SorterDocs[items[i].Label]; ok {
+				items[i].Detail = d.Signature
+			}
+			continue
+		}
+		if items[i].Detail == "printer stack" {
+			if d, ok := builtin.PrinterDocs[items[i].Label]; ok {
+				items[i].Detail = d.Signature
+			}
+			continue
+		}
 		if d, ok := builtin.Docs[items[i].Label]; ok {
 			items[i].Detail = d.Signature
 		}
@@ -474,6 +486,14 @@ func (s *Server) resolveCompletion(w *bufio.Writer, id json.RawMessage, params j
 		item.Documentation = &markupContent{Kind: "markdown", Value: docText(d, s.zh)}
 	case hasDoc(builtin.BatchDocs, label):
 		d, _ := builtin.BatchDocs[label]
+		item.Detail = d.Signature
+		item.Documentation = &markupContent{Kind: "markdown", Value: docText(d, s.zh)}
+	case hasDoc(builtin.SorterDocs, label):
+		d, _ := builtin.SorterDocs[label]
+		item.Detail = d.Signature
+		item.Documentation = &markupContent{Kind: "markdown", Value: docText(d, s.zh)}
+	case hasDoc(builtin.PrinterDocs, label):
+		d, _ := builtin.PrinterDocs[label]
 		item.Detail = d.Signature
 		item.Documentation = &markupContent{Kind: "markdown", Value: docText(d, s.zh)}
 	case hasDoc(builtin.KeywordDocs, label):
@@ -525,6 +545,10 @@ func completionItemsFor(text string, pos lspPosition) []completionItem {
 		switch {
 		case recv == "batch":
 			return batchMethodItems()
+		case recv == "sorter":
+			return sorterMethodItems()
+		case recv == "printer":
+			return printerMethodItems()
 		case isDevicePort(recv):
 			return logicTypeItems()
 		case enumReceiver(recv):
@@ -554,10 +578,16 @@ func baseCompletionItems() []completionItem {
 		ci("d0", 6, "device"), ci("d1", 6, "device"), ci("d2", 6, "device"),
 		ci("d3", 6, "device"), ci("d4", 6, "device"), ci("d5", 6, "device"), ci("db", 6, "device"),
 		ci("batch", 9, "batch IO"),
+		ci("sorter", 9, "sorter stack"),
+		ci("printer", 9, "printer stack"),
 		ci("read", 3, "runtime logic type"),
 		ci("write", 3, "runtime logic type"),
 		ci("readDev", 3, "runtime device + logic type"),
 		ci("writeDev", 3, "runtime device + logic type"),
+		ci("readById", 3, "device by ReferenceId"),
+		ci("writeById", 3, "device by ReferenceId"),
+		ci("readDevSlot", 3, "runtime device port slot"),
+		ci("writeDevSlot", 3, "runtime device port slot"),
 		ci("isLoadValid", 3, "condition only"),
 		ci("isStoreValid", 3, "condition only"),
 	}
@@ -596,6 +626,27 @@ func batchMethodItems() []completionItem {
 	items := make([]completionItem, 0, len(names))
 	for _, n := range names {
 		items = append(items, completionItem{Label: n, Kind: 3, Detail: "batch IO"})
+	}
+	return items
+}
+
+func sorterMethodItems() []completionItem {
+	names := []string{"filterPrefabHash", "filterPrefabHashNotEquals", "filterSortingClass",
+		"filterSlotType", "filterQuantity", "limitNextExecutionByCount"}
+	items := make([]completionItem, 0, len(names))
+	for _, n := range names {
+		items = append(items, completionItem{Label: n, Kind: 3, Detail: "sorter stack"})
+	}
+	return items
+}
+
+func printerMethodItems() []completionItem {
+	names := []string{"none", "stackPointer", "executeRecipe", "waitUntilNextValid",
+		"jumpIfNextInvalid", "jumpToAddress", "deviceSetLock", "ejectReagent",
+		"ejectAllReagents", "missingRecipeReagent"}
+	items := make([]completionItem, 0, len(names))
+	for _, n := range names {
+		items = append(items, completionItem{Label: n, Kind: 3, Detail: "printer stack"})
 	}
 	return items
 }
@@ -954,6 +1005,15 @@ func (s *Server) hoverFor(text, word string) string {
 		return "device alias `" + word + "` = `" + dev + "`"
 	}
 	if d, ok := builtin.Docs[word]; ok {
+		return docText(d, s.zh)
+	}
+	if d, ok := builtin.BatchDocs[word]; ok {
+		return docText(d, s.zh)
+	}
+	if d, ok := builtin.SorterDocs[word]; ok {
+		return docText(d, s.zh)
+	}
+	if d, ok := builtin.PrinterDocs[word]; ok {
 		return docText(d, s.zh)
 	}
 	if d, ok := builtin.KeywordDocs[word]; ok {

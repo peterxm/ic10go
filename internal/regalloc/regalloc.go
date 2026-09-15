@@ -444,15 +444,19 @@ func replaceInstrUses(i ir.Instr, f func(ir.Value) ir.Value) {
 	case *ir.Store:
 		v.Src = f(v.Src)
 	case *ir.LoadSlot:
+		v.DevPtr = f(v.DevPtr)
 		v.Index = f(v.Index)
 	case *ir.StoreSlot:
+		v.DevPtr = f(v.DevPtr)
 		v.Index = f(v.Index)
 		v.Src = f(v.Src)
 	case *ir.LoadDyn:
 		v.DevPtr = f(v.DevPtr)
+		v.DevID = f(v.DevID)
 		v.Logic = f(v.Logic)
 	case *ir.StoreDyn:
 		v.DevPtr = f(v.DevPtr)
+		v.DevID = f(v.DevID)
 		v.Logic = f(v.Logic)
 		v.Src = f(v.Src)
 	case *ir.Builtin:

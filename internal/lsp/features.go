@@ -936,6 +936,35 @@ func tokenInRange(t semanticToken, r lspRange) bool {
 	return true
 }
 
+// specialBuiltins are builtins lowered outside builtin.Funcs (handled specially
+// by the lowerer); they still deserve the "builtin" semantic token.
+var specialBuiltins = map[string]bool{
+	"hash": true, "str": true, "raw": true,
+	"read": true, "write": true, "readDev": true, "writeDev": true,
+	"readById": true, "writeById": true, "readDevSlot": true, "writeDevSlot": true,
+	"jump": true, "ireg": true, "setIreg": true,
+	"isLoadValid": true, "isStoreValid": true,
+}
+
+func isBuiltinName(name string) bool {
+	if _, ok := builtin.Funcs[name]; ok {
+		return true
+	}
+	return specialBuiltins[name]
+}
+
+// enumReceiverSet is the set of dotted namespaces that resolve to game enum
+// members (e.g. SorterInstruction, PrinterInstruction, ConditionOperation).
+var enumReceiverSet = func() map[string]bool {
+	m := map[string]bool{"LogicType": true}
+	for k := range builtin.EnumConstants {
+		if i := strings.IndexByte(k, '.'); i > 0 {
+			m[k[:i]] = true
+		}
+	}
+	return m
+}()
+
 func semanticTokensFor(text string) []semanticToken {
 	file := source.NewFile("", []byte(text))
 	diags := &diag.Bag{}
@@ -953,17 +982,26 @@ func semanticTokensFor(text string) []semanticToken {
 		case t.Kind == token.String:
 			typ = semanticTokenIndex["string"]
 		case t.Kind == token.Ident:
-			if _, ok := builtin.Funcs[t.Text]; ok {
+			switch {
+			case isBuiltinName(t.Text):
 				typ = semanticTokenIndex["builtin"]
-			} else if builtin.LogicTypes[t.Text] {
+			case t.Text == "batch" || t.Text == "sorter" || t.Text == "printer":
+				typ = semanticTokenIndex["namespace"]
+			case builtin.LogicTypes[t.Text]:
 				typ = semanticTokenIndex["logicType"]
-			} else if builtin.SlotTypes[t.Text] {
+			case builtin.SlotTypes[t.Text]:
 				typ = semanticTokenIndex["logicType"]
-			} else if i+1 < len(toks) && toks[i+1].Kind == token.LParen {
+			case i+1 < len(toks) && toks[i+1].Kind == token.Dot && enumReceiverSet[t.Text]:
+				typ = semanticTokenIndex["enum"]
+			case i > 0 && toks[i-1].Kind == token.Dot:
+				if i >= 2 && toks[i-2].Kind == token.Ident && enumReceiverSet[toks[i-2].Text] {
+					typ = semanticTokenIndex["enumMember"]
+				} else {
+					typ = semanticTokenIndex["property"]
+				}
+			case i+1 < len(toks) && toks[i+1].Kind == token.LParen:
 				typ = semanticTokenIndex["function"]
-			} else if i > 0 && toks[i-1].Kind == token.Dot {
-				typ = semanticTokenIndex["property"]
-			} else {
+			default:
 				typ = semanticTokenIndex["variable"]
 			}
 		case t.Kind >= token.Const && t.Kind <= token.Range:

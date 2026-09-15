@@ -36,15 +36,18 @@ func DefUse(i Instr) (use, def []*Reg) {
 	case *Store:
 		use = ValueRegs(v.Src)
 	case *LoadSlot:
-		use = ValueRegs(v.Index)
+		use = append(ValueRegs(v.DevPtr), ValueRegs(v.Index)...)
 		def = []*Reg{v.Dst}
 	case *StoreSlot:
-		use = append(ValueRegs(v.Index), ValueRegs(v.Src)...)
+		use = append(ValueRegs(v.DevPtr), ValueRegs(v.Index)...)
+		use = append(use, ValueRegs(v.Src)...)
 	case *LoadDyn:
-		use = append(ValueRegs(v.DevPtr), ValueRegs(v.Logic)...)
+		use = append(ValueRegs(v.DevPtr), ValueRegs(v.DevID)...)
+		use = append(use, ValueRegs(v.Logic)...)
 		def = []*Reg{v.Dst}
 	case *StoreDyn:
-		use = append(ValueRegs(v.DevPtr), ValueRegs(v.Logic)...)
+		use = append(ValueRegs(v.DevPtr), ValueRegs(v.DevID)...)
+		use = append(use, ValueRegs(v.Logic)...)
 		use = append(use, ValueRegs(v.Src)...)
 	case *Builtin:
 		for _, a := range v.Args {

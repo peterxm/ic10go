@@ -33,6 +33,10 @@ var Docs = map[string]Doc{
 	"atan2": {"atan2(y, x)", "Arc tangent of y/x using signs.", "按 y/x 的符号求反正切。"},
 	"isNaN": {"isNaN(x)", "1 if x is NaN else 0.", "x 是 NaN 时为 1，否则 0。"},
 
+	"hash": {"hash(\"...\")", "Compile-time CRC-32 of a string (IC10 HASH).", "编译期计算字符串的 CRC-32（IC10 HASH）。"},
+	"str":  {"str(\"...\")", "Display-string operand (IC10 STR).", "显示字符串操作数（IC10 STR）。"},
+	"raw":  {"raw(\"...\")", "Emit the argument verbatim as an IC10 operand.", "把参数原样作为 IC10 操作数输出。"},
+
 	"pow": {"pow(a, b)", "a to the power b.", "a 的 b 次幂。"},
 	"min": {"min(a, b)", "Smaller of a and b.", "a、b 中较小者。"},
 	"max": {"max(a, b)", "Larger of a and b.", "a、b 中较大者。"},
@@ -61,8 +65,8 @@ var Docs = map[string]Doc{
 	"isSet":   {"isSet(dev)", "1 if the device is connected.", "设备已连接时为 1。"},
 	"isUnset": {"isUnset(dev)", "1 if the device is not connected.", "设备未连接时为 1。"},
 	"rmap":    {"rmap(dev, hash)", "Map a reagent hash to the prefab the device needs.", "把反应物 hash 映射为设备所需的 prefab。"},
-	"get":     {"get(dev, addr)", "Read a device memory address.", "读取设备内存地址。"},
-	"put":     {"put(dev, addr, v)", "Write a device memory address.", "写入设备内存地址。"},
+	"get":     {"get(dev, addr)", "Read a device memory address (dev = port, id or register).", "读取设备内存地址（dev 可为端口、id 或寄存器）。"},
+	"put":     {"put(dev, addr, v)", "Write a device memory address (dev = port, id or register).", "写入设备内存地址（dev 可为端口、id 或寄存器）。"},
 	"clr":     {"clr(dev)", "Clear a device.", "清空设备。"},
 	"clrById": {"clrById(id)", "Clear a device addressed by id (IC10 clrd).", "按设备 id 清空设备（IC10 clrd）。"},
 	"getd":    {"getd(id, addr)", "Read a device address by id (emits unified get).", "按设备 id 读取地址（生成统一 get）。"},
@@ -73,6 +77,10 @@ var Docs = map[string]Doc{
 
 	"read":         {"read(dev, lt)", "Read a device logic type chosen at runtime.", "读取运行期决定的 logic type。"},
 	"write":        {"write(dev, lt, v)", "Write a device logic type chosen at runtime.", "写入运行期决定的 logic type。"},
+	"readById":     {"readById(id, lt)", "Read a logic type from a device by ReferenceId (IC10 ld).", "按 ReferenceId 读取 logic type（IC10 ld）。"},
+	"writeById":    {"writeById(id, lt, v)", "Write a logic type to a device by ReferenceId (IC10 sd).", "按 ReferenceId 写入 logic type（IC10 sd）。"},
+	"readDevSlot":  {"readDevSlot(reg, index, slt)", "Read a slot property from a runtime-selected device port (IC10 ls drN).", "从运行期选择的设备端口读取槽位属性（IC10 ls drN）。"},
+	"writeDevSlot": {"writeDevSlot(reg, index, slt, v)", "Write a slot property to a runtime-selected device port (IC10 ss drN).", "向运行期选择的设备端口写入槽位属性（IC10 ss drN）。"},
 	"isLoadValid":  {"isLoadValid(dev, \"lt\")", "Condition: device supports reading lt.", "条件：设备支持读取该 logic type。"},
 	"isStoreValid": {"isStoreValid(dev, \"lt\")", "Condition: device supports writing lt.", "条件：设备支持写入该 logic type。"},
 }
@@ -87,6 +95,32 @@ var BatchDocs = map[string]Doc{
 	"write":     {"batch.write(typeHash, logic, value)", "Write a logic type to all devices of one type.", "对所有同类型设备写入一个 logic type。"},
 	"writeName": {"batch.writeName(typeHash, nameHash, logic, value)", "Write to devices matching a name hash.", "按名字 hash 筛选后写入。"},
 	"writeSlot": {"batch.writeSlot(typeHash, slot, logic, value)", "Write a slot property.", "写入槽位属性。"},
+}
+
+// SorterDocs documents the sorter.* stack-instruction builders (keyed by
+// method name).
+var SorterDocs = map[string]Doc{
+	"filterPrefabHash":          {"sorter.filterPrefabHash(hash)", "FilterPrefabHashEquals instruction.", "FilterPrefabHashEquals 指令。"},
+	"filterPrefabHashNotEquals": {"sorter.filterPrefabHashNotEquals(hash)", "FilterPrefabHashNotEquals instruction.", "FilterPrefabHashNotEquals 指令。"},
+	"filterSortingClass":        {"sorter.filterSortingClass(op, class)", "FilterSortingClassCompare instruction.", "FilterSortingClassCompare 指令。"},
+	"filterSlotType":            {"sorter.filterSlotType(op, slotClass)", "FilterSlotTypeCompare instruction.", "FilterSlotTypeCompare 指令。"},
+	"filterQuantity":            {"sorter.filterQuantity(op, quantity)", "FilterQuantityCompare instruction.", "FilterQuantityCompare 指令。"},
+	"limitNextExecutionByCount": {"sorter.limitNextExecutionByCount(count)", "LimitNextExecutionByCount instruction.", "LimitNextExecutionByCount 指令。"},
+}
+
+// PrinterDocs documents the printer.* stack-instruction builders (keyed by
+// method name).
+var PrinterDocs = map[string]Doc{
+	"none":                 {"printer.none()", "No-op instruction (OP 0).", "空操作指令（OP 0）。"},
+	"stackPointer":         {"printer.stackPointer(index)", "StackPointer instruction (OP 1, stack address 63).", "StackPointer 指令（OP 1，仅栈地址 63）。"},
+	"executeRecipe":        {"printer.executeRecipe(quantity, prefabHash)", "ExecuteRecipe instruction (OP 2, stack addresses 0..53).", "ExecuteRecipe 指令（OP 2，栈地址 0..53）。"},
+	"waitUntilNextValid":   {"printer.waitUntilNextValid()", "WaitUntilNextValid instruction (OP 3).", "WaitUntilNextValid 指令（OP 3）。"},
+	"jumpIfNextInvalid":    {"printer.jumpIfNextInvalid(stackAddress)", "JumpIfNextInvalid instruction (OP 4).", "JumpIfNextInvalid 指令（OP 4）。"},
+	"jumpToAddress":        {"printer.jumpToAddress(stackAddress)", "JumpToAddress instruction (OP 5).", "JumpToAddress 指令（OP 5）。"},
+	"deviceSetLock":        {"printer.deviceSetLock(lockState)", "DeviceSetLock instruction (OP 6).", "DeviceSetLock 指令（OP 6）。"},
+	"ejectReagent":         {"printer.ejectReagent(reagentHash)", "EjectReagent instruction (OP 7).", "EjectReagent 指令（OP 7）。"},
+	"ejectAllReagents":     {"printer.ejectAllReagents()", "EjectAllReagents instruction (OP 8).", "EjectAllReagents 指令（OP 8）。"},
+	"missingRecipeReagent": {"printer.missingRecipeReagent(quantityCeil, reagentHash)", "MissingRecipeReagent instruction (OP 9, stack addresses 54..62).", "MissingRecipeReagent 指令（OP 9，栈地址 54..62）。"},
 }
 
 // LogicTypeDocs documents the most common device logic types.

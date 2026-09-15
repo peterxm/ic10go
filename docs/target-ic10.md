@@ -118,8 +118,11 @@
 | `isSet(d)` | `sdse` |
 | `isUnset(d)` | `sdns` |
 | `get / put / clr / rmap` | 同名指令 |
-| `getd(id, addr)` / `putd(id, addr, v)` | 统一 `get` / `put`（device 操作数接受 id；独立的 `getd`/`putd` 已弃用） |
+| `dN.stack[addr]` / `id.stack[addr]` | `get` / `put`（device 操作数接受端口 / id / 寄存器） |
+| `getd(id, addr)` / `putd(id, addr, v)` | 统一 `get` / `put`（独立的 `getd`/`putd` 已弃用） |
 | `clrById(id)` | `clrd` |
+| `readById(id, lt)` / `writeById(id, lt, v)` | `ld` / `sd`（按 ReferenceId 读写逻辑类型） |
+| `readDevSlot(reg, i, slt)` / `writeDevSlot(reg, i, slt, v)` | `ls drN` / `ss drN`（运行期端口） |
 | `readReagent(dev, mode, key)` | `lr` |
 
 ### 4.3 分支
@@ -196,13 +199,26 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 - **`LogicType.<成员>`**（如 `LogicType.Open`、`LogicType.Channel0`）：不查表，
   **原样输出**到 IC10，由游戏汇编器解析。因此任何合法成员都能用，也不受内建
   表版本影响。可作为 `read` / `write` / `readDev` / `writeDev` 的逻辑类型实参。
+- **未知的 `Enum.Member`**：同样**原样输出并给出 `unknown-enum` 警告**，因此
+  游戏更新新增枚举无需改编译器；`raw("...")` 可对任意操作数显式原样输出。
 - 需要编译器知道**数值**的枚举（表见 `internal/builtin.EnumConstants`，数值需
   以游戏 Stationpedia 为准）：
-  - `SorterInstruction.FilterPrefabHashEquals`(1) / `FilterPrefabHashNotEquals`(2)
-    / `FilterSlotTypeCompare`(3) / `FilterSortingClassCompare`(4)
-  - `SlotClass.Battery`、`SortingClass.Ores`
-  - `ReagentMode.Contents`(0) / `Required`(1) / `Recipe`(2)
-  - `PrinterInstruction.ExecuteRecipe`(1) / `WaitUntilNextValid`(2)（8 位 OP 码，需核对）
+  - `SorterInstruction`（低 8 位 OP 码）：`None`/`NOP`(0) / `FilterPrefabHashEquals`(1)
+    / `FilterPrefabHashNotEquals`(2) / `FilterSortingClassCompare`(3)
+    / `FilterSlotTypeCompare`(4) / `FilterQuantityCompare`(5)
+    / `LimitNextExecutionByCount`(6)
+  - 条件运算（`Filter*Compare` 的位 8..15）：`ConditionOperation.Equals`(0) /
+    `Greater`(1) / `Less`(2) / `NotEquals`(3)，也接受裸名
+    `Equals`/`Greater`/`Less`/`NotEquals`
+  - `SlotClass.*`（0..43）与 `SortingClass.*`（0..10），如
+    `SlotClass.Battery`(14)、`SortingClass.Ores`(9)
+  - `LogicReagentMode.Contents`(0) / `Required`(1) / `Recipe`(2)
+    / `TotalContents`(3)（旧前缀 `ReagentMode.*` 仍保留）
+  - `PrinterInstruction`（8 位 OP 码）：`None`(0) / `StackPointer`(1) /
+    `ExecuteRecipe`(2) / `WaitUntilNextValid`(3) / `JumpIfNextInvalid`(4) /
+    `JumpToAddress`(5) / `DeviceSetLock`(6) / `EjectReagent`(7) /
+    `EjectAllReagents`(8) / `MissingRecipeReagent`(9)
+  - `TraderInstruction.*`（Medium Satellite Dish，0..18）
   - `Color.Blue`(0) / `Gray`(1) / `Green`(2) / `Orange`(3) / `Red`(4) / `Yellow`(5)
     / `White`(6) / `Black`(7) / `Brown`(8) / `Khaki`(9) / `Pink`(10) / `Purple`(11)
     （`LogicType.Color` 设备颜色；>11 视作 Purple，<0 视作 Blue）
@@ -215,8 +231,9 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
   - `Sound.None`(0) / `Alarm2`(1) … `Alarm1`(45)（扬声器/警报；游戏枚举
     `SoundAlert`，IC10 前缀为 `Sound`）
 
-> **测试版本：Stationeers Hotfix `v0.2.6428.27798`（2026-08-13）**。枚举名与数值
-> 随游戏版本变动，更新后需重新核对。
+> 枚举数值核对自 Stationeers 社区 Wiki（Logic Sorter，2026-09-05）与游戏类型导出
+> `github.com/Stationeers-ic/ic10`（`src/Defines/consts.ts`）。枚举名与数值随游戏
+> 版本变动，更新后需重新核对；未知枚举会原样输出，故轻微变动不会报错。
 
 ### 5.6 数据段布局
 

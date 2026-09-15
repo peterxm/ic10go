@@ -381,7 +381,9 @@ ic10go/
 ### M3 领域特性 ✅
 - 槽位 `ls/ss`、通道 `ChannelN`
 - 批量 `lb/lbn/lbs/sb/sbn/sbs`
-- 栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr/clrById`
+- 栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr/clrById`（`get/put` 的 device 操作数接受端口 / id / 寄存器）、`dN.stack[addr]` / `id.stack[addr]` 语法糖
+- 按 ReferenceId 读写 `readById`/`writeById`（`ld`/`sd`）、运行期端口槽位 `readDevSlot`/`writeDevSlot`（`ls/ss drN`）
+- 设备栈指令构建器 `sorter.*` / `printer.*`（字段位宽校验）；未知 `Enum.Member` 原样输出、`raw("...")` 逃生口
 - `approx/approxZero/notApprox/notApproxZero/logicalNor/isNotNaN`、`isSet`/`isUnset`/`rmap`/`readReagent`、NaN 支持、`ext/ins/sla/srl/rol/ror`
 - 底层控制流：`label/goto/call/ret`、`ra/sp`、`ireg/setIreg`、`jump(expr)`
 - 动态 logicType：`read(dev, lt)` / `write(dev, lt, v)`

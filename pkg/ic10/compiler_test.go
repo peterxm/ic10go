@@ -304,7 +304,7 @@ func TestEnumConstants(t *testing.T) {
 	if diags.HasErrors() || err != nil {
 		t.Fatalf("compile: diags=%v err=%v", diags.Diags, err)
 	}
-	if !strings.Contains(code, "s d0 Mode 2") || !strings.Contains(code, "put d0 0 1") {
+	if !strings.Contains(code, "s d0 Mode 2") || !strings.Contains(code, "put d0 0 2") {
 		t.Errorf("enum constants not resolved:\n%s", code)
 	}
 }

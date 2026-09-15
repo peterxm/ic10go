@@ -504,6 +504,19 @@ func (m *Machine) execOp(ins *Instr) error {
 		dst, _ := m.reg(a[0])
 		m.Regs[dst] = m.dev(a[1]).Values[m.logicName(a[2])]
 		return nil
+	case "ld":
+		dst, _ := m.reg(a[0])
+		m.Regs[dst] = m.deviceByID(mustNum(m, a[1])).Values[m.logicName(a[2])]
+		return nil
+	case "sd":
+		logic := m.logicName(a[1])
+		v := mustNum(m, a[2])
+		d := m.deviceByID(mustNum(m, a[0]))
+		d.Values[logic] = v
+		if m.OnWrite != nil {
+			m.OnWrite(d.Name, logic, v)
+		}
+		return nil
 	case "lr":
 		dst, _ := m.reg(a[0])
 		key := mustNum(m, a[3])

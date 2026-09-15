@@ -607,6 +607,11 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 			l.b.Emit(&ir.Store{Dev: channelDev(dev, conn), Logic: "Channel" + itoa(ch), Src: val})
 			return
 		}
+		if dev, addr, ok := l.stackOf(t); ok {
+			l.b.Emit(&ir.Builtin{Name: "put",
+				Args: []ir.Value{l.deviceOperand(dev), l.lowerExpr(addr), val}})
+			return
+		}
 		l.diags.Errorf(t.Pos(), "unsupported assignment target")
 	default:
 		l.diags.Errorf(target.Pos(), "unsupported assignment target")
@@ -1193,17 +1198,21 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 	case *ast.ParenExpr:
 		return l.lowerExpr(e.X)
 	case *ast.Ident:
-		v, ok := l.lookup(e.Name)
-		if !ok {
-			if isSpecialReg(e.Name) {
-				r := l.b.NewReg(e.Name)
-				l.b.Emit(&ir.LoadSpecial{Dst: r, Name: e.Name})
-				return r
-			}
-			l.diags.Errorf(e.Pos(), "undefined variable %q", e.Name)
-			return &ir.Const{V: 0}
+		if v, ok := l.lookup(e.Name); ok {
+			return v
 		}
-		return v
+		// Bare game enum constants such as the sorter CONDOP names
+		// (Equals / Greater / Less / NotEquals). User names shadow them.
+		if v, ok := builtin.EnumConstants[e.Name]; ok {
+			return &ir.Const{V: v}
+		}
+		if isSpecialReg(e.Name) {
+			r := l.b.NewReg(e.Name)
+			l.b.Emit(&ir.LoadSpecial{Dst: r, Name: e.Name})
+			return r
+		}
+		l.diags.Errorf(e.Pos(), "undefined variable %q", e.Name)
+		return &ir.Const{V: 0}
 	case *ast.UnaryExpr:
 		return l.lowerUnary(e)
 	case *ast.BinaryExpr:
@@ -1224,6 +1233,12 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 		if dev, conn, ch, ok := l.channelOf(e); ok {
 			r := l.b.NewReg("channel")
 			l.b.Emit(&ir.Load{Dst: r, Dev: channelDev(dev, conn), Logic: "Channel" + itoa(ch)})
+			return r
+		}
+		if dev, addr, ok := l.stackOf(e); ok {
+			r := l.b.NewReg("stack")
+			l.b.Emit(&ir.Builtin{Name: "get", Dst: r,
+				Args: []ir.Value{l.deviceOperand(dev), l.lowerExpr(addr)}})
 			return r
 		}
 		l.diags.Errorf(e.Pos(), "index expression is not a value")
@@ -1483,6 +1498,13 @@ func (l *lowerer) lowerDeviceRead(e *ast.SelectorExpr) ir.Value {
 		if id.Name == "LogicType" {
 			return &ir.Const{Raw: "LogicType." + e.Sel.Name}
 		}
+		// Escape hatch: an unknown `Enum.Member` is emitted verbatim so new
+		// game enums work without a compiler update (the game assembler
+		// resolves the name). Warn so typos are still visible.
+		full := id.Name + "." + e.Sel.Name
+		l.diags.WarnfCode("unknown-enum", e.Pos(),
+			"unknown enum %q; emitting verbatim (add it to builtin.EnumConstants for a numeric value)", full)
+		return &ir.Const{Raw: full}
 	}
 	l.diags.Errorf(e.Pos(), "unsupported device access")
 	return &ir.Const{V: 0}
@@ -1518,8 +1540,15 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		return &ir.Const{V: 0}
 	}
 	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-		if base, ok := sel.X.(*ast.Ident); ok && base.Name == "batch" {
-			return l.lowerBatchCall(call, sel.Sel.Name, needResult)
+		if base, ok := sel.X.(*ast.Ident); ok {
+			switch base.Name {
+			case "batch":
+				return l.lowerBatchCall(call, sel.Sel.Name, needResult)
+			case "sorter":
+				return l.lowerSorterCall(call, sel.Sel.Name)
+			case "printer":
+				return l.lowerPrinterCall(call, sel.Sel.Name)
+			}
 		}
 		l.diags.Errorf(call.Pos(), "unsupported call target")
 		return &ir.Const{V: 0}
@@ -1557,6 +1586,22 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			return &ir.Const{V: 0}
 		}
 		return &ir.Const{Raw: "STR(" + strconv.Quote(s.Value) + ")"}
+	}
+
+	// raw("...") emits its argument verbatim as an IC10 operand. It is the
+	// escape hatch for game constants the compiler does not know (e.g. a bare
+	// enum member or a new assembler keyword).
+	if id.Name == "raw" {
+		if len(call.Args) != 1 {
+			l.diags.Errorf(call.Pos(), "raw expects one string argument")
+			return &ir.Const{V: 0}
+		}
+		s, ok := call.Args[0].(*ast.StringLit)
+		if !ok {
+			l.diags.Errorf(call.Args[0].Pos(), "raw expects a string literal")
+			return &ir.Const{V: 0}
+		}
+		return &ir.Const{Raw: s.Value}
 	}
 
 	// isLoadValid / isStoreValid are condition-only builtins.
@@ -1597,6 +1642,31 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		return &ir.Const{V: 0}
 	}
 
+	// readById(id, lt) / writeById(id, lt, v) address a device by its
+	// ReferenceId (IC10 "ld r? id rN" / "sd id rN r?").
+	if id.Name == "readById" {
+		if len(call.Args) != 2 {
+			l.diags.Errorf(call.Pos(), "readById expects a device id and a logic type")
+			return &ir.Const{V: 0}
+		}
+		devID := l.lowerExpr(call.Args[0])
+		logic := l.dynamicLogic(call.Args[1])
+		r := l.b.NewReg("read")
+		l.b.Emit(&ir.LoadDyn{Dst: r, DevID: devID, Logic: logic})
+		return r
+	}
+	if id.Name == "writeById" {
+		if len(call.Args) != 3 {
+			l.diags.Errorf(call.Pos(), "writeById expects a device id, a logic type and a value")
+			return &ir.Const{V: 0}
+		}
+		devID := l.lowerExpr(call.Args[0])
+		logic := l.dynamicLogic(call.Args[1])
+		src := l.lowerExpr(call.Args[2])
+		l.b.Emit(&ir.StoreDyn{DevID: devID, Logic: logic, Src: src})
+		return &ir.Const{V: 0}
+	}
+
 	// readDev(reg, lt) / writeDev(reg, lt, v) select the device port from a
 	// register at runtime (IC10 "l r? drN rM" / "s drN rM r?").
 	if id.Name == "readDev" {
@@ -1619,6 +1689,44 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		logic := l.dynamicLogic(call.Args[1])
 		src := l.lowerExpr(call.Args[2])
 		l.b.Emit(&ir.StoreDyn{DevPtr: ptr, Logic: logic, Src: src})
+		return &ir.Const{V: 0}
+	}
+
+	// readDevSlot(reg, index, slt) / writeDevSlot(reg, index, slt, v) select the
+	// device port from a register for slot access (IC10 "ls r? drN i slt" /
+	// "ss drN i slt r?").
+	if id.Name == "readDevSlot" {
+		if len(call.Args) != 3 {
+			l.diags.Errorf(call.Pos(), "readDevSlot expects a register, a slot index and a slot type")
+			return &ir.Const{V: 0}
+		}
+		ptr := l.lowerExpr(call.Args[0])
+		index := l.lowerExpr(call.Args[1])
+		logic, ok := l.logicName(call.Args[2])
+		if !ok {
+			l.diags.Errorf(call.Args[2].Pos(), "expected a slot type name")
+			return &ir.Const{V: 0}
+		}
+		l.checkSlot(call.Args[2].Pos(), logic)
+		r := l.b.NewReg("readslot")
+		l.b.Emit(&ir.LoadSlot{Dst: r, DevPtr: ptr, Index: index, Logic: logic})
+		return r
+	}
+	if id.Name == "writeDevSlot" {
+		if len(call.Args) != 4 {
+			l.diags.Errorf(call.Pos(), "writeDevSlot expects a register, a slot index, a slot type and a value")
+			return &ir.Const{V: 0}
+		}
+		ptr := l.lowerExpr(call.Args[0])
+		index := l.lowerExpr(call.Args[1])
+		logic, ok := l.logicName(call.Args[2])
+		if !ok {
+			l.diags.Errorf(call.Args[2].Pos(), "expected a slot type name")
+			return &ir.Const{V: 0}
+		}
+		l.checkSlot(call.Args[2].Pos(), logic)
+		src := l.lowerExpr(call.Args[3])
+		l.b.Emit(&ir.StoreSlot{DevPtr: ptr, Index: index, Logic: logic, Src: src})
 		return &ir.Const{V: 0}
 	}
 
@@ -1674,13 +1782,19 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		args := make([]ir.Value, len(call.Args))
 		for i, a := range call.Args {
 			if i == 0 && builtin.SemOf(id.Name).DeviceArg >= 0 {
-				d, ok := l.deviceName(a)
-				if !ok {
-					l.diags.Errorf(a.Pos(), "%s expects a device as its first argument", id.Name)
-					return &ir.Const{V: 0}
+				if d, ok := l.deviceName(a); ok {
+					args[i] = &ir.Device{Name: d}
+					continue
 				}
-				args[i] = &ir.Device{Name: d}
-				continue
+				// The game's get/put take a full device operand (d?|r?|id),
+				// so a register or a device id is allowed here too. Other
+				// device builtins still require a dN/db port.
+				if id.Name == "get" || id.Name == "put" {
+					args[i] = l.lowerExpr(a)
+					continue
+				}
+				l.diags.Errorf(a.Pos(), "%s expects a device as its first argument", id.Name)
+				return &ir.Const{V: 0}
 			}
 			args[i] = l.lowerExpr(a)
 		}
@@ -1708,6 +1822,177 @@ var batchModes = map[string]float64{
 	"Sum":     1,
 	"Minimum": 2,
 	"Maximum": 3,
+}
+
+// packField is one bit-field of a device stack instruction.
+type packField struct {
+	value ir.Value
+	shift float64
+}
+
+// packBits builds `base | (value << shift) | ...` as IR. Constant operands are
+// folded immediately by emitBin, so the whole expression usually collapses to a
+// single number.
+func (l *lowerer) packBits(base float64, fields ...packField) ir.Value {
+	acc := ir.Value(&ir.Const{V: base})
+	for _, f := range fields {
+		v := f.value
+		if f.shift != 0 {
+			sh := l.b.NewReg("pack")
+			l.emitBin(ir.Shl, sh, v, &ir.Const{V: f.shift})
+			v = sh
+		}
+		r := l.b.NewReg("pack")
+		l.emitBin(ir.BitOr, r, acc, v)
+		acc = r
+	}
+	return acc
+}
+
+// packArg lowers a stack-instruction field and, when it is a compile-time
+// constant, checks that it fits in the field's bit width, so e.g. a quantity
+// that would overflow into the next field is reported instead of silently
+// packed.
+func (l *lowerer) packArg(e ast.Expr, bits int, what string) ir.Value {
+	v := l.lowerExpr(e)
+	if c, ok := v.(*ir.Const); ok && c.Raw == "" && c.Special == "" {
+		if !fitsBits(c.V, bits) {
+			l.diags.Errorf(e.Pos(), "%s %v does not fit in %d bits", what, c.V, bits)
+		}
+	}
+	return v
+}
+
+// fitsBits reports whether v fits in `bits` bits, accepting either a signed or
+// an unsigned representation (a 32-bit prefab hash may be negative or up to
+// 2^32-1).
+func fitsBits(v float64, bits int) bool {
+	if v != math.Trunc(v) {
+		return false
+	}
+	lo := -math.Pow(2, float64(bits-1))
+	hi := math.Pow(2, float64(bits)) - 1
+	return v >= lo && v <= hi
+}
+
+// lowerSorterCall lowers the sorter.* stack-instruction builders.
+func (l *lowerer) lowerSorterCall(call *ast.CallExpr, method string) ir.Value {
+	want := func(n int) bool {
+		if len(call.Args) != n {
+			l.diags.Errorf(call.Pos(), "sorter.%s expects %d arguments, got %d", method, n, len(call.Args))
+			return false
+		}
+		return true
+	}
+	switch method {
+	case "filterPrefabHash":
+		if !want(1) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(1, packField{l.packArg(call.Args[0], 32, "prefab hash"), 8})
+	case "filterPrefabHashNotEquals":
+		if !want(1) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(2, packField{l.packArg(call.Args[0], 32, "prefab hash"), 8})
+	case "filterSortingClass":
+		if !want(2) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(3,
+			packField{l.packArg(call.Args[0], 8, "condition operation"), 8},
+			packField{l.packArg(call.Args[1], 16, "sorting class"), 16})
+	case "filterSlotType":
+		if !want(2) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(4,
+			packField{l.packArg(call.Args[0], 8, "condition operation"), 8},
+			packField{l.packArg(call.Args[1], 16, "slot class"), 16})
+	case "filterQuantity":
+		if !want(2) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(5,
+			packField{l.packArg(call.Args[0], 8, "condition operation"), 8},
+			packField{l.packArg(call.Args[1], 16, "quantity"), 16})
+	case "limitNextExecutionByCount":
+		if !want(1) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(6, packField{l.packArg(call.Args[0], 32, "count"), 8})
+	}
+	l.diags.Errorf(call.Pos(), "unknown sorter instruction %q", method)
+	return &ir.Const{V: 0}
+}
+
+// lowerPrinterCall lowers the printer.* stack-instruction builders. The field
+// layouts are taken from the in-game Stationpedia (PrinterInstruction). Note
+// the placement constraints: StackPointer is only valid at stack address 63,
+// MissingRecipeReagent at 54..62, and the rest at 0..53.
+func (l *lowerer) lowerPrinterCall(call *ast.CallExpr, method string) ir.Value {
+	want := func(n int) bool {
+		if len(call.Args) != n {
+			l.diags.Errorf(call.Pos(), "printer.%s expects %d arguments, got %d", method, n, len(call.Args))
+			return false
+		}
+		return true
+	}
+	opOnly := func(op float64, n int) ir.Value {
+		if !want(n) {
+			return &ir.Const{V: 0}
+		}
+		return &ir.Const{V: op}
+	}
+	switch method {
+	case "none":
+		return opOnly(0, 0)
+	case "stackPointer": // address 63: OP | index<<8
+		if !want(1) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(1, packField{l.packArg(call.Args[0], 16, "index"), 8})
+	case "executeRecipe": // addresses 0..53: OP | quantity<<8 | prefabHash<<16
+		if !want(2) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(2,
+			packField{l.packArg(call.Args[0], 8, "quantity"), 8},
+			packField{l.packArg(call.Args[1], 32, "prefab hash"), 16})
+	case "waitUntilNextValid":
+		return opOnly(3, 0)
+	case "jumpIfNextInvalid": // addresses 0..53: OP | stackAddress<<8
+		if !want(1) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(4, packField{l.packArg(call.Args[0], 16, "stack address"), 8})
+	case "jumpToAddress": // addresses 0..53: OP | stackAddress<<8
+		if !want(1) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(5, packField{l.packArg(call.Args[0], 16, "stack address"), 8})
+	case "deviceSetLock": // addresses 0..53: OP | lockState<<8
+		if !want(1) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(6, packField{l.packArg(call.Args[0], 8, "lock state"), 8})
+	case "ejectReagent": // addresses 0..53: OP | reagentHash<<8
+		if !want(1) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(7, packField{l.packArg(call.Args[0], 32, "reagent hash"), 8})
+	case "ejectAllReagents":
+		return opOnly(8, 0)
+	case "missingRecipeReagent": // addresses 54..62: OP | quantityCeil<<8 | reagentHash<<16
+		if !want(2) {
+			return &ir.Const{V: 0}
+		}
+		return l.packBits(9,
+			packField{l.packArg(call.Args[0], 8, "quantity ceil"), 8},
+			packField{l.packArg(call.Args[1], 32, "reagent hash"), 16})
+	}
+	l.diags.Errorf(call.Pos(), "unknown printer instruction %q", method)
+	return &ir.Const{V: 0}
 }
 
 // lowerBatchCall handles the batch.read / batch.write family.
@@ -2192,6 +2477,30 @@ func (l *lowerer) slotOf(e ast.Expr) (dev string, index ast.Expr, ok bool) {
 
 // channelOf recognises d.channel[conn][ch] where both indices are compile-time
 // constants.
+// stackOf matches `dev.stack[addr]`, the device stack access sugar (IC10
+// get/put). dev may be a port (d0/db) or any expression resolving to a device
+// id; deviceOperand turns it into the right operand.
+func (l *lowerer) stackOf(e ast.Expr) (dev ast.Expr, addr ast.Expr, ok bool) {
+	idx, isIdx := e.(*ast.IndexExpr)
+	if !isIdx {
+		return nil, nil, false
+	}
+	sel, isSel := idx.X.(*ast.SelectorExpr)
+	if !isSel || sel.Sel.Name != "stack" {
+		return nil, nil, false
+	}
+	return sel.X, idx.Index, true
+}
+
+// deviceOperand lowers a device operand: a port becomes ir.Device, otherwise
+// the expression is lowered (a device id or a register holding one).
+func (l *lowerer) deviceOperand(e ast.Expr) ir.Value {
+	if d, ok := l.deviceName(e); ok {
+		return &ir.Device{Name: d}
+	}
+	return l.lowerExpr(e)
+}
+
 func (l *lowerer) channelOf(e ast.Expr) (dev string, conn, ch float64, ok bool) {
 	chIdx, isIdx := e.(*ast.IndexExpr)
 	if !isIdx {
@@ -2317,7 +2626,7 @@ func compoundBinOp(k token.Kind) (ir.BinOp, bool) {
 }
 
 func foldUnary(op token.Kind, c *ir.Const) (*ir.Const, bool) {
-	if c.Special != "" {
+	if c.Special != "" || c.Raw != "" {
 		return nil, false
 	}
 	switch op {
@@ -2341,7 +2650,7 @@ func ic10Mod(x, y float64) float64 {
 }
 
 func foldBin(op ir.BinOp, a, b *ir.Const) (*ir.Const, bool) {
-	if a.Special != "" || b.Special != "" {
+	if a.Special != "" || b.Special != "" || a.Raw != "" || b.Raw != "" {
 		return nil, false
 	}
 	x, y := a.V, b.V
@@ -2375,7 +2684,7 @@ func foldBin(op ir.BinOp, a, b *ir.Const) (*ir.Const, bool) {
 }
 
 func foldCmp(c ir.Cond, a, b *ir.Const) (*ir.Const, bool) {
-	if a.Special != "" || b.Special != "" {
+	if a.Special != "" || b.Special != "" || a.Raw != "" || b.Raw != "" {
 		return nil, false
 	}
 	x, y := a.V, b.V

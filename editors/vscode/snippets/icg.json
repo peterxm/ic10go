@@ -110,6 +110,41 @@
     "body": ["${1:d2}.slot[${2:0}].${3:Mature}"],
     "description": "read a machine slot property"
   },
+  "Device stack read": {
+    "prefix": "stackread",
+    "body": ["${1:d0}.stack[${2:0}]"],
+    "description": "read a device memory stack entry (get)"
+  },
+  "Device stack write": {
+    "prefix": "stackwrite",
+    "body": ["${1:d0}.stack[${2:0}] = ${3:0}"],
+    "description": "write a device memory stack entry (put)"
+  },
+  "Read by ReferenceId": {
+    "prefix": "readbyid",
+    "body": ["readById(${1:id}, ${2:LogicType.Open})"],
+    "description": "read a logic type by device ReferenceId (IC10 ld)"
+  },
+  "Write by ReferenceId": {
+    "prefix": "writebyid",
+    "body": ["writeById(${1:id}, ${2:LogicType.Open}, ${3:1})"],
+    "description": "write a logic type by device ReferenceId (IC10 sd)"
+  },
+  "Dynamic slot read": {
+    "prefix": "readdevslot",
+    "body": ["readDevSlot(${1:0}, ${2:0}, ${3:Occupied})"],
+    "description": "read a slot from a register-selected device port (IC10 ls drN)"
+  },
+  "Sorter filter instruction": {
+    "prefix": "sorterfilter",
+    "body": ["sorter.filterSortingClass(${1:Equals}, ${2:SortingClass.Ores})"],
+    "description": "build a Logic Sorter filter instruction"
+  },
+  "Printer execute recipe": {
+    "prefix": "printerexec",
+    "body": ["printer.executeRecipe(${1:50}, hash(\"${2:ItemCableCoil}\"))"],
+    "description": "build a Printer ExecuteRecipe instruction"
+  },
   "If / else": {
     "prefix": "ifelse",
     "body": [

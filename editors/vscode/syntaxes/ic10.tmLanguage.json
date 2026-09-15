@@ -36,7 +36,7 @@
       "patterns": [
         {
           "name": "constant.other.enum.ic10",
-          "match": "\\b(SorterInstruction|PrinterInstruction|ReagentMode|SlotClass|SortingClass|Sound|DisplayMode|PowerMode|Color|LogicType)\\.[A-Za-z_][A-Za-z0-9_]*"
+          "match": "\\b(SorterInstruction|PrinterInstruction|TraderInstruction|ConditionOperation|ReagentMode|LogicReagentMode|SlotClass|SortingClass|SorterStack|PrinterStack|Stack|Sound|DisplayMode|PowerMode|Color|LogicType)\\.[A-Za-z_][A-Za-z0-9_]*"
         }
       ]
     },
@@ -44,7 +44,7 @@
       "patterns": [
         {
           "name": "keyword.instruction.ic10",
-          "match": "\\b(b?eqz|b?nez|b?ltz|b?lez|b?gtz|b?gez|b?eq|b?ne|b?lt|b?le|b?gt|b?ge|bnan|b?apz|b?naz|b?ap|b?na|b?dns|b?dse|bdnvl|bdnvs|br?[a-z]+al?|j|jal|jr|yield|sleep|hcf|lbn?s?|sbn?s?|ls|ss|lb|sb|add|sub|mul|div|mod|pow|abs|sgn|sqrt|exp|log|max|min|clamp|lerp|ceil|floor|round|trunc|rand|sin|cos|tan|asin|acos|atan2?|and|or|xor|not|nor|sll|sra|srl|sla|rol|ror|ext|ins|push|pop|peek|poke|getd?|putd?|clr|rmap|select|move|sdse|sdns)\\b"
+          "match": "\\b(b?eqz|b?nez|b?ltz|b?lez|b?gtz|b?gez|b?eq|b?ne|b?lt|b?le|b?gt|b?ge|bnan|b?apz|b?naz|b?ap|b?na|b?dns|b?dse|bdnvl|bdnvs|br?[a-z]+al?|j|jal|jr|yield|sleep|hcf|lbn?s?|sbn?s?|ls|ss|lb|sb|add|sub|mul|div|mod|pow|abs|sgn|sqrt|exp|log|max|min|clamp|lerp|ceil|floor|round|trunc|rand|sin|cos|tan|asin|acos|atan2?|and|or|xor|not|nor|sll|sra|srl|sla|rol|ror|ext|ins|push|pop|peek|poke|getd?|putd?|clrd?|ld|sd|rmap|select|move|sdse|sdns)\\b"
         }
       ]
     },

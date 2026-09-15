@@ -41,13 +41,17 @@ var semantics = map[string]Sem{
 	"readReagent": {ReadsDev: true, DeviceArg: 0},
 
 	// Dynamic logic type / device register (lowered specially).
-	"read":     {ReadsDev: true, DeviceArg: 0},
-	"write":    {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: 0},
-	"readDev":  {ReadsDev: true, DeviceArg: -1},
-	"writeDev": {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: -1},
-	"setIreg":  {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: -1},
-	"ireg":     {ReadsDev: true, DeviceArg: -1},
-	"jump":     {SideEffect: true, Barrier: true, DeviceArg: -1},
+	"read":         {ReadsDev: true, DeviceArg: 0},
+	"write":        {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: 0},
+	"readDev":      {ReadsDev: true, DeviceArg: -1},
+	"writeDev":     {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: -1},
+	"readById":     {ReadsDev: true, DeviceArg: -1},
+	"writeById":    {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: -1},
+	"readDevSlot":  {ReadsDev: true, DeviceArg: -1},
+	"writeDevSlot": {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: -1},
+	"setIreg":      {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: -1},
+	"ireg":         {ReadsDev: true, DeviceArg: -1},
+	"jump":         {SideEffect: true, Barrier: true, DeviceArg: -1},
 }
 
 // pureBuiltins are the builtins with no observable side effect and no device

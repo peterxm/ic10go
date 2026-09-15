@@ -1,0 +1,27 @@
+// 逻辑分拣器（Logic Sorter）按物品分类分拣矿石。
+//
+// 分拣器内部是一块栈内存，每个地址放一条“过滤指令”。指令是把 OP 码与参数
+// 按位段打包成的整数（低 8 位为 OP 码）：
+//
+//   FilterSortingClassCompare（OP 码 3）
+//     位 0..7   OP 码     = SorterInstruction.FilterSortingClassCompare
+//     位 8..15  条件运算  = Equals / Greater / Less / NotEquals
+//     位 16..31 分类      = SortingClass.*
+//
+//   其它常用指令：
+//     FilterSlotTypeCompare（OP 码 4）   位 16..31 = SlotClass.*
+//     FilterQuantityCompare（OP 码 5）   位 16..31 = 数量
+//     FilterPrefabHashEquals / NotEquals（OP 码 1 / 2）
+//       位 8..39 = hash("ItemXxx")
+//
+// Mode：All(0) 全部匹配 / Any(1) 至少一个匹配 / None(2) 全部不匹配，默认 All。
+// 需要切换时写 d0.Mode = 1（Any）或 2（None）。
+//
+// sorter.filterSortingClass(条件, 分类) 会把上面三段打包成一条整数，等价于
+//   SortingClass.Ores<<16 | Equals<<8 | SorterInstruction.FilterSortingClassCompare
+// 这些游戏枚举名由编译器求值成数值后再写入，不依赖游戏汇编器解析。
+
+func main() {
+    // 向分拣器栈地址 0 写入“分类 == 矿石”的过滤指令。
+    put(d0, 0, sorter.filterSortingClass(Equals, SortingClass.Ores))
+}

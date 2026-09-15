@@ -207,34 +207,44 @@ type Store struct {
 	Src   Value
 }
 
+// LoadSlot reads a device slot property. When DevPtr is set the device port is
+// chosen at runtime from the register it names (IC10 "ls r? drN index slt").
 type LoadSlot struct {
-	Dst   *Reg
-	Dev   string
-	Index Value
-	Logic string
+	Dst    *Reg
+	Dev    string
+	DevPtr Value
+	Index  Value
+	Logic  string
 }
 
+// StoreSlot writes a device slot property. When DevPtr is set the device port
+// is chosen at runtime (IC10 "ss drN index slt r?").
 type StoreSlot struct {
-	Dev   string
-	Index Value
-	Logic string
-	Src   Value
+	Dev    string
+	DevPtr Value
+	Index  Value
+	Logic  string
+	Src    Value
 }
 
 // LoadDyn reads a device logic value whose logic type is chosen at runtime
 // (IC10 "l r? d? rN"). When DevPtr is set the device port is also chosen at
-// runtime from the register it names (IC10 "l r? drN rM").
+// runtime from the register it names (IC10 "l r? drN rM"). When DevID is set
+// the device is addressed by its ReferenceId (IC10 "ld r? id rN").
 type LoadDyn struct {
 	Dst    *Reg
 	Dev    string
 	DevPtr Value
+	DevID  Value
 	Logic  Value
 }
 
 // StoreDyn writes a device logic value whose logic type is chosen at runtime.
+// DevID selects a device by ReferenceId (IC10 "sd id rN r?").
 type StoreDyn struct {
 	Dev    string
 	DevPtr Value
+	DevID  Value
 	Logic  Value
 	Src    Value
 }

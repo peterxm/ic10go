@@ -80,6 +80,7 @@ ic10c build --json <file.icg>
 |------|------|------|
 | `unknown-logic-type` | warning | 逻辑类型不在内建表中 |
 | `unknown-slot-type` | warning | 槽位类型不在内建表中 |
+| `unknown-enum` | warning | 未知 `Enum.Member`，原样输出（可用 `raw("...")` 显式原样输出） |
 | `no-main` | error | 找不到 `main` 函数 |
 | `data-too-large` | error | 数据段超出芯片栈 |
 | `codegen-error` | error | 代码生成失败（例如超出 128 行 / 4096 字节 / 90 字符） |

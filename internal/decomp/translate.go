@@ -82,6 +82,10 @@ func (d *decompiler) translate(l icLine) []string {
 			return []string{fmt.Sprintf("write(%s, %s, %s)", d.resolve(l.args[0]), d.a(l, 1), d.a(l, 2))}
 		}
 		return []string{d.deviceWrite(l.args[0], l.args[1], d.a(l, 2))}
+	case "ld":
+		return []string{d.assignDst(l.args[0], fmt.Sprintf("readById(%s, %s)", d.a(l, 1), d.a(l, 2)))}
+	case "sd":
+		return []string{fmt.Sprintf("writeById(%s, %s, %s)", d.a(l, 0), d.a(l, 1), d.a(l, 2))}
 	case "ls":
 		dst := d.assignDst(l.args[0], fmt.Sprintf("%s.slot[%s].%s", d.resolve(l.args[1]), d.a(l, 2), l.args[3]))
 		return []string{dst}

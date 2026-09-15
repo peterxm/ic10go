@@ -450,19 +450,42 @@ batch.writeSlot(hash("StructureBattery"), 0, "ChargeRatio", 1)       // sbs
 ### 7.7 设备栈 / 按 id
 
 ```go
-get(d0, addr)          // get：按端口
-put(d0, addr, value)   // put：按端口
-getd(id, addr)         // get：按设备 id（生成统一 get，不再生成过期的 getd）
-putd(id, addr, value)  // put：按设备 id（生成统一 put）
+v := d0.stack[addr]    // get：读取设备栈（语法糖）
+d0.stack[addr] = v     // put：写入设备栈（语法糖）
+id := d1.ReferenceId
+id.stack[0] = v        // 设备操作数也可为 id / 寄存器（生成统一 get/put）
+
+get(dev, addr)         // get：dev 可为端口 dN/db、设备 id 或保存 id 的寄存器
+put(dev, addr, value)  // put：同上
+getd(id, addr)         // 等价 get，按设备 id
+putd(id, addr, value)  // 等价 put，按设备 id
 clr(d0)                // clr
 clrById(id)            // clrd：按设备 id 清空
 rmap(d0, reagentHash)  // rmap
-readReagent(d0, ReagentMode.Contents, key)  // lr：读取反应物
+readReagent(d0, LogicReagentMode.Contents, key)  // lr：读取反应物
 ```
 
-> `getd` / `putd` 是 `.icg` 的按 id 形式；游戏里独立的 `getd`/`putd` 指令已弃用
-> （编辑器划线、百科不列），因此编译器改为生成统一的 `get` / `put`
-> （它们的 device 操作数现在可接受 id）。
+> 游戏的 `get` / `put` 的 device 操作数是 `d?|r?|id`，因此 `.icg` 的 `get`/`put`
+> 也接受设备 id 或保存 id 的寄存器；`getd`/`putd` 只是按 id 的别名，编译器统一
+> 生成 `get` / `put`（独立的 `getd`/`putd` 指令已弃用）。
+> `dN.stack[addr]` / `id.stack[addr]` 与 `dN.slot[i].X` 一样是语法糖。
+
+按 ReferenceId 读写逻辑类型（IC10 `ld` / `sd`），以及运行期选择设备端口的槽位
+读写（IC10 `ls drN` / `ss drN`）：
+
+```go
+v := readById(id, LogicType.Temperature)   // ld：按 id 读逻辑类型
+writeById(id, LogicType.On, 1)             // sd：按 id 写逻辑类型
+ptr := d2.Setting                           // 端口号在寄存器里
+n := readDevSlot(ptr, 0, Occupied)          // ls r? drN i slt
+writeDevSlot(ptr, 1, On, 1)                 // ss drN i slt r?
+```
+
+> `read`/`write` 用端口，`readById`/`writeById` 用 ReferenceId，`readDev`/`writeDev`
+> 用寄存器里的端口号（`drN`），`readDevSlot`/`writeDevSlot` 是 `drN` 的槽位版本。
+> 设备栈地址/容量常量：`Stack.Size`(512)、`SorterStack.Size`(32)、
+> `PrinterStack.Size`(64)、`PrinterStack.StackPointer`(63)、
+> `PrinterStack.MissingRecipeReagent`(54)。
 
 > 在标准 IC host 上，`db` 的栈就是芯片自身的栈：`get/put(db, addr)` 与
 > `push/pop/poke/peek` 访问同一块内存（真机已验证）。栈是**持久**的，跨代码
@@ -524,9 +547,50 @@ notApproxZero(a, tol)  // snaz
 ```go
 hash("StructureBattery")   // CRC-32，编译期常量
 str("Ready!")              // 显示字符串，输出为 STR("Ready!")
+raw("Equals")              // 原样输出该 IC10 操作数（游戏枚举/关键字逃生口）
 ```
 
-### 8.7 底层
+> `raw("...")` 把字符串原样写进 IC10，用于编译器还不认识的游戏常量或汇编器
+> 关键字；未知的 `Enum.Member` 也会**原样输出并告警**，因此游戏更新新增枚举
+> 无需改编译器（已知枚举仍优先用内建表里的数值）。
+
+### 8.7 设备栈指令构建器
+
+分拣器 / 打印机的栈指令是按位段打包的整数。`sorter.*` / `printer.*` 构建器
+按手册的字段布局打包（常量参数会折叠成单个数字）：
+
+```go
+put(d0, 0, sorter.filterPrefabHash(hash("ItemIronOre")))       // hash << 8 | 1
+put(d0, 1, sorter.filterPrefabHashNotEquals(hash("ItemGold"))) // hash << 8 | 2
+put(d0, 2, sorter.filterSortingClass(Equals, SortingClass.Ores))   // class<<16 | op<<8 | 3
+put(d0, 3, sorter.filterSlotType(Greater, SlotClass.Battery))      // class<<16 | op<<8 | 4
+put(d0, 4, sorter.filterQuantity(Less, 10))                        // qty<<16   | op<<8 | 5
+put(d0, 5, sorter.limitNextExecutionByCount(5))                    // count<<8  | 6
+
+put(d1, 0, printer.none())                            // 0
+put(d1, 1, printer.stackPointer(7))                   // index<<8 | 1（仅栈地址 63）
+put(d1, 2, printer.executeRecipe(50, hash("ItemCableCoil"))) // qty<<8 | hash<<16 | 2
+put(d1, 3, printer.waitUntilNextValid())              // 3
+put(d1, 4, printer.jumpIfNextInvalid(3))              // addr<<8 | 4
+put(d1, 5, printer.jumpToAddress(10))                 // addr<<8 | 5
+put(d1, 6, printer.deviceSetLock(1))                  // lock<<8 | 6
+put(d1, 7, printer.ejectReagent(hash("Iron")))        // hash<<8 | 7
+put(d1, 8, printer.ejectAllReagents())                // 8
+put(d1, 9, printer.missingRecipeReagent(2, hash("Iron"))) // ceil<<8 | hash<<16 | 9
+```
+
+> `sorter` / `printer` 是命名空间（与 `batch` 一样），不是设备；设备仍用 `dN`/`db`
+> 或 `const myPrinter = d1` 这样的别名。构建器参数可以是运行期值（会生成
+> `sll`/`or`）；**常量参数会做位宽校验**（如 `printer.executeRecipe` 的 quantity
+> 只有 8 位，超出报错而不是串到 hash 字段）。字段布局取自游戏内 Stationpedia
+> 的 `PrinterInstruction`：`StackPointer` 仅用于栈地址 63，`MissingRecipeReagent`
+> 仅用于 54..62，其余用于 0..53。
+
+条件运算取 `Equals` / `Greater` / `Less` / `NotEquals`（0/1/2/3）；分类/槽位/数量
+常量取 `SortingClass.*` / `SlotClass.*`。分拣器 `Mode`：`All`(0) / `Any`(1) /
+`None`(2)。
+
+### 8.8 底层
 
 | 函数 | 说明 |
 |------|------|

@@ -116,7 +116,25 @@ func runWrites(code string, init map[[2]string]float64) ([]string, bool) {
 		return writes, true
 	}
 	err := m.Run(200000)
+	writes = append(writes, deviceStacks(m)...)
 	return writes, err != nil && err != vm.ErrStepLimit
+}
+
+// deviceStacks snapshots the d0..d2 memory stacks so a build that leaves
+// different stack contents is caught by the differential comparison. `db` is
+// excluded (its stack is the chip's own, used by spilling and the data
+// segment).
+func deviceStacks(m *vm.Machine) []string {
+	var out []string
+	for _, name := range []string{"d0", "d1", "d2"} {
+		d := m.Device(name)
+		for i, v := range d.Stack {
+			if v != 0 {
+				out = append(out, fmt.Sprintf("%s.stack[%d]=%v", name, i, v))
+			}
+		}
+	}
+	return out
 }
 
 // runWithLoader installs the data segment, then runs the runtime on top.
@@ -137,6 +155,7 @@ func runWithLoader(runtime, loader string, init map[[2]string]float64) ([]string
 		return writes, true
 	}
 	err := m.Run(200000)
+	writes = append(writes, deviceStacks(m)...)
 	return writes, err != nil && err != vm.ErrStepLimit
 }
 
@@ -262,7 +281,7 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		g.simple(sb, ind)
 		return
 	}
-	switch g.rng.Intn(23) {
+	switch g.rng.Intn(26) {
 	case 0, 1:
 		g.simple(sb, ind)
 	case 2, 3:
@@ -379,6 +398,12 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		fmt.Fprintf(&body, "    %s += 1\n", g.varName())
 		body.WriteString("    ret\n")
 		g.callees = append(g.callees, body.String())
+	case 23:
+		fmt.Fprintf(sb, "%sput(%s, %d, %s)\n", ind, g.stackDev(), g.rng.Intn(8), g.expr(2))
+	case 24:
+		fmt.Fprintf(sb, "%s%s = get(%s, %d)\n", ind, g.varName(), g.stackDev(), g.rng.Intn(8))
+	case 25:
+		fmt.Fprintf(sb, "%sclr(%s)\n", ind, g.stackDev())
 	default:
 		ncase := 2 + g.rng.Intn(9) // 2..10 dense cases
 		if g.rng.Intn(2) == 0 {
@@ -424,6 +449,14 @@ func (g *gen) varName() string { return g.vars[g.rng.Intn(len(g.vars))] }
 
 func (g *gen) devPort() string {
 	devs := []string{"d0", "d1", "d2", "db"}
+	return devs[g.rng.Intn(len(devs))]
+}
+
+// stackDev returns a device port whose memory stack is safe to use. `db` is
+// excluded because its stack is the chip's own persistent stack (register
+// spilling and the data segment lay it out differently between builds).
+func (g *gen) stackDev() string {
+	devs := []string{"d0", "d1", "d2"}
 	return devs[g.rng.Intn(len(devs))]
 }
 

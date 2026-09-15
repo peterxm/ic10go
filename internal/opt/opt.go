@@ -325,8 +325,10 @@ func replaceConstUses(i ir.Instr, state map[*ir.Reg]*ir.Const) bool {
 	case *ir.Store:
 		v.Src = rw(v.Src)
 	case *ir.LoadSlot:
+		v.DevPtr = rw(v.DevPtr)
 		v.Index = rw(v.Index)
 	case *ir.StoreSlot:
+		v.DevPtr = rw(v.DevPtr)
 		v.Index = rw(v.Index)
 		v.Src = rw(v.Src)
 	case *ir.Builtin:
@@ -395,8 +397,10 @@ func rewriteUses(i ir.Instr, val map[*ir.Reg]ir.Value) bool {
 	case *ir.Store:
 		v.Src = rw(v.Src)
 	case *ir.LoadSlot:
+		v.DevPtr = rw(v.DevPtr)
 		v.Index = rw(v.Index)
 	case *ir.StoreSlot:
+		v.DevPtr = rw(v.DevPtr)
 		v.Index = rw(v.Index)
 		v.Src = rw(v.Src)
 	case *ir.Builtin:
@@ -411,9 +415,11 @@ func rewriteUses(i ir.Instr, val map[*ir.Reg]ir.Value) bool {
 		v.Src = rw(v.Src)
 	case *ir.LoadDyn:
 		v.DevPtr = rw(v.DevPtr)
+		v.DevID = rw(v.DevID)
 		v.Logic = rwLogic(v.Logic, val, &changed)
 	case *ir.StoreDyn:
 		v.DevPtr = rw(v.DevPtr)
+		v.DevID = rw(v.DevID)
 		v.Logic = rwLogic(v.Logic, val, &changed)
 		v.Src = rw(v.Src)
 	case *ir.LoadIndirect:
@@ -1146,7 +1152,7 @@ func selectConvert(fn *ir.Function) bool {
 func selectCond(br *ir.Br) (val ir.Value, swap, needCmp bool) {
 	isZero := func(v ir.Value) bool {
 		c, ok := v.(*ir.Const)
-		return ok && c.Special == "" && c.V == 0
+		return ok && c.Special == "" && c.Raw == "" && c.V == 0
 	}
 	switch br.Cond {
 	case ir.NonZero:
@@ -1576,7 +1582,7 @@ func removeUnreachable(fn *ir.Function) bool {
 // ---------------------------------------------------------------------------
 
 func foldBin(op ir.BinOp, a, b *ir.Const) (*ir.Const, bool) {
-	if a.Special != "" || b.Special != "" {
+	if a.Special != "" || b.Special != "" || a.Raw != "" || b.Raw != "" {
 		return nil, false
 	}
 	x, y := a.V, b.V
@@ -1610,7 +1616,7 @@ func foldBin(op ir.BinOp, a, b *ir.Const) (*ir.Const, bool) {
 }
 
 func foldUn(op ir.UnOp, a *ir.Const) (*ir.Const, bool) {
-	if a.Special != "" {
+	if a.Special != "" || a.Raw != "" {
 		return nil, false
 	}
 	switch op {
@@ -1628,7 +1634,7 @@ func foldUn(op ir.UnOp, a *ir.Const) (*ir.Const, bool) {
 }
 
 func foldCmpUn(c ir.Cond, a *ir.Const) (*ir.Const, bool) {
-	if a.Special != "" {
+	if a.Special != "" || a.Raw != "" {
 		return nil, false
 	}
 	switch c {
@@ -1647,7 +1653,7 @@ func foldCmpUn(c ir.Cond, a *ir.Const) (*ir.Const, bool) {
 }
 
 func foldCmp(c ir.Cond, a, b *ir.Const) (*ir.Const, bool) {
-	if a.Special != "" || b.Special != "" {
+	if a.Special != "" || b.Special != "" || a.Raw != "" || b.Raw != "" {
 		return nil, false
 	}
 	x, y := a.V, b.V
@@ -2047,13 +2053,13 @@ func instrKey(i ir.Instr, reg func(*ir.Reg) string) string {
 	case *ir.Store:
 		return "store|" + v.Dev + "|" + v.Logic + "|" + vk(v.Src)
 	case *ir.LoadSlot:
-		return "loadslot|" + v.Dev + "|" + v.Logic + "|" + vk(v.Index) + "|" + reg(v.Dst)
+		return "loadslot|" + v.Dev + "|" + vk(v.DevPtr) + "|" + v.Logic + "|" + vk(v.Index) + "|" + reg(v.Dst)
 	case *ir.StoreSlot:
-		return "storeslot|" + v.Dev + "|" + v.Logic + "|" + vk(v.Index) + "|" + vk(v.Src)
+		return "storeslot|" + v.Dev + "|" + vk(v.DevPtr) + "|" + v.Logic + "|" + vk(v.Index) + "|" + vk(v.Src)
 	case *ir.LoadDyn:
-		return "loaddyn|" + v.Dev + "|" + vk(v.DevPtr) + "|" + vk(v.Logic) + "|" + reg(v.Dst)
+		return "loaddyn|" + v.Dev + "|" + vk(v.DevPtr) + "|" + vk(v.DevID) + "|" + vk(v.Logic) + "|" + reg(v.Dst)
 	case *ir.StoreDyn:
-		return "storedyn|" + v.Dev + "|" + vk(v.DevPtr) + "|" + vk(v.Logic) + "|" + vk(v.Src)
+		return "storedyn|" + v.Dev + "|" + vk(v.DevPtr) + "|" + vk(v.DevID) + "|" + vk(v.Logic) + "|" + vk(v.Src)
 	case *ir.LoadSpecial:
 		return "loadsp|" + v.Name + "|" + reg(v.Dst)
 	case *ir.StoreSpecial:
