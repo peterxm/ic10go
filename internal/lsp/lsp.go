@@ -502,6 +502,13 @@ func (s *Server) resolveCompletion(w *bufio.Writer, id json.RawMessage, params j
 	case hasDoc(builtin.LogicTypeDocs, label):
 		d, _ := builtin.LogicTypeDocs[label]
 		item.Documentation = &markupContent{Kind: "markdown", Value: docText(d, s.zh)}
+	case isBareEnum(label):
+		v, _ := bareEnumValue(label)
+		item.Documentation = &markupContent{Kind: "markdown", Value: fmt.Sprintf("enum member `%s = %v`", label, v)}
+	case isRawConst(label):
+		item.Documentation = &markupContent{Kind: "markdown", Value: fmt.Sprintf("constant `%s = %v`", label, builtin.RawConstants[label])}
+	case isBatchMode(label):
+		item.Documentation = &markupContent{Kind: "markdown", Value: fmt.Sprintf("batch mode `%s = %v`", label, builtin.BatchModes[label])}
 	}
 	reply(w, id, item)
 }
@@ -590,6 +597,12 @@ func baseCompletionItems() []completionItem {
 		ci("writeDevSlot", 3, "runtime device port slot"),
 		ci("isLoadValid", 3, "condition only"),
 		ci("isStoreValid", 3, "condition only"),
+		ci("hash", 3, "compile-time CRC-32"), ci("str", 3, "display string"), ci("raw", 3, "verbatim operand"),
+		ci("jump", 3, "computed jump"), ci("ireg", 3, "indirect register"), ci("setIreg", 3, "indirect register"),
+		ci("ra", 6, "special register"), ci("sp", 6, "special register"),
+	}
+	for name := range builtin.BatchModes {
+		items = append(items, completionItem{Label: name, Kind: 21, Detail: "batch mode"})
 	}
 	for name := range builtin.Funcs {
 		items = append(items, completionItem{Label: name, Kind: 3, Detail: "builtin"})
@@ -599,6 +612,16 @@ func baseCompletionItems() []completionItem {
 	}
 	for name := range builtin.SlotTypes {
 		items = append(items, completionItem{Label: name, Kind: 21, Detail: "slot type"})
+	}
+	// Bare game enum members (Equals / Greater / Less / NotEquals) and numeric
+	// constants (pi / deg2rad / ...) are valid identifiers on their own.
+	for name := range builtin.EnumConstants {
+		if !strings.Contains(name, ".") {
+			items = append(items, completionItem{Label: name, Kind: 21, Detail: "enum"})
+		}
+	}
+	for name := range builtin.RawConstants {
+		items = append(items, completionItem{Label: name, Kind: 21, Detail: "constant"})
 	}
 	return items
 }
@@ -699,6 +722,31 @@ func enumItems(recv string) []completionItem {
 	}
 	sortItems(items)
 	return items
+}
+
+// bareEnumValue returns the value of a bare (undotted) game enum constant such
+// as the sorter CONDOP names (Equals / Greater / Less / NotEquals).
+func bareEnumValue(name string) (float64, bool) {
+	if strings.Contains(name, ".") {
+		return 0, false
+	}
+	v, ok := builtin.EnumConstants[name]
+	return v, ok
+}
+
+func isBareEnum(name string) bool {
+	_, ok := bareEnumValue(name)
+	return ok
+}
+
+func isRawConst(name string) bool {
+	_, ok := builtin.RawConstants[name]
+	return ok
+}
+
+func isBatchMode(name string) bool {
+	_, ok := builtin.BatchModes[name]
+	return ok
 }
 
 func isDevicePort(s string) bool {
@@ -1021,6 +1069,24 @@ func (s *Server) hoverFor(text, word string) string {
 	}
 	if d, ok := builtin.LogicTypeDocs[word]; ok {
 		return docText(d, s.zh)
+	}
+	if v, ok := bareEnumValue(word); ok {
+		if s.zh {
+			return fmt.Sprintf("枚举成员 `%s = %v`", word, v)
+		}
+		return fmt.Sprintf("enum member `%s = %v`", word, v)
+	}
+	if v, ok := builtin.RawConstants[word]; ok {
+		if s.zh {
+			return fmt.Sprintf("常量 `%s = %v`", word, v)
+		}
+		return fmt.Sprintf("constant `%s = %v`", word, v)
+	}
+	if v, ok := builtin.BatchModes[word]; ok {
+		if s.zh {
+			return fmt.Sprintf("批量模式 `%s = %v`", word, v)
+		}
+		return fmt.Sprintf("batch mode `%s = %v`", word, v)
 	}
 	switch word {
 	case "true", "false", "nan", "pinf", "ninf":

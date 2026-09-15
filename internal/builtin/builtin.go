@@ -397,6 +397,17 @@ var RawConstants = map[string]float64{
 	"epsilon": 2.220446049250313e-16,
 }
 
+// BatchModes maps a batch aggregation mode name to its IC10 operand. It is the
+// single source of truth for `batch.*` mode arguments (strings, bare names and
+// `LogicBatchMethod.*` constants all resolve through it).
+var BatchModes = map[string]float64{
+	"Average": 0,
+	"Sum":     1,
+	"Minimum": 2,
+	"Maximum": 3,
+	"Count":   4,
+}
+
 // LogicTypes is the set of device logic type names understood by IC10. It
 // mirrors the game's LogicType enum (minus None); update it as the game adds
 // members.

@@ -168,6 +168,19 @@ func TestHoverEnumMember(t *testing.T) {
 	}
 }
 
+func TestHoverBareEnum(t *testing.T) {
+	src := "func main() { d0.Setting = Equals }"
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"be.icg","text":`+jsonString(src)+`}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"be.icg"},"position":{"line":0,"character":29}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "Equals") || !strings.Contains(out, "0") {
+		t.Errorf("hover did not describe the bare enum constant:\n%s", out)
+	}
+}
+
 func TestHoverVariableType(t *testing.T) {
 	out := runServer(t,
 		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
@@ -289,6 +302,11 @@ func TestCompletionContext(t *testing.T) {
 		{"printer method", "printer.", `{"line":0,"character":8}`, "executeRecipe", "Temperature"},
 		{"read by id builtin", "readBy", `{"line":0,"character":6}`, "readById", ""},
 		{"write by id builtin", "writeBy", `{"line":0,"character":7}`, "writeById", ""},
+		{"bare enum member", "Equals", `{"line":0,"character":6}`, "Equals", ""},
+		{"raw constant", "deg2rad", `{"line":0,"character":7}`, "deg2rad", ""},
+		{"special builtin hash", "has", `{"line":0,"character":3}`, `"label":"hash"`, ""},
+		{"batch mode name", "Sum", `{"line":0,"character":3}`, "Sum", ""},
+		{"special register", "ra", `{"line":0,"character":2}`, `"label":"ra"`, ""},
 		{"stack size enum", "SorterStack.", `{"line":0,"character":12}`, "Size", `"label":"func"`},
 		{"condition operation enum", "ConditionOperation.", `{"line":0,"character":19}`, "Equals", `"label":"func"`},
 		{"enum member", "SorterInstruction.", `{"line":0,"character":18}`, "FilterPrefabHashEquals", `"label":"func"`},
@@ -419,7 +437,7 @@ func TestSemanticTokens(t *testing.T) {
 func TestSemanticTokensForNewFeatures(t *testing.T) {
 	src := "func main() { put(d0, 0, sorter.filterSortingClass(Equals, SortingClass.Ores)); " +
 		"put(d1, 0, printer.executeRecipe(1, 2)); x := readById(1, LogicType.On); " +
-		"y := SorterInstruction.FilterPrefabHashEquals }"
+		"y := SorterInstruction.FilterPrefabHashEquals; z := pi; w := Sum }"
 	got := map[string]string{}
 	for _, tk := range semanticTokensFor(src) {
 		if tk.char+tk.length <= len(src) {
@@ -432,6 +450,9 @@ func TestSemanticTokensForNewFeatures(t *testing.T) {
 		"filterSortingClass":     "property",
 		"executeRecipe":          "property",
 		"readById":               "builtin",
+		"Equals":                 "enumMember", // bare CONDOP name
+		"pi":                     "number",     // raw game constant
+		"Sum":                    "enumMember", // bare batch mode name
 		"SorterInstruction":      "enum",
 		"FilterPrefabHashEquals": "enumMember",
 		"LogicType":              "enum",

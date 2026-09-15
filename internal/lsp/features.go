@@ -985,6 +985,12 @@ func semanticTokensFor(text string) []semanticToken {
 			switch {
 			case isBuiltinName(t.Text):
 				typ = semanticTokenIndex["builtin"]
+			case isBareEnum(t.Text):
+				typ = semanticTokenIndex["enumMember"]
+			case isRawConst(t.Text):
+				typ = semanticTokenIndex["number"]
+			case isBatchMode(t.Text):
+				typ = semanticTokenIndex["enumMember"]
 			case t.Text == "batch" || t.Text == "sorter" || t.Text == "printer":
 				typ = semanticTokenIndex["namespace"]
 			case builtin.LogicTypes[t.Text]:

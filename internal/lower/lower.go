@@ -1822,14 +1822,6 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 	return &ir.Const{V: 0}
 }
 
-var batchModes = map[string]float64{
-	"Average": 0,
-	"Sum":     1,
-	"Minimum": 2,
-	"Maximum": 3,
-	"Count":   4,
-}
-
 // packField is one bit-field of a device stack instruction.
 type packField struct {
 	value ir.Value
@@ -2119,10 +2111,10 @@ func (l *lowerer) logicName(e ast.Expr) (string, bool) {
 func (l *lowerer) modeValue(e ast.Expr) (ir.Value, bool) {
 	switch x := e.(type) {
 	case *ast.StringLit:
-		v, ok := batchModes[x.Value]
+		v, ok := builtin.BatchModes[x.Value]
 		return &ir.Const{V: v}, ok
 	case *ast.Ident:
-		if v, ok := batchModes[x.Name]; ok {
+		if v, ok := builtin.BatchModes[x.Name]; ok {
 			return &ir.Const{V: v}, true
 		}
 	case *ast.NumberLit:
