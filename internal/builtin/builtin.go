@@ -448,6 +448,12 @@ var LogicTypes = map[string]bool{
 	"PressureOutput": true, "PressureOutput2": true, "PressureSetting": true, "Progress": true,
 	"ProportionalGain": true, "Quantity": true, "Ratio": true, "RatioCarbonDioxide": true,
 	"RatioCarbonDioxideInput": true, "RatioCarbonDioxideInput2": true, "RatioCarbonDioxideOutput": true, "RatioCarbonDioxideOutput2": true,
+	// Newer gases (methane / hydrazine / helium / silanol / hydrochloric acid /
+	// ozone / alcohol / sodium chloride) and their liquid forms.
+	"RatioHelium": true, "RatioHydrazine": true, "RatioHydrochloricAcid": true, "RatioMethane": true,
+	"RatioOzone": true, "RatioSilanol": true, "RatioLiquidAlcohol": true, "RatioLiquidHydrazine": true,
+	"RatioLiquidHydrochloricAcid": true, "RatioLiquidMethane": true, "RatioLiquidOzone": true,
+	"RatioLiquidSilanol": true, "RatioLiquidSodiumChloride": true,
 	"RatioHydrogen": true, "RatioLiquidCarbonDioxide": true, "RatioLiquidCarbonDioxideInput": true, "RatioLiquidCarbonDioxideInput2": true,
 	"RatioLiquidCarbonDioxideOutput": true, "RatioLiquidCarbonDioxideOutput2": true, "RatioLiquidHydrogen": true, "RatioLiquidNitrogen": true,
 	"RatioLiquidNitrogenInput": true, "RatioLiquidNitrogenInput2": true, "RatioLiquidNitrogenOutput": true, "RatioLiquidNitrogenOutput2": true,
