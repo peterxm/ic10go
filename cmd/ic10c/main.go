@@ -649,7 +649,9 @@ func cmdStats(args []string) int {
 			fmt.Printf("  max line   %3d / %d\n", s.MaxLineLen, codegen.MaxLineLen)
 			fmt.Printf("  registers  %3d / %d\n", s.RegsUsed, ic10.NumRegs)
 			if ch.Loader != "" {
-				fmt.Printf("  loader     %3d lines (run once)\n", strings.Count(ch.Loader, "\n"))
+				ls := ic10.StatsOf(ch.Loader)
+				fmt.Printf("  loader     %3d / %d lines · %d / %d bytes (run once)\n",
+					ls.Lines, codegen.MaxLines, ls.Bytes, codegen.MaxBytes)
 			}
 		}
 		return 0
@@ -660,6 +662,11 @@ func cmdStats(args []string) int {
 	fmt.Printf("bytes      %3d / %d\n", s.Bytes, codegen.MaxBytes)
 	fmt.Printf("max line   %3d / %d\n", s.MaxLineLen, codegen.MaxLineLen)
 	fmt.Printf("registers  %3d / %d\n", s.RegsUsed, ic10.NumRegs)
+	if compiled.Loader != "" {
+		ls := ic10.StatsOf(compiled.Loader)
+		fmt.Printf("loader     %3d / %d lines · %d / %d bytes (run once)\n",
+			ls.Lines, codegen.MaxLines, ls.Bytes, codegen.MaxBytes)
+	}
 	if base, size, autoTabled, warn := ic10.DataStats(files[0], data, opts); base >= 0 {
 		fmt.Printf("data       slots %d..%d (%d values)\n", base, base+size-1, size)
 		if warn != "" {

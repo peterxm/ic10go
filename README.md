@@ -73,7 +73,7 @@ ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
 ic10c build --data-only [--chip NAME] <file.icg>  # 只输出一次性 loader（数据段 + 外提设置）
 ic10c run    <file.icg>       # 编译并在内置 VM 中运行（多芯片锁步；--steps/--set/--trace）
 ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] <file.icg>
-                              # 行 / 字节 / 寄存器预算（多芯片按芯片分组）+ 数据段 / 栈冲突警告
+                              # 行 / 字节 / 寄存器预算（多芯片按芯片分组；含 loader 预算）+ 数据段 / 栈冲突警告
 ic10c size   <file.icg>       # 按函数拆分行预算（找最占行数的函数）
 ic10c graph  [--level source|ir] [--func NAME] [--no-lines] [-o FILE] <file.icg>
                               # 控制流图（Mermaid；默认源码级，--level ir 为 IR 基本块）
