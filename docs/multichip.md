@@ -1,7 +1,7 @@
 # 多芯片支持
 
-> 状态：**P1 / P2 已实现**（`chip` 块 / 顶层公共区 / `bus` 通道糖 / 每芯片管线 /
-> CLI `--chip` / JSON `chips[]`）；**P3 VM `World` 待做**。
+> 状态：**P1–P4 已实现**（`chip` 块 / 顶层公共区 / `bus` 通道糖 / 每芯片管线 /
+> CLI `--chip` / JSON `chips[]` / VM `World` 锁步 / 编辑器）。
 > 定位：**编译期语法糖 + 多程序输出**。`chip` / `bus` 全部降级成现有 IC10
 > 通道读写（`s/l <dev>:<conn> ChannelN`），**运行时没有新指令**；VM 的多芯片
 > 只是测试设施。
@@ -318,7 +318,9 @@ type World struct {
    JSON `chips[]`。不做 bus → 显示芯片可自读设备，立即解决 fuel mixer 行数问题。
 2. ✅ **P2 `bus` 糖**（已实现）：`bus Name on dev:conn { slot type ... }` + `Bus.slot`
    读写 → `l/s dev:conn ChannelN`；唯一写者 / 多写者 / 无写者 / >8 槽诊断。
-3. **P3 VM `World`**：多芯片锁步 + 网络模型 + e2e 测试。
+3. ✅ **P3 VM `World`**（已实现）：`vm.World` 多芯片锁步，设备按名共享（同一
+   `dev:conn` 的 `ChannelN` 互通），每芯片保留自己的寄存器与栈；`ic10c run` 跑
+   多芯片程序并打印世界设备。见 `internal/vm` 的 `World` / `Machine.Step`。
 4. ✅ **P4 编辑器**：LSP 看到 chip 内声明（`flatDecls`）；VSCode 编译命令弹芯片选择。
 
 ---

@@ -197,3 +197,43 @@ func TestStrictDevice(t *testing.T) {
 		t.Errorf("lenient unset device = %v, want 0", got)
 	}
 }
+
+func TestWorldChannelSharing(t *testing.T) {
+	w := NewWorld()
+	a := w.AddChip()
+	b := w.AddChip()
+	if err := a.Load("s db:0 Channel0 42\nj 0\n"); err != nil {
+		t.Fatalf("load a: %v", err)
+	}
+	if err := b.Load("l r0 db:0 Channel0\ns d0 Setting r0\nj 0\n"); err != nil {
+		t.Fatalf("load b: %v", err)
+	}
+	if err := w.Run(30); err != nil && err != ErrStepLimit {
+		t.Fatalf("run: %v", err)
+	}
+	if got := w.Get("d0", "Setting"); got != 42 {
+		t.Errorf("d0.Setting = %v, want 42 (channel not shared)", got)
+	}
+}
+
+func TestWorldSeparateStacks(t *testing.T) {
+	w := NewWorld()
+	a := w.AddChip()
+	b := w.AddChip()
+	// Each chip pokes its own stack; the values must not collide.
+	if err := a.Load("poke 0 111\nget r0 db 0\ns d0 Setting r0\nj 0\n"); err != nil {
+		t.Fatalf("load a: %v", err)
+	}
+	if err := b.Load("poke 0 222\nget r0 db 0\ns d1 Setting r0\nj 0\n"); err != nil {
+		t.Fatalf("load b: %v", err)
+	}
+	if err := w.Run(30); err != nil && err != ErrStepLimit {
+		t.Fatalf("run: %v", err)
+	}
+	if got := w.Get("d0", "Setting"); got != 111 {
+		t.Errorf("chip a stack = %v, want 111", got)
+	}
+	if got := w.Get("d1", "Setting"); got != 222 {
+		t.Errorf("chip b stack = %v, want 222", got)
+	}
+}

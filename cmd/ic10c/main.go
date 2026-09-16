@@ -418,7 +418,7 @@ func cmdRun(args []string) int {
 		return 1
 	}
 	ic10Hint(file)
-	code, diags, err := ic10.CompileWithOptions(file, data, ic10.Options{StableInsOrder: stableIns})
+	compiled, diags, err := ic10.CompileResult(file, data, ic10.Options{StableInsOrder: stableIns})
 	if rc := report(source.NewFile(file, data), diags); rc != 0 {
 		return rc
 	}
@@ -427,27 +427,64 @@ func cmdRun(args []string) int {
 		return 1
 	}
 
-	m := vm.New()
+	multi := false
+	for _, ch := range compiled.Chips {
+		if ch.Name != "" {
+			multi = true
+		}
+	}
+
+	if !multi {
+		m := vm.New()
+		for _, s := range sets {
+			name, logic, value, ok := parseSet(s)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "ic10c: bad --set %q (want name.logic=value)\n", s)
+				return 2
+			}
+			m.Set(name, logic, value)
+		}
+		if err := m.Load(compiled.Code); err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		if trace {
+			m.Trace = os.Stdout
+		}
+		if err := m.Run(steps); err != nil && err != vm.ErrStepLimit {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		printDevices(m)
+		return 0
+	}
+
+	// Multi-chip: run every chip lockstep in a shared world (chips referencing
+	// the same device/connection share its network channels).
+	w := vm.NewWorld()
 	for _, s := range sets {
 		name, logic, value, ok := parseSet(s)
 		if !ok {
 			fmt.Fprintf(os.Stderr, "ic10c: bad --set %q (want name.logic=value)\n", s)
 			return 2
 		}
-		m.Set(name, logic, value)
+		w.Set(name, logic, value)
 	}
-	if err := m.Load(code); err != nil {
+	for _, ch := range compiled.Chips {
+		m := w.AddChip()
+		if err := m.Load(ch.Code); err != nil {
+			fmt.Fprintf(os.Stderr, "ic10c: chip %s: %v\n", ch.Name, err)
+			return 1
+		}
+		if trace {
+			m.Trace = os.Stdout
+		}
+	}
+	if err := w.Run(steps); err != nil && err != vm.ErrStepLimit {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	if trace {
-		m.Trace = os.Stdout
-	}
-	if err := m.Run(steps); err != nil && err != vm.ErrStepLimit {
-		fmt.Fprintln(os.Stderr, "ic10c:", err)
-		return 1
-	}
-	printDevices(m)
+	printDeviceMap(w.Devices)
 	return 0
 }
 
@@ -469,14 +506,16 @@ func parseSet(s string) (name, logic string, value float64, ok bool) {
 	return lhs[:dot], lhs[dot+1:], v, true
 }
 
-func printDevices(m *vm.Machine) {
-	names := make([]string, 0, len(m.Devices))
-	for n := range m.Devices {
+func printDevices(m *vm.Machine) { printDeviceMap(m.Devices) }
+
+func printDeviceMap(devices map[string]*vm.Device) {
+	names := make([]string, 0, len(devices))
+	for n := range devices {
 		names = append(names, n)
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		d := m.Devices[n]
+		d := devices[n]
 		keys := make([]string, 0, len(d.Values))
 		for k := range d.Values {
 			keys = append(keys, k)

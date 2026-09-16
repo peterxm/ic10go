@@ -101,6 +101,10 @@ type Machine struct {
 	// SelfDevice is the port the running chip is mounted on; reading its
 	// LineNumber returns the current line. Defaults to "db".
 	SelfDevice string
+	// world, when set, shares devices (and network channels) with other chips;
+	// see World. localDevices holds the chip's own "db" stack in that case.
+	world        *World
+	localDevices map[string]*Device
 	// Reagents maps a reagent hash to the prefab the device needs (rmap).
 	Reagents map[float64]float64
 	// Strict enables game-accurate device errors (DeviceNotFound /
@@ -155,6 +159,29 @@ func (m *Machine) logicNameByID(id int) string {
 
 // Device returns the device with the given port name, creating it if needed.
 func (m *Machine) Device(name string) *Device {
+	// In a World, chips share devices (so channels on the same connection are
+	// shared); the chip's own stack ("db") stays per-chip.
+	if m.world != nil {
+		if name == "db" {
+			if m.localDevices == nil {
+				m.localDevices = map[string]*Device{}
+			}
+			if d, ok := m.localDevices[name]; ok {
+				return d
+			}
+			d := newDevice(name)
+			d.Stack = m.Stack
+			m.localDevices[name] = d
+			return d
+		}
+		if d, ok := m.world.Devices[name]; ok {
+			return d
+		}
+		d := newDevice(name)
+		m.world.Devices[name] = d
+		m.world.order = append(m.world.order, d)
+		return d
+	}
 	if d, ok := m.Devices[name]; ok {
 		return d
 	}
@@ -294,6 +321,103 @@ func (m *Machine) Run(maxSteps int) error {
 
 // ErrStepLimit indicates the execution budget was exhausted.
 var ErrStepLimit = fmt.Errorf("vm: step limit reached")
+
+// Step executes a single instruction. done is true when the program has halted
+// or run past its end (label/comment lines do not consume a step).
+func (m *Machine) Step() (done bool, err error) {
+	if m.Program == nil {
+		return true, fmt.Errorf("vm: no program loaded")
+	}
+	for {
+		if m.Halted || m.PC < 0 || m.PC >= len(m.Program.Instrs) {
+			return true, nil
+		}
+		ins := m.Program.Instrs[m.PC]
+		if ins == nil {
+			m.PC++
+			continue
+		}
+		next := m.PC + 1
+		if m.Trace != nil {
+			fmt.Fprintf(m.Trace, "%4d  %s %s\n", m.PC, ins.Op, strings.Join(ins.Args, " "))
+		}
+		if err := m.exec(ins, &next); err != nil {
+			return false, fmt.Errorf("vm: line %d: %w", m.PC, err)
+		}
+		m.PC = next
+		return false, nil
+	}
+}
+
+// World runs several IC10 chips in lockstep, sharing devices by name so that
+// chips referencing the same device/connection (for example "db:0") share the
+// same network channels. Each chip keeps its own registers and stack.
+type World struct {
+	Chips   []*Machine
+	Devices map[string]*Device
+	order   []*Device
+}
+
+// NewWorld returns an empty world.
+func NewWorld() *World {
+	return &World{Devices: map[string]*Device{}}
+}
+
+// AddChip creates a machine that shares the world's devices and returns it.
+func (w *World) AddChip() *Machine {
+	m := New()
+	m.world = w
+	w.Chips = append(w.Chips, m)
+	return m
+}
+
+// Step runs one instruction on every chip (lockstep).
+func (w *World) Step() error {
+	for _, m := range w.Chips {
+		if _, err := m.Step(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Run runs up to maxTicks lockstep ticks, stopping early once every chip is
+// done. It returns ErrStepLimit if the budget runs out first.
+func (w *World) Run(maxTicks int) error {
+	for t := 0; t < maxTicks; t++ {
+		allDone := true
+		for _, m := range w.Chips {
+			done, err := m.Step()
+			if err != nil {
+				return err
+			}
+			if !done {
+				allDone = false
+			}
+		}
+		if allDone {
+			return nil
+		}
+	}
+	return ErrStepLimit
+}
+
+// Device returns the world's device by name (creating it if needed).
+func (w *World) Device(name string) *Device {
+	if d, ok := w.Devices[name]; ok {
+		return d
+	}
+	d := newDevice(name)
+	w.Devices[name] = d
+	w.order = append(w.order, d)
+	return d
+}
+
+// Set sets a logic value on a world device (for test setup).
+func (w *World) Set(name, logic string, v float64) { w.Device(name).Values[logic] = v }
+
+// Get reads a logic value from a world device.
+func (w *World) Get(name, logic string) float64 { return w.Device(name).Values[logic] }
 
 // Parse parses IC10 source into a Program.
 func Parse(src string) (*Program, error) {
