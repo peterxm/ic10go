@@ -31,7 +31,7 @@
     "keywords": {
       "patterns": [
         { "name": "keyword.control.icg", "match": "\\b(if|else|for|break|continue|return|switch|case|default|range)\\b" },
-        { "name": "storage.type.icg", "match": "\\b(const|data|var|func)\\b" },
+        { "name": "storage.type.icg", "match": "\\b(const|data|var|func|chip|bus|use)\\b" },
         { "name": "constant.language.icg", "match": "\\b(true|false|nan|pinf|ninf)\\b" },
         { "name": "keyword.other.icg", "match": "\\btable\\b" },
         { "name": "storage.type.icg", "match": "\\b(num|bool|device|void)\\b" }

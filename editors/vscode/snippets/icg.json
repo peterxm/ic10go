@@ -247,5 +247,29 @@
       "}"
     ],
     "description": "switch with an inclusive interval case"
+  },
+  "Chip block": {
+    "prefix": "chip",
+    "body": [
+      "chip ${1:display} {",
+      "    use ${2:Display} on ${3:db:0}",
+      "    func main() {",
+      "        for {",
+      "            yield()",
+      "            $0",
+      "        }",
+      "    }",
+      "}"
+    ],
+    "description": "multi-chip: a chip block with a bus access point"
+  },
+  "Bus": {
+    "prefix": "bus",
+    "body": [
+      "bus ${1:Display} {",
+      "    ${2:value} num",
+      "}"
+    ],
+    "description": "multi-chip: a named network bus (channel contract)"
   }
 }

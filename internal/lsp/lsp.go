@@ -368,7 +368,7 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 		})
 		return
 	}
-	code, diags, err := ic10.Compile(uri, []byte(text))
+	compiled, diags, err := ic10.CompileResult(uri, []byte(text), ic10.Options{})
 	items := []lspDiagnostic{}
 	for _, d := range diags.Diags {
 		line := d.Pos.Line - 1
@@ -415,7 +415,7 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 		"uri":         uri,
 		"diagnostics": items,
 	})
-	s.publishStats(w, uri, text, code, err, diags)
+	s.publishStats(w, uri, text, compiled, err, diags)
 }
 
 func severity(s int) int {
@@ -607,6 +607,9 @@ func completionItemsFor(text string, pos lspPosition) []completionItem {
 			j--
 		}
 		recv := text[j : i-1]
+		if items, ok := busSlotItems(text, recv); ok {
+			return items
+		}
 		switch {
 		case recv == "batch":
 			return batchMethodItems()
@@ -703,6 +706,27 @@ func slotTypeItems() []completionItem {
 	}
 	sortItems(items)
 	return items
+}
+
+// busSlotItems completes `Bus.slot` with the slots declared on that bus.
+func busSlotItems(text, recv string) ([]completionItem, bool) {
+	tree := parseText(text)
+	if tree == nil {
+		return nil, false
+	}
+	for _, d := range flatDecls(tree.Decls) {
+		bus, ok := d.(*ast.BusDecl)
+		if !ok || bus.Name.Name != recv {
+			continue
+		}
+		items := make([]completionItem, 0, len(bus.Slots))
+		for _, s := range bus.Slots {
+			items = append(items, completionItem{Label: s.Name.Name, Kind: 21, Detail: "bus slot"})
+		}
+		sortItems(items)
+		return items, true
+	}
+	return nil, false
 }
 
 func batchMethodItems() []completionItem {

@@ -428,11 +428,11 @@ class LspClient {
                 return;
             }
 
-            // Multi-chip: pick which chip to preview / install.
+            // Multi-chip: pick which chip to preview / install. A single chip
+            // block is mirrored by the top-level result, so no picker is needed.
             let chosen = result;
             const chips = result.chips || [];
-            const multi = chips.length > 1 || (chips.length === 1 && chips[0].name);
-            if (multi) {
+            if (chips.length > 1) {
                 const pick = await vscode.window.showQuickPick(
                     chips.map((c) => ({
                         label: c.name,
@@ -1292,6 +1292,9 @@ class LspClient {
         );
         if (p.dataBase !== undefined) {
             text += ` · data ${p.dataBase}..${p.dataEnd}`;
+        }
+        if (p.chips) {
+            text += t(` · ${p.chips} chips`, ` · ${p.chips} 块芯片`);
         }
         this.status.text = text;
         const tips = [t('IC10 budget — click to compile', 'IC10 预算 — 点击编译')];

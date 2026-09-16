@@ -1105,6 +1105,8 @@ func semanticTokensFor(text string) []semanticToken {
 				typ = semanticTokenIndex["enumMember"]
 			case t.Text == "batch" || t.Text == "sorter" || t.Text == "printer":
 				typ = semanticTokenIndex["namespace"]
+			case i > 0 && (toks[i-1].Kind == token.Chip || toks[i-1].Kind == token.Bus || toks[i-1].Kind == token.Use):
+				typ = semanticTokenIndex["namespace"]
 			case builtin.LogicTypes[t.Text]:
 				typ = semanticTokenIndex["logicType"]
 			case builtin.SlotTypes[t.Text]:
@@ -1122,7 +1124,7 @@ func semanticTokensFor(text string) []semanticToken {
 			default:
 				typ = semanticTokenIndex["variable"]
 			}
-		case t.Kind >= token.Const && t.Kind <= token.Range:
+		case t.Kind >= token.Const && t.Kind <= token.Use:
 			typ = semanticTokenIndex["keyword"]
 		default:
 			typ = semanticTokenIndex["operator"]
@@ -1283,12 +1285,31 @@ func (s *Server) colorPresentation(w *bufio.Writer, id json.RawMessage, params j
 
 // publishStats notifies the client of the compiled program's budget so it can
 // show a persistent status indicator.
-func (s *Server) publishStats(w *bufio.Writer, uri, text, code string, err error, diags *diag.Bag) {
+func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.Result, err error, diags *diag.Bag) {
 	if err != nil || diags.HasErrors() {
 		notify(w, "icg/stats", map[string]any{"uri": uri, "error": true})
 		return
 	}
-	st := ic10.StatsOf(code)
+	st := ic10.StatsOf(compiled.Code)
+	multi := len(compiled.Chips) > 1
+	if multi {
+		// Report the tightest budget across the chips.
+		for _, ch := range compiled.Chips {
+			cs := ic10.StatsOf(ch.Code)
+			if cs.Lines > st.Lines {
+				st.Lines = cs.Lines
+			}
+			if cs.Bytes > st.Bytes {
+				st.Bytes = cs.Bytes
+			}
+			if cs.MaxLineLen > st.MaxLineLen {
+				st.MaxLineLen = cs.MaxLineLen
+			}
+			if cs.RegsUsed > st.RegsUsed {
+				st.RegsUsed = cs.RegsUsed
+			}
+		}
+	}
 	payload := map[string]any{
 		"uri":        uri,
 		"lines":      st.Lines,
@@ -1300,17 +1321,22 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text, code string, err error
 		"maxLineMax": codegen.MaxLineLen,
 		"maxRegs":    16,
 	}
-	if base, size, autoTabled, warn := ic10.DataStats(uri, []byte(text), ic10.Options{}); base >= 0 {
-		payload["dataBase"] = base
-		payload["dataSize"] = size
-		payload["dataEnd"] = base + size - 1
-		payload["autoTabled"] = autoTabled
-		if warn != "" {
-			payload["dataWarn"] = warn
-		}
-		if depth, unbounded, err := ic10.MaxStackDepth(uri, []byte(text), ic10.Options{}); err == nil {
-			payload["stackDepth"] = depth
-			payload["stackUnbounded"] = unbounded
+	if multi {
+		payload["chips"] = len(compiled.Chips)
+	}
+	if !multi {
+		if base, size, autoTabled, warn := ic10.DataStats(uri, []byte(text), ic10.Options{}); base >= 0 {
+			payload["dataBase"] = base
+			payload["dataSize"] = size
+			payload["dataEnd"] = base + size - 1
+			payload["autoTabled"] = autoTabled
+			if warn != "" {
+				payload["dataWarn"] = warn
+			}
+			if depth, unbounded, err := ic10.MaxStackDepth(uri, []byte(text), ic10.Options{}); err == nil {
+				payload["stackDepth"] = depth
+				payload["stackUnbounded"] = unbounded
+			}
 		}
 	}
 	notify(w, "icg/stats", payload)
