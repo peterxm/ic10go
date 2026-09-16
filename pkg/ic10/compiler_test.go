@@ -664,3 +664,50 @@ func TestMultiChipTopMainRejected(t *testing.T) {
 		t.Fatal("expected an error when a top-level main is mixed with chip blocks")
 	}
 }
+
+func TestBusChannelMapping(t *testing.T) {
+	src := "bus B on db:0 {\n    a num\n    b num\n}\n" +
+		"chip c {\n    func main() { B.a = d1.Pressure; B.b = 1 }\n}\n" +
+		"chip d {\n    func main() { d0.Setting = B.a; d1.On = B.b }\n}\n"
+	res, diags, err := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
+	if diags.HasErrors() {
+		t.Fatalf("compile errors: %v", diags.Diags)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Chips[0].Code, "s db:0 Channel0") || !strings.Contains(res.Chips[0].Code, "s db:0 Channel1") {
+		t.Errorf("producer should write both channels:\n%s", res.Chips[0].Code)
+	}
+	if !strings.Contains(res.Chips[1].Code, "l r0 db:0 Channel0") || !strings.Contains(res.Chips[1].Code, "l r0 db:0 Channel1") {
+		t.Errorf("consumer should read both channels:\n%s", res.Chips[1].Code)
+	}
+}
+
+func TestBusNoWriter(t *testing.T) {
+	src := "bus B on db:0 { x num }\nchip a { func main() { d0.On = B.x } }\n"
+	_, diags, _ := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
+	if !diags.HasErrors() {
+		t.Fatal("expected an error for a bus slot with no writer")
+	}
+}
+
+func TestBusMultiWriter(t *testing.T) {
+	src := "bus B on db:0 { x num }\n" +
+		"chip a { func main() { B.x = 1 } }\n" +
+		"chip b { func main() { B.x = 2 } }\n"
+	_, diags, _ := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
+	if !diags.HasErrors() {
+		t.Fatal("expected an error for a bus slot written by two chips")
+	}
+}
+
+func TestBusTooManySlots(t *testing.T) {
+	src := "bus B on db:0 {\n    s0 num\n    s1 num\n    s2 num\n    s3 num\n" +
+		"    s4 num\n    s5 num\n    s6 num\n    s7 num\n    s8 num\n}\n" +
+		"chip a { func main() { B.s0 = 1 } }\n"
+	_, diags, _ := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
+	if !diags.HasErrors() {
+		t.Fatal("expected an error for a bus with more than 8 slots")
+	}
+}

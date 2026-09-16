@@ -278,6 +278,27 @@ func (p *printer) declIn(d Decl, inGroup bool) {
 		p.indent--
 		p.nl()
 		p.write("}")
+	case *BusDecl:
+		p.write("bus ")
+		p.write(d.Name.Name)
+		p.write(" on ")
+		p.write(d.Device)
+		p.write(":")
+		p.write(strconv.Itoa(d.Conn))
+		p.write(" {")
+		p.indent++
+		for _, s := range d.Slots {
+			p.leading(s.Pos().Line)
+			p.nl()
+			p.write(s.Name.Name)
+			p.write(" ")
+			p.write(s.Type)
+			p.trailing(s.Pos().Line)
+			p.note(s.Pos().Line)
+		}
+		p.indent--
+		p.nl()
+		p.write("}")
 	}
 }
 

@@ -57,6 +57,10 @@ type Options struct {
 	// bytes. Off by default; requires the game's relative-jump base to match
 	// the VM (relative to the jump's own line).
 	RelJump bool
+
+	// recordBus, when set, records every `Bus.slot` read/write while compiling
+	// so CompileResult can check that each slot has exactly one writer.
+	recordBus func(bus, slot string, write bool)
 }
 
 // fixedDataBase returns the fixed data base for the selected layout, or 0 for
@@ -138,6 +142,24 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 	}
 
 	common, chips := splitChips(tree)
+
+	// Track which chip reads/writes each bus slot (producer/consumer check).
+	busUses := map[string]*busUse{}
+	currentChip := ""
+	opts.recordBus = func(bus, slot string, write bool) {
+		k := bus + "." + slot
+		u := busUses[k]
+		if u == nil {
+			u = &busUse{readers: map[string]bool{}, writers: map[string]bool{}}
+			busUses[k] = u
+		}
+		if write {
+			u.writers[currentChip] = true
+		} else {
+			u.readers[currentChip] = true
+		}
+	}
+
 	if len(chips) == 0 {
 		info := checkInfo(tree, name, diags, opts)
 		if info == nil || diags.HasErrors() {
@@ -150,6 +172,7 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			return Result{}, diags, nil
 		}
 		res, err := compileInfo(info, opts, diags)
+		checkBusUse(common, busUses, diags)
 		if err != nil {
 			return res, diags, err
 		}
@@ -170,6 +193,7 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 	var results []ChipResult
 	var firstErr error
 	for _, ch := range chips {
+		currentChip = ch.Name.Name
 		cdiags := &diag.Bag{}
 		info := checkInfo(&ast.File{Decls: mergeDecls(common, ch.Decls)}, name, cdiags, opts)
 		if info == nil {
@@ -200,10 +224,40 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 		}
 		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, Loader: dl + res.Loader, Setup: res.Setup})
 	}
+	checkBusUse(common, busUses, diags)
 	if len(results) == 0 {
 		return Result{}, diags, firstErr
 	}
 	return Result{Code: results[0].Code, Loader: results[0].Loader, Chips: results, Setup: results[0].Setup}, diags, firstErr
+}
+
+// busUse records which chips read and write one bus slot.
+type busUse struct {
+	readers map[string]bool
+	writers map[string]bool
+}
+
+// checkBusUse enforces that every bus slot has exactly one writer.
+func checkBusUse(common []ast.Decl, uses map[string]*busUse, diags *diag.Bag) {
+	for _, d := range common {
+		bus, ok := d.(*ast.BusDecl)
+		if !ok {
+			continue
+		}
+		for _, s := range bus.Slots {
+			u := uses[bus.Name.Name+"."+s.Name.Name]
+			writers := 0
+			if u != nil {
+				writers = len(u.writers)
+			}
+			switch {
+			case writers == 0:
+				diags.Errorf(s.Name.Pos(), "bus slot %s.%s is never written", bus.Name.Name, s.Name.Name)
+			case writers > 1:
+				diags.Errorf(s.Name.Pos(), "bus slot %s.%s is written by multiple chips", bus.Name.Name, s.Name.Name)
+			}
+		}
+	}
 }
 
 // compileInfo runs the lower/optimize/codegen pipeline for one checked chip.
@@ -453,6 +507,7 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, no
 		JumpTable:       opts.JumpTable,
 		Fast:            opts.Fast,
 		NoCheck:         noCheck,
+		RecordBus:       opts.recordBus,
 	})
 	if diags.HasErrors() {
 		return nil

@@ -86,11 +86,29 @@ type ChipDecl struct {
 	Decls []Decl // const / data / var / func
 }
 
+// BusDecl is a `bus Name on dev:conn { slot type ... }` block: a named set of
+// network channels shared between chips. Slots map to Channel0.. in order.
+type BusDecl struct {
+	NodeBase
+	Name   *Ident
+	Device string // "db", "d0", ...
+	Conn   int
+	Slots  []*BusSlot
+}
+
+// BusSlot is one channel of a BusDecl; its position is the channel number.
+type BusSlot struct {
+	NodeBase
+	Name *Ident
+	Type string // "num", "bool" or "str"
+}
+
 func (*ConstDecl) declNode() {}
 func (*DataDecl) declNode()  {}
 func (*VarDecl) declNode()   {}
 func (*FuncDecl) declNode()  {}
 func (*ChipDecl) declNode()  {}
+func (*BusDecl) declNode()   {}
 
 // ---------------------------------------------------------------------------
 // Statements

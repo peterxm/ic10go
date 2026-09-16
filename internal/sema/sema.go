@@ -38,6 +38,15 @@ type FuncInfo struct {
 	Params []string
 }
 
+// BusInfo is a `bus Name on dev:conn { ... }` declaration: a named set of
+// network channels shared between chips.
+type BusInfo struct {
+	Name   string
+	Device string         // "db", "d0", ...
+	Conn   int            // device connection index
+	Slots  map[string]int // slot name -> channel index
+}
+
 // DataTable is a compile-time `data` table stored in the persistent stack.
 // Values are rendered IC10 literals (numbers or game enum names such as
 // LogicType.Open), emitted verbatim by the loader.
@@ -67,6 +76,8 @@ type Info struct {
 	Devices   map[string]string // const NAME = dN (device alias)
 	Funcs     map[string]*FuncInfo
 	Main      *ast.FuncDecl
+	// Buses maps a `bus` name to its channel layout.
+	Buses map[string]*BusInfo
 
 	// Data segment (top-level `data` tables). All zero when there is none.
 	Data        []*DataTable
@@ -101,6 +112,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 		RawConsts:     map[string]string{},
 		Devices:       map[string]string{},
 		Funcs:         map[string]*FuncInfo{},
+		Buses:         map[string]*BusInfo{},
 		DataIndex:     map[string]*DataTable{},
 		Sentinel:      -1,
 		TableSwitches: map[*ast.SwitchStmt]*TableSwitch{},
@@ -217,6 +229,34 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 				}
 				info.Main = d
 			}
+		case *ast.BusDecl:
+			if _, exists := info.Buses[d.Name.Name]; exists {
+				diags.Errorf(d.Name.Pos(), "bus %q redeclared", d.Name.Name)
+				continue
+			}
+			if _, exists := info.Consts[d.Name.Name]; exists {
+				diags.Errorf(d.Name.Pos(), "bus %q conflicts with a constant", d.Name.Name)
+				continue
+			}
+			if len(d.Slots) > 8 {
+				diags.Errorf(d.Name.Pos(),
+					"bus %q has %d slots; a network has only 8 channels — split it into another bus on a different connection",
+					d.Name.Name, len(d.Slots))
+			}
+			bi := &BusInfo{Name: d.Name.Name, Device: d.Device, Conn: d.Conn, Slots: map[string]int{}}
+			for i, s := range d.Slots {
+				if _, dup := bi.Slots[s.Name.Name]; dup {
+					diags.Errorf(s.Name.Pos(), "bus slot %q redeclared", s.Name.Name)
+					continue
+				}
+				switch s.Type {
+				case "num", "bool", "str":
+				default:
+					diags.Errorf(s.Name.Pos(), "unknown bus slot type %q (want num, bool or str)", s.Type)
+				}
+				bi.Slots[s.Name.Name] = i
+			}
+			info.Buses[d.Name.Name] = bi
 		}
 	}
 

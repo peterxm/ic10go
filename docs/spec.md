@@ -250,6 +250,24 @@ chip display {
   自己 chip 的 loader。
 - 芯片间通信见 [`multichip.md`](multichip.md)（`bus` / 网络通道）。
 
+`bus` 声明一组命名网络通道（最多 8 个，按顺序映射 `Channel0..7`）：
+
+```go
+bus Display on db:0 {
+    o2Pressure num
+    mixOut     num
+}
+chip control { func main() { for { yield(); Display.o2Pressure = d1.Pressure } } }
+chip display { func main() { for { yield(); d0.Setting = Display.o2Pressure } } }
+```
+
+- `on <dev>:<conn>` 指定连接（`db:0`、`d0:1` 等）；所有参与芯片必须落在同一条
+  电缆网络（否则读到 `NaN`），跨网络需桥接设备。
+- `Bus.slot` 写 → `s <dev>:<conn> ChannelN`，读 → `l r <dev>:<conn> ChannelN`。
+- 每个槽位**恰好一个写者**（0 个 / 多个都报错）；读任意。不做握手，由用户保证时序。
+- 槽位类型 `num` / `bool` / `str`（`str` 是数值编码，接收端 LED 用
+  `DisplayMode.String` 显示）。
+
 CLI：`ic10c build x.icg` 会为每个 chip 写 `<file>.<chip>.ic`（及各自的
 `.data.ic`）；`ic10c build --chip NAME x.icg` 只输出指定 chip。`--json` 的
 `chips[]` 列出每块芯片。

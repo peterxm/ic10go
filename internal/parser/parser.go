@@ -109,6 +109,8 @@ func (p *parser) parseTopDecl() []ast.Decl {
 		return []ast.Decl{p.parseFuncDecl()}
 	case token.Chip:
 		return []ast.Decl{p.parseChipDecl()}
+	case token.Bus:
+		return []ast.Decl{p.parseBusDecl()}
 	default:
 		p.errorf(p.cur().Pos, "expected declaration, found %s", describe(p.cur()))
 		return nil
@@ -261,6 +263,44 @@ func (p *parser) parseChipMember() []ast.Decl {
 		p.errorf(p.cur().Pos, "expected const, data, var or func, found %s", describe(p.cur()))
 		return nil
 	}
+}
+
+// parseBusDecl parses `bus Name on dev:conn { slot type ... }`. Slots map to
+// Channel0.. in declaration order (at most 8).
+func (p *parser) parseBusDecl() *ast.BusDecl {
+	kw := p.expect(token.Bus)
+	name := p.parseIdent()
+	on := p.expect(token.Ident)
+	if on.Text != "on" {
+		p.errorf(on.Pos, "expected 'on', found %q", on.Text)
+	}
+	var dev string
+	switch p.cur().Kind {
+	case token.Device, token.Ident:
+		dev = p.advance().Text
+	default:
+		p.errorf(p.cur().Pos, "expected a device, found %s", describe(p.cur()))
+	}
+	p.expect(token.Colon)
+	connTok := p.expect(token.Number)
+	conn, _ := strconv.Atoi(connTok.Text)
+	p.expect(token.LBrace)
+	var slots []*ast.BusSlot
+	for {
+		p.skipSemis()
+		if p.at(token.RBrace) || p.at(token.EOF) {
+			break
+		}
+		spos := p.cur().Pos
+		sname := p.parseIdent()
+		typ := "num"
+		if p.at(token.Ident) {
+			typ = p.advance().Text
+		}
+		slots = append(slots, &ast.BusSlot{NodeBase: base(spos), Name: sname, Type: typ})
+	}
+	p.expect(token.RBrace)
+	return &ast.BusDecl{NodeBase: base(kw.Pos), Name: name, Device: dev, Conn: conn, Slots: slots}
 }
 
 // parseOptLabel parses an optional label after break/continue.

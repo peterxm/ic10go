@@ -38,6 +38,9 @@ type Options struct {
 	Fast bool
 	// NoCheck disables logic-type validation.
 	NoCheck bool
+	// RecordBus, when set, is called for every `Bus.slot` read (write=false) or
+	// write (write=true) so the caller can check producer/consumer counts.
+	RecordBus func(bus, slot string, write bool)
 }
 
 // emitDataCheck verifies the persistent data segment is installed: it reads the
@@ -591,6 +594,21 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 		}
 		l.b.Emit(&ir.Assign{Dst: r, Src: val})
 	case *ast.SelectorExpr:
+		// Bus slot: `Bus.slot = v` writes a named network channel.
+		if id, ok := t.X.(*ast.Ident); ok {
+			if bi, isBus := l.info.Buses[id.Name]; isBus {
+				ch, isSlot := bi.Slots[t.Sel.Name]
+				if !isSlot {
+					l.diags.Errorf(t.Sel.Pos(), "bus %q has no slot %q", id.Name, t.Sel.Name)
+					return
+				}
+				l.b.Emit(&ir.Store{Dev: channelDev(bi.Device, float64(bi.Conn)), Logic: "Channel" + itoa(float64(ch)), Src: val})
+				if l.opts.RecordBus != nil {
+					l.opts.RecordBus(id.Name, t.Sel.Name, true)
+				}
+				return
+			}
+		}
 		if dev, ok := l.deviceName(t.X); ok {
 			l.checkLogic(t.Sel.Pos(), t.Sel.Name)
 			l.b.Emit(&ir.Store{Dev: dev, Logic: t.Sel.Name, Src: val})
@@ -1481,6 +1499,22 @@ func (l *lowerer) lowerTernary(e *ast.TernaryExpr) ir.Value {
 }
 
 func (l *lowerer) lowerDeviceRead(e *ast.SelectorExpr) ir.Value {
+	// Bus slot: `Bus.slot` is a named network channel.
+	if id, ok := e.X.(*ast.Ident); ok {
+		if bi, isBus := l.info.Buses[id.Name]; isBus {
+			ch, isSlot := bi.Slots[e.Sel.Name]
+			if !isSlot {
+				l.diags.Errorf(e.Sel.Pos(), "bus %q has no slot %q", id.Name, e.Sel.Name)
+				return &ir.Const{V: 0}
+			}
+			r := l.b.NewReg(e.Sel.Name)
+			l.b.Emit(&ir.Load{Dst: r, Dev: channelDev(bi.Device, float64(bi.Conn)), Logic: "Channel" + itoa(float64(ch))})
+			if l.opts.RecordBus != nil {
+				l.opts.RecordBus(id.Name, e.Sel.Name, false)
+			}
+			return r
+		}
+	}
 	if dev, ok := l.deviceName(e.X); ok {
 		l.checkLogic(e.Sel.Pos(), e.Sel.Name)
 		r := l.b.NewReg(e.Sel.Name)

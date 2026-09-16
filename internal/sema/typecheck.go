@@ -346,6 +346,9 @@ func (c *typeChecker) inferSelector(v *ast.SelectorExpr) Type {
 	case *ast.DeviceLit:
 		return Num
 	case *ast.Ident:
+		if _, ok := c.info.Buses[x.Name]; ok {
+			return Num
+		}
 		if t, _ := c.lookup(x.Name); t == Device || t == Data {
 			return Num
 		}
