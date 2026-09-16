@@ -135,13 +135,15 @@ case 1: db.Setting = -1301215609; heat = 0.0095
 ### 5.2 编译输出
 
 ```
-ic10c build --split-data main.icg
-  -> main.ic          # runtime（≤128 行）
-  -> main.data.ic     # loader（≤128 行，装一次）
+ic10c build main.icg
+  -> main.ic          # runtime 到 stdout（≤128 行）
+  -> main.data.ic     # loader 自动写到文件（≤128 行，装一次）
 ```
 
-实现采用 `--split-data` / `--data-out`（runtime 到 stdout、loader 到文件），
-VSCode 的“编译为 IC10”命令自动处理（复制安装代码 + 预览运行代码）。
+实现采用 `--data-out`（runtime 到 stdout、loader 到文件），需要 loader 时**自动
+输出**（`--split-data` 兼容保留）；VSCode 的“编译为 IC10”命令自动处理（复制安装
+代码 + 预览运行代码）。多芯片时按芯片各写 `<file>.<chip>.ic` 与
+`<file>.<chip>.data.ic`，`--chip NAME` 只输出一个（见 [`multichip.md`](multichip.md)）。
 
 ### 5.3 寻址与代码生成
 
@@ -403,10 +405,11 @@ func main() {
 ```
 ic10c build [flags] <file.icg>
 
-数据段相关 flags：
-  --split-data           同时输出 runtime（stdout）与 loader
+数据段 / loader 相关 flags：
+  --split-data           兼容保留（loader 现在需要时会自动输出）
   --data-out <file>      loader 输出路径（默认 <file>.data.ic）
-  --data-only            只输出 loader（数据变更后重装用）
+  --data-only            只输出一次性 loader（数据段 + 外提设置；多芯片需 --chip）
+  --chip <name>          多芯片：只输出指定芯片（见 multichip.md）
   --no-data-check        不在 runtime 插入版本校验
   --unsafe               不安全：跳过运行时数据校验以进一步压缩代码（会打印警告）
   --data-access <mode>   读取方式：
@@ -426,8 +429,8 @@ ic10c build [flags] <file.icg>
 # 无 data 表时行为不变
 ic10c build main.icg
 
-# 有 data 表：runtime 到 stdout，loader 到 main.data.ic
-ic10c build --split-data main.icg > main.ic
+# 有 data 表：runtime 到 stdout，loader 自动写 main.data.ic
+ic10c build main.icg > main.ic
 
 # 数据变更后只重装 loader
 ic10c build --data-only main.icg > main.data.ic

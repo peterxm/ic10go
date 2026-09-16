@@ -236,7 +236,7 @@ func main() {
 ```
 
 ```bash
-ic10c build --split-data app.icg > app.ic        # 生成 loader -> app.data.ic
+ic10c build app.icg > app.ic                     # runtime 到 stdout，loader 自动写 app.data.ic
 ic10c build --data-only app.icg > app.data.ic    # 只生成 loader
 ```
 

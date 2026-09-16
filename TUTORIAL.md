@@ -555,9 +555,10 @@ func main() {
 
 - `data` 元素是编译期常量：数字、`hash("...")`，或游戏枚举名（如
   `LogicType.Open`）。
-- 数据由一次性 **loader** 写入：`ic10c build --split-data`（或 `--data-only`）
-  生成；先在芯片里跑 loader，再用编译出的 runtime 覆盖它。VSCode 里右键
-  「编译为 IC10」会自动把安装代码放进剪贴板、在旁边打开运行代码。
+- 数据由一次性 **loader** 写入：`ic10c build` 会自动写出 `<file>.data.ic`
+  （`--data-only` 只生成 loader）；先在芯片里跑 loader，再用编译出的 runtime
+  覆盖它。VSCode 里右键「编译为 IC10」会自动把安装代码放进剪贴板、在旁边打开
+  运行代码。
 - runtime 启动时校验版本哨兵，缺失 / 过期则停机；`--unsafe` 可跳过以省几行。
 - `switch x table { ... }` 把「常量 → 常量」的多路分支自动表化；
   `--auto-table` 可对符合条件的普通 `switch` 自动做（默认关闭）。

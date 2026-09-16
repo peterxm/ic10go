@@ -57,20 +57,23 @@ j 1
 **M3 已完成**：批量 IO（`batch.read/readName/readSlot/readNameSlot/write/writeName/writeSlot`）、网络通道 `d.channel[conn][ch]`、栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr/clrById`（`get/put` 的 device 操作数接受端口 / id / 寄存器）、`dN.stack[addr]` / `id.stack[addr]` 语法糖、按 ReferenceId 读写 `readById/writeById`（`ld`/`sd`）、运行期端口槽位 `readDevSlot/writeDevSlot`（`ls/ss drN`）、`sorter.*` / `printer.*` 栈指令构建器（含字段位宽校验）、`raw("...")` 原样输出、未知 `Enum.Member` 原样输出、`isSet/isUnset/rmap/readReagent`、`approx/approxZero/notApprox/notApproxZero/logicalNor/isNotNaN`、`str("...")` 显示字符串、动态 logicType `read/write`、动态设备寄存器 `readDev/writeDev`（IC10 `drN`）、`LogicType.X` 枚举名透传、补充 logic type、游戏枚举/常量表同步（`EnumConstants`：`SorterInstruction`/`PrinterInstruction`/`SlotClass`/`GasType`/`LogicSlotType` 等；`RawConstants`：`pi`/`deg2rad`/`rad2deg`/`epsilon`）、批量模式 `Count`、**持久栈数据段**（`data` 表 / `switch ... table` / loader+runtime 两段流程 / 版本哨兵 / `--data-access` / `--data-layout` / `--unsafe` / `--auto-table`）。
 **M5 已完成**：测试用最小 IC10 解释器 `internal/vm`（寄存器 / 栈 / 设备 / 槽位 / 通道 / 批量 / 分支 / 标签与绝对行号），配套端到端语义测试与常量折叠差分测试；并经 `ic10c run` 暴露给用户调试。健壮性/保真：操作数与栈越界返回错误（不 panic）、`pi`/`deg2rad` 等游戏常量、`LineNumber`、确定性 `rand`、`rmap`、可选严格设备语义（见 [`docs/vm-improvements.md`](docs/vm-improvements.md)）。
 **M4 已完成**：`ic10c stats`（行/字节/寄存器预算）、`ic10c graph`（源码级控制流图 → Mermaid，`--level ir` 为 IR 基本块）、`ic10c fmt`（格式化，支持 `-w`，保留注释/分组/空行/`data` 表；原生 `.ic`/`.ic10` 重排并对齐列，`--no-align` 关闭）、`ic10c disasm`（旧 IC10 反汇编注释）、`ic10c decompile`（IC10 → `.icg`，支持 `-s` 结构化）、`ic10c minify`（压缩现有 IC10 行数）、`ic10c run`（内置 VM 执行）、`ic10c lsp`（诊断 / 上下文补全 / 格式化 / hover / 定义 / 大纲 / 折叠 / 引用 / 重命名 / 参数提示 / 快速修复 / 语义高亮 / 预算内联 / 预制体 hash 补全（`hash("…")` 内与 hash 型实参，参数位按类型补全）与反查 / Wiki 文档链接；`.ic`/`.ic10` 原生指令补全、说明、未知指令诊断）、VSCode 扩展（`.icg` 与 `.ic`/`.ic10` 支持、片段、编译预览并自动处理数据段安装代码、VM 运行、反编译/压缩/注释命令）。
+**M6 已完成**：**多芯片**——一个 `.icg` 用 `chip 名字 { ... }` 声明多块芯片，各编译成独立程序（各自 128 行 / 4 KiB 预算与 loader；顶层 `const`/`data`/`func` 为公共区，chip 内可遮蔽）；`bus 名字 { 槽位 num ... }` + 每 chip `use 名字 on dev:conn` 声明命名网络通道（可多连接跨 8 槽，唯一写者校验，`run` 按 bus 自动接线）；CLI 按芯片写文件 / `--chip NAME` / JSON `chips[]` / `stats` 分组；VM `World` 多芯片同 tick 锁步；LSP 按光标所在 chip 隔离补全与签名，VSCode 编译命令弹芯片选择。另：超行数时把一次性设置写入外提到 loader，并支持新气体比例逻辑类型。
 
 当前可用：
 
 ```
 ic10c build  <file.icg>       # 编译为 IC10 并输出到 stdout；需要 loader 时自动写出 <file>.data.ic
-ic10c build --json <file.icg> # 输出机器可读的 JSON（代码/一次性 loader/统计/诊断）
+                              # 多芯片：每块芯片各写 <file>.<chip>.ic（+ 各自 .data.ic）
+ic10c build --json <file.icg> # 输出机器可读的 JSON（chips[] 代码/loader/统计/诊断）
+ic10c build --chip NAME <file.icg>  # 多芯片：只输出指定芯片到 stdout
 ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
             [--data-layout top|middle] [--unsafe] [--auto-table] [--jump-table] \
             [--fast] [--rel-jump] <file.icg>
                               # 兼容保留；loader 现在会自动输出（默认 <file>.data.ic）
-ic10c build --data-only <file.icg>  # 只输出数据段 loader
-ic10c run    <file.icg>       # 编译并在内置 VM 中运行（--steps/--set/--trace）
+ic10c build --data-only [--chip NAME] <file.icg>  # 只输出一次性 loader（数据段 + 外提设置）
+ic10c run    <file.icg>       # 编译并在内置 VM 中运行（多芯片锁步；--steps/--set/--trace）
 ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] <file.icg>
-                              # 行 / 字节 / 寄存器预算 + 数据段 / 栈冲突警告
+                              # 行 / 字节 / 寄存器预算（多芯片按芯片分组）+ 数据段 / 栈冲突警告
 ic10c size   <file.icg>       # 按函数拆分行预算（找最占行数的函数）
 ic10c graph  [--level source|ir] [--func NAME] [--no-lines] [-o FILE] <file.icg>
                               # 控制流图（Mermaid；默认源码级，--level ir 为 IR 基本块）
@@ -122,9 +125,10 @@ go test ./...
 | [`TUTORIAL.md`](TUTORIAL.md) | 新手详细教程（从零到部署） |
 | [`QUICKSTART.md`](QUICKSTART.md) | 5 分钟上手 |
 | [`docs/spec.md`](docs/spec.md) | `.icg` 语言规范 |
-| [`docs/architecture.md`](docs/architecture.md) | 编译器架构与里程碑 M0–M5 |
+| [`docs/architecture.md`](docs/architecture.md) | 编译器架构与里程碑 M0–M6 |
 | [`docs/target-ic10.md`](docs/target-ic10.md) | IC10 目标约束、指令映射与内建数据 |
 | [`docs/data-segment.md`](docs/data-segment.md) | 持久栈数据段：`data` 表 / loader+runtime / 布局 / 宿主兼容 |
+| [`docs/multichip.md`](docs/multichip.md) | 多芯片：`chip` / `bus` / `use`、通道分配、VM `World`、编辑器支持 |
 | [`docs/plugin-api.md`](docs/plugin-api.md) | `build --json` 机器接口：字段、诊断 code、桥接流程 |
 | [`docs/ingame-test-plan.md`](docs/ingame-test-plan.md) | 真机测试方案（新内建 / 优化 / `--rel-jump` 验证） |
 | [`docs/vm-improvements.md`](docs/vm-improvements.md) | 测试用 IC10 虚拟机（`internal/vm`）改进计划（P1–P5） |
@@ -139,3 +143,4 @@ go test ./...
 - **M3** 领域特性：槽位 / 批量 / 通道 / 栈
 - **M4** 工具链：`fmt` / `disasm` / `decompile` / `run` / `stats` / LSP / VSCode 扩展
 - **M5** 测试用最小解释器（VM）
+- **M6** 多芯片：`chip` 块 / `bus` + `use` 通道 / 每芯片 loader / VM `World` / 编辑器

@@ -50,10 +50,16 @@
                           │    asm      │  布局 / 行号回填 / 限额校验
                           └──────┬──────┘
                                  ▼
-                          ┌─────────────┐
-                          │    emit     │  IC10 文本
-                          └─────────────┘
+                           ┌─────────────┐
+                           │    emit     │  IC10 文本
+                           └─────────────┘
 ```
+
+**多芯片**：源码可含 `chip 名字 { ... }` 块（见 [`multichip.md`](multichip.md)）。
+`parser` 只解析一次；`sema → lower → opt → regalloc → isel → asm → emit` 对**每块
+芯片各跑一遍**（顶层 `const`/`data`/`func` 作为公共区合并进每块芯片，chip 内声明可
+遮蔽），产物是每芯片一份 IC10 + 各自的一次性 loader。`pkg/ic10.CompileResult` 返回
+`Result.Chips`。
 
 ---
 
@@ -78,6 +84,8 @@
   - 槽位类型名合法性
   - 批量模式名合法性
 - 标记常量、内联 / 外提候选函数。
+- **多芯片**：`Info.Buses`（`bus` 契约：槽位 → 通道号）与 `Info.BusBindings`
+  （本芯片 `use` 的访问点）。每块芯片的 `Info` 都并入顶层公共区。
 - sema 报错会短路 lower，因此类型检查与 lower 的诊断不重复。
 
 ### 3.3 lower（AST → IR）
@@ -357,7 +365,7 @@ ic10go/
 
 ---
 
-## 11. 里程碑（M0–M5 已实现）
+## 11. 里程碑（M0–M6 已实现）
 
 ### M0 骨架 ✅
 - `go.mod`、`cmd/ic10c` 骨架
@@ -412,6 +420,16 @@ ic10go/
 - 作为优化器的语义回归基准
 - 健壮性：操作数 arity 与栈越界返回错误（不 panic）
 - 保真：游戏常量（`pi`/`deg2rad`/…）、`LineNumber`、确定性 `rand`、`rmap`、可选严格设备语义；详见 [`vm-improvements.md`](vm-improvements.md)
+
+### M6 多芯片 ✅
+- `chip 名字 { ... }`：一个源文件多块芯片，各编译成独立程序（各自 128 行 / 4 KiB 预算与 loader）
+- 顶层 `const`/`data`/`func` 为公共区，chip 内声明可遮蔽；顶层 `main` 与 chip 块互斥
+- `bus 名字 { 槽位 }` + 每 chip `use 名字 on dev:conn`：命名网络通道（可多连接跨 8 槽）
+- `Bus.槽位` → `l/s <dev>:<conn> ChannelN`；唯一写者 / 被读却无写者 / 未绑定 / 超通道校验
+- CLI 按芯片写文件、`--chip`、JSON `chips[]`、`stats` 分组；VM `World` 多芯片锁步并按 bus 自动接线
+- LSP 按光标所在 chip 隔离补全/签名；VSCode 编译命令弹芯片选择
+- 另：超预算时把一次性设置写入外提到 loader（`internal/opt/setup.go`）；同步新气体比例逻辑类型
+- 详见 [`multichip.md`](multichip.md)
 
 ---
 

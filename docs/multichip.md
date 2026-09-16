@@ -105,10 +105,11 @@ chip display {
 ```
 File    = { TopDecl }
 TopDecl = ConstDecl | DataDecl | FuncDecl | BusDecl | ChipDecl
-BusDecl = "bus" Ident "on" ConnLit "{" { Slot } "}"
-ConnLit = Ident ":" Int              // db:0, d0:1
-Slot    = Ident "num"
-ChipDecl= "chip" Ident "{" { ConstDecl | DataDecl | FuncDecl } "}"
+BusDecl = "bus" Ident "{" { Slot } "}"
+UseDecl = "use" Ident "on" ConnLit { "," ConnLit }
+ConnLit = Ident ":" Int              // db:0, d0:1 (device port or alias)
+Slot    = Ident Type                 // num / bool / str
+ChipDecl= "chip" Ident "{" { ConstDecl | DataDecl | FuncDecl | UseDecl } "}"
 ```
 
 ### 2.6 槽位类型
