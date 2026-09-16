@@ -15,7 +15,7 @@
 | 诊断 | 打开、编辑时实时显示编译错误，**含 128 行 / 4KiB / 90 字符超限**；`.ic`/`.ic10` 检查编辑器上限、未知指令与重复标签 |
 | 补全 | **上下文感知** + 签名与文档（见下）；`.ic`/`.ic10` 补全指令 / 逻辑类型 / 批量模式 |
 | 悬停文档 | 内建函数**签名 + 用法说明**、逻辑类型含义、枚举成员（如 `Color.Purple = 11`、`DisplayMode.Percent`）、关键字与底层原语、**变量/表达式的类型**；`.ic`/`.ic10` 显示指令说明；**预制体名 / 数字 hash 反查** |
-| 预制体 | `hash("…")` / `HASH("…")` 内补全 1700+ 预制体名；悬停数字 hash 显示预制体名与标题 |
+| 预制体 | `hash("…")` / `HASH("…")` 内补全 1900+ 预制体名；**hash 型实参处**（`batch.*` 的 typeHash、`sorter.filterPrefabHash`、`printer.executeRecipe` 等）直接选预制体名即插入 `hash("…")`；悬停数字 hash 显示预制体名与标题 |
 | 大纲 / 折叠 | 文档符号（函数、常量、变量、标签）+ 代码折叠；`.ic`/`.ic10` 显示标签大纲 |
 | 跳转定义 | `F12` / `Ctrl+点击` |
 | 查找引用 / 重命名 | `Shift+F12` / `F2`（单文件内所有引用） |
@@ -38,6 +38,8 @@
 - `batch.` → `read` / `readName` / `readSlot` / `write` …
 - `sorter.` / `printer.` → 设备栈指令构建器（`filterSortingClass`、`executeRecipe` …）
 - `SorterInstruction.` / `PrinterInstruction.` / `TraderInstruction.` / `ConditionOperation.` / `LogicReagentMode.` / `SorterStack.` / `PrinterStack.` / `LogicType.` / `LogicSlotType.` / `LogicBatchMethod.` / `DisplayMode.` / `Sound.` / `Color.` / `PowerMode.` / `AirCon.` / `GasType.` / `RobotMode.` / `ShuttleType.` 等 → 枚举成员（补全项由 `EnumConstants` 自动派生）
+- 调用实参按位置 → `batch.*` 的 typeHash 补预制体（插入 `hash("…")`）、logic 补 logic type、mode 补批量模式；`sorter.filterPrefabHash` / `printer.executeRecipe` / `printer.ejectReagent` / `rmap` / `readReagent` 的 hash 实参补预制体；`read`/`write`/`readById`/`writeById`/`readDev`/`writeDev` 的 logic 实参补 logic type
+- 原生 IC10（`.ic`/`.ic10`）按操作数类型 → `sb`/`sbn`/`lb`/`lbn`/`lbs`/`lbns` 的 `DEVICE_TYPE` 补预制体（插入 `HASH("…")`）、`LOGIC_TYPE` / `BATCH_MODE` / `SLOT_LOGIC_TYPE` 补对应名字
 - 普通位置 → 当前文件的函数 / 常量 / 变量 / 标签 + 内建 + 设备端口
 
 **文档**（悬停与补全项）示例：

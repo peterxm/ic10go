@@ -68,6 +68,9 @@ func ic10CompletionItems(text string, pos lspPosition) []completionItem {
 	if start, prefix, ok := hashArgContext(text, off); ok {
 		return prefabItems(text, start, off, prefix)
 	}
+	if items, ok := ic10ArgItems(text, off); ok {
+		return items
+	}
 	items := make([]completionItem, 0, len(builtin.IC10Instructions)+32)
 	// HASH("…") / STR("…") are IC10 macros, not in the instruction table.
 	for _, m := range []string{"HASH", "STR"} {
@@ -87,6 +90,55 @@ func ic10CompletionItems(text string, pos lspPosition) []completionItem {
 	}
 	sortItems(items)
 	return items
+}
+
+// ic10ArgItems completes native IC10 operands by their declared kind
+// (DEVICE_TYPE → prefab, LOGIC_TYPE / BATCH_MODE / SLOT_LOGIC_TYPE → names).
+func ic10ArgItems(text string, off int) ([]completionItem, bool) {
+	lineStart := strings.LastIndexByte(text[:off], '\n') + 1
+	lineEnd := len(text)
+	if i := strings.IndexByte(text[off:], '\n'); i >= 0 {
+		lineEnd = off + i
+	}
+	line := text[lineStart:lineEnd]
+	col := off - lineStart
+	code, _ := ic10asm.SplitComment(line)
+	if col > len(code) {
+		return nil, false // cursor inside a # comment
+	}
+	prefix := code[:col]
+	toks := ic10asm.Tokenize(prefix)
+	if len(toks) == 0 {
+		return nil, false
+	}
+	ins, ok := builtin.IC10Instructions[strings.ToLower(toks[0])]
+	if !ok {
+		return nil, false
+	}
+	argIdx := len(toks) - 1
+	if !strings.HasSuffix(prefix, " ") && !strings.HasSuffix(prefix, "\t") {
+		argIdx = len(toks) - 2
+	}
+	if argIdx < 0 {
+		return nil, false
+	}
+	kinds := strings.Fields(ins.Sig)
+	if argIdx >= len(kinds) {
+		return nil, false
+	}
+	start, end := wordOffsetsAt(text, off)
+	rng := lspRange{Start: offsetToLSP(text, start), End: offsetToLSP(text, end)}
+	switch kinds[argIdx] {
+	case "DEVICE_TYPE":
+		return prefabEditItems(rng, strings.ToLower(text[start:off]), true), true
+	case "LOGIC_TYPE":
+		return nameEditItems(text, start, end, off, logicTypeNames(), "logic type", false), true
+	case "BATCH_MODE":
+		return nameEditItems(text, start, end, off, batchModeNames(), "batch mode", false), true
+	case "SLOT_LOGIC_TYPE":
+		return nameEditItems(text, start, end, off, slotTypeNames(), "slot type", false), true
+	}
+	return nil, false
 }
 
 // ic10Hover describes an instruction, logic type, defined name or prefab.

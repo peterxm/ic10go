@@ -622,6 +622,9 @@ func completionItemsFor(text string, pos lspPosition) []completionItem {
 			return logicTypeItems()
 		}
 	}
+	if items, ok := argCompletionItems(text, off); ok {
+		return items
+	}
 	items := baseCompletionItems()
 	for _, r := range enumReceivers() {
 		items = append(items, completionItem{Label: r, Kind: 9, Detail: "enum"})
@@ -867,6 +870,206 @@ func prefabItems(text string, contentStart, off int, prefix string) []completion
 	}
 	sortItems(items)
 	return items
+}
+
+// callParams maps a call target to the kind of completion offered at each
+// argument position. Unknown kinds ("value" / "name" / "index") fall back to
+// the generic completion list.
+var callParams = map[string][]string{
+	"batch.read":         {"prefab", "logic", "mode"},
+	"batch.readName":     {"prefab", "name", "logic", "mode"},
+	"batch.readSlot":     {"prefab", "index", "logic", "mode"},
+	"batch.readNameSlot": {"prefab", "name", "index", "logic", "mode"},
+	"batch.write":        {"prefab", "logic", "value"},
+	"batch.writeName":    {"prefab", "name", "logic", "value"},
+	"batch.writeSlot":    {"prefab", "index", "logic", "value"},
+
+	"sorter.filterPrefabHash":          {"prefab"},
+	"sorter.filterPrefabHashNotEquals": {"prefab"},
+	"printer.executeRecipe":            {"value", "prefab"},
+	"printer.ejectReagent":             {"prefab"},
+	"printer.missingRecipeReagent":     {"value", "prefab"},
+
+	"rmap":        {"value", "prefab"},
+	"readReagent": {"value", "value", "prefab"},
+
+	"read":      {"value", "logic"},
+	"write":     {"value", "logic", "value"},
+	"readById":  {"value", "logic"},
+	"writeById": {"value", "logic", "value"},
+	"readDev":   {"value", "logic"},
+	"writeDev":  {"value", "logic", "value"},
+
+	"readDevSlot":  {"value", "value", "slot"},
+	"writeDevSlot": {"value", "value", "slot", "value"},
+}
+
+// argCompletionItems returns context-specific completions when off sits at a
+// known call argument (batch.*, sorter/printer hash builders, hash builtins).
+func argCompletionItems(text string, off int) ([]completionItem, bool) {
+	callee, argIndex, argStart, ok := callContext(text, off)
+	if !ok {
+		return nil, false
+	}
+	kinds, ok := callParams[callee]
+	if !ok || argIndex < 0 || argIndex >= len(kinds) {
+		return nil, false
+	}
+	switch kinds[argIndex] {
+	case "prefab":
+		return prefabArgItems(text, argStart, off), true
+	case "logic":
+		return quotedArgItems(text, argStart, off, logicTypeNames(), "logic type"), true
+	case "mode":
+		return quotedArgItems(text, argStart, off, batchModeNames(), "batch mode"), true
+	case "slot":
+		return bareArgItems(text, argStart, off, slotTypeNames(), "slot type"), true
+	}
+	return nil, false
+}
+
+// prefabArgItems completes prefab names at a call argument, inserting
+// hash("Name") so the compiler folds it to a CRC-32 constant.
+func prefabArgItems(text string, argStart, off int) []completionItem {
+	start, end := wordOffsetsAt(text, off)
+	if start < argStart {
+		start = argStart
+	}
+	rng := lspRange{Start: offsetToLSP(text, start), End: offsetToLSP(text, end)}
+	return prefabEditItems(rng, strings.ToLower(text[start:off]), false)
+}
+
+// prefabEditItems builds prefab completions replacing rng with hash("…") (or
+// HASH("…") for native IC10).
+func prefabEditItems(rng lspRange, lp string, upper bool) []completionItem {
+	items := make([]completionItem, 0, 64)
+	for name, title := range builtin.Prefabs {
+		if lp != "" &&
+			!strings.Contains(strings.ToLower(name), lp) &&
+			!strings.Contains(strings.ToLower(title), lp) {
+			continue
+		}
+		newText := fmt.Sprintf("hash(%q)", name)
+		if upper {
+			newText = fmt.Sprintf("HASH(%q)", name)
+		}
+		items = append(items, completionItem{
+			Label:    name,
+			Kind:     21,
+			Detail:   title,
+			TextEdit: &textEdit{Range: rng, NewText: newText},
+			Data:     map[string]any{"label": name},
+		})
+	}
+	sortItems(items)
+	return items
+}
+
+// quotedArgItems completes identifier-valued arguments (logic types, batch
+// modes). A bare position inserts a quoted string; an already-open string
+// literal is filled in place.
+func quotedArgItems(text string, argStart, off int, names []string, detail string) []completionItem {
+	inStr, contentStart := argStringState(text, argStart, off)
+	start, end := wordOffsetsAt(text, off)
+	if inStr {
+		start, end = contentStart, off
+	} else if start < argStart {
+		start = argStart
+	}
+	return nameEditItems(text, start, end, off, names, detail, !inStr)
+}
+
+// bareArgItems completes identifier-valued arguments inserted without quotes
+// (slot types, native IC10 operands).
+func bareArgItems(text string, argStart, off int, names []string, detail string) []completionItem {
+	start, end := wordOffsetsAt(text, off)
+	if start < argStart {
+		start = argStart
+	}
+	return nameEditItems(text, start, end, off, names, detail, false)
+}
+
+// nameEditItems builds a completion list over names, replacing text[start:end].
+func nameEditItems(text string, start, end, off int, names []string, detail string, quoted bool) []completionItem {
+	if start > off {
+		start = off
+	}
+	if end < off {
+		end = off
+	}
+	rng := lspRange{Start: offsetToLSP(text, start), End: offsetToLSP(text, end)}
+	prefix := strings.ToLower(text[start:off])
+	items := make([]completionItem, 0, len(names))
+	for _, name := range names {
+		if prefix != "" && !strings.Contains(strings.ToLower(name), prefix) {
+			continue
+		}
+		newText := name
+		if quoted {
+			newText = strconv.Quote(name)
+		}
+		items = append(items, completionItem{
+			Label:    name,
+			Kind:     21,
+			Detail:   detail,
+			TextEdit: &textEdit{Range: rng, NewText: newText},
+			Data:     map[string]any{"label": name},
+		})
+	}
+	sortItems(items)
+	return items
+}
+
+// wordOffsetsAt returns the byte range of the word under off.
+func wordOffsetsAt(text string, off int) (int, int) {
+	start := off
+	for start > 0 && isWordByte(text[start-1]) {
+		start--
+	}
+	end := off
+	for end < len(text) && isWordByte(text[end]) {
+		end++
+	}
+	return start, end
+}
+
+// argStringState reports whether off sits inside an unterminated string started
+// within the current argument, returning the content start offset.
+func argStringState(text string, argStart, off int) (bool, int) {
+	n := 0
+	last := -1
+	for i := argStart; i < off && i < len(text); i++ {
+		if text[i] == '"' {
+			n++
+			last = i
+		}
+	}
+	if n%2 == 1 {
+		return true, last + 1
+	}
+	return false, 0
+}
+
+func logicTypeNames() []string { return sortedKeys(builtin.LogicTypes) }
+
+func slotTypeNames() []string { return sortedKeys(builtin.SlotTypes) }
+
+func batchModeNames() []string {
+	out := make([]string, 0, len(builtin.BatchModes))
+	for k := range builtin.BatchModes {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // prefabHashAt parses a numeric prefab hash at pos (decimal or $hex, with an

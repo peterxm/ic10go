@@ -254,8 +254,8 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 
 除枚举外，编译器/编辑器还带两张游戏数据表（`internal/builtin`，非编译输出）：
 
-- **`Prefabs` / `PrefabByHash`**：1700+ 预制体名 → 显示标题；hash 即 `Hash(name)`。
-  用于 `hash("…")` / `HASH("…")` 补全、数字 hash 反查与 Wiki 文档链接。
+- **`Prefabs` / `PrefabByHash`**：1900+ 预制体名 → 显示标题；hash 即 `Hash(name)`。
+  用于 `hash("…")` / `HASH("…")` 补全、hash 型实参的预制体补全、数字 hash 反查与 Wiki 文档链接。
 - **`IC10Instructions`**：原生 IC10 指令的签名与游戏说明，用于 `.ic`/`.ic10`
   的补全、悬停与未知指令诊断。
 

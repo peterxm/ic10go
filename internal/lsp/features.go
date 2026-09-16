@@ -716,8 +716,11 @@ func (s *Server) signatureHelp(w *bufio.Writer, id json.RawMessage, params json.
 	reply(w, id, signatureHelpFor(text, p.Position))
 }
 
-func signatureHelpFor(text string, pos lspPosition) any {
-	off := posToOffset(text, pos)
+// callContext locates the innermost call enclosing off. It returns the callee
+// name (qualified as "batch.writeName" / "sorter.x" / "printer.x" when the call
+// is a method), the 0-based argument index and the byte offset where that
+// argument starts.
+func callContext(text string, off int) (string, int, int, bool) {
 	file := source.NewFile("", []byte(text))
 	diags := &diag.Bag{}
 	toks := lexer.Tokenize(file, diags)
@@ -744,12 +747,16 @@ func signatureHelpFor(text string, pos lspPosition) any {
 		}
 	}
 	if open <= 0 || toks[open-1].Kind != token.Ident {
-		return nil
+		return "", 0, 0, false
 	}
 	name := toks[open-1].Text
+	if open >= 3 && toks[open-2].Kind == token.Dot && toks[open-3].Kind == token.Ident {
+		name = toks[open-3].Text + "." + name
+	}
 
-	// Count commas between '(' and the cursor at depth 0.
-	active := 0
+	// Count commas between '(' and the cursor at depth 0 to find the argument.
+	argIndex := 0
+	argStart := toks[open].Pos.Offset + 1
 	d := 0
 	for i := open + 1; i < len(toks) && toks[i].Pos.Offset < off; i++ {
 		switch toks[i].Kind {
@@ -761,11 +768,20 @@ func signatureHelpFor(text string, pos lspPosition) any {
 			}
 		case token.Comma:
 			if d == 0 {
-				active++
+				argIndex++
+				argStart = toks[i].Pos.Offset + 1
 			}
 		}
 	}
+	return name, argIndex, argStart, true
+}
 
+func signatureHelpFor(text string, pos lspPosition) any {
+	off := posToOffset(text, pos)
+	name, active, _, ok := callContext(text, off)
+	if !ok || strings.Contains(name, ".") {
+		return nil
+	}
 	label, params := signatureFor(text, name)
 	if label == "" {
 		return nil

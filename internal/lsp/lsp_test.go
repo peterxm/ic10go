@@ -319,6 +319,8 @@ func TestCompletionContext(t *testing.T) {
 		{"power mode member", "PowerMode.", `{"line":0,"character":10}`, "Charging", `"label":"func"`},
 		{"color member", "Color.", `{"line":0,"character":6}`, "Purple", `"label":"func"`},
 		{"slot type", "d0.slot[0].", `{"line":0,"character":11}`, "Occupied", `"label":"func"`},
+		{"batch arg device logic", "batch.write(d0.", `{"line":0,"character":15}`, "Temperature", "StructureBattery"},
+		{"batch arg hash string", `batch.write(hash("Iro`, `{"line":0,"character":20}`, "ItemIronOre", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -333,6 +335,43 @@ func TestCompletionContext(t *testing.T) {
 			}
 			if c.notWant != "" && strings.Contains(out, c.notWant) {
 				t.Errorf("completion unexpectedly contains %q:\n%s", c.notWant, out)
+			}
+		})
+	}
+}
+
+func TestCompletionArgPosition(t *testing.T) {
+	cases := []struct {
+		name    string
+		uri     string
+		text    string
+		want    string
+		newText string
+	}{
+		{"batch typeHash", "a.icg", "batch.write(Str", "StructureBattery", `"newText":"hash(\"StructureBattery\")"`},
+		{"batch write logic", "b.icg", `batch.write(hash("StructureBattery"), `, "Temperature", `"newText":"\"Temperature\""`},
+		{"batch read logic", "c.icg", `batch.read(hash("StructureBattery"), `, "Temperature", `"newText":"\"Temperature\""`},
+		{"batch read mode", "d.icg", `batch.read(hash("StructureBattery"), "Temperature", `, "Average", `"newText":"\"Average\""`},
+		{"batch writeName logic", "n.icg", `batch.writeName(hash("StructureBattery"), hash("Bank 1"), `, "Temperature", `"newText":"\"Temperature\""`},
+		{"batch logic in string", "e.icg", `batch.write(hash("StructureBattery"), "Tem`, "Temperature", `"newText":"Temperature"`},
+		{"sorter prefab", "f.icg", "sorter.filterPrefabHash(", "ItemIronOre", `"newText":"hash(\"ItemIronOre\")"`},
+		{"printer prefab", "g.icg", "printer.executeRecipe(50, ", "ItemIronOre", `"newText":"hash(\"ItemIronOre\")"`},
+		{"readReagent hash", "h.icg", "readReagent(d0, 0, ", "ItemIronOre", `"newText":"hash(\"ItemIronOre\")"`},
+		{"readById logic", "i.icg", "readById(1, ", "Temperature", `"newText":"\"Temperature\""`},
+		{"native sbn type", "j.ic", "sbn ", "StructureBattery", `"newText":"HASH(\"StructureBattery\")"`},
+		{"native lb type", "k.ic", "lb r0 ", "StructureBattery", `"newText":"HASH(\"StructureBattery\")"`},
+		{"native lb logic", "l.ic", `lb r0 HASH("StructureBattery") `, "Temperature", `"newText":"Temperature"`},
+		{"native lb mode", "m.ic", `lb r0 HASH("StructureBattery") Temperature `, "Average", `"newText":"Average"`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			pos := fmt.Sprintf(`{"line":0,"character":%d}`, len(c.text))
+			out := openAndRequest(t, c.uri, c.text, "textDocument/completion", `,"position":`+pos)
+			if !strings.Contains(out, c.want) {
+				t.Errorf("completion missing %q:\n%s", c.want, out)
+			}
+			if c.newText != "" && !strings.Contains(out, c.newText) {
+				t.Errorf("completion missing textEdit %q:\n%s", c.newText, out)
 			}
 		})
 	}
