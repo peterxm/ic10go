@@ -332,7 +332,9 @@ type World struct {
 3. ✅ **P3 VM `World`**（已实现）：`vm.World` 多芯片锁步，设备按名共享（同一
    `dev:conn` 的 `ChannelN` 互通），每芯片保留自己的寄存器与栈；`ic10c run` 跑
    多芯片程序并打印世界设备。见 `internal/vm` 的 `World` / `Machine.Step`。
-4. ✅ **P4 编辑器**：LSP 看到 chip 内声明（`flatDecls`）；VSCode 编译命令弹芯片选择。
+4. ✅ **P4 编辑器**：LSP 按**光标所在 chip** 隔离补全与签名（只给公共区 + 本 chip 的
+   声明，`declsAtOffset`）；`Bus.` 补全槽位；语义高亮 `chip`/`bus`/`use`；VSCode
+   编译命令弹芯片选择、状态栏显示芯片数。
 
 ---
 

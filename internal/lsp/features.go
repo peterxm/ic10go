@@ -56,6 +56,34 @@ func flatDecls(decls []ast.Decl) []ast.Decl {
 	return out
 }
 
+// declsAtOffset returns the declarations visible at off: the shared top-level
+// ones plus, when off is inside a chip, that chip's own declarations (so other
+// chips' locals are not offered).
+func declsAtOffset(tree *ast.File, off int) []ast.Decl {
+	common := make([]ast.Decl, 0, len(tree.Decls))
+	for _, d := range tree.Decls {
+		if _, ok := d.(*ast.ChipDecl); !ok {
+			common = append(common, d)
+		}
+	}
+	for i, d := range tree.Decls {
+		ch, ok := d.(*ast.ChipDecl)
+		if !ok {
+			continue
+		}
+		end := 1 << 30
+		if i+1 < len(tree.Decls) {
+			end = tree.Decls[i+1].Pos().Offset
+		}
+		if off >= ch.Pos().Offset && off < end {
+			out := make([]ast.Decl, 0, len(common)+len(ch.Decls))
+			out = append(out, common...)
+			return append(out, ch.Decls...)
+		}
+	}
+	return common
+}
+
 func matchBrace(text string, open int) int {
 	depth := 0
 	for i := open; i < len(text); i++ {
@@ -796,7 +824,7 @@ func signatureHelpFor(text string, pos lspPosition) any {
 	if !ok || strings.Contains(name, ".") {
 		return nil
 	}
-	label, params := signatureFor(text, name)
+	label, params := signatureFor(text, off, name)
 	if label == "" {
 		return nil
 	}
@@ -810,9 +838,9 @@ func signatureHelpFor(text string, pos lspPosition) any {
 	}
 }
 
-func signatureFor(text, name string) (string, []any) {
+func signatureFor(text string, off int, name string) (string, []any) {
 	if tree := parseText(text); tree != nil {
-		for _, d := range flatDecls(tree.Decls) {
+		for _, d := range declsAtOffset(tree, off) {
 			if f, ok := d.(*ast.FuncDecl); ok && f.Name.Name == name {
 				var parts []string
 				var params []any

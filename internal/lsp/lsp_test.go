@@ -662,3 +662,32 @@ func TestHoverBatteryPower(t *testing.T) {
 		t.Errorf("hover did not describe PowerActual:\n%s", out)
 	}
 }
+
+func TestCompletionChipScope(t *testing.T) {
+	src := "const Shared = 1\n" +
+		"chip a {\n    const LocalA = 2\n    func main() { x := 0 }\n}\n" +
+		"chip b {\n    const LocalB = 3\n    func main() { }\n}\n"
+	labels := func(pos lspPosition) string {
+		var out []string
+		for _, it := range completionItemsFor(src, pos) {
+			out = append(out, it.Label)
+		}
+		return strings.Join(out, ",")
+	}
+	// Inside chip a: sees Shared and LocalA, not LocalB.
+	a := labels(lspPosition{Line: 3, Character: 20})
+	if !strings.Contains(a, "LocalA") || !strings.Contains(a, "Shared") {
+		t.Errorf("chip a completion missing Shared/LocalA:\n%s", a)
+	}
+	if strings.Contains(a, "LocalB") {
+		t.Errorf("chip a completion should not offer LocalB:\n%s", a)
+	}
+	// Inside chip b: sees LocalB, not LocalA.
+	b := labels(lspPosition{Line: 6, Character: 20})
+	if !strings.Contains(b, "LocalB") {
+		t.Errorf("chip b completion missing LocalB:\n%s", b)
+	}
+	if strings.Contains(b, "LocalA") {
+		t.Errorf("chip b completion should not offer LocalA:\n%s", b)
+	}
+}

@@ -633,7 +633,7 @@ func completionItemsFor(text string, pos lspPosition) []completionItem {
 		items = append(items, completionItem{Label: r, Kind: 9, Detail: "enum"})
 	}
 	items = append(items, batchMethodItems()...)
-	items = append(items, documentSymbols("", text)...)
+	items = append(items, documentSymbolsAt(text, off)...)
 	return items
 }
 
@@ -1156,14 +1156,15 @@ func sortItems(items []completionItem) {
 
 // documentSymbols collects the user-defined functions, constants, variables and
 // labels of a document for completion.
-func documentSymbols(name, text string) []completionItem {
-	file := source.NewFile(name, []byte(text))
+func documentSymbolsAt(text string, off int) []completionItem {
+	file := source.NewFile("", []byte(text))
 	diags := &diag.Bag{}
 	toks := lexer.Tokenize(file, diags)
 	tree := parser.Parse(file, toks, diags)
 	if tree == nil {
 		return nil
 	}
+	decls := declsAtOffset(tree, off)
 	var items []completionItem
 	seen := map[string]bool{}
 	add := func(n string, kind int, detail string) {
@@ -1173,7 +1174,7 @@ func documentSymbols(name, text string) []completionItem {
 		seen[n] = true
 		items = append(items, completionItem{Label: n, Kind: kind, Detail: detail})
 	}
-	for _, d := range flatDecls(tree.Decls) {
+	for _, d := range decls {
 		switch d := d.(type) {
 		case *ast.FuncDecl:
 			add(d.Name.Name, 3, "function")
@@ -1185,7 +1186,7 @@ func documentSymbols(name, text string) []completionItem {
 			add(d.Name.Name, 6, "variable")
 		}
 	}
-	for _, d := range flatDecls(tree.Decls) {
+	for _, d := range decls {
 		if f, ok := d.(*ast.FuncDecl); ok && f.Body != nil {
 			collectStmtSymbols(f.Body.List, add)
 		}
