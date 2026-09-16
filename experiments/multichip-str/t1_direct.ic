@@ -1,0 +1,3 @@
+# T1 对照：直接写 STR 到 LED（接收芯片单独跑）
+s d0 Mode 10
+s d0 Setting STR("AB")

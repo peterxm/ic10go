@@ -1,0 +1,5 @@
+# T3b 发射芯片：中文（非 ASCII）走通道
+loop:
+s db:0 Channel0 STR("温度")
+yield
+j loop

@@ -1,0 +1,7 @@
+# T2/T3 接收芯片：读 db:0 的 Channel0 写到 d0（LED，String 模式）
+s d0 Mode 10
+loop:
+l r0 db:0 Channel0
+s d0 Setting r0
+yield
+j loop

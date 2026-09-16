@@ -1,0 +1,6 @@
+# T0 单芯片回环：同一芯片写/读 db:0 的 Channel0
+# 若 LED 显示 42，说明通道读写语法没问题，T2 失败就只是两块芯片的网络没接通。
+s d0 Mode 10
+s db:0 Channel0 42
+l r0 db:0 Channel0
+s d0 Setting r0

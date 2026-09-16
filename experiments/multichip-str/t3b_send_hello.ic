@@ -1,0 +1,5 @@
+# T3b 发射芯片：长字符串走通道
+loop:
+s db:0 Channel0 STR("HELLO")
+yield
+j loop

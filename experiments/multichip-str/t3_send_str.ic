@@ -1,0 +1,5 @@
+# T3 发射芯片：往 db:0 的 Channel0 写 STR("AB")
+loop:
+s db:0 Channel0 STR("AB")
+yield
+j loop
