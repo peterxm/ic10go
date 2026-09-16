@@ -38,13 +38,18 @@ type FuncInfo struct {
 	Params []string
 }
 
-// BusInfo is a `bus Name on dev:conn { ... }` declaration: a named set of
-// network channels shared between chips.
+// BusInfo is a `bus Name { ... }` declaration: a named set of network channels
+// shared between chips. Slots map to Channel0.. in order.
 type BusInfo struct {
-	Name   string
-	Device string         // "db", "d0", ...
-	Conn   int            // device connection index
-	Slots  map[string]int // slot name -> channel index
+	Name  string
+	Slots map[string]int // slot name -> channel index
+}
+
+// BusConn is one of a chip's access points to a bus network: a device port (or
+// alias) and a connection, giving 8 consecutive channels.
+type BusConn struct {
+	Device string
+	Conn   int
 }
 
 // DataTable is a compile-time `data` table stored in the persistent stack.
@@ -78,6 +83,8 @@ type Info struct {
 	Main      *ast.FuncDecl
 	// Buses maps a `bus` name to its channel layout.
 	Buses map[string]*BusInfo
+	// BusBindings maps a `bus` name to this chip's access points (from `use`).
+	BusBindings map[string][]BusConn
 
 	// Data segment (top-level `data` tables). All zero when there is none.
 	Data        []*DataTable
@@ -113,6 +120,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 		Devices:       map[string]string{},
 		Funcs:         map[string]*FuncInfo{},
 		Buses:         map[string]*BusInfo{},
+		BusBindings:   map[string][]BusConn{},
 		DataIndex:     map[string]*DataTable{},
 		Sentinel:      -1,
 		TableSwitches: map[*ast.SwitchStmt]*TableSwitch{},
@@ -238,12 +246,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 				diags.Errorf(d.Name.Pos(), "bus %q conflicts with a constant", d.Name.Name)
 				continue
 			}
-			if len(d.Slots) > 8 {
-				diags.Errorf(d.Name.Pos(),
-					"bus %q has %d slots; a network has only 8 channels — split it into another bus on a different connection",
-					d.Name.Name, len(d.Slots))
-			}
-			bi := &BusInfo{Name: d.Name.Name, Device: d.Device, Conn: d.Conn, Slots: map[string]int{}}
+			bi := &BusInfo{Name: d.Name.Name, Slots: map[string]int{}}
 			for i, s := range d.Slots {
 				if _, dup := bi.Slots[s.Name.Name]; dup {
 					diags.Errorf(s.Name.Pos(), "bus slot %q redeclared", s.Name.Name)
@@ -257,6 +260,37 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 				bi.Slots[s.Name.Name] = i
 			}
 			info.Buses[d.Name.Name] = bi
+		case *ast.UseDecl:
+			if _, dup := info.BusBindings[d.Bus.Name]; dup {
+				diags.Errorf(d.Bus.Pos(), "bus %q bound more than once in this chip", d.Bus.Name)
+				continue
+			}
+			bi, ok := info.Buses[d.Bus.Name]
+			if !ok {
+				diags.Errorf(d.Bus.Pos(), "unknown bus %q", d.Bus.Name)
+				continue
+			}
+			if len(d.Bindings) == 0 {
+				diags.Errorf(d.Bus.Pos(), "use %s needs at least one connection", d.Bus.Name)
+				continue
+			}
+			binds := make([]BusConn, 0, len(d.Bindings))
+			for _, b := range d.Bindings {
+				dev := b.Device
+				if alias, isAlias := info.Devices[dev]; isAlias {
+					dev = alias
+				} else if !isDevicePort(dev) {
+					diags.Errorf(b.Pos(), "unknown device %q", b.Device)
+					continue
+				}
+				binds = append(binds, BusConn{Device: dev, Conn: b.Conn})
+			}
+			if max := 8 * len(binds); len(bi.Slots) > max {
+				diags.Errorf(d.Bus.Pos(),
+					"bus %q has %d slots but only %d channel(s) bound (8 per connection); add more connections",
+					d.Bus.Name, len(bi.Slots), max)
+			}
+			info.BusBindings[d.Bus.Name] = binds
 		}
 	}
 
@@ -737,4 +771,12 @@ func deviceAlias(e ast.Expr, devices map[string]string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// isDevicePort reports whether s is a literal device port (db or d0..d5).
+func isDevicePort(s string) bool {
+	if s == "db" {
+		return true
+	}
+	return len(s) == 2 && s[0] == 'd' && s[1] >= '0' && s[1] <= '5'
 }

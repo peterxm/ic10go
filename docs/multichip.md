@@ -41,24 +41,23 @@ data Recipe = [ -1301215609, 0.0095 ]
 func clamp(x, lo, hi) { ... }   // 公共函数，各芯片各自内联/外提
 ```
 
-### 2.2 `bus` 声明
+### 2.2 `bus` 声明（契约）
+
+顶层 `bus` 只声明**契约**：槽位名字与顺序（→ `Channel0..`）。**访问点由每个 chip
+用 `use` 指定**（§2.4）。
 
 ```go
-bus Display on db:0 {
+bus Display {
     o2Pressure num
     mixOut     num
     mixError   num
 }
 ```
 
-- `on <dev>:<conn>` **显式指定连接**（必需）：`db:0`（host 数据口）、`d0:1` 等。
-  该连接在**每块芯片各自的上下文**里解析（`db` = 各芯片自己的 host）。
-- **接线约束**：通道是"每条电缆网络 8 个"。参与同一 `bus` 的所有芯片，其
-  `<dev>:<conn>` 必须落在**同一条电缆网络**，否则读到 `NaN`（No Available
-  Network）。两块芯片在不同网络时，需一块**桥接设备**（如 Logic Memory，两条
-  连接分别接两个网络），两边都引用该设备对应的连接。编译器无法校验接线，由用户保证。
-- 槽位按声明顺序映射到 `Channel0..Channel7`；**最多 8 槽**。
-- 槽位类型：`num` / `bool` / `str("...")`（三种都做，见 §2.6）。
+- 槽位按声明顺序映射到 `Channel0..`；**每条连接 8 个通道**。
+- 槽位类型：`num` / `bool` / `str`（见 §2.6）。
+- 一个 bus 可跨多条连接（`8 × 连接数` 个通道），槽位 `i` 落在第 `i/8` 条连接的
+  `Channel(i%8)`。
 
 ### 2.3 `chip` 块
 
@@ -77,15 +76,29 @@ chip display {
 - 无 `chip` 块时保持现状（顶层 `main` = 单芯片）。
 - **不允许**顶层 `main` 与 `chip` 块混用（报错）。
 
-### 2.4 访问总线
+### 2.4 访问总线（`use` 访问点）
+
+每个用到 bus 的 chip 声明自己的**访问点**（可多个连接，按槽位顺序分段）：
 
 ```go
-Display.o2Pressure = d1.Pressure    // 写 -> s db:0 Channel0 <value>
-x := Display.mixOut                 // 读 -> l r db:0 Channel1
+chip control {
+    use Display on db:0            // 本芯片经 db:0 接入
+    func main() { for { yield(); Display.o2Pressure = d1.Pressure } }
+}
+chip display {
+    use Display on d2:1            // 本芯片经 d2:1（如桥接设备的某个口）接入
+    func main() { for { yield(); d0.Setting = Display.o2Pressure } }
+}
 ```
 
-`Bus.slot` 与现有 `d.channel[conn][ch]` 降到**同一组 IR**（`ir.Store/Load{Dev:"db:0",
-Logic:"ChannelN"}`）。
+- `use Bus on dev:conn[, dev:conn ...]`：`dev` 可为端口（`db`/`d0..d5`）或**设备
+  别名**（`const Mem = d2`），只允许编译期常量（不允许 `drN`）。
+- 槽位 `i` → 第 `i/8` 条绑定的 `Channel(i%8)`：`s/l <dev>:<conn> ChannelN`。
+- 与现有 `d.channel[conn][ch]` 降到**同一组 IR**。
+- **接线约束**：同一条绑定的所有芯片必须落在同一条电缆网络，否则读到 `NaN`
+  （No Available Network）；跨网络需桥接设备。编译器不校验接线，由用户保证。
+
+> 相比最初"在 bus 上写死一个 `db:0`"，把访问点拆到每个 chip 更贴近现实接线。
 
 ### 2.5 文法（增量）
 
@@ -139,34 +152,32 @@ ChipDecl= "chip" Ident "{" { ConstDecl | DataDecl | FuncDecl } "}"
 对每个 bus 槽位，扫描所有 chip：
 
 - **写**该槽位的 chip = producer；**读**的 = consumer。
-- 约束：
-  - producer **恰好一个**（0 个 → 报错 `slot never written`；≥2 → 报错
-    `slot written by multiple chips`）。
-  - consumer 任意个。
-- 生成：
-  - producer：在赋值处发 `s <conn> ChannelN <value>`。
-  - consumer：在读取处收 `l <reg> <conn> ChannelN`。
+- 约束（按**芯片**计数，同一芯片多处写只算一次）：
+  - ≥2 个写者 → 报错 `written by multiple chips`；
+  - 有读者但**没有写者** → 报错 `read but never written`；
+  - 既无读者也无写者的槽位 → 允许（未使用）。
+- 生成（用**本芯片的 `use` 绑定**）：
+  - producer：在赋值处发 `s <dev>:<conn> ChannelN <value>`。
+  - consumer：在读取处收 `l <reg> <dev>:<conn> ChannelN`。
 - **不做握手**：消费者可能读到 `NaN`（通道默认值）或旧值；由用户保证时序。
 
 ### 3.3 通道分配
 
-- 槽位 i → `Channel{i}`，i ∈ 0..7。
-- 超过 8 槽 → 报错，提示拆分：
+- 槽位 `i` → 第 `i/8` 条绑定的 `Channel(i%8)`。
+- 芯片绑定 `n` 条连接即有 `8n` 个通道；若 bus 槽位数超过 `8n` → 报错，提示加连接：
 
   ```
-  bus "Display" has 9 slots; a network has only 8 channels.
-  split it into another bus on a different connection (e.g. `bus Display2 on d0:1 { ... }`).
+  bus "Display" has 9 slots but only 8 channel(s) bound (8 per connection); add more connections
   ```
 
 ### 3.4 与现有语法的关系
 
 | 新写法 | 等价的现有写法 |
 |--------|----------------|
-| `Display.slot = v` | `db.channel[0][i] = v` |
+| `Display.slot = v`（chip 内 `use Display on db:0`） | `db.channel[0][i] = v` |
 | `x := Display.slot` | `x := db.channel[0][i]` |
-| `bus Display on db:0 { … }` | 手动约定 `db.channel[0][0..7]` |
 
-即 `bus` 是"命名 + 自动编号 + 自动收发"的糖。
+即 `bus` 是"命名 + 自动编号 + 自动收发"的糖；`use` 决定每芯片的访问点。
 
 ---
 
@@ -174,11 +185,11 @@ ChipDecl= "chip" Ident "{" { ConstDecl | DataDecl | FuncDecl } "}"
 
 | 项 | 值 |
 |----|----|
-| 每网络通道数 | 8 |
+| 每连接通道数 | 8 |
 | 每通道载荷 | 1 个 float64 |
-| 每 `bus` 槽位 | ≤ 8 |
-| 槽位类型 | `num` / `bool`（走通道）/ `str("...")`（待定，见 §2.6） |
-| 超 8 的办法 | 再声明一个 `bus`，指定**另一条连接/网络**（`on d0:1`） |
+| 每 `bus` 槽位 | ≤ `8 ×` 该芯片绑定的连接数 |
+| 槽位类型 | `num` / `bool` / `str`（`str` 是数值编码，见 §2.6） |
+| 超 8 的办法 | `use` 里加连接：`use Display on a:0, b:1`（按槽位顺序分段） |
 | 通道持久性 | **易失**（改接线 / 退出世界清空），默认 `NaN` |
 
 典型显示场景：显示芯片**自读源设备**（零通道）；只有主芯片的中间量（PID 输出、
@@ -355,12 +366,13 @@ const TargetO2 = 33.3
 const PresTarget = 550.0
 
 // 显示总线：主芯片发中间量，显示芯片收
-bus Display on db:0 {
+bus Display {
     mixOut   num
     mixError num
 }
 
 chip control {
+    use Display on db:0
     func main() {
         // ... 现有 PID / 安全 / 温度前馈 ...
         for {
@@ -374,6 +386,7 @@ chip control {
 }
 
 chip display {
+    use Display on d2:1                // 本芯片的接入点（可为桥接设备的口）
     func main() {
         for {
             yield()
@@ -390,4 +403,4 @@ chip display {
 ```
 
 效果：`control` 只多 2 行发送，删掉整个 LED 段（约 16 行）；`display` 独立 128 行
-预算。
+预算。`ic10c run` 会按 bus 自动把两块芯片的访问点接成同一条网，直接可跑。

@@ -255,35 +255,23 @@ func (p *parser) parseChipMember() []ast.Decl {
 		return p.parseVarDecls()
 	case token.Func:
 		return []ast.Decl{p.parseFuncDecl()}
+	case token.Use:
+		return []ast.Decl{p.parseUseDecl()}
 	case token.Chip:
 		p.errorf(p.cur().Pos, "chips cannot be nested")
 		p.advance()
 		return nil
 	default:
-		p.errorf(p.cur().Pos, "expected const, data, var or func, found %s", describe(p.cur()))
+		p.errorf(p.cur().Pos, "expected const, data, var, func or use, found %s", describe(p.cur()))
 		return nil
 	}
 }
 
-// parseBusDecl parses `bus Name on dev:conn { slot type ... }`. Slots map to
-// Channel0.. in declaration order (at most 8).
+// parseBusDecl parses `bus Name { slot type ... }`. Slots map to Channel0.. in
+// declaration order (at most 8 per connection).
 func (p *parser) parseBusDecl() *ast.BusDecl {
 	kw := p.expect(token.Bus)
 	name := p.parseIdent()
-	on := p.expect(token.Ident)
-	if on.Text != "on" {
-		p.errorf(on.Pos, "expected 'on', found %q", on.Text)
-	}
-	var dev string
-	switch p.cur().Kind {
-	case token.Device, token.Ident:
-		dev = p.advance().Text
-	default:
-		p.errorf(p.cur().Pos, "expected a device, found %s", describe(p.cur()))
-	}
-	p.expect(token.Colon)
-	connTok := p.expect(token.Number)
-	conn, _ := strconv.Atoi(connTok.Text)
 	p.expect(token.LBrace)
 	var slots []*ast.BusSlot
 	for {
@@ -300,7 +288,39 @@ func (p *parser) parseBusDecl() *ast.BusDecl {
 		slots = append(slots, &ast.BusSlot{NodeBase: base(spos), Name: sname, Type: typ})
 	}
 	p.expect(token.RBrace)
-	return &ast.BusDecl{NodeBase: base(kw.Pos), Name: name, Device: dev, Conn: conn, Slots: slots}
+	return &ast.BusDecl{NodeBase: base(kw.Pos), Name: name, Slots: slots}
+}
+
+// parseUseDecl parses `use Bus on dev:conn[, dev:conn ...]`, a chip's access
+// points to a bus's network(s).
+func (p *parser) parseUseDecl() *ast.UseDecl {
+	kw := p.expect(token.Use)
+	bus := p.parseIdent()
+	on := p.expect(token.Ident)
+	if on.Text != "on" {
+		p.errorf(on.Pos, "expected 'on', found %q", on.Text)
+	}
+	var binds []*ast.ConnRef
+	for {
+		bpos := p.cur().Pos
+		var dev string
+		switch p.cur().Kind {
+		case token.Device, token.Ident:
+			dev = p.advance().Text
+		default:
+			p.errorf(p.cur().Pos, "expected a device, found %s", describe(p.cur()))
+		}
+		p.expect(token.Colon)
+		connTok := p.expect(token.Number)
+		conn, _ := strconv.Atoi(connTok.Text)
+		binds = append(binds, &ast.ConnRef{NodeBase: base(bpos), Device: dev, Conn: conn})
+		if p.at(token.Comma) {
+			p.advance()
+			continue
+		}
+		break
+	}
+	return &ast.UseDecl{NodeBase: base(kw.Pos), Bus: bus, Bindings: binds}
 }
 
 // parseOptLabel parses an optional label after break/continue.

@@ -237,3 +237,22 @@ func TestWorldSeparateStacks(t *testing.T) {
 		t.Errorf("chip b stack = %v, want 222", got)
 	}
 }
+
+func TestWorldWire(t *testing.T) {
+	w := NewWorld()
+	a := w.AddChip()
+	b := w.AddChip()
+	if err := a.Load("s db:0 Channel0 42\nj 0\n"); err != nil {
+		t.Fatalf("load a: %v", err)
+	}
+	if err := b.Load("l r0 d2:1 Channel0\ns d0 Setting r0\nj 0\n"); err != nil {
+		t.Fatalf("load b: %v", err)
+	}
+	w.Wire("db:0", "d2:1")
+	if err := w.Run(30); err != nil && err != ErrStepLimit {
+		t.Fatalf("run: %v", err)
+	}
+	if got := w.Get("d0", "Setting"); got != 42 {
+		t.Errorf("d0.Setting = %v, want 42 (wired access points not shared)", got)
+	}
+}

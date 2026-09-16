@@ -84,6 +84,9 @@ type ChipResult struct {
 	// Setup reports whether Loader includes hoisted one-time device writes
 	// (modes / switches / constant settings) rather than only data-segment writes.
 	Setup bool
+	// Buses maps a bus name to this chip's access points ("dev:conn"), used to
+	// wire a multi-chip VM run. Nil when the chip uses no bus.
+	Buses map[string][]string
 }
 
 // Result is a compiled program: the runtime code plus an optional one-time
@@ -181,7 +184,7 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			return Result{}, diags, derr
 		}
 		res.Loader = dl + res.Loader
-		res.Chips = []ChipResult{{Code: res.Code, Loader: res.Loader, Setup: res.Setup}}
+		res.Chips = []ChipResult{{Code: res.Code, Loader: res.Loader, Setup: res.Setup, Buses: chipBuses(info)}}
 		return res, diags, nil
 	}
 
@@ -222,7 +225,7 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			}
 			continue
 		}
-		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, Loader: dl + res.Loader, Setup: res.Setup})
+		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, Loader: dl + res.Loader, Setup: res.Setup, Buses: chipBuses(info)})
 	}
 	checkBusUse(common, busUses, diags)
 	if len(results) == 0 {
@@ -237,7 +240,8 @@ type busUse struct {
 	writers map[string]bool
 }
 
-// checkBusUse enforces that every bus slot has exactly one writer.
+// checkBusUse enforces that every bus slot is written by exactly one chip when
+// it is used; a slot nobody touches is fine.
 func checkBusUse(common []ast.Decl, uses map[string]*busUse, diags *diag.Bag) {
 	for _, d := range common {
 		bus, ok := d.(*ast.BusDecl)
@@ -246,15 +250,15 @@ func checkBusUse(common []ast.Decl, uses map[string]*busUse, diags *diag.Bag) {
 		}
 		for _, s := range bus.Slots {
 			u := uses[bus.Name.Name+"."+s.Name.Name]
-			writers := 0
+			readers, writers := 0, 0
 			if u != nil {
-				writers = len(u.writers)
+				readers, writers = len(u.readers), len(u.writers)
 			}
 			switch {
-			case writers == 0:
-				diags.Errorf(s.Name.Pos(), "bus slot %s.%s is never written", bus.Name.Name, s.Name.Name)
 			case writers > 1:
 				diags.Errorf(s.Name.Pos(), "bus slot %s.%s is written by multiple chips", bus.Name.Name, s.Name.Name)
+			case readers > 0 && writers == 0:
+				diags.Errorf(s.Name.Pos(), "bus slot %s.%s is read but never written", bus.Name.Name, s.Name.Name)
 			}
 		}
 	}
@@ -371,6 +375,22 @@ func topMain(decls []ast.Decl) *ast.FuncDecl {
 		}
 	}
 	return nil
+}
+
+// chipBuses renders a chip's bus bindings as "dev:conn" strings.
+func chipBuses(info *sema.Info) map[string][]string {
+	if len(info.BusBindings) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(info.BusBindings))
+	for name, binds := range info.BusBindings {
+		conns := make([]string, 0, len(binds))
+		for _, b := range binds {
+			conns = append(conns, fmt.Sprintf("%s:%d", b.Device, b.Conn))
+		}
+		out[name] = conns
+	}
+	return out
 }
 
 func declName(d ast.Decl) string {

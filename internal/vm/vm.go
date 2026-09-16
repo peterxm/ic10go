@@ -174,6 +174,9 @@ func (m *Machine) Device(name string) *Device {
 			m.localDevices[name] = d
 			return d
 		}
+		if d, ok := m.world.nets[name]; ok {
+			return d
+		}
 		if d, ok := m.world.Devices[name]; ok {
 			return d
 		}
@@ -356,11 +359,58 @@ type World struct {
 	Chips   []*Machine
 	Devices map[string]*Device
 	order   []*Device
+	// nets maps a "dev:conn" access point to its shared network device, so
+	// access points wired together (Wire/WireBus) share channels.
+	nets map[string]*Device
 }
 
 // NewWorld returns an empty world.
 func NewWorld() *World {
-	return &World{Devices: map[string]*Device{}}
+	return &World{Devices: map[string]*Device{}, nets: map[string]*Device{}}
+}
+
+// Wire puts the given "dev:conn" access points on the same network: chips
+// referencing any of them read and write the same channels.
+func (w *World) Wire(members ...string) {
+	if len(members) == 0 {
+		return
+	}
+	var d *Device
+	for _, m := range members {
+		if e, ok := w.nets[m]; ok {
+			d = e
+			break
+		}
+	}
+	if d == nil {
+		d = newDevice("net[" + members[0] + "]")
+		w.Devices[d.Name] = d
+		w.order = append(w.order, d)
+	}
+	for _, m := range members {
+		w.nets[m] = d
+	}
+}
+
+// WireBus wires the access points of one bus across chips. Each chip passes its
+// binding list; entry i of every list is the same network segment (a bus may
+// span several connections, 8 channels each).
+func (w *World) WireBus(bindings ...[]string) {
+	maxLen := 0
+	for _, b := range bindings {
+		if len(b) > maxLen {
+			maxLen = len(b)
+		}
+	}
+	for i := 0; i < maxLen; i++ {
+		var members []string
+		for _, b := range bindings {
+			if i < len(b) {
+				members = append(members, b[i])
+			}
+		}
+		w.Wire(members...)
+	}
 }
 
 // AddChip creates a machine that shares the world's devices and returns it.

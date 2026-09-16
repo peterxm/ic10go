@@ -666,9 +666,9 @@ func TestMultiChipTopMainRejected(t *testing.T) {
 }
 
 func TestBusChannelMapping(t *testing.T) {
-	src := "bus B on db:0 {\n    a num\n    b num\n}\n" +
-		"chip c {\n    func main() { B.a = d1.Pressure; B.b = 1 }\n}\n" +
-		"chip d {\n    func main() { d0.Setting = B.a; d1.On = B.b }\n}\n"
+	src := "bus B {\n    a num\n    b num\n}\n" +
+		"chip c {\n    use B on db:0\n    func main() { B.a = d1.Pressure; B.b = 1 }\n}\n" +
+		"chip d {\n    use B on d2:1\n    func main() { d0.Setting = B.a; d1.On = B.b }\n}\n"
 	res, diags, err := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
 	if diags.HasErrors() {
 		t.Fatalf("compile errors: %v", diags.Diags)
@@ -677,15 +677,51 @@ func TestBusChannelMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(res.Chips[0].Code, "s db:0 Channel0") || !strings.Contains(res.Chips[0].Code, "s db:0 Channel1") {
-		t.Errorf("producer should write both channels:\n%s", res.Chips[0].Code)
+		t.Errorf("producer should write its own access point:\n%s", res.Chips[0].Code)
 	}
-	if !strings.Contains(res.Chips[1].Code, "l r0 db:0 Channel0") || !strings.Contains(res.Chips[1].Code, "l r0 db:0 Channel1") {
-		t.Errorf("consumer should read both channels:\n%s", res.Chips[1].Code)
+	if !strings.Contains(res.Chips[1].Code, "l r0 d2:1 Channel0") || !strings.Contains(res.Chips[1].Code, "l r0 d2:1 Channel1") {
+		t.Errorf("consumer should read its own access point:\n%s", res.Chips[1].Code)
+	}
+	if got := res.Chips[0].Buses["B"]; len(got) != 1 || got[0] != "db:0" {
+		t.Errorf("chip c bus bindings = %v, want [db:0]", got)
+	}
+	if got := res.Chips[1].Buses["B"]; len(got) != 1 || got[0] != "d2:1" {
+		t.Errorf("chip d bus bindings = %v, want [d2:1]", got)
+	}
+}
+
+func TestBusMultiConnection(t *testing.T) {
+	// Nine slots span two connections: slots 0..7 on the first, slot 8 on the
+	// second (its local Channel0).
+	src := "bus B {\n    s0 num\n    s1 num\n    s2 num\n    s3 num\n" +
+		"    s4 num\n    s5 num\n    s6 num\n    s7 num\n    s8 num\n}\n" +
+		"chip a {\n    use B on db:0, d1:1\n    func main() { B.s8 = 5 }\n}\n" +
+		"chip b {\n    use B on db:0, d1:1\n    func main() { d0.On = B.s8 }\n}\n"
+	res, diags, err := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
+	if diags.HasErrors() {
+		t.Fatalf("compile errors: %v", diags.Diags)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Chips[0].Code, "s d1:1 Channel0") {
+		t.Errorf("slot 8 should land on the second connection:\n%s", res.Chips[0].Code)
+	}
+}
+
+func TestBusTooManySlots(t *testing.T) {
+	src := "bus B {\n    s0 num\n    s1 num\n    s2 num\n    s3 num\n" +
+		"    s4 num\n    s5 num\n    s6 num\n    s7 num\n    s8 num\n}\n" +
+		"chip a {\n    use B on db:0\n    func main() { B.s0 = 1 }\n}\n"
+	_, diags, _ := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
+	if !diags.HasErrors() {
+		t.Fatal("expected an error for 9 slots bound to a single connection")
 	}
 }
 
 func TestBusNoWriter(t *testing.T) {
-	src := "bus B on db:0 { x num }\nchip a { func main() { d0.On = B.x } }\n"
+	src := "bus B {\n    x num\n}\n" +
+		"chip a {\n    use B on db:0\n    func main() { d0.On = B.x }\n}\n"
 	_, diags, _ := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
 	if !diags.HasErrors() {
 		t.Fatal("expected an error for a bus slot with no writer")
@@ -693,21 +729,36 @@ func TestBusNoWriter(t *testing.T) {
 }
 
 func TestBusMultiWriter(t *testing.T) {
-	src := "bus B on db:0 { x num }\n" +
-		"chip a { func main() { B.x = 1 } }\n" +
-		"chip b { func main() { B.x = 2 } }\n"
+	src := "bus B {\n    x num\n}\n" +
+		"chip a {\n    use B on db:0\n    func main() { B.x = 1 }\n}\n" +
+		"chip b {\n    use B on db:0\n    func main() { B.x = 2 }\n}\n"
 	_, diags, _ := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
 	if !diags.HasErrors() {
 		t.Fatal("expected an error for a bus slot written by two chips")
 	}
 }
 
-func TestBusTooManySlots(t *testing.T) {
-	src := "bus B on db:0 {\n    s0 num\n    s1 num\n    s2 num\n    s3 num\n" +
-		"    s4 num\n    s5 num\n    s6 num\n    s7 num\n    s8 num\n}\n" +
-		"chip a { func main() { B.s0 = 1 } }\n"
+func TestBusNotBound(t *testing.T) {
+	src := "bus B {\n    x num\n}\n" +
+		"chip a {\n    func main() { B.x = 1 }\n}\n"
 	_, diags, _ := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
 	if !diags.HasErrors() {
-		t.Fatal("expected an error for a bus with more than 8 slots")
+		t.Fatal("expected an error for using a bus without `use`")
+	}
+}
+
+func TestBusDeviceAlias(t *testing.T) {
+	src := "const Mem = d3\n" +
+		"bus B {\n    x num\n}\n" +
+		"chip a {\n    use B on Mem:1\n    func main() { B.x = 1 }\n}\n"
+	res, diags, err := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
+	if diags.HasErrors() {
+		t.Fatalf("compile errors: %v", diags.Diags)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Chips[0].Code, "s d3:1 Channel0") {
+		t.Errorf("device alias should resolve to d3:\n%s", res.Chips[0].Code)
 	}
 }

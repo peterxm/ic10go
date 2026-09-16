@@ -281,10 +281,6 @@ func (p *printer) declIn(d Decl, inGroup bool) {
 	case *BusDecl:
 		p.write("bus ")
 		p.write(d.Name.Name)
-		p.write(" on ")
-		p.write(d.Device)
-		p.write(":")
-		p.write(strconv.Itoa(d.Conn))
 		p.write(" {")
 		p.indent++
 		for _, s := range d.Slots {
@@ -299,6 +295,18 @@ func (p *printer) declIn(d Decl, inGroup bool) {
 		p.indent--
 		p.nl()
 		p.write("}")
+	case *UseDecl:
+		p.write("use ")
+		p.write(d.Bus.Name)
+		p.write(" on ")
+		for i, b := range d.Bindings {
+			if i > 0 {
+				p.write(", ")
+			}
+			p.write(b.Device)
+			p.write(":")
+			p.write(strconv.Itoa(b.Conn))
+		}
 	}
 }
 

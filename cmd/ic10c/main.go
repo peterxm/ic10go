@@ -480,6 +480,17 @@ func cmdRun(args []string) int {
 			m.Trace = os.Stdout
 		}
 	}
+	// Wire every bus's access points across the chips that bind it, so the run
+	// matches the declared buses.
+	busBindings := map[string][][]string{}
+	for _, ch := range compiled.Chips {
+		for bus, binds := range ch.Buses {
+			busBindings[bus] = append(busBindings[bus], binds)
+		}
+	}
+	for _, binds := range busBindings {
+		w.WireBus(binds...)
+	}
 	if err := w.Run(steps); err != nil && err != vm.ErrStepLimit {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1

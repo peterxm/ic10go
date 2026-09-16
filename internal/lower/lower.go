@@ -602,7 +602,12 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 					l.diags.Errorf(t.Sel.Pos(), "bus %q has no slot %q", id.Name, t.Sel.Name)
 					return
 				}
-				l.b.Emit(&ir.Store{Dev: channelDev(bi.Device, float64(bi.Conn)), Logic: "Channel" + itoa(float64(ch)), Src: val})
+				dev, localCh, ok := l.busConn(id.Name, ch)
+				if !ok {
+					l.diags.Errorf(t.Sel.Pos(), "bus %q is not bound in this chip; add `use %s on dev:conn`", id.Name, id.Name)
+					return
+				}
+				l.b.Emit(&ir.Store{Dev: dev, Logic: "Channel" + itoa(float64(localCh)), Src: val})
 				if l.opts.RecordBus != nil {
 					l.opts.RecordBus(id.Name, t.Sel.Name, true)
 				}
@@ -1507,8 +1512,13 @@ func (l *lowerer) lowerDeviceRead(e *ast.SelectorExpr) ir.Value {
 				l.diags.Errorf(e.Sel.Pos(), "bus %q has no slot %q", id.Name, e.Sel.Name)
 				return &ir.Const{V: 0}
 			}
+			dev, localCh, ok := l.busConn(id.Name, ch)
+			if !ok {
+				l.diags.Errorf(e.Sel.Pos(), "bus %q is not bound in this chip; add `use %s on dev:conn`", id.Name, id.Name)
+				return &ir.Const{V: 0}
+			}
 			r := l.b.NewReg(e.Sel.Name)
-			l.b.Emit(&ir.Load{Dst: r, Dev: channelDev(bi.Device, float64(bi.Conn)), Logic: "Channel" + itoa(float64(ch))})
+			l.b.Emit(&ir.Load{Dst: r, Dev: dev, Logic: "Channel" + itoa(float64(localCh))})
 			if l.opts.RecordBus != nil {
 				l.opts.RecordBus(id.Name, e.Sel.Name, false)
 			}
@@ -2581,6 +2591,18 @@ func (l *lowerer) dataTable(e ast.Expr) (*sema.DataTable, bool) {
 
 func channelDev(dev string, conn float64) string {
 	return dev + ":" + strconv.FormatInt(int64(conn), 10)
+}
+
+// busConn maps a bus channel index to this chip's access point: the binding
+// segment (8 channels each) and the local channel within it.
+func (l *lowerer) busConn(bus string, ch int) (dev string, localCh int, ok bool) {
+	binds := l.info.BusBindings[bus]
+	seg := ch / 8
+	if seg < 0 || seg >= len(binds) {
+		return "", 0, false
+	}
+	b := binds[seg]
+	return channelDev(b.Device, float64(b.Conn)), ch % 8, true
 }
 
 func itoa(v float64) string {

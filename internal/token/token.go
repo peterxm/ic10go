@@ -37,6 +37,7 @@ const (
 	Range
 	Chip
 	Bus
+	Use
 
 	// Operators and punctuation
 	Plus
@@ -113,6 +114,7 @@ var keywords = map[string]Kind{
 	"range":    Range,
 	"chip":     Chip,
 	"bus":      Bus,
+	"use":      Use,
 }
 
 // Lookup maps an identifier to its keyword kind, or Ident.
@@ -159,6 +161,7 @@ var kindNames = map[Kind]string{
 	Range:         "range",
 	Chip:          "chip",
 	Bus:           "bus",
+	Use:           "use",
 	Plus:          "+",
 	Minus:         "-",
 	Star:          "*",

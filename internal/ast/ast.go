@@ -86,14 +86,13 @@ type ChipDecl struct {
 	Decls []Decl // const / data / var / func
 }
 
-// BusDecl is a `bus Name on dev:conn { slot type ... }` block: a named set of
-// network channels shared between chips. Slots map to Channel0.. in order.
+// BusDecl is a `bus Name { slot type ... }` block: a named set of network
+// channels shared between chips. Slots map to Channel0.. in order. How each
+// chip reaches the network is declared with a per-chip UseDecl.
 type BusDecl struct {
 	NodeBase
-	Name   *Ident
-	Device string // "db", "d0", ...
-	Conn   int
-	Slots  []*BusSlot
+	Name  *Ident
+	Slots []*BusSlot
 }
 
 // BusSlot is one channel of a BusDecl; its position is the channel number.
@@ -103,12 +102,28 @@ type BusSlot struct {
 	Type string // "num", "bool" or "str"
 }
 
+// UseDecl is a `use Bus on dev:conn[, dev:conn ...]` inside a chip: it binds the
+// bus's channels to this chip's device connection(s), 8 channels each.
+type UseDecl struct {
+	NodeBase
+	Bus      *Ident
+	Bindings []*ConnRef
+}
+
+// ConnRef is a `dev:conn` access point: a device port or alias and a connection.
+type ConnRef struct {
+	NodeBase
+	Device string // "db", "d0", ... or a device alias
+	Conn   int
+}
+
 func (*ConstDecl) declNode() {}
 func (*DataDecl) declNode()  {}
 func (*VarDecl) declNode()   {}
 func (*FuncDecl) declNode()  {}
 func (*ChipDecl) declNode()  {}
 func (*BusDecl) declNode()   {}
+func (*UseDecl) declNode()   {}
 
 // ---------------------------------------------------------------------------
 // Statements

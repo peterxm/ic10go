@@ -250,21 +250,29 @@ chip display {
   自己 chip 的 loader。
 - 芯片间通信见 [`multichip.md`](multichip.md)（`bus` / 网络通道）。
 
-`bus` 声明一组命名网络通道（最多 8 个，按顺序映射 `Channel0..7`）：
+`bus` 声明一组命名网络通道；每个 chip 用 `use` 声明自己的访问点：
 
 ```go
-bus Display on db:0 {
+bus Display {
     o2Pressure num
     mixOut     num
 }
-chip control { func main() { for { yield(); Display.o2Pressure = d1.Pressure } } }
-chip display { func main() { for { yield(); d0.Setting = Display.o2Pressure } } }
+chip control {
+    use Display on db:0
+    func main() { for { yield(); Display.o2Pressure = d1.Pressure } }
+}
+chip display {
+    use Display on d2:1
+    func main() { for { yield(); d0.Setting = Display.o2Pressure } }
+}
 ```
 
-- `on <dev>:<conn>` 指定连接（`db:0`、`d0:1` 等）；所有参与芯片必须落在同一条
-  电缆网络（否则读到 `NaN`），跨网络需桥接设备。
+- `use Bus on dev:conn[, dev:conn ...]`：访问点（可多连接），`dev` 为端口
+  （`db`/`d0..d5`）或设备别名，**只允许编译期常量**。槽位 `i` → 第 `i/8` 条绑定的
+  `Channel(i%8)`。
 - `Bus.slot` 写 → `s <dev>:<conn> ChannelN`，读 → `l r <dev>:<conn> ChannelN`。
-- 每个槽位**恰好一个写者**（0 个 / 多个都报错）；读任意。不做握手，由用户保证时序。
+- 每个槽位至多一个写者；**被读却没有写者** → 报错。不做握手，由用户保证时序。
+- 同一条绑定上的芯片必须落在同一条电缆网络（否则读到 `NaN`），跨网络需桥接设备。
 - 槽位类型 `num` / `bool` / `str`（`str` 是数值编码，接收端 LED 用
   `DisplayMode.String` 显示）。
 
