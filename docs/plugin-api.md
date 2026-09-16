@@ -54,7 +54,8 @@ ic10c build --json <file.icg>
 | `ok` | 是否编译成功。`false` 时 `code` 为空，`diagnostics` 必含 error。 |
 | `code` | 编译产物原文。 |
 | `lines` | 产物按行拆分。**直接写芯片请用这个**，避免尾换行 / CRLF 歧义。 |
-| `data.needed` | 是否需要先安装持久栈数据段。 |
+| `data.needed` | 是否需要先运行一次性 loader（数据段和/或外提的设置写入）。 |
+| `data.setup` | loader 里是否包含**外提的一次性设置写入**（`Mode`/`On`/常量 `Setting` 等，见下文）。 |
 | `data.loader` | 一次性 loader 的 IC10 代码；`needed=false` 时省略。桥可自动先跑它。 |
 | `data.start` / `end` | 数据段占用的栈槽范围。 |
 | `data.sentinel` | 版本哨兵槽（= `start`）。 |
@@ -63,6 +64,16 @@ ic10c build --json <file.icg>
 | `stats` | 行 / 字节 / 最长行 / 引用到的寄存器数。 |
 | `limits` | 固定上限（128 / 4096 / 90 / 16）。 |
 | `diagnostics[]` | 诊断列表，按源码位置排序。 |
+
+### 一次性设置写入（`data.setup`）
+
+编译器会把**序言里的一次性设备写入**（`Mode`、`On`、常量 `Setting` 等，操作数
+全为编译期常量）外提到 loader：设备状态是持久的，这些写入只需在安装时执行一次。
+触发条件是 runtime 超过 128 行，或程序本来就需要 loader（有 `data` 表）。
+
+此时 `data.needed = true`、`data.setup = true`，`data.loader` 同时包含数据段写入
+（若有）与外提的设置写入；桥接程序应先跑 loader 再写 runtime。runtime 自身仍
+≤128 行。
 
 ### 诊断
 

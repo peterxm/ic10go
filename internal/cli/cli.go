@@ -160,16 +160,16 @@ var Commands = []Command{
 				ZH: "按稳定版的参数顺序生成 `ins`",
 			}},
 			{Long: "--split-data", Desc: text{
-				EN: "also emit the one-time data-segment loader",
-				ZH: "同时输出一次性的数据段装载器",
+				EN: "kept for compatibility; the one-time loader is emitted automatically when needed",
+				ZH: "兼容保留；需要 loader 时会自动输出",
 			}},
 			{Long: "--data-out", Arg: "<file>", Desc: text{
 				EN: "loader output path (default <file>.data.ic)",
 				ZH: "装载器输出路径（默认 <file>.data.ic）",
 			}},
 			{Long: "--data-only", Desc: text{
-				EN: "emit only the data-segment loader",
-				ZH: "只输出数据段装载器",
+				EN: "emit only the one-time loader (data segment + hoisted setup)",
+				ZH: "只输出一次性装载器（数据段 + 外提的设置写入）",
 			}},
 			{Long: "--no-data-check", Desc: text{
 				EN: "do not verify the data segment at runtime",

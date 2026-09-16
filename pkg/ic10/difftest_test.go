@@ -50,7 +50,8 @@ func runDifferential(t *testing.T, opts ic10.Options, seeds int, genFunc func(in
 
 		t.Setenv("IC10C_NO_OPT", "")
 		t.Setenv("IC10C_NO_OUTLINE", "")
-		optCode, diags, err := ic10.CompileWithOptions("t.icg", []byte(src), opts)
+		optRes, diags, err := ic10.CompileResult("t.icg", []byte(src), opts)
+		optCode := optRes.Code
 		if err != nil && (strings.Contains(err.Error(), "exceeding") ||
 			strings.Contains(err.Error(), "did not converge")) {
 			continue // program too big/spilly; not a correctness issue
@@ -61,7 +62,8 @@ func runDifferential(t *testing.T, opts ic10.Options, seeds int, genFunc func(in
 
 		t.Setenv("IC10C_NO_OPT", "1")
 		t.Setenv("IC10C_NO_OUTLINE", "1")
-		rawCode, diags, err := ic10.CompileWithOptions("t.icg", []byte(src), opts)
+		rawRes, diags, err := ic10.CompileResult("t.icg", []byte(src), opts)
+		rawCode := rawRes.Code
 		if err != nil && (strings.Contains(err.Error(), "exceeding") ||
 			strings.Contains(err.Error(), "did not converge")) {
 			continue
@@ -74,12 +76,12 @@ func runDifferential(t *testing.T, opts ic10.Options, seeds int, genFunc func(in
 		var want, got []string
 		var wantErr, gotErr bool
 		if withData {
-			loader, lerr := ic10.DataLoaderWithOptions("t.icg", []byte(src), opts)
+			base, lerr := ic10.DataLoaderWithOptions("t.icg", []byte(src), opts)
 			if lerr != nil {
 				t.Fatalf("seed %d: loader failed: %v\n%s", seed, lerr, src)
 			}
-			want, wantErr = runWithLoader(rawCode, loader, init)
-			got, gotErr = runWithLoader(optCode, loader, init)
+			want, wantErr = runWithLoader(rawCode, base+rawRes.Loader, init)
+			got, gotErr = runWithLoader(optCode, base+optRes.Loader, init)
 		} else {
 			want, wantErr = runWrites(rawCode, init)
 			got, gotErr = runWrites(optCode, init)
@@ -137,19 +139,21 @@ func deviceStacks(m *vm.Machine) []string {
 	return out
 }
 
-// runWithLoader installs the data segment, then runs the runtime on top.
+// runWithLoader installs the data segment, then runs the runtime on top. Writes
+// from both the loader and the runtime are recorded, so a setup write hoisted
+// into the loader is compared like one left in the runtime.
 func runWithLoader(runtime, loader string, init map[[2]string]float64) ([]string, bool) {
 	m := vm.New()
 	setup(m, init)
+	var writes []string
+	m.OnWrite = func(dev, logic string, v float64) {
+		writes = append(writes, fmt.Sprintf("%s.%s=%v", dev, logic, v))
+	}
 	if err := m.Load(loader); err != nil {
 		return nil, true
 	}
 	if err := m.Run(10000); err != nil {
 		return nil, true
-	}
-	var writes []string
-	m.OnWrite = func(dev, logic string, v float64) {
-		writes = append(writes, fmt.Sprintf("%s.%s=%v", dev, logic, v))
 	}
 	if err := m.Load(runtime); err != nil {
 		return writes, true

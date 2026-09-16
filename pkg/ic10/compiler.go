@@ -67,6 +67,18 @@ func fixedDataBase(opts Options) int {
 	return 0
 }
 
+// Result is a compiled program: the runtime code plus an optional one-time
+// loader.
+type Result struct {
+	// Code is the runtime program installed on the chip.
+	Code string
+	// Loader is a one-time program that must run before Code, or "" when the
+	// program needs none. It installs device modes / switches / constant
+	// settings that the compiler hoisted out of the runtime to fit the line
+	// budget (see CompileResult).
+	Loader string
+}
+
 // Compile compiles .icg source into IC10 code.
 //
 // On success it returns the generated code and a (possibly non-empty) bag of
@@ -85,35 +97,88 @@ func Compile(name string, src []byte) (string, *diag.Bag, error) {
 // function is called several times, so the better choice depends on the
 // program.
 func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Bag, error) {
+	res, diags, err := CompileResult(name, src, opts)
+	return res.Code, diags, err
+}
+
+// CompileResult is Compile plus the optional one-time setup loader.
+//
+// When the runtime would exceed an IC10 limit, the compiler hoists constant
+// device writes from the straight-line prologue (device modes, On/Off switches,
+// constant settings) into Result.Loader. Device state persists, so the loader
+// only has to run once; the chip is then overwritten with the runtime.
+func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, error) {
 	info, diags := parseAndCheck(name, src, opts)
 	if info == nil || diags.HasErrors() {
-		return "", diags, nil
+		return Result{}, diags, nil
 	}
 
 	noCheck, noOutline, noOpt := envSwitches()
 	plan := lower.PlanOutlines(info, noOutline)
-	best := ""
+	var best Result
+	haveBest := false
 	var bestErr error
+	consider := func(r Result) {
+		if !haveBest || better(r.Code, best.Code) {
+			best, haveBest = r, true
+		}
+	}
 	run := func(outline map[string]bool) {
 		fn := lowerAndOptimize(info, opts, outline, noCheck, noOpt, diags)
 		if fn == nil || diags.HasErrors() {
 			return
 		}
 		code, err := generate(fn, info, opts)
-		if err != nil {
-			bestErr = err
+		// Split out one-time setup writes when the runtime is over a limit, or
+		// when the program already needs a one-time loader (data segment): in
+		// that case moving setup writes into the existing loader is free.
+		if err == nil && info.DataSize == 0 {
+			consider(Result{Code: code})
 			return
 		}
-		if best == "" || better(code, best) {
-			best, bestErr = code, nil
+		setup := opt.SplitSetup(fn)
+		if setup == nil {
+			if err == nil {
+				consider(Result{Code: code})
+			} else {
+				bestErr = err
+			}
+			return
 		}
+		if oerr := opt.Optimize(fn); oerr != nil {
+			if err == nil {
+				consider(Result{Code: code})
+			} else {
+				bestErr = err
+			}
+			return
+		}
+		runtime, rerr := generate(fn, info, opts)
+		if rerr != nil {
+			if err == nil {
+				consider(Result{Code: code})
+			} else {
+				bestErr = rerr
+			}
+			return
+		}
+		loader, lerr := generate(setup, info, opts)
+		if lerr != nil {
+			if err == nil {
+				consider(Result{Code: code})
+			} else {
+				bestErr = rerr
+			}
+			return
+		}
+		consider(Result{Code: runtime, Loader: loader})
 	}
 	run(nil)
 	if len(plan) > 0 {
 		run(plan)
 	}
-	if best == "" {
-		return "", diags, bestErr
+	if !haveBest {
+		return Result{}, diags, bestErr
 	}
 	return best, diags, nil
 }

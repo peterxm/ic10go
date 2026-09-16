@@ -46,6 +46,27 @@ func TestFormatPreservesComments(t *testing.T) {
 	}
 }
 
+func TestFormatPreservesUnitConstants(t *testing.T) {
+	// Comments like "(kPa)" / "（%）" must not leak a unit suffix into the
+	// literal, and plain values must not change.
+	src := []byte("const (\n" +
+		"    PresTarget = 3000.0  // 目标输出压力 (kPa)\n" +
+		"    PresMin = 500.0  // 调压阀输出下限 (kPa)\n" +
+		"    Deadband = 0.3  // 死区（%），抑制抖动\n" +
+		"    Target = 33.3  // 目标比例\n" +
+		")\n" +
+		"func main() { d0.Setting = PresTarget; d1.Setting = PresMin; d2.Setting = Deadband; d3.Setting = Target }\n")
+	out, diags, err := ic10.Format("t.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("diags=%v err=%v", diags.Diags, err)
+	}
+	for _, want := range []string{"PresTarget = 3000.0", "PresMin = 500.0", "Deadband = 0.3", "Target = 33.3"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("constant %q was changed by formatting:\n%s", want, out)
+		}
+	}
+}
+
 func TestStatsOf(t *testing.T) {
 	s := ic10.StatsOf("move r0 1\ns d0 On r0\n")
 	if s.Lines != 2 {

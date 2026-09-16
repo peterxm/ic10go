@@ -450,8 +450,8 @@ class LspClient {
                 await vscode.env.clipboard.writeText(loader);
                 const copyRuntime = t('Copy runtime code', '复制运行代码');
                 const pick = await vscode.window.showInformationMessage(
-                    t('IC10 Go: this program uses a data table. The one-time data loader is on your clipboard — paste it into the IC chip and run it once, then paste the runtime code from the preview on the right.',
-                        'IC10 Go: 该程序使用了数据表。已把「安装代码」复制到剪贴板：先粘贴到 IC 芯片并运行一次，再用右侧预览中的「运行代码」覆盖它。'),
+                    t('IC10 Go: this program needs a one-time install loader (data table and/or hoisted setup writes). It is on your clipboard — paste it into the IC chip and run it once, then paste the runtime code from the preview on the right.',
+                        'IC10 Go: 该程序需要一次性「安装代码」（数据表和/或外提的设置写入）。已复制到剪贴板：先粘贴到 IC 芯片并运行一次，再用右侧预览中的「运行代码」覆盖它。'),
                     copyRuntime);
                 if (pick === copyRuntime) {
                     await vscode.env.clipboard.writeText(result.code);

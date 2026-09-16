@@ -2,6 +2,7 @@ package ic10_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -67,6 +68,58 @@ func TestBuildJSONSuccessWithData(t *testing.T) {
 		t.Errorf("unexpected diagnostics: %+v", res.Diagnostics)
 	}
 	assertJSONFields(t, res, "apiVersion", "ok", "code", "lines", "data", "stats", "limits", "diagnostics")
+}
+
+func TestBuildJSONSetupLoader(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("func main() {\n")
+	for i := 0; i < 2; i++ {
+		for _, logic := range []string{"On", "Mode", "Setting"} {
+			fmt.Fprintf(&b, "    d%d.%s = 1\n", i, logic)
+		}
+	}
+	b.WriteString("    for {\n")
+	for i := 0; i < 124; i++ {
+		b.WriteString("        yield()\n")
+	}
+	b.WriteString("    }\n}\n")
+
+	res, err := ic10.BuildJSON("s.icg", []byte(b.String()), ic10.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK {
+		t.Fatalf("ok = false, diagnostics: %+v", res.Diagnostics)
+	}
+	if !res.Data.Needed || !res.Data.Setup {
+		t.Fatalf("data.needed=%v setup=%v, want both true", res.Data.Needed, res.Data.Setup)
+	}
+	if !strings.Contains(res.Data.Loader, "s d0 Mode 1") {
+		t.Errorf("loader missing the hoisted setup write:\n%s", res.Data.Loader)
+	}
+	if strings.Contains(res.Code, "s d0 Mode 1") {
+		t.Errorf("setup write was not removed from the runtime:\n%s", res.Code)
+	}
+}
+
+func TestBuildJSONDataWithSetup(t *testing.T) {
+	src := "data T = [1, 2]\nfunc main() { d0.Mode = 1; d0.On = 1; for { yield(); d1.On = T[0] } }\n"
+	res, err := ic10.BuildJSON("ds.icg", []byte(src), ic10.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK {
+		t.Fatalf("ok = false, diagnostics: %+v", res.Diagnostics)
+	}
+	if !res.Data.Needed || !res.Data.Setup {
+		t.Fatalf("data.needed=%v setup=%v, want both true", res.Data.Needed, res.Data.Setup)
+	}
+	if !strings.Contains(res.Data.Loader, "s d0 Mode 1") {
+		t.Errorf("loader missing the hoisted setup write:\n%s", res.Data.Loader)
+	}
+	if strings.Contains(res.Code, "s d0 Mode 1") {
+		t.Errorf("setup write was not hoisted out of the runtime:\n%s", res.Code)
+	}
 }
 
 func TestBuildJSONNoData(t *testing.T) {

@@ -159,7 +159,6 @@ func missingLang() string {
 
 func cmdBuild(args []string) int {
 	stableIns := false
-	splitData := false
 	dataOnly := false
 	noDataCheck := false
 	unsafe := false
@@ -187,7 +186,9 @@ func cmdBuild(args []string) int {
 		case "--auto-table":
 			autoTable = true
 		case "--split-data":
-			splitData = true
+			// Kept for compatibility: the one-time loader is now emitted
+			// automatically whenever the program needs one (data segment
+			// and/or hoisted setup writes).
 		case "--data-only":
 			dataOnly = true
 		case "--no-data-check":
@@ -269,11 +270,19 @@ func cmdBuild(args []string) int {
 			fmt.Fprintln(os.Stderr, "ic10c: source has no data tables")
 			return 1
 		}
+		// Include any hoisted one-time setup writes so a reinstall is complete.
+		if compiled, _, cerr := ic10.CompileResult(files[0], data, opts); cerr == nil {
+			loader += compiled.Loader
+		}
+		if n := strings.Count(loader, "\n"); n > codegen.MaxLines {
+			fmt.Fprintf(os.Stderr, "ic10c: one-time loader has %d lines, exceeding the %d line limit\n", n, codegen.MaxLines)
+			return 1
+		}
 		fmt.Print(loader)
 		return 0
 	}
 
-	code, diags, err := ic10.CompileWithOptions(files[0], data, opts)
+	compiled, diags, err := ic10.CompileResult(files[0], data, opts)
 	file := source.NewFile(files[0], data)
 	if rc := report(file, diags); rc != 0 {
 		return rc
@@ -282,26 +291,30 @@ func cmdBuild(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	fmt.Print(code)
+	fmt.Print(compiled.Code)
 
-	if splitData {
-		loader, err := ic10.DataLoaderWithOptions(files[0], data, opts)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "ic10c:", err)
-			return 1
-		}
-		if loader == "" {
-			return 0
-		}
-		if dataOut == "" {
-			dataOut = strings.TrimSuffix(files[0], ".icg") + ".data.ic"
-		}
-		if err := os.WriteFile(dataOut, []byte(loader), 0o644); err != nil {
-			fmt.Fprintln(os.Stderr, "ic10c:", err)
-			return 1
-		}
-		fmt.Fprintf(os.Stderr, "ic10c: data loader written to %s (run it once, then use the runtime)\n", dataOut)
+	// A one-time loader is needed when the program has a data segment and/or
+	// when the compiler hoisted setup writes out of the runtime.
+	loader := ""
+	if dl, lerr := ic10.DataLoaderWithOptions(files[0], data, opts); lerr == nil {
+		loader = dl
 	}
+	loader += compiled.Loader
+	if loader == "" {
+		return 0
+	}
+	if n := strings.Count(loader, "\n"); n > codegen.MaxLines {
+		fmt.Fprintf(os.Stderr, "ic10c: one-time loader has %d lines, exceeding the %d line limit\n", n, codegen.MaxLines)
+		return 1
+	}
+	if dataOut == "" {
+		dataOut = strings.TrimSuffix(files[0], ".icg") + ".data.ic"
+	}
+	if err := os.WriteFile(dataOut, []byte(loader), 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	fmt.Fprintf(os.Stderr, "ic10c: one-time loader written to %s (run it once, then use the runtime)\n", dataOut)
 	return 0
 }
 

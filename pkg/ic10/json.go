@@ -49,11 +49,14 @@ type Diagnostic struct {
 	Message  string `json:"message"`
 }
 
-// DataSegment describes the persistent stack data segment, if the program has
-// one. When Needed is true the host must run Loader once before installing the
-// runtime Code.
+// DataSegment describes the one-time loader and, if the program has one, the
+// persistent stack data segment. When Needed is true the host must run Loader
+// once before installing the runtime Code. Setup is set when the loader also
+// carries hoisted one-time device writes (modes / switches / settings) rather
+// than only data-segment writes.
 type DataSegment struct {
 	Needed   bool   `json:"needed"`
+	Setup    bool   `json:"setup,omitempty"`
 	Loader   string `json:"loader,omitempty"`
 	Start    int    `json:"start"`
 	End      int    `json:"end"`
@@ -91,7 +94,7 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 		Data:        DataSegment{Access: accessName(opts), Layout: layoutName(opts)},
 	}
 
-	code, diags, err := CompileWithOptions(name, src, opts)
+	compiled, diags, err := CompileResult(name, src, opts)
 	if diags != nil {
 		diags.Sort()
 		for _, d := range diags.Diags {
@@ -100,14 +103,22 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 	}
 	// The data segment can be inspected independently of code generation, so
 	// report it even when compilation fails (for example on a line overrun).
+	var loader string
 	if base, size, _, _ := DataStats(name, src, opts); base >= 0 {
-		loader, _ := DataLoaderWithOptions(name, src, opts)
+		dl, _ := DataLoaderWithOptions(name, src, opts)
+		loader = dl
 		res.Data.Needed = true
-		res.Data.Loader = loader
 		res.Data.Sentinel = base
 		res.Data.Start = base
 		res.Data.End = base + size - 1
 	}
+	// Hoisted setup writes ride in the same one-time loader, after the data.
+	if compiled.Loader != "" {
+		loader += compiled.Loader
+		res.Data.Needed = true
+		res.Data.Setup = true
+	}
+	res.Data.Loader = loader
 	if err != nil {
 		res.Diagnostics = append(res.Diagnostics, Diagnostic{
 			Severity: "error",
@@ -123,9 +134,9 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 	}
 
 	res.OK = true
-	res.Code = code
-	res.Lines = splitLines(code)
-	res.Stats = StatsOf(code)
+	res.Code = compiled.Code
+	res.Lines = splitLines(compiled.Code)
+	res.Stats = StatsOf(compiled.Code)
 	return res, nil
 }
 

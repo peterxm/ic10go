@@ -181,11 +181,39 @@ VSCode 的“编译为 IC10”命令自动处理（复制安装代码 + 预览�
 
 ### 5.6 工具链
 
-- `ic10c build --split-data`
+- `ic10c build --split-data`（兼容保留；现在需要 loader 时会自动输出）
 - `ic10c build --data-only`（只生成 / 更新 loader）
 - VSCode：“IC10 Go: 编译为 IC10” → 一个命令完成：把安装代码复制到
   剪贴板、在旁边预览运行代码，并提示“先跑安装代码、再用运行代码覆盖”。
 - 文档：安装步骤、版本升级、失败行为。
+
+### 5.7 一次性设置外提（复用 loader）
+
+编译器会把**序言里的一次性设备写入**外提到 loader。触发条件：
+
+- runtime 会**超过 128 行**：外提以塞进预算（否则报超行）；或
+- 程序**本来就需要 loader**（有 `data` 表）：外提是“顺带”的，不增加安装步骤，
+  直接让 runtime 更小。
+
+判定：
+
+- 所在块**不在任何循环内**，且**支配某个循环头**（每次到达循环前恰好执行一次）；
+  用支配关系而非直线扫描，所以能跨过数据段哨兵检查这类条件序言。
+- 指令是**操作数全为编译期常量**的设备写（`Store`/`StoreSlot`/`StoreDyn`/`Batch`
+  的 store 形式）。
+- 典型内容：`d0.Mode = …`、`d0.On = 1`、常量 `d4.Setting = …`、
+  `batch.writeName(hash, hash("LED"), Mode, DisplayMode.Percent)`。
+
+依据：设备状态持久（同数据段），这些写入只需安装时执行一次。
+
+产物：runtime（≤128 行，去掉外提的写）+ loader（数据段写入 + 外提的设置写入）。
+CLI 自动写出 loader（`<file>.data.ic`），`--data-only` 也会带上设置写入；
+JSON 接口给出 `data.setup = true`。合并后的 loader 同样受 128 行限制（超了报错）。
+
+实现：`internal/opt/setup.go` 的 `SplitSetup`；`pkg/ic10.CompileResult` 在
+`generate` 失败时、或 `info.DataSize > 0` 时调用它并重试。
+
+> 没有 `data` 表且 runtime 放得下时**不拆分**：避免无谓的两步安装流程。
 
 ---
 

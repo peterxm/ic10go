@@ -212,6 +212,86 @@ func TestGlobalConstantPropagation(t *testing.T) {
 	}
 }
 
+func TestSplitSetupLoader(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("func main() {\n")
+	// One-time constant device writes: hoistable setup.
+	for i := 0; i < 2; i++ {
+		for _, logic := range []string{"On", "Mode", "Setting"} {
+			fmt.Fprintf(&b, "    d%d.%s = 1\n", i, logic)
+		}
+	}
+	b.WriteString("    for {\n")
+	// Enough loop lines to push the runtime over the 128-line limit.
+	for i := 0; i < 124; i++ {
+		b.WriteString("        yield()\n")
+	}
+	b.WriteString("    }\n}\n")
+
+	res, diags, err := ic10.CompileResult("split.icg", []byte(b.String()), ic10.Options{})
+	if diags.HasErrors() {
+		t.Fatalf("compile errors: %v", diags.Diags)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Loader == "" {
+		t.Fatalf("expected a setup loader (runtime %d lines)", strings.Count(res.Code, "\n"))
+	}
+	if n := strings.Count(res.Code, "\n"); n > ic10.LimitsOf().Lines {
+		t.Errorf("runtime still over the limit: %d lines", n)
+	}
+	for _, want := range []string{"s d0 Mode 1", "s d0 On 1", "s d1 Setting 1"} {
+		if !strings.Contains(res.Loader, want) {
+			t.Errorf("loader missing %q:\n%s", want, res.Loader)
+		}
+		if strings.Contains(res.Code, want) {
+			t.Errorf("setup write %q was not removed from the runtime", want)
+		}
+	}
+}
+
+func TestSplitSetupWithDataSegment(t *testing.T) {
+	// A program that already needs a loader (data segment) hoists its setup
+	// writes into that loader even though the runtime fits.
+	src := "data T = [1, 2]\nfunc main() { d0.Mode = 1; d0.On = 1; for { yield(); d1.On = T[0] } }\n"
+	res, diags, err := ic10.CompileResult("ds.icg", []byte(src), ic10.Options{})
+	if diags.HasErrors() {
+		t.Fatalf("compile errors: %v", diags.Diags)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Loader == "" {
+		t.Fatal("expected the setup to be hoisted into the loader")
+	}
+	for _, want := range []string{"s d0 Mode 1", "s d0 On 1"} {
+		if !strings.Contains(res.Loader, want) {
+			t.Errorf("loader missing %q:\n%s", want, res.Loader)
+		}
+		if strings.Contains(res.Code, want) {
+			t.Errorf("setup write %q was not removed from the runtime:\n%s", want, res.Code)
+		}
+	}
+}
+
+func TestNoLoaderWhenUnderLimit(t *testing.T) {
+	res, diags, err := ic10.CompileResult("small.icg",
+		[]byte("func main() { d0.Mode = 1; d0.On = 1; for { yield(); d1.Setting = d2.Setting } }\n"), ic10.Options{})
+	if diags.HasErrors() {
+		t.Fatalf("compile errors: %v", diags.Diags)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Loader != "" {
+		t.Errorf("unexpected loader for a small program:\n%s", res.Loader)
+	}
+	if !strings.Contains(res.Code, "s d0 Mode 1") {
+		t.Errorf("setup write should stay in the runtime when it fits:\n%s", res.Code)
+	}
+}
+
 func mustCompile(t *testing.T, src string) string {
 	t.Helper()
 	code, diags, err := ic10.Compile("test.icg", []byte(src))

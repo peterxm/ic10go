@@ -12,7 +12,7 @@
 - **寄存器复用**：活跃性分析 + 图着色（Chaitin-Briggs）+ 拷贝合并；寄存器不足时自动溢出到 IC10 栈。
 - **面向 128 行 / 4 KiB 约束**：不生成 `alias` / `define` / 注释 / 空行 / 标签，跳转默认用绝对行号（`--rel-jump` 可改相对跳转）。
 - **现代语法**：`:=`、`if/for/switch`、`for range`（含遍历 `data` 表）、`case lo..hi` 区间、`if/switch` 初始化语句、带标签的 `break/continue`、函数（编译期内联 / 外提，按体积决策）、设备属性 `d0.On`、槽位 `d0.slot[i].X`、设备栈 `d0.stack[i]`、批量 IO、通道、`sorter.*` / `printer.*` 栈指令构建器、`raw("...")` 逃生口。
-- **持久栈数据段**：`data` 表把大块常量 / 查表放进芯片持久栈，`switch ... table` 自动表化，突破 128 行预算。
+- **持久栈数据段**：`data` 表把大块常量 / 查表放进芯片持久栈，`switch ... table` 自动表化，突破 128 行预算。编译器还会把序言里的一次性设备写入（`Mode` / `On` / 常量 `Setting`，操作数全为常量）自动外提到一次性 loader：**超 128 行时**用来塞进预算，**程序本来就需要 loader（有 `data` 表）时**顺带复用、让 runtime 更小。
 - **编译期求值**：常量折叠、`hash()` 的 CRC-32、单位字面量（温度 `20c`/`68f`→K、压力 `20.1MPa`/`101.3kPa`→kPa）、逻辑类型校验。
 - **快速开发工具链**：`build` / `run` / `fmt` / `disasm` / `decompile` / `stats` / `lsp`，以及内置最小解释器。
 
@@ -60,12 +60,12 @@ j 1
 当前可用：
 
 ```
-ic10c build  <file.icg>       # 编译为 IC10 并输出到 stdout
-ic10c build --json <file.icg> # 输出机器可读的 JSON（代码/数据段 loader/统计/诊断）
+ic10c build  <file.icg>       # 编译为 IC10 并输出到 stdout；需要 loader 时自动写出 <file>.data.ic
+ic10c build --json <file.icg> # 输出机器可读的 JSON（代码/一次性 loader/统计/诊断）
 ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
             [--data-layout top|middle] [--unsafe] [--auto-table] [--jump-table] \
             [--fast] [--rel-jump] <file.icg>
-                              # 同时输出持久栈数据段 loader（默认 <file>.data.ic）
+                              # 兼容保留；loader 现在会自动输出（默认 <file>.data.ic）
 ic10c build --data-only <file.icg>  # 只输出数据段 loader
 ic10c run    <file.icg>       # 编译并在内置 VM 中运行（--steps/--set/--trace）
 ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] <file.icg>
