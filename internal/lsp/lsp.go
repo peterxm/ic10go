@@ -1143,6 +1143,50 @@ func (s *Server) prefabHoverAt(text string, pos lspPosition) string {
 	return ""
 }
 
+// busSlotHoverAt describes a bus name or a `Bus.slot` access.
+func (s *Server) busSlotHoverAt(text string, pos lspPosition) string {
+	word, _ := wordAtOffset(text, pos)
+	if word == "" {
+		return ""
+	}
+	tree := parseText(text)
+	if tree == nil {
+		return ""
+	}
+	for _, d := range flatDecls(tree.Decls) {
+		bus, ok := d.(*ast.BusDecl)
+		if !ok || bus.Name.Name != word {
+			continue
+		}
+		var slots []string
+		for _, sl := range bus.Slots {
+			slots = append(slots, sl.Name.Name)
+		}
+		if s.zh {
+			return fmt.Sprintf("总线 `%s`（%d 槽）：%s", bus.Name.Name, len(bus.Slots), strings.Join(slots, " / "))
+		}
+		return fmt.Sprintf("bus `%s` (%d slots): %s", bus.Name.Name, len(bus.Slots), strings.Join(slots, " / "))
+	}
+	if recv, member := enumMemberAt(text, pos); recv != "" {
+		for _, d := range flatDecls(tree.Decls) {
+			bus, ok := d.(*ast.BusDecl)
+			if !ok || bus.Name.Name != recv {
+				continue
+			}
+			for i, sl := range bus.Slots {
+				if sl.Name.Name != member {
+					continue
+				}
+				if s.zh {
+					return fmt.Sprintf("总线槽位 `%s.%s` = `Channel%d`", recv, member, i)
+				}
+				return fmt.Sprintf("bus slot `%s.%s` = `Channel%d`", recv, member, i)
+			}
+		}
+	}
+	return ""
+}
+
 func isDevicePort(s string) bool {
 	if s == "db" {
 		return true
@@ -1307,6 +1351,12 @@ func (s *Server) hover(w *bufio.Writer, id json.RawMessage, params json.RawMessa
 			})
 			return
 		}
+	}
+	if content := s.busSlotHoverAt(text, p.Position); content != "" {
+		reply(w, id, map[string]any{
+			"contents": map[string]any{"kind": "markdown", "value": content},
+		})
+		return
 	}
 	if content := s.prefabHoverAt(text, p.Position); content != "" {
 		reply(w, id, map[string]any{

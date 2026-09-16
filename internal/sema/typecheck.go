@@ -364,6 +364,16 @@ func (c *typeChecker) inferIndex(v *ast.IndexExpr) Type {
 			return Num
 		}
 	}
+	// Bus.slot[dev][conn]: the inner index selects a bus slot.
+	if inner, ok := v.X.(*ast.IndexExpr); ok {
+		if sel, ok := inner.X.(*ast.SelectorExpr); ok {
+			if id, ok := sel.X.(*ast.Ident); ok {
+				if _, isBus := c.info.Buses[id.Name]; isBus {
+					return Num
+				}
+			}
+		}
+	}
 	if id, ok := v.X.(*ast.Ident); ok {
 		if t, _ := c.lookup(id.Name); t == Data {
 			return Num

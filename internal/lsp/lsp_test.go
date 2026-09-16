@@ -691,3 +691,23 @@ func TestCompletionChipScope(t *testing.T) {
 		t.Errorf("chip b completion should not offer LocalA:\n%s", b)
 	}
 }
+
+func TestBusEditorSupport(t *testing.T) {
+	// Bus.slot completion.
+	src := "bus B {\n    x num\n    y num\n}\nchip c {\n    func main() { B. }\n}\n"
+	var labels []string
+	for _, it := range completionItemsFor(src, lspPosition{Line: 5, Character: 20}) {
+		labels = append(labels, it.Label)
+	}
+	joined := strings.Join(labels, ",")
+	if !strings.Contains(joined, "x") || !strings.Contains(joined, "y") {
+		t.Errorf("Bus. completion missing slots:\n%s", joined)
+	}
+
+	// Hover on an inline bus slot access shows its channel.
+	hoverSrc := "bus B {\n    x num\n}\nchip c {\n    func main() { B.x[d5][1] = 1 }\n}\n"
+	out := openAndRequest(t, "b.icg", hoverSrc, "textDocument/hover", `,"position":{"line":4,"character":20}`)
+	if !strings.Contains(out, "Channel0") {
+		t.Errorf("hover on a bus slot missing the channel:\n%s", out)
+	}
+}

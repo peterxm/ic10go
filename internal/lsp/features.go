@@ -56,6 +56,25 @@ func flatDecls(decls []ast.Decl) []ast.Decl {
 	return out
 }
 
+// busNamesIn returns the names declared with `bus`, so the editor can classify
+// bus accesses (`Display.slot`) as namespaces.
+func busNamesIn(text string) map[string]bool {
+	tree := parseText(text)
+	if tree == nil {
+		return nil
+	}
+	var out map[string]bool
+	for _, d := range flatDecls(tree.Decls) {
+		if bus, ok := d.(*ast.BusDecl); ok {
+			if out == nil {
+				out = map[string]bool{}
+			}
+			out[bus.Name.Name] = true
+		}
+	}
+	return out
+}
+
 // declsAtOffset returns the declarations visible at off: the shared top-level
 // ones plus, when off is inside a chip, that chip's own declarations (so other
 // chips' locals are not offered).
@@ -1109,6 +1128,7 @@ func semanticTokensFor(text string) []semanticToken {
 	file := source.NewFile("", []byte(text))
 	diags := &diag.Bag{}
 	toks := lexer.Tokenize(file, diags)
+	busNames := busNamesIn(text)
 	var out []semanticToken
 	for i, t := range toks {
 		pos := offsetToLSP(text, t.Pos.Offset)
@@ -1132,6 +1152,8 @@ func semanticTokensFor(text string) []semanticToken {
 			case isBatchMode(t.Text):
 				typ = semanticTokenIndex["enumMember"]
 			case t.Text == "batch" || t.Text == "sorter" || t.Text == "printer":
+				typ = semanticTokenIndex["namespace"]
+			case busNames[t.Text]:
 				typ = semanticTokenIndex["namespace"]
 			case i > 0 && (toks[i-1].Kind == token.Chip || toks[i-1].Kind == token.Bus || toks[i-1].Kind == token.Use):
 				typ = semanticTokenIndex["namespace"]
