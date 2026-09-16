@@ -1,10 +1,11 @@
-# 多芯片支持（草案）
+# 多芯片支持
 
-> 状态：**草案，待评审**（未实现）
+> 状态：**P1 已实现**（`chip` 块 / 顶层公共区 / 每芯片管线 / CLI `--chip` / JSON `chips[]`）；
+> **P2 `bus` 待做**；P3 VM `World` 待做。
 > 定位：**编译期语法糖 + 多程序输出**。`chip` / `bus` 全部降级成现有 IC10
 > 通道读写（`s/l <dev>:<conn> ChannelN`），**运行时没有新指令**；VM 的多芯片
 > 只是测试设施。
-> 关联：`docs/spec.md` §7.3 网络通道、`docs/data-segment.md`、`docs/vm-improvements.md` §B5。
+> 关联：`docs/spec.md` §4.5 与 §7.3、`docs/data-segment.md`、`docs/vm-improvements.md` §B5。
 
 ---
 
@@ -313,11 +314,11 @@ type World struct {
 
 0. **P0 `str` 真机验证**：确认 `STR("...")` 能否过网络通道（决定 `str` 槽位做法）。
    脚本与步骤见 [`experiments/multichip-str/`](../experiments/multichip-str/README.md)。
-1. **P1 多程序拆分**：`chip` 块 + 公共区 + 每芯片管线 + CLI/JSON。不做 bus。
-   → 显示芯片可自读设备，立即解决 fuel mixer 行数问题。
+1. ✅ **P1 多程序拆分**（已实现）：`chip` 块 + 公共区 + 每芯片管线 + CLI `--chip` /
+   JSON `chips[]`。不做 bus → 显示芯片可自读设备，立即解决 fuel mixer 行数问题。
 2. **P2 `bus` 糖**：语法 + 推断 + 通道分配 + 诊断。
 3. **P3 VM `World`**：多芯片锁步 + 网络模型 + e2e 测试。
-4. **P4 编辑器**：LSP 按 chip 分析、VSCode 选芯片。
+4. **P4 编辑器**：LSP 按 chip 分析、VSCode 选芯片（VSCode 选芯片已完成）。
 
 ---
 

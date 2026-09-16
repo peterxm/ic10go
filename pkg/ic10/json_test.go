@@ -67,7 +67,7 @@ func TestBuildJSONSuccessWithData(t *testing.T) {
 	if len(res.Diagnostics) != 0 {
 		t.Errorf("unexpected diagnostics: %+v", res.Diagnostics)
 	}
-	assertJSONFields(t, res, "apiVersion", "ok", "code", "lines", "data", "stats", "limits", "diagnostics")
+	assertJSONFields(t, res, "apiVersion", "ok", "code", "lines", "data", "chips", "stats", "limits", "diagnostics")
 }
 
 func TestBuildJSONSetupLoader(t *testing.T) {
@@ -233,5 +233,25 @@ func assertJSONFields(t *testing.T, v any, keys ...string) {
 	}
 	if len(m) != len(keys) {
 		t.Errorf("JSON has %d fields, want %d: %v", len(m), len(keys), m)
+	}
+}
+
+func TestBuildJSONChips(t *testing.T) {
+	src := "chip a {\n    func main() { d0.On = 1 }\n}\nchip b {\n    func main() { d1.On = 2 }\n}\n"
+	res, err := ic10.BuildJSON("m.icg", []byte(src), ic10.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK {
+		t.Fatalf("ok = false, diagnostics: %+v", res.Diagnostics)
+	}
+	if len(res.Chips) != 2 {
+		t.Fatalf("chips = %d, want 2", len(res.Chips))
+	}
+	if res.Chips[0].Name != "a" || res.Chips[1].Name != "b" {
+		t.Errorf("chip names = %q, %q", res.Chips[0].Name, res.Chips[1].Name)
+	}
+	if !strings.Contains(res.Chips[1].Code, "s d1 On 2") {
+		t.Errorf("chip b code:\n%s", res.Chips[1].Code)
 	}
 }

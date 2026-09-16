@@ -428,8 +428,34 @@ class LspClient {
                 return;
             }
 
+            // Multi-chip: pick which chip to preview / install.
+            let chosen = result;
+            const chips = result.chips || [];
+            const multi = chips.length > 1 || (chips.length === 1 && chips[0].name);
+            if (multi) {
+                const pick = await vscode.window.showQuickPick(
+                    chips.map((c) => ({
+                        label: c.name,
+                        description: `${(c.stats || {}).lines || 0} lines`,
+                        chip: c,
+                    })),
+                    { placeHolder: t('Select a chip to install', '选择要安装的芯片') }
+                );
+                if (!pick) return;
+                chosen = {
+                    code: pick.chip.code,
+                    stats: pick.chip.stats,
+                    limits: result.limits,
+                    data: {
+                        needed: !!pick.chip.loader,
+                        loader: pick.chip.loader,
+                        setup: pick.chip.setup,
+                    },
+                };
+            }
+
             const preview = await vscode.workspace.openTextDocument({
-                content: result.code,
+                content: chosen.code,
                 language: 'ic10',
             });
             await vscode.window.showTextDocument(preview, {
@@ -437,14 +463,14 @@ class LspClient {
                 preview: true,
             });
 
-            const st = result.stats || {};
-            const lim = result.limits || {};
+            const st = chosen.stats || {};
+            const lim = chosen.limits || {};
             const budget =
                 `${st.lines || 0}/${lim.lines || 0} lines · ${st.bytes || 0}/${lim.bytes || 0} B · ` +
                 `${st.maxLine || 0}/${lim.maxLine || 0} ch · ${st.regs || 0}/${lim.regs || 0} reg`;
             this.output.appendLine(`=== ${path.basename(doc.fileName)} ===\n${budget}`);
 
-            const data = result.data || {};
+            const data = chosen.data || {};
             const loader = data.loader || '';
             if (data.needed && loader.trim()) {
                 await vscode.env.clipboard.writeText(loader);
@@ -454,7 +480,7 @@ class LspClient {
                         'IC10 Go: 该程序需要一次性「安装代码」（数据表和/或外提的设置写入）。已复制到剪贴板：先粘贴到 IC 芯片并运行一次，再用右侧预览中的「运行代码」覆盖它。'),
                     copyRuntime);
                 if (pick === copyRuntime) {
-                    await vscode.env.clipboard.writeText(result.code);
+                    await vscode.env.clipboard.writeText(chosen.code);
                     vscode.window.setStatusBarMessage(t('IC10 Go: runtime code copied', 'IC10 Go: 运行代码已复制'), 5000);
                 }
             } else {

@@ -152,3 +152,16 @@ func TestFormatConvenienceSyntax(t *testing.T) {
 		t.Errorf("not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", out, twice)
 	}
 }
+
+func TestFormatChipBlocks(t *testing.T) {
+	src := []byte("const X = 1\nchip a {\n    func main() { d0.Setting = X }\n}\nchip b {\n    func main() { d1.On = X }\n}\n")
+	out, diags, err := ic10.Format("t.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("diags=%v err=%v", diags.Diags, err)
+	}
+	for _, want := range []string{"chip a {", "chip b {", "func main()", "const X = 1"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("formatting dropped %q:\n%s", want, out)
+		}
+	}
+}

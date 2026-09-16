@@ -263,6 +263,21 @@ func (p *printer) declIn(d Decl, inGroup bool) {
 		}
 		p.write(" ")
 		p.block(d.Body)
+	case *ChipDecl:
+		p.write("chip ")
+		p.write(d.Name.Name)
+		p.write(" {")
+		p.indent++
+		for _, m := range d.Decls {
+			p.leading(m.Pos().Line)
+			p.nl()
+			p.decl(m)
+			p.trailing(m.Pos().Line)
+			p.note(m.Pos().Line)
+		}
+		p.indent--
+		p.nl()
+		p.write("}")
 	}
 }
 

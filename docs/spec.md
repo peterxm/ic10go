@@ -226,6 +226,34 @@ heat       = RecipeHeat[ore-1]
 
 详见 [`data-segment.md`](data-segment.md)。
 
+### 4.5 多芯片（`chip` 块）
+
+一个 `.icg` 文件可声明多块芯片，每块各自编译成独立的 IC10 程序（各自 128 行 /
+4 KiB 预算、各自的一次性 loader）：
+
+```go
+const Shared = 33.3          // 顶层声明 = 公共区，所有 chip 可见
+func helper(x) num { return x + 1 }
+
+chip control {
+    const Kp = 0.8           // chip 内声明可遮蔽顶层同名
+    func main() { for { yield(); d0.Setting = helper(Kp) } }
+}
+chip display {
+    func main() { for { yield(); d1.On = Shared } }
+}
+```
+
+- 每个 `chip` 必须恰好有一个 `main`（无参数、无返回值）。
+- 顶层 `main` 与 `chip` 块**不能混用**。
+- 顶层 `const`/`data`/`func` 被每个用到的 chip **各编译一份**；`data` 表各自进
+  自己 chip 的 loader。
+- 芯片间通信见 [`multichip.md`](multichip.md)（`bus` / 网络通道）。
+
+CLI：`ic10c build x.icg` 会为每个 chip 写 `<file>.<chip>.ic`（及各自的
+`.data.ic`）；`ic10c build --chip NAME x.icg` 只输出指定 chip。`--json` 的
+`chips[]` 列出每块芯片。
+
 ---
 
 ## 5. 语句

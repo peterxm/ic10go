@@ -1149,7 +1149,7 @@ func documentSymbols(name, text string) []completionItem {
 		seen[n] = true
 		items = append(items, completionItem{Label: n, Kind: kind, Detail: detail})
 	}
-	for _, d := range tree.Decls {
+	for _, d := range flatDecls(tree.Decls) {
 		switch d := d.(type) {
 		case *ast.FuncDecl:
 			add(d.Name.Name, 3, "function")
@@ -1161,7 +1161,7 @@ func documentSymbols(name, text string) []completionItem {
 			add(d.Name.Name, 6, "variable")
 		}
 	}
-	for _, d := range tree.Decls {
+	for _, d := range flatDecls(tree.Decls) {
 		if f, ok := d.(*ast.FuncDecl); ok && f.Body != nil {
 			collectStmtSymbols(f.Body.List, add)
 		}

@@ -42,6 +42,20 @@ func parseText(text string) *ast.File {
 	return parser.Parse(file, toks, diags)
 }
 
+// flatDecls expands `chip` blocks so editor features see chip-local functions,
+// constants and data tables as well as the shared top-level ones.
+func flatDecls(decls []ast.Decl) []ast.Decl {
+	var out []ast.Decl
+	for _, d := range decls {
+		if ch, ok := d.(*ast.ChipDecl); ok {
+			out = append(out, flatDecls(ch.Decls)...)
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
 func matchBrace(text string, open int) int {
 	depth := 0
 	for i := open; i < len(text); i++ {
@@ -200,7 +214,7 @@ func documentLinksFor(uri, text string) []any {
 		return nil
 	}
 	decls := map[string]int{} // name -> 0-based declaration line
-	for _, d := range tree.Decls {
+	for _, d := range flatDecls(tree.Decls) {
 		switch d := d.(type) {
 		case *ast.FuncDecl:
 			decls[d.Name.Name] = d.Name.Pos().Line - 1
@@ -247,7 +261,7 @@ func documentSymbolsFor(text string) []documentSymbol {
 		return nil
 	}
 	var out []documentSymbol
-	for _, d := range tree.Decls {
+	for _, d := range flatDecls(tree.Decls) {
 		switch d := d.(type) {
 		case *ast.FuncDecl:
 			sym := documentSymbol{
@@ -798,7 +812,7 @@ func signatureHelpFor(text string, pos lspPosition) any {
 
 func signatureFor(text, name string) (string, []any) {
 	if tree := parseText(text); tree != nil {
-		for _, d := range tree.Decls {
+		for _, d := range flatDecls(tree.Decls) {
 			if f, ok := d.(*ast.FuncDecl); ok && f.Name.Name == name {
 				var parts []string
 				var params []any

@@ -592,3 +592,75 @@ func TestJumpTableEquivalence(t *testing.T) {
 		}
 	}
 }
+
+func TestMultiChipCompile(t *testing.T) {
+	src := "const Shared = 10\n" +
+		"func helper(x) num { return x + Shared }\n" +
+		"chip control {\n    func main() { for { yield(); d0.Setting = helper(1) } }\n}\n" +
+		"chip display {\n    func main() { for { yield(); d1.On = Shared } }\n}\n"
+	res, diags, err := ic10.CompileResult("multi.icg", []byte(src), ic10.Options{})
+	if diags.HasErrors() {
+		t.Fatalf("compile errors: %v", diags.Diags)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Chips) != 2 {
+		t.Fatalf("chips = %d, want 2", len(res.Chips))
+	}
+	if res.Chips[0].Name != "control" || res.Chips[1].Name != "display" {
+		t.Fatalf("chip names = %q, %q", res.Chips[0].Name, res.Chips[1].Name)
+	}
+	if !strings.Contains(res.Chips[0].Code, "s d0 Setting 11") {
+		t.Errorf("control chip should fold helper(1) to 11:\n%s", res.Chips[0].Code)
+	}
+	if !strings.Contains(res.Chips[1].Code, "s d1 On 10") {
+		t.Errorf("display chip should use the shared const:\n%s", res.Chips[1].Code)
+	}
+	if res.Code != res.Chips[0].Code {
+		t.Errorf("Result.Code should mirror the first chip")
+	}
+}
+
+func TestMultiChipShadowing(t *testing.T) {
+	src := "const X = 1\n" +
+		"chip a {\n    const X = 2\n    func main() { d0.Setting = X }\n}\n" +
+		"chip b {\n    func main() { d0.Setting = X }\n}\n"
+	res, diags, err := ic10.CompileResult("shadow.icg", []byte(src), ic10.Options{})
+	if diags.HasErrors() {
+		t.Fatalf("compile errors: %v", diags.Diags)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Chips[0].Code, "s d0 Setting 2") {
+		t.Errorf("chip-local const should shadow the top-level one:\n%s", res.Chips[0].Code)
+	}
+	if !strings.Contains(res.Chips[1].Code, "s d0 Setting 1") {
+		t.Errorf("chip without a local const should see the top-level one:\n%s", res.Chips[1].Code)
+	}
+}
+
+func TestMultiChipNoMain(t *testing.T) {
+	_, diags, _ := ic10.CompileResult("nomain.icg", []byte("chip a { func helper() {} }\n"), ic10.Options{})
+	if !diags.HasErrors() {
+		t.Fatal("expected an error for a chip without main")
+	}
+	found := false
+	for _, d := range diags.Diags {
+		if strings.Contains(d.Msg, `chip "a" has no main`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("missing chip-no-main diagnostic: %v", diags.Diags)
+	}
+}
+
+func TestMultiChipTopMainRejected(t *testing.T) {
+	_, diags, _ := ic10.CompileResult("mixed.icg",
+		[]byte("func main() {}\nchip a { func main() {} }\n"), ic10.Options{})
+	if !diags.HasErrors() {
+		t.Fatal("expected an error when a top-level main is mixed with chip blocks")
+	}
+}

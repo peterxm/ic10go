@@ -65,6 +65,18 @@ type DataSegment struct {
 	Layout   string `json:"layout"`
 }
 
+// ChipJSON is one chip's output in a multi-chip build.
+type ChipJSON struct {
+	// Name is the chip block's name; empty for a single-chip program.
+	Name   string   `json:"name,omitempty"`
+	Code   string   `json:"code"`
+	Lines  []string `json:"lines"`
+	Stats  Stats    `json:"stats"`
+	Loader string   `json:"loader,omitempty"`
+	// Setup reports whether Loader carries hoisted one-time device writes.
+	Setup bool `json:"setup,omitempty"`
+}
+
 // BuildResult is the JSON document emitted by `ic10c build --json`. It is a
 // superset of `ic10c stats` and carries the compiled code, the optional data
 // loader and any diagnostics.
@@ -74,6 +86,7 @@ type BuildResult struct {
 	Code        string       `json:"code"`
 	Lines       []string     `json:"lines"`
 	Data        DataSegment  `json:"data"`
+	Chips       []ChipJSON   `json:"chips"`
 	Stats       Stats        `json:"stats"`
 	Limits      Limits       `json:"limits"`
 	Diagnostics []Diagnostic `json:"diagnostics"`
@@ -89,6 +102,7 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 	res := BuildResult{
 		APIVersion:  APIVersion,
 		Lines:       []string{},
+		Chips:       []ChipJSON{},
 		Diagnostics: []Diagnostic{},
 		Limits:      LimitsOf(),
 		Data:        DataSegment{Access: accessName(opts), Layout: layoutName(opts)},
@@ -101,24 +115,37 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 			res.Diagnostics = append(res.Diagnostics, convertDiag(d))
 		}
 	}
-	// The data segment can be inspected independently of code generation, so
-	// report it even when compilation fails (for example on a line overrun).
-	var loader string
-	if base, size, _, _ := DataStats(name, src, opts); base >= 0 {
-		dl, _ := DataLoaderWithOptions(name, src, opts)
-		loader = dl
-		res.Data.Needed = true
-		res.Data.Sentinel = base
-		res.Data.Start = base
-		res.Data.End = base + size - 1
+	// The top-level data/loader mirror the first chip for single-chip consumers;
+	// chips[] is authoritative for multi-chip programs.
+	multi := false
+	for _, ch := range compiled.Chips {
+		if ch.Name != "" {
+			multi = true
+		}
+		res.Chips = append(res.Chips, ChipJSON{
+			Name:   ch.Name,
+			Code:   ch.Code,
+			Lines:  splitLines(ch.Code),
+			Stats:  StatsOf(ch.Code),
+			Loader: ch.Loader,
+			Setup:  ch.Setup,
+		})
 	}
-	// Hoisted setup writes ride in the same one-time loader, after the data.
 	if compiled.Loader != "" {
-		loader += compiled.Loader
 		res.Data.Needed = true
-		res.Data.Setup = true
+		res.Data.Loader = compiled.Loader
+		res.Data.Setup = compiled.Setup
 	}
-	res.Data.Loader = loader
+	// The data segment range can be inspected independently of code generation,
+	// so report it even when compilation fails (for example on a line overrun).
+	if !multi {
+		if base, size, _, _ := DataStats(name, src, opts); base >= 0 {
+			res.Data.Needed = true
+			res.Data.Sentinel = base
+			res.Data.Start = base
+			res.Data.End = base + size - 1
+		}
+	}
 	if err != nil {
 		res.Diagnostics = append(res.Diagnostics, Diagnostic{
 			Severity: "error",

@@ -35,6 +35,8 @@ const (
 	PInf
 	NInf
 	Range
+	Chip
+	Bus
 
 	// Operators and punctuation
 	Plus
@@ -109,6 +111,8 @@ var keywords = map[string]Kind{
 	"pinf":     PInf,
 	"ninf":     NInf,
 	"range":    Range,
+	"chip":     Chip,
+	"bus":      Bus,
 }
 
 // Lookup maps an identifier to its keyword kind, or Ident.
@@ -153,6 +157,8 @@ var kindNames = map[Kind]string{
 	PInf:          "pinf",
 	NInf:          "ninf",
 	Range:         "range",
+	Chip:          "chip",
+	Bus:           "bus",
 	Plus:          "+",
 	Minus:         "-",
 	Star:          "*",

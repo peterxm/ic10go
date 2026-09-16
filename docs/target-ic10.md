@@ -290,6 +290,9 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 - 常量直接内联为十进制 / `0x` / `0b`。
 - 文件末尾单个换行。
 
+> 多芯片（`chip` 块）不改变单芯片的输出格式：每块芯片各自输出一份上述格式的
+> 程序（各自 ≤128 行），CLI 按芯片写文件（见 `docs/multichip.md`）。
+
 示例：
 
 ```

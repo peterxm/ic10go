@@ -107,6 +107,8 @@ func (p *parser) parseTopDecl() []ast.Decl {
 		return p.parseVarDecls()
 	case token.Func:
 		return []ast.Decl{p.parseFuncDecl()}
+	case token.Chip:
+		return []ast.Decl{p.parseChipDecl()}
 	default:
 		p.errorf(p.cur().Pos, "expected declaration, found %s", describe(p.cur()))
 		return nil
@@ -220,6 +222,45 @@ func (p *parser) parseFuncDecl() *ast.FuncDecl {
 func (p *parser) parseIdent() *ast.Ident {
 	t := p.expect(token.Ident)
 	return &ast.Ident{NodeBase: base(t.Pos), Name: t.Text}
+}
+
+// parseChipDecl parses `chip Name { const|data|var|func ... }`, a block that
+// compiles to a separate IC10 program. Chips cannot be nested.
+func (p *parser) parseChipDecl() *ast.ChipDecl {
+	kw := p.expect(token.Chip)
+	name := p.parseIdent()
+	p.expect(token.LBrace)
+	var decls []ast.Decl
+	for {
+		p.skipSemis()
+		if p.at(token.RBrace) || p.at(token.EOF) {
+			break
+		}
+		decls = append(decls, p.parseChipMember()...)
+	}
+	p.expect(token.RBrace)
+	return &ast.ChipDecl{NodeBase: base(kw.Pos), Name: name, Decls: decls}
+}
+
+// parseChipMember parses a declaration allowed inside a `chip` block.
+func (p *parser) parseChipMember() []ast.Decl {
+	switch p.cur().Kind {
+	case token.Const:
+		return p.parseConstDecl()
+	case token.Data:
+		return p.parseDataDecl()
+	case token.Var:
+		return p.parseVarDecls()
+	case token.Func:
+		return []ast.Decl{p.parseFuncDecl()}
+	case token.Chip:
+		p.errorf(p.cur().Pos, "chips cannot be nested")
+		p.advance()
+		return nil
+	default:
+		p.errorf(p.cur().Pos, "expected const, data, var or func, found %s", describe(p.cur()))
+		return nil
+	}
 }
 
 // parseOptLabel parses an optional label after break/continue.
@@ -715,7 +756,7 @@ func (p *parser) syncTop() {
 			if depth > 0 {
 				depth--
 			}
-		case token.Func, token.Var, token.Const:
+		case token.Func, token.Var, token.Const, token.Data, token.Chip:
 			if depth == 0 {
 				return
 			}

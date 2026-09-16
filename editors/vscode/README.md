@@ -31,6 +31,7 @@
 | 预算常驻 | **状态栏**实时显示当前 `.icg` 的 `行/字节/行长/寄存器` 预算（含数据段 `data a..b`；点击即编译）；文件末尾另有 inlay hint |
 | 格式化 | `Shift+Alt+F`；`[icg]` 默认**保存时格式化**（可在设置中关闭）；`.ic`/`.ic10` 重排空白并对齐指令列 |
 | 数据段 | 命令 **“IC10 Go: 编译为 IC10”** 会自动识别 `data` 表：把一次性「安装代码」复制到剪贴板、并在旁边打开运行代码；`data` 表 / `switch ... table` 有语法高亮与补全。编译器还会把序言里的一次性设置写入（`Mode`/`On`/常量 `Setting`）自动外提到同一份安装代码：**超 128 行时**用来塞进预算，**本来就有 `data` 表时**顺带复用、让 runtime 更小 |
+| 多芯片 | 一个 `.icg` 用 `chip 名字 { ... }` 声明多块芯片（各自 128 行预算 / loader）；「编译为 IC10」会弹出芯片选择，再预览/复制该芯片的运行代码与安装代码 |
 | 片段 | `main`、`hyst`、`pid`（软件 PID）、`piddev`（硬件 PID 控制器配置）、`batchread`、`batchwrite`、`readlt`、`writelt`、`readdev`、`writedev`、`readbyid`、`writebyid`、`readdevslot`、`stackread`、`stackwrite`、`sorterfilter`、`printerexec`、`data`、`switchtable`、`func`、`const`、`slotread` 等 |
 
 **上下文感知补全**：

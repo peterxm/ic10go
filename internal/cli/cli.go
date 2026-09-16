@@ -163,6 +163,10 @@ var Commands = []Command{
 				EN: "kept for compatibility; the one-time loader is emitted automatically when needed",
 				ZH: "兼容保留；需要 loader 时会自动输出",
 			}},
+			{Long: "--chip", Arg: "<name>", Desc: text{
+				EN: "multi-chip: emit only the named chip (default: one file per chip)",
+				ZH: "多芯片：只输出指定芯片（默认每个芯片各写一份文件）",
+			}},
 			{Long: "--data-out", Arg: "<file>", Desc: text{
 				EN: "loader output path (default <file>.data.ic)",
 				ZH: "装载器输出路径（默认 <file>.data.ic）",

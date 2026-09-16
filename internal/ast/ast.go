@@ -77,10 +77,20 @@ type FuncDecl struct {
 	Body   *BlockStmt
 }
 
+// ChipDecl is a `chip Name { ... }` block: a separate IC10 program with its own
+// scope, main function and 128-line budget. Top-level declarations outside any
+// chip are shared by every chip.
+type ChipDecl struct {
+	NodeBase
+	Name  *Ident
+	Decls []Decl // const / data / var / func
+}
+
 func (*ConstDecl) declNode() {}
 func (*DataDecl) declNode()  {}
 func (*VarDecl) declNode()   {}
 func (*FuncDecl) declNode()  {}
+func (*ChipDecl) declNode()  {}
 
 // ---------------------------------------------------------------------------
 // Statements

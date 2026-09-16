@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"ic10go/internal/ast"
 	"ic10go/internal/codegen"
 	"ic10go/internal/diag"
 	"ic10go/internal/ir"
@@ -67,6 +68,20 @@ func fixedDataBase(opts Options) int {
 	return 0
 }
 
+// ChipResult is one chip's compiled output in a multi-chip program.
+type ChipResult struct {
+	// Name is the chip block's name.
+	Name string
+	// Code is the chip's runtime program.
+	Code string
+	// Loader is the chip's one-time loader (data segment and/or hoisted setup),
+	// or "" when the chip needs none.
+	Loader string
+	// Setup reports whether Loader includes hoisted one-time device writes
+	// (modes / switches / constant settings) rather than only data-segment writes.
+	Setup bool
+}
+
 // Result is a compiled program: the runtime code plus an optional one-time
 // loader.
 type Result struct {
@@ -77,6 +92,12 @@ type Result struct {
 	// settings that the compiler hoisted out of the runtime to fit the line
 	// budget (see CompileResult).
 	Loader string
+	// Chips holds every chip when the source declares `chip` blocks. For a
+	// single-chip program it holds one entry mirroring Code/Loader, so callers
+	// can always iterate Chips.
+	Chips []ChipResult
+	// Setup reports whether Loader includes hoisted one-time device writes.
+	Setup bool
 }
 
 // Compile compiles .icg source into IC10 code.
@@ -108,11 +129,85 @@ func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Ba
 // constant settings) into Result.Loader. Device state persists, so the loader
 // only has to run once; the chip is then overwritten with the runtime.
 func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, error) {
-	info, diags := parseAndCheck(name, src, opts)
-	if info == nil || diags.HasErrors() {
+	file := source.NewFile(name, src)
+	diags := &diag.Bag{}
+	toks := lexer.Tokenize(file, diags)
+	tree := parser.Parse(file, toks, diags)
+	if diags.HasErrors() {
 		return Result{}, diags, nil
 	}
 
+	common, chips := splitChips(tree)
+	if len(chips) == 0 {
+		info := checkInfo(tree, name, diags, opts)
+		if info == nil || diags.HasErrors() {
+			return Result{}, diags, nil
+		}
+		if info.Main == nil {
+			diags.ErrorfCode("no-main", source.Pos{File: name, Line: 1, Col: 1}, "no main function found")
+		}
+		if diags.HasErrors() {
+			return Result{}, diags, nil
+		}
+		res, err := compileInfo(info, opts, diags)
+		if err != nil {
+			return res, diags, err
+		}
+		dl, derr := dataLoaderFor(info, opts)
+		if derr != nil {
+			return Result{}, diags, derr
+		}
+		res.Loader = dl + res.Loader
+		res.Chips = []ChipResult{{Code: res.Code, Loader: res.Loader, Setup: res.Setup}}
+		return res, diags, nil
+	}
+
+	// Multi-chip: each chip is compiled independently against the shared
+	// top-level declarations. The top-level `main` is not allowed.
+	if top := topMain(common); top != nil {
+		diags.Errorf(top.Pos(), "top-level main cannot be mixed with chip blocks; move it into a chip")
+	}
+	var results []ChipResult
+	var firstErr error
+	for _, ch := range chips {
+		cdiags := &diag.Bag{}
+		info := checkInfo(&ast.File{Decls: mergeDecls(common, ch.Decls)}, name, cdiags, opts)
+		if info == nil {
+			mergeDiags(diags, cdiags)
+			continue
+		}
+		if info.Main == nil {
+			cdiags.ErrorfCode("no-main", ch.Name.Pos(), "chip %q has no main function", ch.Name.Name)
+		}
+		if cdiags.HasErrors() {
+			mergeDiags(diags, cdiags)
+			continue
+		}
+		res, err := compileInfo(info, opts, cdiags)
+		mergeDiags(diags, cdiags)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		dl, derr := dataLoaderFor(info, opts)
+		if derr != nil {
+			if firstErr == nil {
+				firstErr = derr
+			}
+			continue
+		}
+		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, Loader: dl + res.Loader, Setup: res.Setup})
+	}
+	if len(results) == 0 {
+		return Result{}, diags, firstErr
+	}
+	return Result{Code: results[0].Code, Loader: results[0].Loader, Chips: results, Setup: results[0].Setup}, diags, firstErr
+}
+
+// compileInfo runs the lower/optimize/codegen pipeline for one checked chip.
+func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error) {
 	noCheck, noOutline, noOpt := envSwitches()
 	plan := lower.PlanOutlines(info, noOutline)
 	var best Result
@@ -171,16 +266,92 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			}
 			return
 		}
-		consider(Result{Code: runtime, Loader: loader})
+		consider(Result{Code: runtime, Loader: loader, Setup: true})
 	}
 	run(nil)
 	if len(plan) > 0 {
 		run(plan)
 	}
 	if !haveBest {
-		return Result{}, diags, bestErr
+		return Result{}, bestErr
 	}
-	return best, diags, nil
+	return best, nil
+}
+
+// splitChips separates top-level chip blocks from the shared declarations.
+func splitChips(f *ast.File) (common []ast.Decl, chips []*ast.ChipDecl) {
+	for _, d := range f.Decls {
+		if ch, ok := d.(*ast.ChipDecl); ok {
+			chips = append(chips, ch)
+			continue
+		}
+		common = append(common, d)
+	}
+	return common, chips
+}
+
+// mergeDecls returns the shared declarations followed by the chip's own, with
+// any shared declaration shadowed by a chip-local one of the same name dropped.
+func mergeDecls(common, chip []ast.Decl) []ast.Decl {
+	shadow := map[string]bool{}
+	for _, d := range chip {
+		if n := declName(d); n != "" {
+			shadow[n] = true
+		}
+	}
+	out := make([]ast.Decl, 0, len(common)+len(chip))
+	for _, d := range common {
+		if n := declName(d); n != "" && shadow[n] {
+			continue
+		}
+		out = append(out, d)
+	}
+	return append(out, chip...)
+}
+
+// topMain returns the top-level `func main`, if any.
+func topMain(decls []ast.Decl) *ast.FuncDecl {
+	for _, d := range decls {
+		if f, ok := d.(*ast.FuncDecl); ok && f.Name.Name == "main" {
+			return f
+		}
+	}
+	return nil
+}
+
+func declName(d ast.Decl) string {
+	switch d := d.(type) {
+	case *ast.ConstDecl:
+		return d.Name.Name
+	case *ast.DataDecl:
+		return d.Name.Name
+	case *ast.VarDecl:
+		return d.Name.Name
+	case *ast.FuncDecl:
+		return d.Name.Name
+	}
+	return ""
+}
+
+// mergeDiags appends src diagnostics to dst, skipping duplicates (the shared
+// declarations are checked once per chip, so their diagnostics would repeat).
+func mergeDiags(dst, src *diag.Bag) {
+	seen := map[string]bool{}
+	for _, d := range dst.Diags {
+		seen[diagKey(d)] = true
+	}
+	for _, d := range src.Diags {
+		k := diagKey(d)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		dst.Diags = append(dst.Diags, d)
+	}
+}
+
+func diagKey(d diag.Diagnostic) string {
+	return fmt.Sprintf("%d:%d:%d:%s", d.Severity, d.Pos.Offset, d.End.Offset, d.Msg)
 }
 
 // better reports whether candidate a is preferable to b: fewer lines first
@@ -224,33 +395,44 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 	return code, colors, err
 }
 
-// parseAndCheck lexes, parses and type-checks the source. It returns a nil Info
-// when there are errors.
+// parseAndCheck lexes, parses and type-checks the source. For multi-chip files
+// it returns the first chip's info; the graph/size/stack tools use it.
 func parseAndCheck(name string, src []byte, opts Options) (*sema.Info, *diag.Bag) {
 	file := source.NewFile(name, src)
 	diags := &diag.Bag{}
-
 	toks := lexer.Tokenize(file, diags)
 	tree := parser.Parse(file, toks, diags)
 	if diags.HasErrors() {
 		return nil, diags
 	}
-
-	info := sema.CheckWithOptions(tree, diags, sema.Options{
-		FixedDataBase: fixedDataBase(opts),
-		AutoTable:     opts.AutoTable,
-	})
+	common, chips := splitChips(tree)
+	target := tree
+	if len(chips) > 0 {
+		target = &ast.File{Decls: mergeDecls(common, chips[0].Decls)}
+	}
+	info := checkInfo(target, name, diags, opts)
 	if info.Main == nil {
 		diags.ErrorfCode("no-main", source.Pos{File: name, Line: 1, Col: 1}, "no main function found")
-	}
-	if info.DataSize > 0 && info.Sentinel+info.DataSize > sema.StackSize {
-		diags.ErrorfCode("data-too-large", source.Pos{File: name, Line: 1, Col: 1},
-			"data segment [%d..%d] exceeds the %d-slot stack", info.Sentinel, info.Sentinel+info.DataSize-1, sema.StackSize)
 	}
 	if diags.HasErrors() {
 		return nil, diags
 	}
 	return info, diags
+}
+
+// checkInfo type-checks one already-parsed program (a single-chip file, or a
+// chip merged with the shared declarations). It returns a nil Info only when
+// semantic checking failed to produce one.
+func checkInfo(tree *ast.File, name string, diags *diag.Bag, opts Options) *sema.Info {
+	info := sema.CheckWithOptions(tree, diags, sema.Options{
+		FixedDataBase: fixedDataBase(opts),
+		AutoTable:     opts.AutoTable,
+	})
+	if info.DataSize > 0 && info.Sentinel+info.DataSize > sema.StackSize {
+		diags.ErrorfCode("data-too-large", source.Pos{File: name, Line: 1, Col: 1},
+			"data segment [%d..%d] exceeds the %d-slot stack", info.Sentinel, info.Sentinel+info.DataSize-1, sema.StackSize)
+	}
+	return info
 }
 
 // envSwitches reads the legacy environment switches once at the public API

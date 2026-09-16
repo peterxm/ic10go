@@ -169,6 +169,7 @@ func cmdBuild(args []string) int {
 	dataAccessStack := false
 	dataLayout := ""
 	dataOut := ""
+	chipName := ""
 	jsonOut := false
 	var files []string
 	for i := 0; i < len(args); i++ {
@@ -185,6 +186,11 @@ func cmdBuild(args []string) int {
 			unsafe = true
 		case "--auto-table":
 			autoTable = true
+		case "--chip":
+			if i+1 < len(args) {
+				chipName = args[i+1]
+				i++
+			}
 		case "--split-data":
 			// Kept for compatibility: the one-time loader is now emitted
 			// automatically whenever the program needs one (data segment
@@ -261,21 +267,30 @@ func cmdBuild(args []string) int {
 	}
 
 	if dataOnly {
-		loader, err := ic10.DataLoaderWithOptions(files[0], data, opts)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "ic10c:", err)
+		compiled, _, cerr := ic10.CompileResult(files[0], data, opts)
+		if cerr != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", cerr)
 			return 1
+		}
+		multi := false
+		for _, ch := range compiled.Chips {
+			if ch.Name != "" {
+				multi = true
+			}
+		}
+		if multi && chipName == "" {
+			fmt.Fprintln(os.Stderr, "ic10c: --data-only needs --chip NAME for a multi-chip program")
+			return 2
+		}
+		loader := ""
+		for _, ch := range compiled.Chips {
+			if chipName == "" || ch.Name == chipName {
+				loader = ch.Loader
+				break
+			}
 		}
 		if loader == "" {
-			fmt.Fprintln(os.Stderr, "ic10c: source has no data tables")
-			return 1
-		}
-		// Include any hoisted one-time setup writes so a reinstall is complete.
-		if compiled, _, cerr := ic10.CompileResult(files[0], data, opts); cerr == nil {
-			loader += compiled.Loader
-		}
-		if n := strings.Count(loader, "\n"); n > codegen.MaxLines {
-			fmt.Fprintf(os.Stderr, "ic10c: one-time loader has %d lines, exceeding the %d line limit\n", n, codegen.MaxLines)
+			fmt.Fprintln(os.Stderr, "ic10c: source has no one-time loader")
 			return 1
 		}
 		fmt.Print(loader)
@@ -291,30 +306,79 @@ func cmdBuild(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	fmt.Print(compiled.Code)
 
-	// A one-time loader is needed when the program has a data segment and/or
-	// when the compiler hoisted setup writes out of the runtime.
-	loader := ""
-	if dl, lerr := ic10.DataLoaderWithOptions(files[0], data, opts); lerr == nil {
-		loader = dl
+	base := strings.TrimSuffix(files[0], ".icg")
+	multi := false
+	for _, ch := range compiled.Chips {
+		if ch.Name != "" {
+			multi = true
+		}
 	}
-	loader += compiled.Loader
-	if loader == "" {
-		return 0
+
+	// Single chip: runtime to stdout, one-time loader beside it.
+	if !multi {
+		fmt.Print(compiled.Code)
+		if compiled.Loader == "" {
+			return 0
+		}
+		out := dataOut
+		if out == "" {
+			out = base + ".data.ic"
+		}
+		return writeLoader(out, compiled.Loader)
 	}
+
+	// Multi-chip with --chip NAME: that chip to stdout.
+	if chipName != "" {
+		for _, ch := range compiled.Chips {
+			if ch.Name != chipName {
+				continue
+			}
+			fmt.Print(ch.Code)
+			if ch.Loader == "" {
+				return 0
+			}
+			out := dataOut
+			if out == "" {
+				out = base + "." + ch.Name + ".data.ic"
+			}
+			return writeLoader(out, ch.Loader)
+		}
+		fmt.Fprintf(os.Stderr, "ic10c: no chip named %q\n", chipName)
+		return 1
+	}
+
+	// Multi-chip without --chip: write one runtime (and loader) per chip.
+	for _, ch := range compiled.Chips {
+		out := base + "." + ch.Name + ".ic"
+		if err := os.WriteFile(out, []byte(ch.Code), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		msg := fmt.Sprintf("%s (%d lines)", out, strings.Count(ch.Code, "\n"))
+		if ch.Loader != "" {
+			lout := base + "." + ch.Name + ".data.ic"
+			if rc := writeLoader(lout, ch.Loader); rc != 0 {
+				return rc
+			}
+			msg += " + loader"
+		}
+		fmt.Fprintln(os.Stderr, "ic10c: wrote "+msg)
+	}
+	return 0
+}
+
+// writeLoader writes a one-time loader after checking the line limit.
+func writeLoader(path, loader string) int {
 	if n := strings.Count(loader, "\n"); n > codegen.MaxLines {
 		fmt.Fprintf(os.Stderr, "ic10c: one-time loader has %d lines, exceeding the %d line limit\n", n, codegen.MaxLines)
 		return 1
 	}
-	if dataOut == "" {
-		dataOut = strings.TrimSuffix(files[0], ".icg") + ".data.ic"
-	}
-	if err := os.WriteFile(dataOut, []byte(loader), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(loader), 0o644); err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	fmt.Fprintf(os.Stderr, "ic10c: one-time loader written to %s (run it once, then use the runtime)\n", dataOut)
+	fmt.Fprintf(os.Stderr, "ic10c: one-time loader written to %s (run it once, then use the runtime)\n", path)
 	return 0
 }
 
@@ -510,7 +574,7 @@ func cmdStats(args []string) int {
 		return 1
 	}
 	ic10Hint(files[0])
-	code, diags, err := ic10.CompileWithOptions(files[0], data, opts)
+	compiled, diags, err := ic10.CompileResult(files[0], data, opts)
 	file := source.NewFile(files[0], data)
 	if rc := report(file, diags); rc != 0 {
 		return rc
@@ -519,6 +583,28 @@ func cmdStats(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
+	multi := false
+	for _, ch := range compiled.Chips {
+		if ch.Name != "" {
+			multi = true
+		}
+	}
+	if multi {
+		// Each chip has its own 128-line / 4 KiB budget.
+		for _, ch := range compiled.Chips {
+			s := ic10.StatsOf(ch.Code)
+			fmt.Printf("chip %s\n", ch.Name)
+			fmt.Printf("  lines      %3d / %d\n", s.Lines, codegen.MaxLines)
+			fmt.Printf("  bytes      %3d / %d\n", s.Bytes, codegen.MaxBytes)
+			fmt.Printf("  max line   %3d / %d\n", s.MaxLineLen, codegen.MaxLineLen)
+			fmt.Printf("  registers  %3d / %d\n", s.RegsUsed, ic10.NumRegs)
+			if ch.Loader != "" {
+				fmt.Printf("  loader     %3d lines (run once)\n", strings.Count(ch.Loader, "\n"))
+			}
+		}
+		return 0
+	}
+	code := compiled.Code
 	s := ic10.StatsOf(code)
 	fmt.Printf("lines      %3d / %d\n", s.Lines, codegen.MaxLines)
 	fmt.Printf("bytes      %3d / %d\n", s.Bytes, codegen.MaxBytes)

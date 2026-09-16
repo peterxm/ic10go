@@ -36,6 +36,12 @@ func DataLoaderWithOptions(name string, src []byte, opts Options) (string, error
 	if err != nil {
 		return "", err
 	}
+	return dataLoaderFor(info, opts)
+}
+
+// dataLoaderFor renders the persistent-stack loader for a checked program's
+// data segment. It returns "" when the program has no data tables.
+func dataLoaderFor(info *sema.Info, opts Options) (string, error) {
 	if len(info.Data) == 0 {
 		return "", nil
 	}
