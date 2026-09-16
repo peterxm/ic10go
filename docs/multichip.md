@@ -43,8 +43,8 @@ func clamp(x, lo, hi) { ... }   // 公共函数，各芯片各自内联/外提
 
 ### 2.2 `bus` 声明（契约）
 
-顶层 `bus` 只声明**契约**：槽位名字与顺序（→ `Channel0..`）。**访问点由每个 chip
-用 `use` 指定**（§2.4）。
+顶层 `bus` 只声明**契约**：槽位名字与顺序（→ 通道号）。**访问点由每次访问决定**
+（默认用 chip 的 `use`，可用 `[dev][conn]` 内联覆盖，见 §2.4）。
 
 ```go
 bus Display {
@@ -54,10 +54,8 @@ bus Display {
 }
 ```
 
-- 槽位按声明顺序映射到 `Channel0..`；**每条连接 8 个通道**。
+- 槽位 `i` → `Channel{i}`；**bus 最多 8 槽**（一条连接 8 个通道）。超 8 请拆成多个 bus。
 - 槽位类型：`num` / `bool` / `str`（见 §2.6）。
-- 一个 bus 可跨多条连接（`8 × 连接数` 个通道），槽位 `i` 落在第 `i/8` 条连接的
-  `Channel(i%8)`。
 
 ### 2.3 `chip` 块
 
@@ -76,29 +74,35 @@ chip display {
 - 无 `chip` 块时保持现状（顶层 `main` = 单芯片）。
 - **不允许**顶层 `main` 与 `chip` 块混用（报错）。
 
-### 2.4 访问总线（`use` 访问点）
+### 2.4 访问总线（默认访问点 + 内联覆盖）
 
-每个用到 bus 的 chip 声明自己的**访问点**（可多个连接，按槽位顺序分段）：
+`use Bus on dev:conn` 给本 chip 一个**默认访问点**；`Bus.slot` 用它。每次访问也可用
+`Bus.slot[dev][conn]` **内联覆盖**（`dev` 为端口 `db`/`d0..d5` 或设备别名，`conn`
+为编译期字面量）：
 
 ```go
 chip control {
-    use Display on db:0            // 本芯片经 db:0 接入
-    func main() { for { yield(); Display.o2Pressure = d1.Pressure } }
+    use Display on db:0
+    func main() {
+        for { yield()
+            Display.o2Pressure = d1.Pressure       // 默认 -> s db:0 Channel0
+            Display.mixOut[d5][1] = 1              // 覆盖 -> s d5:1 Channel1
+        }
+    }
 }
 chip display {
-    use Display on d2:1            // 本芯片经 d2:1（如桥接设备的某个口）接入
-    func main() { for { yield(); d0.Setting = Display.o2Pressure } }
+    func main() {                                  // 无 use，全部内联
+        for { yield()
+            d0.Setting = Display.o2Pressure[d1][0] // l r0 d1:0 Channel0
+        }
+    }
 }
 ```
 
-- `use Bus on dev:conn[, dev:conn ...]`：`dev` 可为端口（`db`/`d0..d5`）或**设备
-  别名**（`const Mem = d2`），只允许编译期常量（不允许 `drN`）。
-- 槽位 `i` → 第 `i/8` 条绑定的 `Channel(i%8)`：`s/l <dev>:<conn> ChannelN`。
-- 与现有 `d.channel[conn][ch]` 降到**同一组 IR**。
-- **接线约束**：同一条绑定的所有芯片必须落在同一条电缆网络，否则读到 `NaN`
-  （No Available Network）；跨网络需桥接设备。编译器不校验接线，由用户保证。
-
-> 相比最初"在 bus 上写死一个 `db:0`"，把访问点拆到每个 chip 更贴近现实接线。
+- 通道号恒等于**槽位下标**；`use` / 内联只决定**访问点**。
+- 没有 `use` 且没写 `[dev][conn]` → 报错。
+- **接线约束**：同一槽位的收发双方必须落在同一条电缆网络（否则读到 `NaN`）；跨网络
+  需桥接设备。编译器不校验接线，由用户保证；`ic10c run` 会按槽位自动把它们接成同一网络。
 
 ### 2.5 文法（增量）
 
@@ -157,18 +161,18 @@ ChipDecl= "chip" Ident "{" { ConstDecl | DataDecl | FuncDecl | UseDecl } "}"
   - ≥2 个写者 → 报错 `written by multiple chips`；
   - 有读者但**没有写者** → 报错 `read but never written`；
   - 既无读者也无写者的槽位 → 允许（未使用）。
-- 生成（用**本芯片的 `use` 绑定**）：
+- 生成（用该次访问的**访问点**：内联 `[dev][conn]` 优先，否则 chip 的 `use` 默认）：
   - producer：在赋值处发 `s <dev>:<conn> ChannelN <value>`。
   - consumer：在读取处收 `l <reg> <dev>:<conn> ChannelN`。
 - **不做握手**：消费者可能读到 `NaN`（通道默认值）或旧值；由用户保证时序。
 
 ### 3.3 通道分配
 
-- 槽位 `i` → 第 `i/8` 条绑定的 `Channel(i%8)`。
-- 芯片绑定 `n` 条连接即有 `8n` 个通道；若 bus 槽位数超过 `8n` → 报错，提示加连接：
+- 槽位 `i` → `Channel{i}`（`i` 即槽位在 bus 中的下标）。
+- bus 最多 8 槽；超过 → 报错，提示拆成多个 bus：
 
   ```
-  bus "Display" has 9 slots but only 8 channel(s) bound (8 per connection); add more connections
+  bus "Display" has 9 slots; a network connection has only 8 channels — split it into another bus
   ```
 
 ### 3.4 与现有语法的关系
@@ -176,9 +180,10 @@ ChipDecl= "chip" Ident "{" { ConstDecl | DataDecl | FuncDecl | UseDecl } "}"
 | 新写法 | 等价的现有写法 |
 |--------|----------------|
 | `Display.slot = v`（chip 内 `use Display on db:0`） | `db.channel[0][i] = v` |
-| `x := Display.slot` | `x := db.channel[0][i]` |
+| `Display.slot[d5][1] = v` | `d5.channel[1][i] = v` |
 
-即 `bus` 是"命名 + 自动编号 + 自动收发"的糖；`use` 决定每芯片的访问点。
+即 `bus` 是"命名 + 自动编号 + 自动收发"的糖；访问点默认来自 `use`，可按次用
+`[dev][conn]` 覆盖。
 
 ---
 
@@ -188,9 +193,9 @@ ChipDecl= "chip" Ident "{" { ConstDecl | DataDecl | FuncDecl | UseDecl } "}"
 |----|----|
 | 每连接通道数 | 8 |
 | 每通道载荷 | 1 个 float64 |
-| 每 `bus` 槽位 | ≤ `8 ×` 该芯片绑定的连接数 |
+| 每 `bus` 槽位 | ≤ 8 |
 | 槽位类型 | `num` / `bool` / `str`（`str` 是数值编码，见 §2.6） |
-| 超 8 的办法 | `use` 里加连接：`use Display on a:0, b:1`（按槽位顺序分段） |
+| 超 8 的办法 | 拆成多个 `bus` |
 | 通道持久性 | **易失**（改接线 / 退出世界清空），默认 `NaN` |
 
 典型显示场景：显示芯片**自读源设备**（零通道）；只有主芯片的中间量（PID 输出、
@@ -328,8 +333,9 @@ type World struct {
    脚本与步骤见 [`experiments/multichip-str/`](../experiments/multichip-str/README.md)。
 1. ✅ **P1 多程序拆分**（已实现）：`chip` 块 + 公共区 + 每芯片管线 + CLI `--chip` /
    JSON `chips[]`。不做 bus → 显示芯片可自读设备，立即解决 fuel mixer 行数问题。
-2. ✅ **P2 `bus` 糖**（已实现）：`bus Name on dev:conn { slot type ... }` + `Bus.slot`
-   读写 → `l/s dev:conn ChannelN`；唯一写者 / 多写者 / 无写者 / >8 槽诊断。
+2. ✅ **P2 `bus` 糖**（已实现）：`bus Name { slot type ... }`（≤8 槽，槽位下标即通道）
+   + 每 chip `use Name on dev:conn` 默认访问点、`Name.slot[dev][conn]` 内联覆盖 →
+   `l/s dev:conn ChannelN`；唯一写者 / 多写者 / 被读却无写者 / 超 8 槽 / 未绑定诊断。
 3. ✅ **P3 VM `World`**（已实现）：`vm.World` 多芯片锁步，设备按名共享（同一
    `dev:conn` 的 `ChannelN` 互通），每芯片保留自己的寄存器与栈；`ic10c run` 跑
    多芯片程序并打印世界设备。见 `internal/vm` 的 `World` / `Machine.Step`。

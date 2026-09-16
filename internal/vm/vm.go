@@ -392,27 +392,6 @@ func (w *World) Wire(members ...string) {
 	}
 }
 
-// WireBus wires the access points of one bus across chips. Each chip passes its
-// binding list; entry i of every list is the same network segment (a bus may
-// span several connections, 8 channels each).
-func (w *World) WireBus(bindings ...[]string) {
-	maxLen := 0
-	for _, b := range bindings {
-		if len(b) > maxLen {
-			maxLen = len(b)
-		}
-	}
-	for i := 0; i < maxLen; i++ {
-		var members []string
-		for _, b := range bindings {
-			if i < len(b) {
-				members = append(members, b[i])
-			}
-		}
-		w.Wire(members...)
-	}
-}
-
 // AddChip creates a machine that shares the world's devices and returns it.
 func (w *World) AddChip() *Machine {
 	m := New()

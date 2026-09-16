@@ -39,8 +39,9 @@ type Options struct {
 	// NoCheck disables logic-type validation.
 	NoCheck bool
 	// RecordBus, when set, is called for every `Bus.slot` read (write=false) or
-	// write (write=true) so the caller can check producer/consumer counts.
-	RecordBus func(bus, slot string, write bool)
+	// write (write=true) with the access point used, so the caller can check
+	// producer/consumer counts and wire a multi-chip VM.
+	RecordBus func(bus, slot, devConn string, write bool)
 }
 
 // emitDataCheck verifies the persistent data segment is installed: it reads the
@@ -602,14 +603,14 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 					l.diags.Errorf(t.Sel.Pos(), "bus %q has no slot %q", id.Name, t.Sel.Name)
 					return
 				}
-				dev, localCh, ok := l.busConn(id.Name, ch)
+				dev, ok := l.busDefault(id.Name)
 				if !ok {
-					l.diags.Errorf(t.Sel.Pos(), "bus %q is not bound in this chip; add `use %s on dev:conn`", id.Name, id.Name)
+					l.diags.Errorf(t.Sel.Pos(), "bus %q has no default access point in this chip; add `use %s on dev:conn` or write %s.%s[dev][conn]", id.Name, id.Name, id.Name, t.Sel.Name)
 					return
 				}
-				l.b.Emit(&ir.Store{Dev: dev, Logic: "Channel" + itoa(float64(localCh)), Src: val})
+				l.b.Emit(&ir.Store{Dev: dev, Logic: "Channel" + itoa(float64(ch)), Src: val})
 				if l.opts.RecordBus != nil {
-					l.opts.RecordBus(id.Name, t.Sel.Name, true)
+					l.opts.RecordBus(id.Name, t.Sel.Name, dev, true)
 				}
 				return
 			}
@@ -633,6 +634,13 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 		if dev, addr, ok := l.stackOf(t); ok {
 			l.b.Emit(&ir.Builtin{Name: "put",
 				Args: []ir.Value{l.deviceOperand(dev), l.lowerExpr(addr), val}})
+			return
+		}
+		if bus, slot, dev, ch, ok := l.busSlotAccess(t); ok {
+			l.b.Emit(&ir.Store{Dev: dev, Logic: "Channel" + itoa(float64(ch)), Src: val})
+			if l.opts.RecordBus != nil {
+				l.opts.RecordBus(bus, slot, dev, true)
+			}
 			return
 		}
 		l.diags.Errorf(t.Pos(), "unsupported assignment target")
@@ -1269,6 +1277,14 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 				Args: []ir.Value{l.deviceOperand(dev), l.lowerExpr(addr)}})
 			return r
 		}
+		if bus, slot, dev, ch, ok := l.busSlotAccess(e); ok {
+			r := l.b.NewReg(slot)
+			l.b.Emit(&ir.Load{Dst: r, Dev: dev, Logic: "Channel" + itoa(float64(ch))})
+			if l.opts.RecordBus != nil {
+				l.opts.RecordBus(bus, slot, dev, false)
+			}
+			return r
+		}
 		l.diags.Errorf(e.Pos(), "index expression is not a value")
 		return &ir.Const{V: 0}
 	case *ast.DeviceLit:
@@ -1512,15 +1528,15 @@ func (l *lowerer) lowerDeviceRead(e *ast.SelectorExpr) ir.Value {
 				l.diags.Errorf(e.Sel.Pos(), "bus %q has no slot %q", id.Name, e.Sel.Name)
 				return &ir.Const{V: 0}
 			}
-			dev, localCh, ok := l.busConn(id.Name, ch)
+			dev, ok := l.busDefault(id.Name)
 			if !ok {
-				l.diags.Errorf(e.Sel.Pos(), "bus %q is not bound in this chip; add `use %s on dev:conn`", id.Name, id.Name)
+				l.diags.Errorf(e.Sel.Pos(), "bus %q has no default access point in this chip; add `use %s on dev:conn` or write %s.%s[dev][conn]", id.Name, id.Name, id.Name, e.Sel.Name)
 				return &ir.Const{V: 0}
 			}
 			r := l.b.NewReg(e.Sel.Name)
-			l.b.Emit(&ir.Load{Dst: r, Dev: dev, Logic: "Channel" + itoa(float64(localCh))})
+			l.b.Emit(&ir.Load{Dst: r, Dev: dev, Logic: "Channel" + itoa(float64(ch))})
 			if l.opts.RecordBus != nil {
-				l.opts.RecordBus(id.Name, e.Sel.Name, false)
+				l.opts.RecordBus(id.Name, e.Sel.Name, dev, false)
 			}
 			return r
 		}
@@ -2593,16 +2609,55 @@ func channelDev(dev string, conn float64) string {
 	return dev + ":" + strconv.FormatInt(int64(conn), 10)
 }
 
-// busConn maps a bus channel index to this chip's access point: the binding
-// segment (8 channels each) and the local channel within it.
-func (l *lowerer) busConn(bus string, ch int) (dev string, localCh int, ok bool) {
-	binds := l.info.BusBindings[bus]
-	seg := ch / 8
-	if seg < 0 || seg >= len(binds) {
-		return "", 0, false
+// busDefault returns the device operand of the chip's default access point for
+// a bus (from `use Bus on dev:conn`).
+func (l *lowerer) busDefault(bus string) (dev string, ok bool) {
+	b, ok := l.info.BusBindings[bus]
+	if !ok {
+		return "", false
 	}
-	b := binds[seg]
-	return channelDev(b.Device, float64(b.Conn)), ch % 8, true
+	return channelDev(b.Device, float64(b.Conn)), true
+}
+
+// busSlotAccess recognises `Bus.slot[dev][conn]`: an explicit access point for
+// a bus slot. The channel is the slot's index in the bus.
+func (l *lowerer) busSlotAccess(e ast.Expr) (bus, slot, dev string, ch int, ok bool) {
+	connIdx, isIdx := e.(*ast.IndexExpr)
+	if !isIdx {
+		return "", "", "", 0, false
+	}
+	devIdx, isIdx := connIdx.X.(*ast.IndexExpr)
+	if !isIdx {
+		return "", "", "", 0, false
+	}
+	sel, isSel := devIdx.X.(*ast.SelectorExpr)
+	if !isSel {
+		return "", "", "", 0, false
+	}
+	id, isID := sel.X.(*ast.Ident)
+	if !isID {
+		return "", "", "", 0, false
+	}
+	bi, isBus := l.info.Buses[id.Name]
+	if !isBus {
+		return "", "", "", 0, false
+	}
+	c, isSlot := bi.Slots[sel.Sel.Name]
+	if !isSlot {
+		l.diags.Errorf(sel.Sel.Pos(), "bus %q has no slot %q", id.Name, sel.Sel.Name)
+		return "", "", "", 0, false
+	}
+	d, isDev := l.deviceName(devIdx.Index)
+	if !isDev {
+		l.diags.Errorf(devIdx.Index.Pos(), "expected a device port (db/d0..d5) or alias")
+		return "", "", "", 0, false
+	}
+	connV, isConn := sema.Eval(connIdx.Index, l.constEnv())
+	if !isConn {
+		l.diags.Errorf(connIdx.Index.Pos(), "connection index must be a compile-time constant")
+		return "", "", "", 0, false
+	}
+	return id.Name, sel.Sel.Name, channelDev(d, connV), c, true
 }
 
 func itoa(v float64) string {

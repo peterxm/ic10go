@@ -682,21 +682,19 @@ func TestBusChannelMapping(t *testing.T) {
 	if !strings.Contains(res.Chips[1].Code, "l r0 d2:1 Channel0") || !strings.Contains(res.Chips[1].Code, "l r0 d2:1 Channel1") {
 		t.Errorf("consumer should read its own access point:\n%s", res.Chips[1].Code)
 	}
-	if got := res.Chips[0].Buses["B"]; len(got) != 1 || got[0] != "db:0" {
-		t.Errorf("chip c bus bindings = %v, want [db:0]", got)
+	if got := res.Chips[0].BusAccess["B.a"]; len(got) != 1 || got[0] != "db:0" {
+		t.Errorf("chip c B.a access = %v, want [db:0]", got)
 	}
-	if got := res.Chips[1].Buses["B"]; len(got) != 1 || got[0] != "d2:1" {
-		t.Errorf("chip d bus bindings = %v, want [d2:1]", got)
+	if got := res.Chips[1].BusAccess["B.a"]; len(got) != 1 || got[0] != "d2:1" {
+		t.Errorf("chip d B.a access = %v, want [d2:1]", got)
 	}
 }
 
-func TestBusMultiConnection(t *testing.T) {
-	// Nine slots span two connections: slots 0..7 on the first, slot 8 on the
-	// second (its local Channel0).
-	src := "bus B {\n    s0 num\n    s1 num\n    s2 num\n    s3 num\n" +
-		"    s4 num\n    s5 num\n    s6 num\n    s7 num\n    s8 num\n}\n" +
-		"chip a {\n    use B on db:0, d1:1\n    func main() { B.s8 = 5 }\n}\n" +
-		"chip b {\n    use B on db:0, d1:1\n    func main() { d0.On = B.s8 }\n}\n"
+func TestBusInlineAccess(t *testing.T) {
+	// Inline [dev][conn] overrides the default; the channel is the slot index.
+	src := "bus B {\n    a num\n    b num\n}\n" +
+		"chip c {\n    use B on db:0\n    func main() { B.a[d5][1] = d1.Pressure; B.b[d4][2] = 1 }\n}\n" +
+		"chip d {\n    func main() { d0.Setting = B.a[d3][0]; d1.On = B.b[d2][3] }\n}\n"
 	res, diags, err := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
 	if diags.HasErrors() {
 		t.Fatalf("compile errors: %v", diags.Diags)
@@ -704,8 +702,18 @@ func TestBusMultiConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(res.Chips[0].Code, "s d1:1 Channel0") {
-		t.Errorf("slot 8 should land on the second connection:\n%s", res.Chips[0].Code)
+	for _, want := range []string{"s d5:1 Channel0", "s d4:2 Channel1"} {
+		if !strings.Contains(res.Chips[0].Code, want) {
+			t.Errorf("producer missing %q:\n%s", want, res.Chips[0].Code)
+		}
+	}
+	for _, want := range []string{"l r0 d3:0 Channel0", "l r0 d2:3 Channel1"} {
+		if !strings.Contains(res.Chips[1].Code, want) {
+			t.Errorf("consumer missing %q:\n%s", want, res.Chips[1].Code)
+		}
+	}
+	if got := res.Chips[1].BusAccess["B.a"]; len(got) != 1 || got[0] != "d3:0" {
+		t.Errorf("chip d B.a access = %v, want [d3:0]", got)
 	}
 }
 
@@ -760,5 +768,21 @@ func TestBusDeviceAlias(t *testing.T) {
 	}
 	if !strings.Contains(res.Chips[0].Code, "s d3:1 Channel0") {
 		t.Errorf("device alias should resolve to d3:\n%s", res.Chips[0].Code)
+	}
+}
+
+func TestBusInlineDeviceAlias(t *testing.T) {
+	src := "const Mem = d3\n" +
+		"bus B {\n    x num\n}\n" +
+		"chip a {\n    func main() { B.x[Mem][1] = 1 }\n}\n"
+	res, diags, err := ic10.CompileResult("bus.icg", []byte(src), ic10.Options{})
+	if diags.HasErrors() {
+		t.Fatalf("compile errors: %v", diags.Diags)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Chips[0].Code, "s d3:1 Channel0") {
+		t.Errorf("inline device alias should resolve to d3:\n%s", res.Chips[0].Code)
 	}
 }

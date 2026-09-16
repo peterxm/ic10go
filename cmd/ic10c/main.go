@@ -480,16 +480,17 @@ func cmdRun(args []string) int {
 			m.Trace = os.Stdout
 		}
 	}
-	// Wire every bus's access points across the chips that bind it, so the run
-	// matches the declared buses.
-	busBindings := map[string][][]string{}
+	// Wire each bus slot's access points across the chips that use it, so the
+	// run matches the declared buses (a connection shared by several slots is
+	// merged into one network).
+	busAccess := map[string][]string{}
 	for _, ch := range compiled.Chips {
-		for bus, binds := range ch.Buses {
-			busBindings[bus] = append(busBindings[bus], binds)
+		for slot, conns := range ch.BusAccess {
+			busAccess[slot] = append(busAccess[slot], conns...)
 		}
 	}
-	for _, binds := range busBindings {
-		w.WireBus(binds...)
+	for _, conns := range busAccess {
+		w.Wire(conns...)
 	}
 	if err := w.Run(steps); err != nil && err != vm.ErrStepLimit {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)

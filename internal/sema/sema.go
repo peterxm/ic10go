@@ -83,8 +83,9 @@ type Info struct {
 	Main      *ast.FuncDecl
 	// Buses maps a `bus` name to its channel layout.
 	Buses map[string]*BusInfo
-	// BusBindings maps a `bus` name to this chip's access points (from `use`).
-	BusBindings map[string][]BusConn
+	// BusBindings maps a `bus` name to this chip's default access point
+	// (from `use Bus on dev:conn`).
+	BusBindings map[string]BusConn
 
 	// Data segment (top-level `data` tables). All zero when there is none.
 	Data        []*DataTable
@@ -120,7 +121,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 		Devices:       map[string]string{},
 		Funcs:         map[string]*FuncInfo{},
 		Buses:         map[string]*BusInfo{},
-		BusBindings:   map[string][]BusConn{},
+		BusBindings:   map[string]BusConn{},
 		DataIndex:     map[string]*DataTable{},
 		Sentinel:      -1,
 		TableSwitches: map[*ast.SwitchStmt]*TableSwitch{},
@@ -246,6 +247,11 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 				diags.Errorf(d.Name.Pos(), "bus %q conflicts with a constant", d.Name.Name)
 				continue
 			}
+			if len(d.Slots) > 8 {
+				diags.Errorf(d.Name.Pos(),
+					"bus %q has %d slots; a network connection has only 8 channels — split it into another bus",
+					d.Name.Name, len(d.Slots))
+			}
 			bi := &BusInfo{Name: d.Name.Name, Slots: map[string]int{}}
 			for i, s := range d.Slots {
 				if _, dup := bi.Slots[s.Name.Name]; dup {
@@ -265,32 +271,23 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 				diags.Errorf(d.Bus.Pos(), "bus %q bound more than once in this chip", d.Bus.Name)
 				continue
 			}
-			bi, ok := info.Buses[d.Bus.Name]
-			if !ok {
+			if _, ok := info.Buses[d.Bus.Name]; !ok {
 				diags.Errorf(d.Bus.Pos(), "unknown bus %q", d.Bus.Name)
 				continue
 			}
-			if len(d.Bindings) == 0 {
-				diags.Errorf(d.Bus.Pos(), "use %s needs at least one connection", d.Bus.Name)
+			if len(d.Bindings) != 1 {
+				diags.Errorf(d.Bus.Pos(), "use %s takes exactly one connection (dev:conn)", d.Bus.Name)
 				continue
 			}
-			binds := make([]BusConn, 0, len(d.Bindings))
-			for _, b := range d.Bindings {
-				dev := b.Device
-				if alias, isAlias := info.Devices[dev]; isAlias {
-					dev = alias
-				} else if !isDevicePort(dev) {
-					diags.Errorf(b.Pos(), "unknown device %q", b.Device)
-					continue
-				}
-				binds = append(binds, BusConn{Device: dev, Conn: b.Conn})
+			b := d.Bindings[0]
+			dev := b.Device
+			if alias, isAlias := info.Devices[dev]; isAlias {
+				dev = alias
+			} else if !isDevicePort(dev) {
+				diags.Errorf(b.Pos(), "unknown device %q", b.Device)
+				continue
 			}
-			if max := 8 * len(binds); len(bi.Slots) > max {
-				diags.Errorf(d.Bus.Pos(),
-					"bus %q has %d slots but only %d channel(s) bound (8 per connection); add more connections",
-					d.Bus.Name, len(bi.Slots), max)
-			}
-			info.BusBindings[d.Bus.Name] = binds
+			info.BusBindings[d.Bus.Name] = BusConn{Device: dev, Conn: b.Conn}
 		}
 	}
 

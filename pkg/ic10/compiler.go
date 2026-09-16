@@ -4,6 +4,7 @@ package ic10
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"ic10go/internal/ast"
@@ -58,9 +59,9 @@ type Options struct {
 	// the VM (relative to the jump's own line).
 	RelJump bool
 
-	// recordBus, when set, records every `Bus.slot` read/write while compiling
-	// so CompileResult can check that each slot has exactly one writer.
-	recordBus func(bus, slot string, write bool)
+	// recordBus, when set, records every `Bus.slot` read/write (with its access
+	// point) while compiling, so CompileResult can check writers and wire a VM.
+	recordBus func(bus, slot, devConn string, write bool)
 }
 
 // fixedDataBase returns the fixed data base for the selected layout, or 0 for
@@ -84,9 +85,10 @@ type ChipResult struct {
 	// Setup reports whether Loader includes hoisted one-time device writes
 	// (modes / switches / constant settings) rather than only data-segment writes.
 	Setup bool
-	// Buses maps a bus name to this chip's access points ("dev:conn"), used to
-	// wire a multi-chip VM run. Nil when the chip uses no bus.
-	Buses map[string][]string
+	// BusAccess maps "Bus.slot" to the access points ("dev:conn") this chip
+	// uses for it, used to wire a multi-chip VM run. Nil when the chip uses no
+	// bus.
+	BusAccess map[string][]string
 }
 
 // Result is a compiled program: the runtime code plus an optional one-time
@@ -146,10 +148,12 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 
 	common, chips := splitChips(tree)
 
-	// Track which chip reads/writes each bus slot (producer/consumer check).
+	// Track which chip reads/writes each bus slot (producer/consumer check) and
+	// which access points each chip uses (for VM wiring).
 	busUses := map[string]*busUse{}
+	chipAccess := map[string]map[string]map[string]bool{}
 	currentChip := ""
-	opts.recordBus = func(bus, slot string, write bool) {
+	opts.recordBus = func(bus, slot, devConn string, write bool) {
 		k := bus + "." + slot
 		u := busUses[k]
 		if u == nil {
@@ -161,6 +165,13 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 		} else {
 			u.readers[currentChip] = true
 		}
+		if chipAccess[currentChip] == nil {
+			chipAccess[currentChip] = map[string]map[string]bool{}
+		}
+		if chipAccess[currentChip][k] == nil {
+			chipAccess[currentChip][k] = map[string]bool{}
+		}
+		chipAccess[currentChip][k][devConn] = true
 	}
 
 	if len(chips) == 0 {
@@ -184,7 +195,7 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			return Result{}, diags, derr
 		}
 		res.Loader = dl + res.Loader
-		res.Chips = []ChipResult{{Code: res.Code, Loader: res.Loader, Setup: res.Setup, Buses: chipBuses(info)}}
+		res.Chips = []ChipResult{{Code: res.Code, Loader: res.Loader, Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, "")}}
 		return res, diags, nil
 	}
 
@@ -225,7 +236,7 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			}
 			continue
 		}
-		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, Loader: dl + res.Loader, Setup: res.Setup, Buses: chipBuses(info)})
+		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, Loader: dl + res.Loader, Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, ch.Name.Name)})
 	}
 	checkBusUse(common, busUses, diags)
 	if len(results) == 0 {
@@ -377,18 +388,20 @@ func topMain(decls []ast.Decl) *ast.FuncDecl {
 	return nil
 }
 
-// chipBuses renders a chip's bus bindings as "dev:conn" strings.
-func chipBuses(info *sema.Info) map[string][]string {
-	if len(info.BusBindings) == 0 {
+// chipBusAccess renders the access points a chip used for each "Bus.slot".
+func chipBusAccess(byChip map[string]map[string]map[string]bool, chip string) map[string][]string {
+	slots := byChip[chip]
+	if len(slots) == 0 {
 		return nil
 	}
-	out := make(map[string][]string, len(info.BusBindings))
-	for name, binds := range info.BusBindings {
-		conns := make([]string, 0, len(binds))
-		for _, b := range binds {
-			conns = append(conns, fmt.Sprintf("%s:%d", b.Device, b.Conn))
+	out := make(map[string][]string, len(slots))
+	for k, set := range slots {
+		conns := make([]string, 0, len(set))
+		for devConn := range set {
+			conns = append(conns, devConn)
 		}
-		out[name] = conns
+		sort.Strings(conns)
+		out[k] = conns
 	}
 	return out
 }
