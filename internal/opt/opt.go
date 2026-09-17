@@ -103,6 +103,23 @@ func hasSideEffect(i ir.Instr) bool {
 // Copy and constant propagation (block-local)
 // ---------------------------------------------------------------------------
 
+// isPhysRegRaw reports whether v is a direct physical-register operand
+// (ireg(const) lowered to the raw operand "rN"). Such a value is re-read at
+// every use, so it must not be propagated or commoned up across an indirect
+// write (setIreg) that could change it.
+func isPhysRegRaw(v ir.Value) bool {
+	c, ok := v.(*ir.Const)
+	if !ok || len(c.Raw) < 2 || c.Raw[0] != 'r' {
+		return false
+	}
+	for i := 1; i < len(c.Raw); i++ {
+		if c.Raw[i] < '0' || c.Raw[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func propagate(fn *ir.Function) bool {
 	changed := false
 	for _, b := range fn.Blocks {
@@ -129,7 +146,11 @@ func propagate(fn *ir.Function) bool {
 			case *ir.Assign:
 				switch src := v.Src.(type) {
 				case *ir.Const:
-					val[d] = src
+					if isPhysRegRaw(src) {
+						delete(val, d)
+					} else {
+						val[d] = src
+					}
 				case *ir.Reg:
 					if rv, ok := val[src]; ok {
 						val[d] = rv
@@ -250,6 +271,9 @@ func evalConst(i ir.Instr, state map[*ir.Reg]*ir.Const) *ir.Const {
 	switch v := i.(type) {
 	case *ir.Assign:
 		if c, ok := resolve(v.Src).(*ir.Const); ok {
+			if isPhysRegRaw(c) {
+				return nil
+			}
 			return c
 		}
 	case *ir.Bin:
@@ -980,8 +1004,22 @@ func containsReg(vs []ir.Value, r *ir.Reg) bool {
 }
 
 func exprKey(i ir.Instr) (key string, operands []ir.Value, dev string, ok bool) {
+	// Expressions that read a physical register directly (ireg(const)) are
+	// left out of CSE: commoning them up would extend their live ranges (and
+	// they would need invalidating on every indirect write).
+	hasPhys := func(vals ...ir.Value) bool {
+		for _, v := range vals {
+			if isPhysRegRaw(v) {
+				return true
+			}
+		}
+		return false
+	}
 	switch v := i.(type) {
 	case *ir.Bin:
+		if hasPhys(v.A, v.B) {
+			return "", nil, "", false
+		}
 		ka, kb := valKey(v.A), valKey(v.B)
 		if commutative(v.Op) && kb < ka {
 			ka, kb = kb, ka
@@ -989,16 +1027,28 @@ func exprKey(i ir.Instr) (key string, operands []ir.Value, dev string, ok bool) 
 		return "b" + strconv.Itoa(int(v.Op)) + "|" + ka + "|" + kb,
 			[]ir.Value{v.A, v.B}, "", true
 	case *ir.Un:
+		if hasPhys(v.A) {
+			return "", nil, "", false
+		}
 		return "u" + strconv.Itoa(int(v.Op)) + "|" + valKey(v.A),
 			[]ir.Value{v.A}, "", true
 	case *ir.Cmp:
 		if v.B == nil {
+			if hasPhys(v.A) {
+				return "", nil, "", false
+			}
 			return "c" + strconv.Itoa(int(v.Cond)) + "|" + valKey(v.A) + "|-",
 				[]ir.Value{v.A}, "", true
+		}
+		if hasPhys(v.A, v.B) {
+			return "", nil, "", false
 		}
 		return "c" + strconv.Itoa(int(v.Cond)) + "|" + valKey(v.A) + "|" + valKey(v.B),
 			[]ir.Value{v.A, v.B}, "", true
 	case *ir.Select:
+		if hasPhys(v.Cond, v.Then, v.Else) {
+			return "", nil, "", false
+		}
 		return "s|" + valKey(v.Cond) + "|" + valKey(v.Then) + "|" + valKey(v.Else),
 			[]ir.Value{v.Cond, v.Then, v.Else}, "", true
 	}

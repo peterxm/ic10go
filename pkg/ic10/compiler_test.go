@@ -938,3 +938,28 @@ func TestIndirectRegsRuntimePointer(t *testing.T) {
 		t.Errorf("d0.Setting = %v, want 42\n%s", got, code)
 	}
 }
+
+// TestIndirectRegNoPropagation checks that a constant ireg read is not
+// propagated across a setIreg that changes the register (it must be copied at
+// the read point).
+func TestIndirectRegNoPropagation(t *testing.T) {
+	src := `func main() {
+    reserveRegs(2, 2)
+    setIreg(2, 1)
+    a := ireg(2)
+    setIreg(2, 5)
+    b := ireg(2)
+    d0.Setting = a*10 + b
+}`
+	code := mustCompile(t, src)
+	m := vm.New()
+	if err := m.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(50); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	if got := m.Get("d0", "Setting"); got != 15 {
+		t.Errorf("d0.Setting = %v, want 15 (read propagated across setIreg?)\n%s", got, code)
+	}
+}

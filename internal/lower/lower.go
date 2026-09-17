@@ -1859,8 +1859,20 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			l.diags.Errorf(call.Pos(), "ireg expects one argument")
 			return &ir.Const{V: 0}
 		}
+		ptr := l.lowerExpr(call.Args[0])
+		// A constant index is a direct physical-register read, so it can be
+		// used as an operand without a copy. It must be reserved so the
+		// allocator does not place another value there.
+		if c, ok := ptr.(*ir.Const); ok && c.Raw == "" && c.Special == "" {
+			if n := int(c.V); n >= 0 && n < 16 {
+				if !l.b.Fn().ReservedRegs[n] {
+					l.diags.Errorf(call.Pos(), "ireg(%d) needs reserveRegs to cover r%d", n, n)
+				}
+				return &ir.Const{Raw: "r" + strconv.Itoa(n)}
+			}
+		}
 		dst := l.b.NewReg("ireg")
-		l.b.Emit(&ir.LoadIndirect{Dst: dst, Ptr: l.lowerExpr(call.Args[0])})
+		l.b.Emit(&ir.LoadIndirect{Dst: dst, Ptr: ptr})
 		return dst
 	}
 	if id.Name == "setIreg" {
