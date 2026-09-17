@@ -4,10 +4,8 @@
 // 相比 solverLarge 多了垂直角校正：V = V - 6.88*sin(V*deg2rada)，
 // 以及反向求解的牛顿迭代（invertVLoop）。
 //
-// 注意：本端口按原脚本逐项计算，寄存器压力较大，编译约 184 行，超过 128 行
-// 预算（原脚本用满 16 个寄存器 + 间接寄存器寻址）。保留为参考移植，
-// 不参与端口等价测试（见 knownUnsupported）。
-
+// 转换写成循环，每组的 X/Y/Z/E 依次写入宿主栈（4 个一组），
+// 克拉默法则内联读取；共享的 2x2 子行列式只算一次。
 
 const b = 6.88
 const deg2rada = 0.0694117438141256949
@@ -15,152 +13,77 @@ const deg2radab = 0.477552797441184780912
 
 func main() {
     var r0 = 0
-    var r2 = 0
     var r1 = 0
-    var x0 = 0
-    var y0 = 0
-    var z0 = 0
-    var x1 = 0
-    var y1 = 0
-    var z1 = 0
-    var x2 = 0
-    var y2 = 0
-    var z2 = 0
+    var i = 0
     var h = 0
     var v = 0
     var e = 0
     var d = 0
+    var a = 0
+    var bb = 0
+    var c = 0
     var tx = 0
     var ty = 0
     var tz = 0
     var vv = 0
+    var iter = 0
 
     label wait:
     yield()
     if db.Setting == 0 { goto wait }
 
+    // 3 组 HVE → X/Y/Z/E，写入宿主栈 100 起
     sp = 9
-
-    // 第 1 组
+    i = 100
+    label convert:
     e = pop()
     v = pop()
     h = pop()
     h = h * deg2rad
     v = v - b * sin(v * deg2rada)
     v = v * deg2rad
-    x0 = -sin(v) * cos(h)
-    y0 = cos(v)
-    z0 = sin(v) * sin(h)
-    put(db, 8, cos(e * deg2rad))
+    put(db, i, -sin(v) * cos(h))
+    i = i + 1
+    put(db, i, cos(v))
+    i = i + 1
+    put(db, i, sin(v) * sin(h))
+    i = i + 1
+    put(db, i, cos(e * deg2rad))
+    i = i + 1
+    if sp != 0 { goto convert }
 
-    // 第 2 组
-    e = pop()
-    v = pop()
-    h = pop()
-    h = h * deg2rad
-    v = v - b * sin(v * deg2rada)
-    v = v * deg2rad
-    x1 = -sin(v) * cos(h)
-    y1 = cos(v)
-    z1 = sin(v) * sin(h)
-    put(db, 5, cos(e * deg2rad))
+    // 2x2 子行列式（x0..z2 在 db 100/101/102、104/105/106、108/109/110）
+    a = get(db, 105)*get(db, 110) - get(db, 106)*get(db, 109)  // Y1*Z2 - Z1*Y2
+    bb = get(db, 104)*get(db, 110) - get(db, 106)*get(db, 108) // X1*Z2 - Z1*X2
+    c = get(db, 104)*get(db, 109) - get(db, 105)*get(db, 108)  // X1*Y2 - Y1*X2
+    d = get(db, 100)*a - get(db, 101)*bb + get(db, 102)*c
 
-    // 第 3 组
-    e = pop()
-    v = pop()
-    h = pop()
-    h = h * deg2rad
-    v = v - b * sin(v * deg2rada)
-    v = v * deg2rad
-    x2 = -sin(v) * cos(h)
-    y2 = cos(v)
-    z2 = sin(v) * sin(h)
-    put(db, 2, cos(e * deg2rad))
-
-    // 行列式 d = X0*(Y1*Z2-Z1*Y2) - Y0*(X1*Z2-Z1*X2) + Z0*(X1*Y2-Y1*X2)
-    r0 = x1 * z2
-    r1 = z1 * x2
-    r0 = r0 - r1
-    d = y0 * r0
-    r0 = x1 * y2
-    r1 = y1 * x2
-    r0 = r0 - r1
-    r0 = z0 * r0
-    d = r0 - d
-    r0 = y1 * z2
-    r1 = z1 * y2
-    r1 = r0 - r1
-    r0 = x0 * r1
-    d = d + r0
-
-    // 克拉默法则
-    r0 = get(db, 8)
-    tx = r1 * r0
-    r0 = y0 * z2
-    r1 = z0 * y2
-    r0 = r0 - r1
-    r1 = get(db, 5)
-    r0 = r0 * r1
-    tx = tx - r0
-    r0 = y0 * z1
-    r1 = z0 * y1
-    r0 = r0 - r1
-    r1 = get(db, 2)
-    r0 = r0 * r1
-    tx = tx + r0
-    tx = tx / d
-
-    r0 = x0 * z1
-    r1 = z0 * x1
-    ty = r0 - r1
-    ty = ty * get(db, 2)
-    r0 = x0 * z2
-    r1 = z0 * x2
-    r0 = r0 - r1
-    r1 = get(db, 5)
-    r0 = r0 * r1
-    ty = r0 - ty
-    r0 = x1 * z2
-    r1 = z1 * x2
-    r0 = r0 - r1
-    r1 = get(db, 8)
-    r0 = r0 * r1
-    ty = ty - r0
-    ty = ty / d
-
-    r0 = x1 * y2
-    r1 = y1 * x2
-    tz = r0 - r1
-    tz = tz * get(db, 8)
-    r0 = x0 * y2
-    r1 = y0 * x2
-    r0 = r0 - r1
-    r1 = get(db, 5)
-    r0 = r0 * r1
-    tz = tz - r0
-    r0 = x0 * y1
-    r1 = y0 * x1
-    r0 = r0 - r1
-    r1 = get(db, 2)
-    r0 = r0 * r1
-    tz = tz + r0
-    tz = tz / d
+    // 克拉默法则（E0/E1/E2 在 db 103/107/111）
+    tx = (a*get(db, 103) -
+        (get(db, 101)*get(db, 110)-get(db, 102)*get(db, 109))*get(db, 107) +
+        (get(db, 101)*get(db, 106)-get(db, 102)*get(db, 105))*get(db, 111)) / d
+    ty = ((get(db, 100)*get(db, 110)-get(db, 102)*get(db, 108))*get(db, 107) -
+        bb*get(db, 103) -
+        (get(db, 100)*get(db, 106)-get(db, 102)*get(db, 104))*get(db, 111)) / d
+    tz = (c*get(db, 103) -
+        (get(db, 100)*get(db, 109)-get(db, 101)*get(db, 108))*get(db, 107) +
+        (get(db, 100)*get(db, 105)-get(db, 101)*get(db, 104))*get(db, 111)) / d
 
     // 转回 HV（V 为未校正值）
     h = atan2(tz, tx * -1) * rad2deg
     vv = atan2(sqrt(tx*tx + tz*tz), ty) * rad2deg
 
-    // 牛顿迭代反解垂直角校正：v -= (v - B*sin(v*deg2rada) - vv) / (1 - deg2radab*cos(v*deg2rada))
+    // 牛顿迭代反解垂直角校正
     v = vv
-    r1 = 3
+    iter = 3
     label invertVLoop:
     r0 = v - b * sin(v * deg2rada)
     r0 = r0 - vv
-    r2 = 1 - deg2radab * cos(v * deg2rada)
-    r0 = r0 / r2
+    r1 = 1 - deg2radab * cos(v * deg2rada)
+    r0 = r0 / r1
     v = v - r0
-    r1 = r1 - 1
-    if r1 >= 0 { goto invertVLoop }
+    iter = iter - 1
+    if iter >= 0 { goto invertVLoop }
 
     put(db, 0, h)
     put(db, 1, v)

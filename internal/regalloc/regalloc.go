@@ -344,6 +344,13 @@ func spillCosts(fn *ir.Function) map[*ir.Reg]int {
 	}
 	for r := range allRegs(fn) {
 		cost[r]++ // never zero
+		// Values created by spilling are short-lived glue (a def stored
+		// immediately, or a load feeding one instruction). Spilling them again
+		// does not reduce pressure and makes the spiller diverge, so make them
+		// the last candidates.
+		if r.Name == "spill" {
+			cost[r] += 1 << 20
+		}
 	}
 	return cost
 }

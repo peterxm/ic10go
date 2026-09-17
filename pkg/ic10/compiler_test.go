@@ -963,3 +963,30 @@ func TestIndirectRegNoPropagation(t *testing.T) {
 		t.Errorf("d0.Setting = %v, want 15 (read propagated across setIreg?)\n%s", got, code)
 	}
 }
+
+// TestSpillConvergence checks that the allocator converges on optimised code
+// with high register pressure and shared subexpressions. It used to fail with
+// "register allocation did not converge" because the spiller kept re-spilling
+// the short-lived spill glue instead of the original long-lived values.
+func TestSpillConvergence(t *testing.T) {
+	src := `func main() {
+    var a = 0
+    var bb = 0
+    var c = 0
+    var d = 0
+    var tx = 0
+    var ty = 0
+    var tz = 0
+    a = get(db, 105)*get(db, 110) - get(db, 106)*get(db, 109)
+    bb = get(db, 104)*get(db, 110) - get(db, 106)*get(db, 108)
+    c = get(db, 104)*get(db, 109) - get(db, 105)*get(db, 108)
+    d = get(db, 100)*a - get(db, 101)*bb + get(db, 102)*c
+    tx = (a*get(db, 103) - (get(db, 101)*get(db, 110)-get(db, 102)*get(db, 109))*get(db, 107) + (get(db, 101)*get(db, 106)-get(db, 102)*get(db, 105))*get(db, 111)) / d
+    ty = ((get(db, 100)*get(db, 110)-get(db, 102)*get(db, 108))*get(db, 107) - bb*get(db, 103) - (get(db, 100)*get(db, 106)-get(db, 102)*get(db, 104))*get(db, 111)) / d
+    tz = (c*get(db, 103) - (get(db, 100)*get(db, 109)-get(db, 101)*get(db, 108))*get(db, 107) + (get(db, 100)*get(db, 105)-get(db, 101)*get(db, 104))*get(db, 111)) / d
+    d0.Setting = tx + ty + tz
+}`
+	if _, diags, err := ic10.Compile("t.icg", []byte(src)); diags.HasErrors() || err != nil {
+		t.Fatalf("compile failed (allocator did not converge?): %v %v", diags.Diags, err)
+	}
+}
