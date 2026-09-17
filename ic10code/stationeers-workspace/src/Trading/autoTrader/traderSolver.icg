@@ -4,8 +4,12 @@
 // 相比 solverLarge 多了垂直角校正：V = V - 6.88*sin(V*deg2rada)，
 // 以及反向求解的牛顿迭代（invertVLoop）。
 //
-// 转换写成循环，每组的 X/Y/Z/E 依次写入宿主栈（4 个一组），
-// 克拉默法则内联读取；共享的 2x2 子行列式只算一次。
+// 转换写成循环，每组的 X/Y/Z/E 依次写入宿主栈（4 个一组），克拉默法则
+// 内联读取；共享的 2x2 子行列式只算一次。
+//
+// 注意：本端口编译约 135 行，仍超过 128 行预算（原脚本把 9 个 XYZ 直接
+// 放在 r2..r10 并手工调度临时寄存器）。保留为参考移植，不参与端口等价
+// 测试（见 knownUnsupported）。行为已用等价测试核对过。
 
 const b = 6.88
 const deg2rada = 0.0694117438141256949
@@ -19,9 +23,6 @@ func main() {
     var v = 0
     var e = 0
     var d = 0
-    var a = 0
-    var bb = 0
-    var c = 0
     var tx = 0
     var ty = 0
     var tz = 0
@@ -52,20 +53,19 @@ func main() {
     i = i + 1
     if sp != 0 { goto convert }
 
-    // 2x2 子行列式（x0..z2 在 db 100/101/102、104/105/106、108/109/110）
-    a = get(db, 105)*get(db, 110) - get(db, 106)*get(db, 109)  // Y1*Z2 - Z1*Y2
-    bb = get(db, 104)*get(db, 110) - get(db, 106)*get(db, 108) // X1*Z2 - Z1*X2
-    c = get(db, 104)*get(db, 109) - get(db, 105)*get(db, 108)  // X1*Y2 - Y1*X2
-    d = get(db, 100)*a - get(db, 101)*bb + get(db, 102)*c
+    // 克拉默法则（子行列式内联，避免长活跃；x0..z2 在 db 100/101/102、
+    // 104/105/106、108/109/110，E 在 103/107/111）
+    d = get(db, 100)*(get(db, 105)*get(db, 110)-get(db, 106)*get(db, 109)) -
+        get(db, 101)*(get(db, 104)*get(db, 110)-get(db, 106)*get(db, 108)) +
+        get(db, 102)*(get(db, 104)*get(db, 109)-get(db, 105)*get(db, 108))
 
-    // 克拉默法则（E0/E1/E2 在 db 103/107/111）
-    tx = (a*get(db, 103) -
+    tx = ((get(db, 105)*get(db, 110)-get(db, 106)*get(db, 109))*get(db, 103) -
         (get(db, 101)*get(db, 110)-get(db, 102)*get(db, 109))*get(db, 107) +
         (get(db, 101)*get(db, 106)-get(db, 102)*get(db, 105))*get(db, 111)) / d
     ty = ((get(db, 100)*get(db, 110)-get(db, 102)*get(db, 108))*get(db, 107) -
-        bb*get(db, 103) -
+        (get(db, 104)*get(db, 110)-get(db, 106)*get(db, 108))*get(db, 103) -
         (get(db, 100)*get(db, 106)-get(db, 102)*get(db, 104))*get(db, 111)) / d
-    tz = (c*get(db, 103) -
+    tz = ((get(db, 104)*get(db, 109)-get(db, 105)*get(db, 108))*get(db, 103) -
         (get(db, 100)*get(db, 109)-get(db, 101)*get(db, 108))*get(db, 107) +
         (get(db, 100)*get(db, 105)-get(db, 101)*get(db, 104))*get(db, 111)) / d
 
