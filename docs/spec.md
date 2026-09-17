@@ -536,7 +536,11 @@ clrById(id)            // clrd：按设备 id 清空
 rmap(d0, reagentHash)  // rmap
 readReagent(d0, LogicReagentMode.Contents, key)  // lr：读取反应物
 readReagent(reg, LogicReagentMode.Contents, key) // lr r? drN：运行期端口
+readReagentById(reg, LogicReagentMode.Contents, key) // lr r? rN：按 ReferenceId
 ```
+
+> `isSet` / `isUnset` / `rmap` / `clr` 的第一个实参也接受寄存器/id（对应
+> 游戏 `sdse`/`sdns`/`rmap`/`clr` 的 `d?|r?|id` 设备操作数）；`get`/`put` 同理。
 
 > 游戏的 `get` / `put` 的 device 操作数是 `d?|r?|id`，因此 `.icg` 的 `get`/`put`
 > 也接受设备 id 或保存 id 的寄存器；`getd`/`putd` 只是按 id 的别名，编译器统一

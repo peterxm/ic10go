@@ -126,6 +126,7 @@
 | `readDevSlot(reg, i, slt)` / `writeDevSlot(reg, i, slt, v)` | `ls drN` / `ss drN`（运行期端口） |
 | `readReagent(dev, mode, key)` | `lr` |
 | `readReagent(reg, mode, key)` | `lr r? drN`（运行期端口） |
+| `readReagentById(reg, mode, key)` | `lr r? rN`（按 ReferenceId） |
 
 ### 4.3 分支
 
