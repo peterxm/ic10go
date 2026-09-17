@@ -51,10 +51,9 @@ func requireIc10Code(t *testing.T) {
 // or a decompile->recompile that exceeds the 128-line budget. Keys are file
 // base names with or without extension.
 var knownUnsupported = map[string]string{
-	"oreSorter":       "source uses an undefined `hash` register (invalid IC10)",
-	"sorterSample":    "source uses an undefined `hash` register (invalid IC10)",
 	"traderSolver":    "decompile->recompile exceeds the 128-line chip budget",
 	"traderSolverRAW": "decompile->recompile exceeds the 128-line chip budget",
+	"sorterSample":    "minify produces a line over the 90-character limit",
 }
 
 // knownUnsupportedPorts lists hand ports whose original cannot be run for the
