@@ -1,108 +1,129 @@
-// 机库增压器：根据批次压力控制舱门与气体传感器。
+// 机库增压器：开关控制「抽真空 → 充气 → 保压 → 泄压」循环。
 //
 // 原脚本：Trading/hangarPressurizer/hangarPressurizer.ic10
+// 设备：d0 = 释放按钮、d1 = 开关、d2 = 状态屏、d3 = 压力屏、
+//       d4 = 交易状态屏、d5 = 降落台数据。
+// 批量：通风口 / 防爆门 / 气体传感器 / 小中大机库门。
+// 状态间切换不经过 yield（与原脚本一致）。
+
+const releaseButton = d0
+const switchDev = d1
+const stateDisplay = d2
+const pressureDisplay = d3
+const traderStatus = d4
+const landingPadData = d5
+
+const ventHash = -785498334
+const blastDoorHash = 337416191
+const gasSensorHash = -1252983604
+
+const interiorVent = hash("Interior Vent")
+const exteriorVent = hash("Exterior Vent")
+const exteriorDoor = hash("Exterior Door")
+const interiorDoor = hash("Interior Door")
+
+const smallHangar = 1736080881
+const medHangar = -566348148
+const largeHangar = -1351081801
+
+const minPress = 40
+
+// 读取气体传感器最低压力（kPa）并换算为 Pa 写到压力屏。
+func showPressure() {
+    pressureDisplay.Mode = 14
+    pressureDisplay.Setting = batch.read(gasSensorHash, "Pressure", "Minimum") * 1000
+}
+// 显示交易台是否就绪（降落台 Mode == 4 为 Ready，否则 Empty）。
+func showTraderStatus() {
+    traderStatus.Mode = 10
+    if landingPadData.Mode == 4 {
+        traderStatus.Setting = str("Ready")
+    } else {
+        traderStatus.Setting = str("Empty")
+    }
+}
 
 func main() {
-    label currSwitchOff:
-    batch.writeName(-785498334, hash("Interior Vent"), "On", 0)
-    batch.writeName(-785498334, hash("Exterior Vent"), "On", 0)
-    batch.writeName(337416191, hash("Interior Door"), "Open", 0)
-    batch.writeName(337416191, hash("Exterior Door"), "Open", 1)
-    batch.write(1736080881, "Open", 1)
-    batch.write(-566348148, "Open", 1)
-    batch.write(-1351081801, "Open", 1)
-    r0 := d0.Activate
-    d5.Activate = r0
-    r0 = d1.Setting
-    if r0 == 1 { goto evacuateToxicAir }
-    d2.Mode = 10
-    d2.Setting = str("Prime")
-    r0 = batch.read(-1252983604, "Pressure", "Minimum")
-    r0 = (r0 * 1000)
-    d3.Setting = r0
-    d4.Mode = 10
-    r0 = d5.Mode
-    if r0 != 4 { goto L42 }
-    d4.Setting = str("Ready")
-    goto L43
-    label L42:
-    d4.Setting = str("Empty")
-    label L43:
+    label idle:
+    batch.writeName(ventHash, interiorVent, "On", 0)
+    batch.writeName(ventHash, exteriorVent, "On", 0)
+    batch.writeName(blastDoorHash, interiorDoor, "Open", 0)
+    batch.writeName(blastDoorHash, exteriorDoor, "Open", 1)
+    batch.write(smallHangar, "Open", 1)
+    batch.write(medHangar, "Open", 1)
+    batch.write(largeHangar, "Open", 1)
+
+    landingPadData.Activate = releaseButton.Activate
+    if switchDev.Setting == 1 { goto evacuate }
+
+    stateDisplay.Mode = 10
+    stateDisplay.Setting = str("Prime")
+    pressureDisplay.Setting = batch.read(gasSensorHash, "Pressure", "Minimum") * 1000
+    showTraderStatus()
     yield()
-    goto currSwitchOff
-    label currSwitchOn:
-    batch.writeName(-785498334, hash("Interior Vent"), "On", 0)
-    batch.writeName(-785498334, hash("Exterior Vent"), "On", 0)
-    batch.writeName(337416191, hash("Interior Door"), "Open", 1)
-    batch.writeName(337416191, hash("Exterior Door"), "Open", 0)
-    r0 = d1.Setting
-    if r0 == 0 { goto depressurizeCleanAir }
-    d3.Mode = 14
-    r0 = batch.read(-1252983604, "Pressure", "Minimum")
-    r0 = (r0 * 1000)
-    d3.Setting = r0
-    d2.Mode = 10
-    d2.Setting = str("Safe!")
-    r0 = d5.Mode
-    if r0 != 4 { goto L63 }
-    d4.Setting = str("Ready")
-    goto L64
-    label L63:
-    d4.Setting = str("Empty")
-    label L64:
+    goto idle
+    label safe:
+    batch.writeName(ventHash, interiorVent, "On", 0)
+    batch.writeName(ventHash, exteriorVent, "On", 0)
+    batch.writeName(blastDoorHash, interiorDoor, "Open", 1)
+    batch.writeName(blastDoorHash, exteriorDoor, "Open", 0)
+    if switchDev.Setting == 0 { goto depressurize }
+
+    showPressure()
+    stateDisplay.Mode = 10
+    stateDisplay.Setting = str("Safe!")
+    showTraderStatus()
     yield()
-    goto currSwitchOn
-    label evacuateToxicAir:
-    batch.writeName(-785498334, hash("Exterior Vent"), "On", 1)
-    batch.writeName(-785498334, hash("Exterior Vent"), "Mode", 1)
-    batch.writeName(337416191, hash("Interior Door"), "Open", 0)
-    batch.writeName(337416191, hash("Exterior Door"), "Open", 0)
-    batch.write(1736080881, "Open", 0)
-    batch.write(-566348148, "Open", 0)
-    batch.write(-1351081801, "Open", 0)
-    batch.write(337416191, "Open", 0)
-    r0 = batch.read(-1252983604, "Pressure", "Maximum")
-    if r0 == 0 { goto pressurizeCleanAir }
-    d3.Mode = 14
-    r0 = (r0 * 1000)
-    d3.Setting = r0
-    d2.Mode = 10
-    d2.Setting = str("Evac")
+    goto safe
+
+    label evacuate:
+    batch.writeName(ventHash, exteriorVent, "On", 1)
+    batch.writeName(ventHash, exteriorVent, "Mode", 1)
+    batch.writeName(blastDoorHash, interiorDoor, "Open", 0)
+    batch.writeName(blastDoorHash, exteriorDoor, "Open", 0)
+    batch.write(smallHangar, "Open", 0)
+    batch.write(medHangar, "Open", 0)
+    batch.write(largeHangar, "Open", 0)
+    batch.write(blastDoorHash, "Open", 0)
+    if batch.read(gasSensorHash, "Pressure", "Maximum") == 0 { goto pressurize }
+
+    pressureDisplay.Mode = 14
+    pressureDisplay.Setting = batch.read(gasSensorHash, "Pressure", "Maximum") * 1000
+    stateDisplay.Mode = 10
+    stateDisplay.Setting = str("Evac")
     yield()
-    goto evacuateToxicAir
-    label pressurizeCleanAir:
-    batch.writeName(-785498334, hash("Exterior Vent"), "On", 0)
-    batch.writeName(-785498334, hash("Interior Vent"), "Mode", 0)
-    batch.writeName(-785498334, hash("Interior Vent"), "On", 1)
-    batch.writeName(337416191, hash("Interior Door"), "Open", 0)
-    batch.writeName(337416191, hash("Exterior Door"), "Open", 0)
-    batch.write(1736080881, "Open", 0)
-    batch.write(-566348148, "Open", 0)
-    batch.write(-1351081801, "Open", 0)
-    r0 = batch.read(-1252983604, "Pressure", "Minimum")
-    if r0 >= 40 { goto currSwitchOn }
-    d3.Mode = 14
-    r0 = (r0 * 1000)
-    d3.Setting = r0
-    d2.Mode = 10
-    d2.Setting = str("Fill")
+    goto evacuate
+
+    label pressurize:
+    batch.writeName(ventHash, exteriorVent, "On", 0)
+    batch.writeName(ventHash, interiorVent, "Mode", 0)
+    batch.writeName(ventHash, interiorVent, "On", 1)
+    batch.writeName(blastDoorHash, interiorDoor, "Open", 0)
+    batch.writeName(blastDoorHash, exteriorDoor, "Open", 0)
+    batch.write(smallHangar, "Open", 0)
+    batch.write(medHangar, "Open", 0)
+    batch.write(largeHangar, "Open", 0)
+    if batch.read(gasSensorHash, "Pressure", "Minimum") >= minPress { goto safe }
+
+    showPressure()
+    stateDisplay.Mode = 10
+    stateDisplay.Setting = str("Fill")
     yield()
-    goto pressurizeCleanAir
-    label depressurizeCleanAir:
-    batch.writeName(-785498334, hash("Interior Vent"), "Mode", 1)
-    batch.writeName(-785498334, hash("Interior Vent"), "On", 1)
-    batch.writeName(337416191, hash("Interior Door"), "Open", 0)
-    batch.writeName(337416191, hash("Exterior Door"), "Open", 0)
-    batch.write(1736080881, "Open", 0)
-    batch.write(-566348148, "Open", 0)
-    batch.write(-1351081801, "Open", 0)
-    d2.Mode = 10
-    d2.Setting = str("Depres")
-    r0 = batch.read(-1252983604, "Pressure", "Minimum")
-    if r0 == 0 { goto currSwitchOff }
-    d3.Mode = 14
-    r0 = (r0 * 1000)
-    d3.Setting = r0
+    goto pressurize
+
+    label depressurize:
+    batch.writeName(ventHash, interiorVent, "Mode", 1)
+    batch.writeName(ventHash, interiorVent, "On", 1)
+    batch.writeName(blastDoorHash, interiorDoor, "Open", 0)
+    batch.writeName(blastDoorHash, exteriorDoor, "Open", 0)
+    batch.write(smallHangar, "Open", 0)
+    batch.write(medHangar, "Open", 0)
+    batch.write(largeHangar, "Open", 0)
+    stateDisplay.Mode = 10
+    stateDisplay.Setting = str("Depres")
+    if batch.read(gasSensorHash, "Pressure", "Minimum") == 0 { goto idle }
+
+    showPressure()
     yield()
-    goto depressurizeCleanAir
+    goto depressurize
 }

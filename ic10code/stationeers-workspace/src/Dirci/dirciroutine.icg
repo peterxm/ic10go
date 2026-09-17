@@ -1,17 +1,31 @@
-// Dirci 采矿例行程序：装载 → 前往矿区 → 采矿 → 返回卸载。
+// Dirci 采矿例行程序：装载 → 前往矿区 → 采矿 → 返回卸载，支持中途改线。
 //
 // 原脚本：Dirci/dirciroutine.ic10
-// 设备：d0 = 机器人发射器、d1 = dirciRoutine、d2 = 召回开关。
-// 保留原脚本的运行时标签地址比较。
+// 设备：d0 = 机器人发射器、d1 = 召回拉杆、d2 = 二级召回（可选）。
+// 寄存器约定：r15 = ra、workError、r13 = 卡住计数、r12 = 栈顶、r0..r5 = 临时。
+// travel 用 `if r15 < goingToWork` 比较返回地址与代码标签。
+
+const robotXmitter = d0
+const recallLever = d1
+const secondaryRecall = d2
 
 func main() {
     var r0 = 0
-    d0.Mode = 0
+    var r1 = 0
+    var r2 = 0
+    var r3 = 0
+    var r12 = 0
+    var r13 = 0
+    var r14 = 0
+    var r15 = 0
+
+    robotXmitter.Mode = 0
+
     label arrivedHome:
     sp = 0
-    r12 := get(db, 511)
+    r12 = get(db, 511)
     call getInventory
-    if r0 != 0 { goto endReroute }
+    if r0 != 0 { goto endReroute } // 还有物品，不改线
     r0 = get(db, 500)
     if r0 == 3 { goto rerouteDone }
     if r0 != 1 { goto endReroute }
@@ -21,102 +35,115 @@ func main() {
     if r0 != 3 { goto L14 }
     sp = 4
     goto goingHome
+
     label rerouteDone:
     put(db, 500, 4)
+
     label endReroute:
     call batteryWeatherCheckRecall
     if r0 != 0 { goto arrivedHome }
-    r2 := 0
+    r2 = 0
+
     label loadingLoop:
-    d0.Mode = 2
+    robotXmitter.Mode = 2
     yield()
-    r2 = (r2 + 1)
-    r0 = d0.Mode
-    if r0 == 4 { goto goingToWork }
-    r1 := get(db, 509)
+    r2 = r2 + 1
+    r0 = robotXmitter.Mode
+    if r0 == 4 { goto goingToWork } // 满载立即出发
+    r1 = get(db, 509)
     if r2 < r1 { goto loadingLoop }
     goto goingToWork
+
     label goingHome:
     call batteryWeatherCheckRecall
     if sp <= 0 { goto arrivedHome }
-    sp = (sp - 1)
-    r3 := get(db, sp)
-    sp = (sp - 1)
-    r2 = get(db, sp)
-    d0.TargetX = r2
-    d0.TargetZ = r3
+    sp = sp - 1
+    r3 = get(db, sp) // Z
+    sp = sp - 1
+    r2 = get(db, sp) // X
+    robotXmitter.TargetX = r2
+    robotXmitter.TargetZ = r3
     call travel
     goto goingHome
+
     label goingToWork:
     call batteryWeatherCheckRecall
     if r0 != 0 { goto goingHome }
     r2 = get(db, sp)
-    sp = (sp + 1)
+    sp = sp + 1
     r3 = get(db, sp)
-    sp = (sp + 1)
-    d0.TargetX = r2
-    d0.TargetZ = r3
+    sp = sp + 1
+    robotXmitter.TargetX = r2
+    robotXmitter.TargetZ = r3
     call travel
     if sp >= r12 { goto workSite }
     goto goingToWork
+
     label workSite:
-    d0.Mode = 3
+    robotXmitter.Mode = 3
     label L58:
     r0 = batch.read(1997212478, "NextWeatherEventTime", "Sum")
-    if r0 != 0 { goto L58 }
+    if r0 != 0 { goto L58 } // 风暴期间原地躲避
     call batteryWeatherCheckRecall
     if r0 != 0 { goto goingHome }
     call getInventory
     if r0 == 0 { goto goingHome }
     goto workSite
+
+    // 统计 2..11 槽的占用数，返回 r0；模式 5（空）时直接回家。
     label getInventory:
     r1 = 2
     r2 = 0
     label occupiedSlotsCalc:
-    r0 = d0.Mode
+    r0 = robotXmitter.Mode
     if r0 == 5 { goto goingHome }
-    r0 = d0.slot[r1].Occupied
-    r2 = (r2 + r0)
-    r1 = (r1 + 1)
+    r0 = robotXmitter.slot[r1].Occupied
+    r2 = r2 + r0
+    r1 = r1 + 1
     if r1 == 12 { goto L76 }
     goto occupiedSlotsCalc
     label L76:
     r0 = r2
     ret
+
+    // 移动；来自 goHome 时改写返回地址。
     label travel:
-    r15 := ra
+    r15 = ra
+
     label travelLoop:
-    d0.Mode = 1
-    r0 = d0.PositionY
-    d0.TargetY = r0
+    robotXmitter.Mode = 1
+    r0 = robotXmitter.PositionY
+    robotXmitter.TargetY = r0
     call batteryWeatherCheckRecall
     if r0 == 0 { goto L90 }
     if r15 < goingToWork { goto L90 }
     r15 = goingHome
-    sp = (sp - 2)
-    d0.Mode = 0
+    sp = sp - 2
+    robotXmitter.Mode = 0
     label L90:
     yield()
-    r0 = d0.Mode
+    r0 = robotXmitter.Mode
     if r0 != 0 { goto travelLoop }
     jump(r15)
+
+    // 召回/电量/天气检查，返回 r0，并维护 workError（r14）。
     label batteryWeatherCheckRecall:
-    r0 = d1.Setting
-    if isUnset(d2) { goto L99 }
-    r1 = d2.Setting
-    r3 = (r0 | r1)
+    r0 = recallLever.Setting
+    if isUnset(secondaryRecall) { goto L99 }
+    r1 = secondaryRecall.Setting
+    r3 = r0 | r1
     label L99:
     if r0 == 0 { goto L101 }
-    r14 := 0
+    r14 = 0
     label L101:
-    r0 = d0.slot[0].Charge
+    r0 = robotXmitter.slot[0].Charge
     r1 = get(db, 510)
-    r2 = (r0 < r1)
-    r2 = (r2 | r14)
+    r2 = r0 < r1
+    r2 = r2 | r14
     db.Setting = r2
     r0 = batch.read(1997212478, "NextWeatherEventTime", "Sum")
-    r0 = (r0 != 0)
-    r0 = (r0 | r3)
-    r0 = (r2 | r0)
+    r0 = r0 != 0
+    r0 = r0 | r3
+    r0 = r2 | r0
     ret
 }

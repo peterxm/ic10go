@@ -49,6 +49,7 @@ func TestIc10CodePorts(t *testing.T) {
 	for _, port := range ports {
 		t.Run(filepath.Base(port), func(t *testing.T) {
 			skipKnownUnsupported(t, port)
+			skipKnownUnsupportedPort(t, port)
 			orig := strings.TrimSuffix(port, ".icg")
 			switch {
 			case fileExists(orig + ".ic"):

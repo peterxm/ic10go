@@ -1,126 +1,157 @@
 // Aimee 采矿例行程序：待机 → 前往矿区 → 采矿 → 返回卸载。
 //
-// 原脚本：AIMeE/roboroutine.ic10
-// 设备：d0 = 机器人发射器、d1 = 召回拉杆、d2 = 二级召回。
-// 保留原脚本的运行时标签地址比较（`if r15 < goingToWork`）。
+// 原脚本：AIMeE/roboroutine.ic10（Cows Are Evil 原作，StormCircuit 大量修改）
+// 设备：d0 = 机器人发射器、d1 = 召回拉杆、d2 = 二级召回（可选）。
+// 寄存器约定（沿用原脚本）：r15 = ra、workError = 工作错误、r13 = 卡住计数、
+// r12 = 栈顶、r0..r5 = 临时。
+//
+// 关键点：travel 用 `if r15 < goingToWork` 比较返回地址与代码标签，
+// 以区分是从 goHome 还是 goToWork 调用；.icg 支持把标签当值使用。
+
+const robotXmitter = d0
+const recallLever = d1
+const secondaryRecall = d2
 
 func main() {
     var r0 = 0
-    var r14 = 0
-    d0.Mode = 0
+    var r1 = 0
+    var r2 = 0
+    var r3 = 0
+    var r12 = 0
+    var r13 = 0
+    var r15 = 0
+    var workError = 0
+
+    robotXmitter.Mode = 0
+
     label arrivedHome:
     sp = 0
-    r12 := get(db, 511)
-    if r14 != 1 { goto L9 }
-    d0.Mode = 4
+    r12 = get(db, 511) // 新的最大航点数
+
+    if workError != 1 { goto L9 }
+    robotXmitter.Mode = 4 // 有工作错误时先进入卸载
     label L9:
     call batteryWeatherCheckRecall
-    if r0 != 0 { goto L9 }
+    if r0 != 0 { goto L9 } // 召回/错误期间循环
+
     label unloadWait:
-    d0.Mode = 4
+    robotXmitter.Mode = 4
     yield()
-    r0 = d0.Mode
+    r0 = robotXmitter.Mode
     if r0 == 4 { goto unloadWait }
     if r0 == 0 { goto goingToWork }
+
     label goingHomeStart:
-    sp = (sp + 1)
+    sp = sp + 1
+
     label goingHomeLoop:
     call batteryWeatherCheckRecall
     if sp <= 1 { goto arrivedHome }
-    sp = (sp - 1)
-    r3 := peek()
-    sp = (sp - 1)
-    r2 := peek()
-    r2 = (r2 - 1)
-    r3 = (r3 - 1)
-    d0.TargetX = r2
-    d0.TargetZ = r3
+    sp = sp - 1
+    r3 = peek()
+    sp = sp - 1
+    r2 = peek()
+    r2 = r2 - 1 // 简单避障
+    r3 = r3 - 1
+    robotXmitter.TargetX = r2
+    robotXmitter.TargetZ = r3
     call travel
     goto goingHomeLoop
+
     label goingToWork:
     call batteryWeatherCheckRecall
     if r0 != 0 { goto goingHomeStart }
-    sp = (sp + 1)
+    sp = sp + 1
     r2 = peek()
-    sp = (sp + 1)
+    sp = sp + 1
     r3 = peek()
-    if sp < r12 { goto noOffset }
+    if sp < r12 { goto noOffset } // 最后一个航点时随机偏移
     call getOffset
-    r2 = (r2 + r0)
+    r2 = r2 + r0
     call getOffset
-    r3 = (r3 + r0)
+    r3 = r3 + r0
+
     label noOffset:
-    d0.TargetX = r2
-    d0.TargetZ = r3
+    robotXmitter.TargetX = r2
+    robotXmitter.TargetZ = r3
     call travel
     if sp >= r12 { goto workSite }
     goto goingToWork
+
+    // 在偏移范围内随机取一个值（r0 返回）。
     label getOffset:
-    r1 := get(db, 507)
+    r1 = get(db, 507)
     r0 = rand()
-    r0 = (r1 * r0)
+    r0 = r1 * r0
     r1 = rand()
     if r1 > 0.5 { goto L57 }
-    r0 = (r0 * -1)
+    r0 = r0 * -1
     label L57:
     ret
+
     label workSite:
-    d0.Mode = 3
-    r13 := 0
+    robotXmitter.Mode = 3
+    r13 = 0
+
     label miningWaitLoop:
     call batteryWeatherCheckRecall
     if r0 != 0 { goto goingHomeStart }
-    r13 = (r13 + 1)
+    r13 = r13 + 1
     r0 = get(db, 508)
     if r13 < r0 { goto L74 }
     r1 = get(db, 509)
-    r0 = d0.MineablesInVicinity
+    r0 = robotXmitter.MineablesInVicinity
     if r0 <= r1 { goto L72 }
-    sp = (sp - 2)
+    sp = sp - 2
     goto goingToWork
     label L72:
-    r14 = 1
+    workError = 1
     goto goingHomeStart
     label L74:
     yield()
-    r0 = d0.Mode
+    r0 = robotXmitter.Mode
     if r0 == 3 { goto miningWaitLoop }
     if r0 == 6 { goto goingHomeStart }
     goto workSite
+
+    // 移动到目标点；若来自 goHome 则跳过返回地址改写。
     label travel:
-    r15 := ra
+    r15 = ra
+
     label travelLoop:
-    d0.Mode = 2
-    r0 = d0.PositionY
-    d0.TargetY = r0
+    robotXmitter.Mode = 2
+    r0 = robotXmitter.PositionY
+    robotXmitter.TargetY = r0
     call batteryWeatherCheckRecall
     if r0 == 0 { goto L91 }
     if r15 < goingToWork { goto L91 }
     r15 = goingHomeStart
-    sp = (sp - 2)
-    d0.Mode = 0
+    sp = sp - 2
+    robotXmitter.Mode = 0 // 触发立即反向
     label L91:
     yield()
-    r0 = d0.Mode
+    r0 = robotXmitter.Mode
     if r0 != 0 { goto travelLoop }
-    jump(r15)
+    jump(r15) // 用保存的返回地址
+
+    // 召回/电量/天气检查：返回 r0（非 0 表示需要回家），并维护 workError。
     label batteryWeatherCheckRecall:
-    r0 = d1.Setting
-    if isUnset(d2) { goto L100 }
-    r1 = d2.Setting
-    r3 = (r0 | r1)
+    r0 = recallLever.Setting
+    if isUnset(secondaryRecall) { goto L100 }
+    r1 = secondaryRecall.Setting
+    r3 = r0 | r1
     label L100:
     if r0 == 0 { goto L102 }
-    r14 = 0
+    workError = 0
     label L102:
-    r0 = d0.slot[0].Charge
+    r0 = robotXmitter.slot[0].Charge
     r1 = get(db, 510)
-    r2 = (r0 < r1)
-    r2 = (r2 | r14)
+    r2 = r0 < r1
+    r2 = r2 | workError
     db.Setting = r2
     r0 = batch.read(1997212478, "NextWeatherEventTime", "Sum")
-    r0 = (r0 != 0)
-    r0 = (r0 | r3)
-    r0 = (r2 | r0)
+    r0 = r0 != 0
+    r0 = r0 | r3
+    r0 = r2 | r0
     ret
 }

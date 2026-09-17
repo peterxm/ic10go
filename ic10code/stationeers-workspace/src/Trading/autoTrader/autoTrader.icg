@@ -1,114 +1,129 @@
-// 自动交易协调器：扫描/锁定交易者并驱动求解器。
+// 自动交易：中碟形天线扫描，找到匹配过滤器的信号后求解并接触。
 //
 // 原脚本：Trading/autoTrader/autoTrader.ic10
-// 结构沿用原脚本的 label/goto。
+// 设备：d0 = 求解器、d1 = 交易过滤旋钮、d2 = 中碟形天线。
+// 子过程沿用原脚本的 jal（solverRoutine 会在信号丢失时直接跳回 findContact）。
+
+const solver = d0
+const traderFilter = d1
+const medDish = d2
+
+const minWattsContact = 200
 
 func main() {
-    var r4 = 0
-    var r7 = 0
+    var currFilter = 0
+    var offset = 0
+    var h = 0
+    var v = 0
+    var signal = 0
+    var idle = 0
+    var minWatts = 0
+    var watts = 0
+    var progress = 0
+    var i = 0
+
     label findContact:
-    d2.BestContactFilter = -1
-    d2.Setting = 3000
+    medDish.BestContactFilter = -1
+    medDish.Setting = 3000
     call moveScannerDish
     call setFilter
-    r0 := d2.ContactTypeId
-    if r0 != r4 { goto findContact }
-    r0 = d2.InterrogationProgress
-    if r0 == 1 { goto findContact }
-    r0 = d2.SignalID
-    d2.BestContactFilter = r0
-    label L18:
-    r0 = d2.Idle
-    if r0 != 1 { goto L18 }
+
+    // 接触类型要匹配过滤器，且尚未接触过
+    if medDish.ContactTypeId != currFilter { goto findContact }
+    if medDish.InterrogationProgress == 1 { goto findContact }
+
+    // 锁住信号并等待碟形天线就位
+    signal = medDish.SignalID
+    for {
+        medDish.BestContactFilter = signal
+        idle = medDish.Idle
+        if idle == 1 { break }
+    }
     yield()
-    d2.Setting = 7500
+    medDish.Setting = 7500
     sleep(2)
-    label L23:
-    r0 = d2.SignalID
-    if r0 == -1 { goto findContact }
-    r0 = d2.MinimumWattsToContact
-    if r0 == -1 { goto L23 }
-    if r0 < 200 { goto findContact }
-    r0 = d2.MinimumWattsToContact
-    r1 := d2.WattsReachingContact
-    if r1 > r0 { goto L32 }
-    call solverRoutine
-    label L32:
-    d2.Activate = 0
+
+    // 等待最低功率出现
+    for {
+        signal = medDish.SignalID
+        if signal == -1 { goto findContact }
+        minWatts = medDish.MinimumWattsToContact
+        if minWatts != -1 { break }
+    }
+    if minWatts < minWattsContact { goto findContact }
+
+    // 尚未够到就求解，然后脉冲 Activate 接触
+    if medDish.WattsReachingContact <= minWatts {
+        call solverRoutine
+    }
+    medDish.Activate = 0
     yield()
-    d2.Activate = 1
+    medDish.Activate = 1
     yield()
-    label L36:
-    r0 = d2.SignalID
-    if r0 == -1 { goto findContact }
-    r0 = d2.MinimumWattsToContact
-    r1 = d2.WattsReachingContact
-    if r1 < r0 { goto findContact }
-    r0 = d2.InterrogationProgress
-    if r0 != 1 { goto L36 }
+
+    // 等待接触完成
+    for {
+        signal = medDish.SignalID
+        if signal == -1 { goto findContact }
+        minWatts = medDish.MinimumWattsToContact
+        watts = medDish.WattsReachingContact
+        if watts < minWatts { goto findContact }
+        progress = medDish.InterrogationProgress
+        if progress == 1 { break }
+    }
     goto findContact
+
+    // 读取过滤旋钮并映射到类别 hash。
     label setFilter:
-    r4 = d1.Setting
-    r4 = get(db, r4)
+    currFilter = traderFilter.Setting
+    currFilter = get(db, currFilter)
     ret
+
+    // 碟形天线扫过天空：水平 +7°，垂直按正弦上下摆动。
     label moveScannerDish:
-    r1 = d2.Horizontal
-    r0 = (r1 + 7)
-    d2.Horizontal = r0
-    r1 = (r0 >= 360)
-    r7 = (r7 + r1)
-    r1 = (r1 * 45)
-    r1 = (r1 % 360)
-    r0 = (r0 * 0.01745)
-    r0 = (r0 + r1)
-    r0 = sin(r0)
-    r0 = (r0 * 45)
-    r0 = (r0 + 45)
-    d2.Vertical = r0
-    label L63:
-    r0 = d2.Idle
-    if r0 != 1 { goto L63 }
+    h = medDish.Horizontal + 7
+    medDish.Horizontal = h
+    v = h >= 360 ? 1 : 0
+    offset = offset + v
+    v = (v * 45) % 360
+    v = sin(h * 0.01745 + v) * 45 + 45
+    medDish.Vertical = v
+    for {
+        idle = medDish.Idle
+        if idle == 1 { break }
+    }
     sleep(2)
     ret
+
+    // 移动碟形天线取 3 个 HVE 参考点写入求解器，再读回解算结果。
     label solverRoutine:
-    r13 := 0
-    r15 := ra
+    i = 0
     label loadSolver:
-    label L71:
-    r0 = d2.SignalID
-    if r0 == -1 { goto findContact }
-    r0 = d2.Idle
-    if r0 == 0 { goto L71 }
-    r0 = d2.SignalStrength
-    if r0 == -1 { goto L71 }
+    signal = medDish.SignalID
+    if signal == -1 { goto findContact }
+    if medDish.Idle == 0 { goto loadSolver }
+    if medDish.SignalStrength == -1 { goto loadSolver }
     sleep(5)
-    r1 = d2.Horizontal
-    put(d0, r13, r1)
-    r13 = (r13 + 1)
-    r1 = d2.Vertical
-    put(d0, r13, r1)
-    r13 = (r13 + 1)
-    r1 = d2.SignalStrength
-    put(d0, r13, r1)
-    r13 = (r13 + 1)
-    if r13 == 9 { goto L92 }
-    r0 = d2.Horizontal
-    r0 = (r0 + 15)
-    d2.Horizontal = r0
-    goto loadSolver
-    label L92:
-    d0.Setting = 1
-    label L93:
-    r0 = d0.Setting
-    if r0 == 1 { goto L93 }
+    put(solver, i, medDish.Horizontal)
+    i = i + 1
+    put(solver, i, medDish.Vertical)
+    i = i + 1
+    put(solver, i, medDish.SignalStrength)
+    i = i + 1
+    if i != 9 {
+        medDish.Horizontal = medDish.Horizontal + 15
+        goto loadSolver
+    }
+
+    solver.Setting = 1
+    for solver.Setting == 1 { yield() }
     sleep(2)
-    r0 = get(d0, 0)
-    d2.Horizontal = r0
-    r0 = get(d0, 1)
-    d2.Vertical = r0
-    label L100:
-    r0 = d2.Idle
-    if r0 != 1 { goto L100 }
+    medDish.Horizontal = get(solver, 0)
+    medDish.Vertical = get(solver, 1)
+    for {
+        idle = medDish.Idle
+        if idle == 1 { break }
+    }
     yield()
-    jump(r15)
+    ret
 }

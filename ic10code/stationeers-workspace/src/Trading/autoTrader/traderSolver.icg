@@ -1,141 +1,169 @@
 // 交易求解器：根据三个参考点解算交易者坐标（可粘贴版本）。
 //
 // 原脚本：Trading/autoTrader/traderSolver.ic10
-// 注意：反编译后重编译约 184 行，超过 128 行预算（寄存器溢出），
-// 因此保留为参考移植，暂不参与端口等价测试（见 knownUnsupported）。
+// 相比 solverLarge 多了垂直角校正：V = V - 6.88*sin(V*deg2rada)，
+// 以及反向求解的牛顿迭代（invertVLoop）。
+//
+// 注意：本端口按原脚本逐项计算，寄存器压力较大，编译约 184 行，超过 128 行
+// 预算（原脚本用满 16 个寄存器 + 间接寄存器寻址）。保留为参考移植，
+// 不参与端口等价测试（见 knownUnsupported）。
+
+
+const b = 6.88
+const deg2rada = 0.0694117438141256949
+const deg2radab = 0.477552797441184780912
 
 func main() {
+    var r0 = 0
     var r2 = 0
-    var r3 = 0
-    var r4 = 0
-    var r5 = 0
-    var r6 = 0
-    var r7 = 0
-    var r8 = 0
-    var r9 = 0
-    var r10 = 0
-    label L0:
+    var r1 = 0
+    var x0 = 0
+    var y0 = 0
+    var z0 = 0
+    var x1 = 0
+    var y1 = 0
+    var z1 = 0
+    var x2 = 0
+    var y2 = 0
+    var z2 = 0
+    var h = 0
+    var v = 0
+    var e = 0
+    var d = 0
+    var tx = 0
+    var ty = 0
+    var tz = 0
+    var vv = 0
+
+    label wait:
     yield()
-    r0 := db.Setting
-    if r0 == 0 { goto L0 }
+    if db.Setting == 0 { goto wait }
+
     sp = 9
-    r1 := 2
-    label L5:
-    r13 := pop()
-    r12 := pop()
-    r11 := pop()
-    r11 = (r11 * deg2rad)
-    r0 = (r12 * 0.0694117438141256949)
-    r0 = sin(r0)
-    r0 = (r0 * 6.88)
-    r12 = (r12 - r0)
-    r12 = (r12 * deg2rad)
-    r0 = cos(r11)
-    t1 := sin(r12); setIreg(r1, t1)
-    t2 := (ireg(r1) * -1); setIreg(r1, t2)
-    t3 := (ireg(r1) * r0); setIreg(r1, t3)
-    r1 = (r1 + 1)
-    t4 := cos(r12); setIreg(r1, t4)
-    r1 = (r1 + 1)
-    r0 = sin(r11)
-    t5 := sin(r12); setIreg(r1, t5)
-    t6 := (ireg(r1) * r0); setIreg(r1, t6)
-    r1 = (r1 + 1)
-    r13 = (r13 * deg2rad)
-    r13 = cos(r13)
-    r0 = (sp + 2)
-    put(db, r0, r13)
-    if sp != 0 { goto L5 }
-    r0 = (r5 * r10)
-    r1 = (r7 * r8)
-    r0 = (r0 - r1)
-    r12 = (r3 * r0)
-    r0 = (r5 * r9)
-    r1 = (r6 * r8)
-    r0 = (r0 - r1)
-    r0 = (r4 * r0)
-    r12 = (r0 - r12)
-    r0 = (r6 * r10)
-    r1 = (r7 * r9)
-    r1 = (r0 - r1)
-    r0 = (r2 * r1)
-    r12 = (r12 + r0)
+
+    // 第 1 组
+    e = pop()
+    v = pop()
+    h = pop()
+    h = h * deg2rad
+    v = v - b * sin(v * deg2rada)
+    v = v * deg2rad
+    x0 = -sin(v) * cos(h)
+    y0 = cos(v)
+    z0 = sin(v) * sin(h)
+    put(db, 8, cos(e * deg2rad))
+
+    // 第 2 组
+    e = pop()
+    v = pop()
+    h = pop()
+    h = h * deg2rad
+    v = v - b * sin(v * deg2rada)
+    v = v * deg2rad
+    x1 = -sin(v) * cos(h)
+    y1 = cos(v)
+    z1 = sin(v) * sin(h)
+    put(db, 5, cos(e * deg2rad))
+
+    // 第 3 组
+    e = pop()
+    v = pop()
+    h = pop()
+    h = h * deg2rad
+    v = v - b * sin(v * deg2rada)
+    v = v * deg2rad
+    x2 = -sin(v) * cos(h)
+    y2 = cos(v)
+    z2 = sin(v) * sin(h)
+    put(db, 2, cos(e * deg2rad))
+
+    // 行列式 d = X0*(Y1*Z2-Z1*Y2) - Y0*(X1*Z2-Z1*X2) + Z0*(X1*Y2-Y1*X2)
+    r0 = x1 * z2
+    r1 = z1 * x2
+    r0 = r0 - r1
+    d = y0 * r0
+    r0 = x1 * y2
+    r1 = y1 * x2
+    r0 = r0 - r1
+    r0 = z0 * r0
+    d = r0 - d
+    r0 = y1 * z2
+    r1 = z1 * y2
+    r1 = r0 - r1
+    r0 = x0 * r1
+    d = d + r0
+
+    // 克拉默法则
     r0 = get(db, 8)
-    r13 = (r1 * r0)
-    r0 = (r3 * r10)
-    r1 = (r4 * r9)
-    r0 = (r0 - r1)
+    tx = r1 * r0
+    r0 = y0 * z2
+    r1 = z0 * y2
+    r0 = r0 - r1
     r1 = get(db, 5)
-    r0 = (r0 * r1)
-    r13 = (r13 - r0)
-    r0 = (r3 * r7)
-    r1 = (r4 * r6)
-    r0 = (r0 - r1)
+    r0 = r0 * r1
+    tx = tx - r0
+    r0 = y0 * z1
+    r1 = z0 * y1
+    r0 = r0 - r1
     r1 = get(db, 2)
-    r0 = (r0 * r1)
-    r13 = (r13 + r0)
-    r13 = (r13 / r12)
-    r0 = (r2 * r7)
-    r14 := (r4 * r5)
-    r14 = (r0 - r14)
-    r14 = (r14 * r1)
-    r0 = (r2 * r10)
-    r1 = (r4 * r8)
-    r0 = (r0 - r1)
+    r0 = r0 * r1
+    tx = tx + r0
+    tx = tx / d
+
+    r0 = x0 * z1
+    r1 = z0 * x1
+    ty = r0 - r1
+    ty = ty * get(db, 2)
+    r0 = x0 * z2
+    r1 = z0 * x2
+    r0 = r0 - r1
     r1 = get(db, 5)
-    r0 = (r0 * r1)
-    r14 = (r0 - r14)
-    r0 = (r5 * r10)
-    r1 = (r7 * r8)
-    r0 = (r0 - r1)
+    r0 = r0 * r1
+    ty = r0 - ty
+    r0 = x1 * z2
+    r1 = z1 * x2
+    r0 = r0 - r1
     r1 = get(db, 8)
-    r0 = (r0 * r1)
-    r14 = (r14 - r0)
-    r14 = (r14 / r12)
-    r0 = (r5 * r9)
-    r15 := (r6 * r8)
-    r0 = (r0 - r15)
-    r15 = (r0 * r1)
-    r0 = (r2 * r9)
-    r1 = (r3 * r8)
-    r0 = (r0 - r1)
+    r0 = r0 * r1
+    ty = ty - r0
+    ty = ty / d
+
+    r0 = x1 * y2
+    r1 = y1 * x2
+    tz = r0 - r1
+    tz = tz * get(db, 8)
+    r0 = x0 * y2
+    r1 = y0 * x2
+    r0 = r0 - r1
     r1 = get(db, 5)
-    r0 = (r0 * r1)
-    r15 = (r15 - r0)
-    r0 = (r2 * r6)
-    r1 = (r3 * r5)
-    r0 = (r0 - r1)
+    r0 = r0 * r1
+    tz = tz - r0
+    r0 = x0 * y1
+    r1 = y0 * x1
+    r0 = r0 - r1
     r1 = get(db, 2)
-    r0 = (r0 * r1)
-    r15 = (r15 + r0)
-    r15 = (r15 / r12)
-    r11 = (r13 * -1)
-    r11 = atan2(r15, r11)
-    r11 = (r11 * rad2deg)
-    r10 = (r13 * r13)
-    r0 = (r15 * r15)
-    r10 = (r10 + r0)
-    r10 = sqrt(r10)
-    r10 = atan2(r10, r14)
-    r10 = (r10 * rad2deg)
-    r12 = r10
-    r2 = 3
-    label L104:
-    r0 = (r12 * 0.0694117438141256949)
-    r0 = sin(r0)
-    r0 = (r0 * 6.88)
-    r0 = (r12 - r0)
-    r0 = (r0 - r10)
-    r1 = (r12 * 0.0694117438141256949)
-    r1 = cos(r1)
-    r1 = (r1 * 0.477552797441184780912)
-    r1 = (1 - r1)
-    r0 = (r0 / r1)
-    r12 = (r12 - r0)
-    r2 = (r2 - 1)
-    if r2 >= 0 { goto L104 }
-    put(db, 0, r11)
-    put(db, 1, r12)
+    r0 = r0 * r1
+    tz = tz + r0
+    tz = tz / d
+
+    // 转回 HV（V 为未校正值）
+    h = atan2(tz, tx * -1) * rad2deg
+    vv = atan2(sqrt(tx*tx + tz*tz), ty) * rad2deg
+
+    // 牛顿迭代反解垂直角校正：v -= (v - B*sin(v*deg2rada) - vv) / (1 - deg2radab*cos(v*deg2rada))
+    v = vv
+    r1 = 3
+    label invertVLoop:
+    r0 = v - b * sin(v * deg2rada)
+    r0 = r0 - vv
+    r2 = 1 - deg2radab * cos(v * deg2rada)
+    r0 = r0 / r2
+    v = v - r0
+    r1 = r1 - 1
+    if r1 >= 0 { goto invertVLoop }
+
+    put(db, 0, h)
+    put(db, 1, v)
     db.Setting = 0
-    goto L0
+    goto wait
 }

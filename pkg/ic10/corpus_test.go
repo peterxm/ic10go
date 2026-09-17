@@ -57,6 +57,14 @@ var knownUnsupported = map[string]string{
 	"traderSolverRAW": "decompile->recompile exceeds the 128-line chip budget",
 }
 
+// knownUnsupportedPorts lists hand-written ports that compile over the chip
+// budget, so the port-equivalence test cannot run them. Their original .ic10
+// still takes part in the round-trip/minify tests.
+var knownUnsupportedPorts = map[string]string{
+	"solverLarge":    "hand port compiles to 145 lines (over the 128-line budget)",
+	"solverLargeRAW": "hand port compiles to 145 lines (over the 128-line budget)",
+}
+
 // skipKnownUnsupported skips a corpus file listed in knownUnsupported.
 func skipKnownUnsupported(t *testing.T, path string) {
 	t.Helper()
@@ -68,6 +76,15 @@ func skipKnownUnsupported(t *testing.T, path string) {
 		if reason, ok := knownUnsupported[strings.TrimSuffix(base, ext)]; ok {
 			t.Skipf("known unsupported: %s", reason)
 		}
+	}
+}
+
+// skipKnownUnsupportedPort skips a hand port listed in knownUnsupportedPorts.
+func skipKnownUnsupportedPort(t *testing.T, path string) {
+	t.Helper()
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if reason, ok := knownUnsupportedPorts[base]; ok {
+		t.Skipf("known unsupported port: %s", reason)
 	}
 }
 

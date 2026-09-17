@@ -1,74 +1,93 @@
-// 大型自动交易：用中/大碟形天线扫描并锁定远距离交易者。
+// 大型自动交易：中碟形天线扫描，锁定信号后让大碟形天线对准并完成接触。
 //
 // 原脚本：Trading/autoTraderLarge/autoTraderLarge.ic10
-// 结构沿用原脚本的 label/goto。
+// 设备：d0 = 交易过滤旋钮、d1 = 中碟形天线、d2 = 大碟形天线。
+// 扫描公式：垂直角 = 45*sin((offset*45)%360 + 0.01745*水平角) + 45。
+
+const traderFilterDial = d0
+const medDish = d1
+const largeDish = d2
+
+const minTraderWatts = 200
 
 func main() {
-    var r7 = 0
+    var offset = 0
+    var h = 0
+    var v = 0
+    var idle = 0
+    var signal = 0
+    var minWatts = 0
+    var progress = 0
+
     label findContact:
-    d1.BestContactFilter = -1
-    d2.BestContactFilter = -1
-    d1.Setting = 1900
-    d1.Setting = 2000
-    d2.Setting = 2000
-    r1 := d1.Horizontal
-    r0 := (r1 + 7)
-    d1.Horizontal = r0
-    r1 = (r0 >= 360)
-    r7 = (r7 + r1)
-    r1 = (r1 * 45)
-    r1 = (r1 % 360)
-    r0 = (r0 * 0.01745)
-    r0 = (r0 + r1)
-    r0 = sin(r0)
-    r0 = (r0 * 45)
-    r0 = (r0 + 45)
-    d1.Vertical = r0
-    label L26:
-    r0 = d1.Idle
-    yield()
-    if r0 != 1 { goto L26 }
+    medDish.BestContactFilter = -1
+    largeDish.BestContactFilter = -1
+    medDish.Setting = 1900
+    medDish.Setting = 2000
+    largeDish.Setting = 2000
+
+    // 中碟形天线扫过天空
+    h = medDish.Horizontal + 7
+    medDish.Horizontal = h
+    v = h >= 360 ? 1 : 0
+    offset = offset + v
+    v = (v * 45) % 360
+    v = sin(h * 0.01745 + v) * 45 + 45
+    medDish.Vertical = v
+
+    for {
+        idle = medDish.Idle
+        yield()
+        if idle == 1 { break }
+    }
     sleep(1)
-    r1 = d0.Setting
-    r0 = d1.ContactTypeId
-    r1 = get(db, r1)
-    if r0 != r1 { goto findContact }
-    r0 = d1.InterrogationProgress
-    if r0 == 1 { goto findContact }
-    r0 = d1.SignalID
-    d2.BestContactFilter = r0
-    r0 = d1.Horizontal
-    d2.Horizontal = r0
-    r0 = d1.Vertical
-    d2.Vertical = r0
-    label L44:
-    r0 = d2.Idle
+
+    // 接触类型要匹配旋钮过滤器，且尚未接触过
+    if medDish.ContactTypeId != get(db, traderFilterDial.Setting) { goto findContact }
+    if medDish.InterrogationProgress == 1 { goto findContact }
+
+    // 把大碟形天线对准找到的信号
+    largeDish.BestContactFilter = medDish.SignalID
+    largeDish.Horizontal = medDish.Horizontal
+    largeDish.Vertical = medDish.Vertical
+
+    for {
+        idle = largeDish.Idle
+        yield()
+        if idle == 1 { break }
+    }
+    largeDish.Setting = 49999
     yield()
-    if r0 != 1 { goto L44 }
-    d2.Setting = 49999
-    yield()
-    d2.Setting = 50000
+    largeDish.Setting = 50000
     sleep(1)
-    label L51:
-    r0 = d2.SignalID
-    if r0 == -1 { goto findContact }
-    r0 = d2.MinimumWattsToContact
+
+    // 等待大碟形天线拿到信号与最低功率
+    if largeDish.SignalID == -1 { goto findContact }
+    for {
+        signal = largeDish.SignalID
+        if signal == -1 { goto findContact }
+        minWatts = largeDish.MinimumWattsToContact
+        yield()
+        if minWatts != -1 { break }
+    }
+    if minWatts < minTraderWatts { goto findContact }
+
+    // 功率已足够才接触，否则重新扫描
+    if largeDish.WattsReachingContact < largeDish.MinimumWattsToContact { goto findContact }
+
+    largeDish.Activate = 0
     yield()
-    if r0 == -1 { goto L51 }
-    if r0 < 200 { goto findContact }
-    r0 = d2.MinimumWattsToContact
-    r1 = d2.WattsReachingContact
-    if r1 < r0 { goto findContact }
-    d2.Activate = 0
+    largeDish.Activate = 1
     yield()
-    d2.Activate = 1
-    yield()
-    label L65:
-    r0 = d2.SignalID
-    yield()
-    if r0 == -1 { goto findContact }
-    r0 = d2.InterrogationProgress
-    yield()
-    if r0 != 1 { goto L65 }
+
+    // 等待接触完成
+    for {
+        signal = largeDish.SignalID
+        yield()
+        if signal == -1 { goto findContact }
+        progress = largeDish.InterrogationProgress
+        yield()
+        if progress == 1 { break }
+    }
     goto findContact
 }

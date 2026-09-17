@@ -1,97 +1,114 @@
-// Aimee 简易漫游测试脚本（往返于矿区与卸载点）。
+// Aimee 简易往返脚本（矿区 ↔ 卸载点），用于测试 roboroutine。
 //
 // 原脚本：AIMeE/useless/baseFriend.ic10
 // 设备：d0 = 机器人发射器、d1 = 召回拉杆。
+// 寄存器约定（沿用原脚本）：stuck、topOfStack、wayX、wayZ、error、r15 = ra。
+
+const robotXmitter = d0
+const recallLever = d1
 
 func main() {
-    var r2 = 0
-    var r6 = 0
-    d0.Mode = 0
+    var r0 = 0
+    var r1 = 0
+    var r7 = 0
+    var stuck = 0
+    var topOfStack = 0
+    var wayX = 0
+    var wayZ = 0
+    var error = 0
+    var r15 = 0
+
+    robotXmitter.Mode = 0
+
     label unload:
-    r3 := get(db, 511)
+    topOfStack = get(db, 511)
     call batteryWeatherCheckRecall
-    if r6 != 0 { goto L14 }
-    sp = 0
-    label L14:
+    if error == 0 { sp = 0 }
     goto goingToWork
+
     label goingHomeStart:
-    sp = (sp + 1)
-    label L18:
+    sp = sp + 1
+
+    label goingHomeLoop:
     call batteryWeatherCheckRecall
     if sp <= 1 { goto unload }
-    sp = (sp - 1)
-    r5 := peek()
-    sp = (sp - 1)
-    r4 := peek()
-    r0 := -1
-    r4 = (r4 + r0)
-    r5 = (r5 + r0)
-    d0.TargetX = r4
-    d0.TargetZ = r5
+    sp = sp - 1
+    wayZ = peek()
+    sp = sp - 1
+    wayX = peek()
+    wayX = wayX - 1 // 简单避障
+    wayZ = wayZ - 1
+    robotXmitter.TargetX = wayX
+    robotXmitter.TargetZ = wayZ
     call travel
-    goto L18
+    goto goingHomeLoop
+
     label goingToWork:
     call batteryWeatherCheckRecall
-    if r6 != 0 { goto goingHomeStart }
-    sp = (sp + 1)
-    r4 = peek()
-    sp = (sp + 1)
-    r5 = peek()
-    r0 = 1
-    r4 = (r4 + r0)
-    r5 = (r5 + r0)
-    d0.TargetX = r4
-    d0.TargetZ = r5
+    if error != 0 { goto goingHomeStart }
+    sp = sp + 1
+    wayX = peek()
+    sp = sp + 1
+    wayZ = peek()
+    wayX = wayX + 1
+    wayZ = wayZ + 1
+    robotXmitter.TargetX = wayX
+    robotXmitter.TargetZ = wayZ
     call travel
-    if sp >= r3 { goto unload }
+    if sp >= topOfStack { goto unload }
     goto goingToWork
+
+    // 移动并等待；stuck 计数超过 70 时用 pathfind 脱困。
     label travel:
-    d0.Mode = 2
-    r15 := ra
-    label L51:
-    r0 = d0.PositionY
-    d0.TargetY = r0
+    robotXmitter.Mode = 2
+    r15 = ra
+
+    label travelLoop:
+    r0 = robotXmitter.PositionY
+    robotXmitter.TargetY = r0
     call batteryWeatherCheckRecall
-    if r6 == 0 { goto L59 }
+    if error == 0 { goto L59 }
     if r15 < goingToWork { goto L59 }
     r15 = goingHomeStart
-    sp = (sp - 2)
-    d0.Mode = 0
+    sp = sp - 2
+    robotXmitter.Mode = 0
     label L59:
-    r0 = d0.VelocityMagnitude
-    r0 = (r0 < 0.2)
-    r2 = (r2 * r0)
-    r2 = (r2 + r0)
-    if r2 >= 70 { goto pathfind }
+    r0 = robotXmitter.VelocityMagnitude < 0.2
+    stuck = stuck * r0
+    stuck = stuck + r0
+    if stuck >= 70 { goto pathfind }
     yield()
-    r0 = d0.Mode
-    if r0 != 0 { goto L51 }
+    r0 = robotXmitter.Mode
+    if r0 != 0 { goto travelLoop }
     jump(r15)
+
     label pathfind:
-    d0.Mode = 5
+    robotXmitter.Mode = 5
     sleep(10)
-    d0.Mode = 2
-    r2 = 0
-    goto L51
+    robotXmitter.Mode = 2
+    stuck = 0
+    goto travelLoop
+
+    // 检查伤害/电量/召回/天气；返回 error 到 r6（error != 0 表示需回家）。
     label batteryWeatherCheckRecall:
     put(db, 507, sp)
     put(db, 506, ra)
-    put(db, 505, r2)
-    r0 = d0.slot[0].Damage
-    r1 := d0.slot[0].Charge
-    r1 = (r1 < 70000)
-    r6 = (r0 | r1)
-    if r6 != 0 { goto L91 }
-    r0 = d1.Setting
-    r6 = (r6 | r0)
+    put(db, 505, stuck)
+    r0 = robotXmitter.slot[0].Damage
+    r1 = robotXmitter.slot[0].Charge
+    r1 = r1 < 70000
+    error = r0 | r1
+    if error != 0 { goto L91 }
+    r0 = recallLever.Setting
+    error = error | r0
     if r0 == 0 { goto L91 }
     db.Setting = 0
-    r7 := 0
+    r7 = 0
     goto L92
     label L91:
-    db.Setting = r6
+    db.Setting = error
     label L92:
     r0 = batch.read(1997212478, "NextWeatherEventTime", "Sum")
-    r6 = (r6 | r0)
+    error = error | r0
     ret
 }
