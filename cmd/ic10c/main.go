@@ -167,6 +167,7 @@ func cmdBuild(args []string) int {
 	fast := false
 	relJump := false
 	dataAccessStack := false
+	spillStack := false
 	dataLayout := ""
 	dataOut := ""
 	chipName := ""
@@ -224,6 +225,19 @@ func cmdBuild(args []string) int {
 				}
 				i++
 			}
+		case "--spill":
+			if i+1 < len(args) {
+				switch args[i+1] {
+				case "db":
+					spillStack = false
+				case "stack":
+					spillStack = true
+				default:
+					fmt.Fprintln(os.Stderr, "ic10c: --spill must be db or stack")
+					return 2
+				}
+				i++
+			}
 		default:
 			files = append(files, args[i])
 		}
@@ -250,6 +264,7 @@ func cmdBuild(args []string) int {
 		Fast:            fast,
 		RelJump:         relJump,
 		DataAccessStack: dataAccessStack,
+		SpillStack:      spillStack,
 		DataLayout:      dataLayout,
 	}
 
@@ -598,6 +613,7 @@ func cmdStats(args []string) int {
 	dataLayout := ""
 	unsafe := false
 	autoTable := false
+	spillStack := false
 	var files []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -610,6 +626,16 @@ func cmdStats(args []string) int {
 			unsafe = true
 		case "--auto-table":
 			autoTable = true
+		case "--spill":
+			if i+1 < len(args) {
+				if args[i+1] == "stack" {
+					spillStack = true
+				} else if args[i+1] != "db" {
+					fmt.Fprintln(os.Stderr, "ic10c: --spill must be db or stack")
+					return 2
+				}
+				i++
+			}
 		default:
 			files = append(files, args[i])
 		}
@@ -618,7 +644,7 @@ func cmdStats(args []string) int {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "stats"))
 		return 2
 	}
-	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable}
+	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
@@ -692,6 +718,7 @@ func cmdSize(args []string) int {
 	dataLayout := ""
 	unsafe := false
 	autoTable := false
+	spillStack := false
 	var files []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -704,6 +731,16 @@ func cmdSize(args []string) int {
 			unsafe = true
 		case "--auto-table":
 			autoTable = true
+		case "--spill":
+			if i+1 < len(args) {
+				if args[i+1] == "stack" {
+					spillStack = true
+				} else if args[i+1] != "db" {
+					fmt.Fprintln(os.Stderr, "ic10c: --spill must be db or stack")
+					return 2
+				}
+				i++
+			}
 		default:
 			files = append(files, args[i])
 		}
@@ -712,7 +749,7 @@ func cmdSize(args []string) int {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "size"))
 		return 2
 	}
-	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable}
+	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)

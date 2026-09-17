@@ -130,6 +130,11 @@ var relJumpFlag = Flag{Long: "--rel-jump", Desc: text{
 	ZH: "生成相对跳转（jr / br*）而非绝对跳转（更小，需真机验证）",
 }}
 
+var spillFlag = Flag{Long: "--spill", Arg: "db|stack", Desc: text{
+	EN: "register spill storage: get/put db (default, 1 line per load) or peek/poke stack (5 lines, fallback)",
+	ZH: "寄存器溢出存放：get/put db（默认，每次加载 1 行）或 peek/poke 栈（5 行，回退）",
+}}
+
 // Commands is the ordered command table.
 var Commands = []Command{
 	{
@@ -184,6 +189,7 @@ var Commands = []Command{
 			jumpTableFlag,
 			fastFlag,
 			relJumpFlag,
+			spillFlag,
 			{Long: "--data-access", Arg: "get|stack", Desc: text{
 				EN: "read the data segment via get/put db (default, IC host) or poke/peek (device host)",
 				ZH: "数据段读写方式：get（默认，IC host）或 stack（poke/peek，兼容设备 host）",

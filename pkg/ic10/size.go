@@ -42,14 +42,18 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 		if fixedDataBase(opts) > 0 {
 			reserved = 0
 		}
-		colors, _, err := regalloc.AllocateReservedSpills(fn, NumRegs, reserved)
+		spillMode := regalloc.SpillDB
+		if opts.SpillStack {
+			spillMode = regalloc.SpillStack
+		}
+		colors, _, err := regalloc.AllocateReservedSpillsMode(fn, NumRegs, reserved, spillMode)
 		if err != nil {
 			return
 		}
 		if opt.MergeTailsColored(fn, colors) {
 			fn.BuildCFG()
 		}
-		_, rep, _ := codegen.GenerateReport(fn, colors)
+		_, rep, _ := codegen.GenerateReportWithOptions(fn, colors, codegen.Options{SpillDB: !opts.SpillStack})
 		if rep == nil {
 			return
 		}

@@ -23,18 +23,42 @@ func AllocateReserved(fn *ir.Function, k, reserved int) (map[*ir.Reg]int, error)
 	return colors, err
 }
 
+// SpillMode selects where a spilled value is kept.
+type SpillMode int
+
+const (
+	// SpillStack keeps spills in the IC stack, loaded with a save/restore of sp
+	// (5 lines per load) and reserving the top register as a scratch.
+	SpillStack SpillMode = iota
+	// SpillDB keeps spills in the IC housing stack, addressed directly with
+	// get/put db (1 line per load). It needs no scratch register, so all
+	// registers stay available to the allocator.
+	SpillDB
+)
+
 // AllocateReservedSpills is AllocateReserved and also returns the number of
 // stack slots used for spills (so the caller can check for data-segment
 // overlap in the fixed-middle layout).
 func AllocateReservedSpills(fn *ir.Function, k, reserved int) (map[*ir.Reg]int, int, error) {
+	return AllocateReservedSpillsMode(fn, k, reserved, SpillStack)
+}
+
+// AllocateReservedSpillsMode is AllocateReservedSpills with an explicit spill
+// mode.
+func AllocateReservedSpillsMode(fn *ir.Function, k, reserved int, mode SpillMode) (map[*ir.Reg]int, int, error) {
 	if colors, ok := tryColor(fn, k); ok {
 		return colors, 0, nil
 	}
-	// Spilling path: reserve one register for the spill-load scratch.
+	// The stack spill path reserves one register for the spill-load scratch;
+	// the db path addresses the housing directly and needs none.
+	avail := k
+	if mode == SpillStack {
+		avail = k - 1
+	}
 	top := 511 - reserved
 	sp := &spiller{fn: fn, slots: map[*ir.Reg]int{}, next: top}
 	for iter := 0; iter < 64; iter++ {
-		colors, spilled := tryColorPartial(fn, k-1)
+		colors, spilled := tryColorPartial(fn, avail)
 		if len(spilled) == 0 {
 			return colors, top - sp.next, nil
 		}

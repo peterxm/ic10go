@@ -59,6 +59,11 @@ type Options struct {
 	// the VM (relative to the jump's own line).
 	RelJump bool
 
+	// SpillStack keeps register spills in the IC stack with a peek/poke
+	// save-restore sequence (5 lines per load, reserves r15 as scratch). The
+	// default is false: spills use get/put db (1 line per load, no scratch).
+	SpillStack bool
+
 	// recordBus, when set, records every `Bus.slot` read/write (with its access
 	// point) while compiling, so CompileResult can check writers and wire a VM.
 	recordBus func(bus, slot, devConn string, write bool)
@@ -464,7 +469,11 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 	if fixedDataBase(opts) > 0 {
 		reserved = 0
 	}
-	colors, spillCount, err := regalloc.AllocateReservedSpills(fn, NumRegs, reserved)
+	spillMode := regalloc.SpillDB
+	if opts.SpillStack {
+		spillMode = regalloc.SpillStack
+	}
+	colors, spillCount, err := regalloc.AllocateReservedSpillsMode(fn, NumRegs, reserved, spillMode)
 	if err != nil {
 		return "", nil, err
 	}
@@ -478,7 +487,7 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 	if opt.MergeTailsColored(fn, colors) {
 		fn.BuildCFG()
 	}
-	code, err := codegen.GenerateWithOptions(fn, colors, codegen.Options{RelJump: opts.RelJump})
+	code, err := codegen.GenerateWithOptions(fn, colors, codegen.Options{RelJump: opts.RelJump, SpillDB: !opts.SpillStack})
 	return code, colors, err
 }
 

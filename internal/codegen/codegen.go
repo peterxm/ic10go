@@ -64,6 +64,10 @@ type Options struct {
 	// saving bytes. It requires the game's relative-jump base to match the VM
 	// (relative to the jump's own line).
 	RelJump bool
+	// SpillDB renders register spills as get/put db (one line per load) instead
+	// of the peek/poke sp save-restore sequence (five lines per load). It must
+	// match the spill mode used by the register allocator.
+	SpillDB bool
 }
 
 // Generate renders a function to IC10 code and validates the result against the
@@ -87,7 +91,7 @@ func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, e
 // layoutLines computes the codegen block order and the emitted lines before
 // branch targets are resolved to line numbers. It is shared by code generation
 // and by Layout (used for the control-flow graph).
-func layoutLines(fn *ir.Function, colors map[*ir.Reg]int) ([]*ir.Block, []line, map[*ir.Block]int) {
+func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.Block, []line, map[*ir.Block]int) {
 	blocks := rpo(fn)
 	// Move halt (Ret) blocks to the end of the layout. A Ret emits no line, so
 	// a jump to one that is followed by an outlined function body would resolve
@@ -114,6 +118,10 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int) ([]*ir.Block, []line, 
 		for _, ins := range b.Instrs {
 			if ls, ok := ins.(*ir.LoadSpill); ok {
 				dst := regName(ls.Dst, colors)
+				if spillDB {
+					add("get "+dst+" db "+strconv.Itoa(ls.Slot), nil, b.Func)
+					continue
+				}
 				add("move "+spillScratch+" sp", nil, b.Func)
 				add("move sp "+strconv.Itoa(ls.Slot), nil, b.Func)
 				add("add sp sp 1", nil, b.Func)
@@ -122,6 +130,10 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int) ([]*ir.Block, []line, 
 				continue
 			}
 			if ss, ok := ins.(*ir.StoreSpill); ok {
+				if spillDB {
+					add("put db "+strconv.Itoa(ss.Slot)+" "+valueText(ss.Src, colors), nil, b.Func)
+					continue
+				}
 				add("poke "+strconv.Itoa(ss.Slot)+" "+valueText(ss.Src, colors), nil, b.Func)
 				continue
 			}
@@ -233,13 +245,13 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int) ([]*ir.Block, []line, 
 
 // Layout returns the codegen block order and each block's 0-based start line.
 func Layout(fn *ir.Function, colors map[*ir.Reg]int) ([]*ir.Block, map[*ir.Block]int) {
-	blocks, _, start := layoutLines(fn, colors)
+	blocks, _, start := layoutLines(fn, colors, false)
 	return blocks, start
 }
 
 // GenerateReportWithOptions is GenerateReport with explicit options.
 func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Options) (string, *Report, error) {
-	blocks, lines, start := layoutLines(fn, colors)
+	blocks, lines, start := layoutLines(fn, colors, opts.SpillDB)
 
 	if err := checkCallLayout(blocks, lines, start); err != nil {
 		return "", nil, err

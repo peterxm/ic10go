@@ -9,7 +9,7 @@
 
 ## 特点
 
-- **寄存器复用**：活跃性分析 + 图着色（Chaitin-Briggs）+ 拷贝合并；寄存器不足时自动溢出到 IC10 栈。
+- **寄存器复用**：活跃性分析 + 图着色（Chaitin-Briggs）+ 拷贝合并；寄存器不足时自动溢出到宿主栈（`get/put db`，每次加载 1 行；`--spill stack` 回退为 `peek/poke`）。
 - **面向 128 行 / 4 KiB 约束**：不生成 `alias` / `define` / 注释 / 空行 / 标签，跳转默认用绝对行号（`--rel-jump` 可改相对跳转）。
 - **现代语法**：`:=`、`if/for/switch`、`for range`（含遍历 `data` 表）、`case lo..hi` 区间、`if/switch` 初始化语句、带标签的 `break/continue`、函数（编译期内联 / 外提，按体积决策）、设备属性 `d0.On`、槽位 `d0.slot[i].X`、设备栈 `d0.stack[i]`、批量 IO、通道、`sorter.*` / `printer.*` 栈指令构建器、`raw("...")` 逃生口。
 - **持久栈数据段**：`data` 表把大块常量 / 查表放进芯片持久栈，`switch ... table` 自动表化，突破 128 行预算。编译器还会把序言里的一次性设备写入（`Mode` / `On` / 常量 `Setting`，操作数全为常量）自动外提到一次性 loader：**超 128 行时**用来塞进预算，**程序本来就需要 loader（有 `data` 表）时**顺带复用、让 runtime 更小。
@@ -99,7 +99,7 @@ sh editors/vscode/install.sh   # 优先用 code CLI 安装 .vsix，回退到复�
 
 > 提示：IC10 里常见的「尾调用跳转」状态机（如 `gasHeaters` 循环后 `j greenhouseGasCheck`）在 `.icg` 中请改写为结构化循环，因为函数不支持递归（编译期展开 / 外提）。
 >
-> 寄存器压力超过 16 时，编译器会自动把多余的值**溢出到 IC10 栈**（固定高地址槽 + 暂存寄存器），而不是报错。未知 logic type 会给出**警告**（可用 `IC10C_NO_CHECK=1` 关闭）。
+> 寄存器压力超过 16 时，编译器会自动把多余的值**溢出到宿主栈**（默认 `get/put db`，每次加载 1 行；`--spill stack` 回退为固定高地址槽 + `peek/poke` 暂存寄存器），而不是报错。未知 logic type 会给出**警告**（可用 `IC10C_NO_CHECK=1` 关闭）。
 >
 > 反编译：`ic10c decompile` 会替换 `alias`/`define`、用 `:=` 声明首次写入的寄存器、用 `label`/`goto`/`call`/`ret` 表达控制流；配合寄存器拷贝合并，`ic10code/` 里的真实脚本都能反编译并在 128 行内重新编译（含最复杂的 Furnace，148→121 行）。加 `-s/--structured` 会基于后支配树还原 `if`/`else`/`for`；结构化失败时自动回退到 goto 形式。
 

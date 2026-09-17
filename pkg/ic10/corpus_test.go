@@ -60,10 +60,7 @@ var knownUnsupported = map[string]string{
 // knownUnsupportedPorts lists hand-written ports that compile over the chip
 // budget, so the port-equivalence test cannot run them. Their original .ic10
 // still takes part in the round-trip/minify tests.
-var knownUnsupportedPorts = map[string]string{
-	"solverLarge":    "hand port compiles to 145 lines (over the 128-line budget)",
-	"solverLargeRAW": "hand port compiles to 145 lines (over the 128-line budget)",
-}
+var knownUnsupportedPorts = map[string]string{}
 
 // skipKnownUnsupported skips a corpus file listed in knownUnsupported.
 func skipKnownUnsupported(t *testing.T, path string) {

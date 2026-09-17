@@ -821,3 +821,62 @@ func TestLabelAddressValue(t *testing.T) {
 		t.Errorf("d0.Setting = %v, want 2\n%s", got, code)
 	}
 }
+
+// TestSpillModes checks that the default db spill mode is shorter than the
+// stack fallback and leaves the devices in the same state.
+func TestSpillModes(t *testing.T) {
+	// 17 distinct live values force spilling.
+	src := "func main() {"
+	for i := 0; i < 17; i++ {
+		src += fmt.Sprintf(" x%d := d0.Temperature + %d", i, i)
+	}
+	src += " d0.Setting ="
+	for i := 0; i < 17; i++ {
+		if i > 0 {
+			src += " +"
+		}
+		src += fmt.Sprintf(" x%d", i)
+	}
+	src += " }\n"
+
+	dbCode, diags, err := ic10.CompileWithOptions("t.icg", []byte(src), ic10.Options{})
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("db compile: %v %v", diags.Diags, err)
+	}
+	stackCode, diags, err := ic10.CompileWithOptions("t.icg", []byte(src), ic10.Options{SpillStack: true})
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("stack compile: %v %v", diags.Diags, err)
+	}
+
+	if n, m := countLines(dbCode), countLines(stackCode); n >= m {
+		t.Errorf("db spills should be shorter: db=%d stack=%d", n, m)
+	}
+	if !strings.Contains(dbCode, " db ") {
+		t.Errorf("db spill mode did not emit get/put db:\n%s", dbCode)
+	}
+	if strings.Contains(dbCode, "peek") || strings.Contains(dbCode, "poke") {
+		t.Errorf("db spill mode still uses peek/poke:\n%s", dbCode)
+	}
+
+	runBoth := func(code string) *vm.Machine {
+		m := vm.New()
+		for i := 0; i < 6; i++ {
+			m.Set(fmt.Sprintf("d%d", i), "Temperature", float64(i+1))
+		}
+		if err := m.Load(code); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.Run(500); err != nil && err != vm.ErrStepLimit {
+			t.Fatalf("run: %v", err)
+		}
+		return m
+	}
+	a, b := runBoth(dbCode), runBoth(stackCode)
+	if a.Get("d0", "Setting") != b.Get("d0", "Setting") {
+		t.Errorf("db=%v stack=%v", a.Get("d0", "Setting"), b.Get("d0", "Setting"))
+	}
+	// x_i = 1 + i, sum(1..17) = 153.
+	if got := a.Get("d0", "Setting"); got != 153 {
+		t.Errorf("spilled sum = %v, want 153", got)
+	}
+}
