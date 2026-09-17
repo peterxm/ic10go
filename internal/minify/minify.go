@@ -44,7 +44,22 @@ type item struct {
 }
 
 // Minify rewrites IC10 source into an equivalent program with fewer lines.
+//
+// If inlining alias/define symbols pushes a line over the character limit, it
+// retries keeping the definitions, so the output is never invalid when a valid
+// (define-preserving) form exists.
 func Minify(src string, opt Options) (string, error) {
+	out, err := minify(src, opt)
+	if err != nil && !opt.KeepDefines {
+		opt.KeepDefines = true
+		if out2, err2 := minify(src, opt); err2 == nil {
+			return out2, nil
+		}
+	}
+	return out, err
+}
+
+func minify(src string, opt Options) (string, error) {
 	raw := strings.Split(src, "\n")
 	items, labels, defs := parse(raw)
 	if opt.KeepDefines {

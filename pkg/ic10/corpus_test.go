@@ -53,7 +53,6 @@ func requireIc10Code(t *testing.T) {
 var knownUnsupported = map[string]string{
 	"traderSolver":    "decompile->recompile exceeds the 128-line chip budget",
 	"traderSolverRAW": "decompile->recompile exceeds the 128-line chip budget",
-	"sorterSample":    "minify produces a line over the 90-character limit",
 }
 
 // knownUnsupportedPorts lists hand ports whose original cannot be run for the

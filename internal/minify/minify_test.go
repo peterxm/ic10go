@@ -71,3 +71,20 @@ func TestLongLineRejected(t *testing.T) {
 		t.Fatal("expected a line-length error")
 	}
 }
+
+func TestKeepsDefinesWhenInliningOverflows(t *testing.T) {
+	// Inlining X twice would exceed the line limit, so Minify keeps the define.
+	src := "define X HASH(\"ItemPureIceVolatiles\")\nor X X SorterInstruction.FilterPrefabHashNotEquals\n"
+	got, err := Minify(src, Options{})
+	if err != nil {
+		t.Fatalf("Minify: %v", err)
+	}
+	if !strings.Contains(got, "define X") {
+		t.Errorf("define was not kept to stay under the line limit:\n%s", got)
+	}
+	for _, ln := range strings.Split(strings.TrimRight(got, "\n"), "\n") {
+		if len(ln) > MaxLineLen {
+			t.Errorf("line over limit (%d): %q", len(ln), ln)
+		}
+	}
+}
