@@ -990,3 +990,33 @@ func TestSpillConvergence(t *testing.T) {
 		t.Fatalf("compile failed (allocator did not converge?): %v %v", diags.Diags, err)
 	}
 }
+
+// TestLicmDoesNotHoistIndirectRegs checks that a computation reading a physical
+// register indirectly is not hoisted out of a loop by licm (it is volatile).
+func TestLicmDoesNotHoistIndirectRegs(t *testing.T) {
+	src := `func main() {
+    reserveRegs(2, 2)
+    sp = 0
+    push(3)
+    push(7)
+    x := 0
+    label loop:
+    v := pop()
+    setIreg(2, v)
+    x = ireg(2) * 2
+    if sp != 0 { goto loop }
+    d0.Setting = x
+}`
+	code := mustCompile(t, src)
+	m := vm.New()
+	if err := m.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(200); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	// Iterations: r2=7 -> x=14, r2=3 -> x=6.
+	if got := m.Get("d0", "Setting"); got != 6 {
+		t.Errorf("d0.Setting = %v, want 6 (licm hoisted an indirect read?)\n%s", got, code)
+	}
+}

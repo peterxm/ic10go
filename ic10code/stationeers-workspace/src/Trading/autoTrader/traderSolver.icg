@@ -4,25 +4,26 @@
 // 相比 solverLarge 多了垂直角校正：V = V - 6.88*sin(V*deg2rada)，
 // 以及反向求解的牛顿迭代（invertVLoop）。
 //
-// 转换写成循环，每组的 X/Y/Z/E 依次写入宿主栈（4 个一组），克拉默法则
-// 内联读取；共享的 2x2 子行列式只算一次。
-//
-// 注意：本端口编译约 135 行，仍超过 128 行预算（原脚本把 9 个 XYZ 直接
-// 放在 r2..r10 并手工调度临时寄存器）。保留为参考移植，不参与端口等价
-// 测试（见 knownUnsupported）。行为已用等价测试核对过。
+// 用 reserveRegs(2,10) 把 r2..r10 留给 3 组 XYZ：转换写成循环用
+// setIreg 间接写入，克拉默法则用 ireg(常量) 直接当寄存器操作数，
+// 与原脚本一样零拷贝。
 
 const b = 6.88
 const deg2rada = 0.0694117438141256949
 const deg2radab = 0.477552797441184780912
 
 func main() {
+    reserveRegs(2, 10)
     var r0 = 0
     var r1 = 0
-    var i = 0
+    var ptr = 0
     var h = 0
     var v = 0
     var e = 0
     var d = 0
+    var a = 0
+    var bb = 0
+    var c = 0
     var tx = 0
     var ty = 0
     var tz = 0
@@ -33,9 +34,9 @@ func main() {
     yield()
     if db.Setting == 0 { goto wait }
 
-    // 3 组 HVE → X/Y/Z/E，写入宿主栈 100 起
+    // 把 3 组 HVE 转成 XYZ 写入 r2..r10，E 存宿主栈（地址 8/5/2）
     sp = 9
-    i = 100
+    ptr = 2
     label convert:
     e = pop()
     v = pop()
@@ -43,31 +44,28 @@ func main() {
     h = h * deg2rad
     v = v - b * sin(v * deg2rada)
     v = v * deg2rad
-    put(db, i, -sin(v) * cos(h))
-    i = i + 1
-    put(db, i, cos(v))
-    i = i + 1
-    put(db, i, sin(v) * sin(h))
-    i = i + 1
-    put(db, i, cos(e * deg2rad))
-    i = i + 1
+    setIreg(ptr, -sin(v) * cos(h))
+    ptr = ptr + 1
+    setIreg(ptr, cos(v))
+    ptr = ptr + 1
+    setIreg(ptr, sin(v) * sin(h))
+    ptr = ptr + 1
+    put(db, sp + 2, cos(e * deg2rad))
     if sp != 0 { goto convert }
 
-    // 克拉默法则（子行列式内联，避免长活跃；x0..z2 在 db 100/101/102、
-    // 104/105/106、108/109/110，E 在 103/107/111）
-    d = get(db, 100)*(get(db, 105)*get(db, 110)-get(db, 106)*get(db, 109)) -
-        get(db, 101)*(get(db, 104)*get(db, 110)-get(db, 106)*get(db, 108)) +
-        get(db, 102)*(get(db, 104)*get(db, 109)-get(db, 105)*get(db, 108))
+    // 2x2 子行列式（r2..r10 分别为 x0,y0,z0,x1,y1,z1,x2,y2,z2）
+    a = ireg(6) * ireg(10) - ireg(7) * ireg(9)   // Y1*Z2 - Z1*Y2
+    bb = ireg(5) * ireg(10) - ireg(7) * ireg(8)  // X1*Z2 - Z1*X2
+    c = ireg(5) * ireg(9) - ireg(6) * ireg(8)    // X1*Y2 - Y1*X2
+    d = ireg(2)*a - ireg(3)*bb + ireg(4)*c
 
-    tx = ((get(db, 105)*get(db, 110)-get(db, 106)*get(db, 109))*get(db, 103) -
-        (get(db, 101)*get(db, 110)-get(db, 102)*get(db, 109))*get(db, 107) +
-        (get(db, 101)*get(db, 106)-get(db, 102)*get(db, 105))*get(db, 111)) / d
-    ty = ((get(db, 100)*get(db, 110)-get(db, 102)*get(db, 108))*get(db, 107) -
-        (get(db, 104)*get(db, 110)-get(db, 106)*get(db, 108))*get(db, 103) -
-        (get(db, 100)*get(db, 106)-get(db, 102)*get(db, 104))*get(db, 111)) / d
-    tz = ((get(db, 104)*get(db, 109)-get(db, 105)*get(db, 108))*get(db, 103) -
-        (get(db, 100)*get(db, 109)-get(db, 101)*get(db, 108))*get(db, 107) +
-        (get(db, 100)*get(db, 105)-get(db, 101)*get(db, 104))*get(db, 111)) / d
+    // 克拉默法则
+    tx = (a*get(db, 8) - (ireg(3)*ireg(10)-ireg(4)*ireg(9))*get(db, 5) +
+        (ireg(3)*ireg(7)-ireg(4)*ireg(6))*get(db, 2)) / d
+    ty = ((ireg(2)*ireg(10)-ireg(4)*ireg(8))*get(db, 5) - bb*get(db, 8) -
+        (ireg(2)*ireg(7)-ireg(4)*ireg(5))*get(db, 2)) / d
+    tz = (c*get(db, 8) - (ireg(2)*ireg(9)-ireg(3)*ireg(8))*get(db, 5) +
+        (ireg(2)*ireg(6)-ireg(3)*ireg(5))*get(db, 2)) / d
 
     // 转回 HV（V 为未校正值）
     h = atan2(tz, tx * -1) * rad2deg

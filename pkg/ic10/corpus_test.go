@@ -47,9 +47,9 @@ func requireIc10Code(t *testing.T) {
 }
 
 // knownUnsupported documents corpus files that the round-trip and minify tests
-// intentionally skip. They are either invalid IC10 (the original would not
-// assemble in-game) or exceed the chip budget when recompiled from the
-// decompiler's output. Keys are file base names with or without extension.
+// intentionally skip: invalid IC10 (the original would not assemble in-game),
+// or a decompile->recompile that exceeds the 128-line budget. Keys are file
+// base names with or without extension.
 var knownUnsupported = map[string]string{
 	"oreSorter":       "source uses an undefined `hash` register (invalid IC10)",
 	"sorterSample":    "source uses an undefined `hash` register (invalid IC10)",
@@ -57,10 +57,14 @@ var knownUnsupported = map[string]string{
 	"traderSolverRAW": "decompile->recompile exceeds the 128-line chip budget",
 }
 
-// knownUnsupportedPorts lists hand-written ports that compile over the chip
-// budget, so the port-equivalence test cannot run them. Their original .ic10
-// still takes part in the round-trip/minify tests.
-var knownUnsupportedPorts = map[string]string{}
+// knownUnsupportedPorts lists hand ports whose original cannot be run for the
+// port-equivalence test (invalid IC10). A port that compiles over budget would
+// also go here; traderSolver's hand port fits, so it is only in
+// knownUnsupported (for the round-trip test).
+var knownUnsupportedPorts = map[string]string{
+	"oreSorter":    "source uses an undefined `hash` register (invalid IC10)",
+	"sorterSample": "source uses an undefined `hash` register (invalid IC10)",
+}
 
 // skipKnownUnsupported skips a corpus file listed in knownUnsupported.
 func skipKnownUnsupported(t *testing.T, path string) {

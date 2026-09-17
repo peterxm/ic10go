@@ -1556,9 +1556,33 @@ func definesLiveIn(i ir.Instr, liveIn map[*ir.Reg]bool) bool {
 }
 
 func hoistable(i ir.Instr) bool {
+	// A physical-register operand (ireg(const) lowered to "rN") is volatile:
+	// it can be changed by an indirect write anywhere in the loop, so never
+	// hoist an instruction that reads one.
+	if hasPhysRegOperand(i) {
+		return false
+	}
 	switch i.(type) {
 	case *ir.Assign, *ir.Bin, *ir.Un, *ir.Cmp, *ir.Select:
 		return true
+	}
+	return false
+}
+
+// hasPhysRegOperand reports whether an instruction reads a physical-register
+// raw operand.
+func hasPhysRegOperand(i ir.Instr) bool {
+	switch v := i.(type) {
+	case *ir.Assign:
+		return isPhysRegRaw(v.Src)
+	case *ir.Bin:
+		return isPhysRegRaw(v.A) || isPhysRegRaw(v.B)
+	case *ir.Un:
+		return isPhysRegRaw(v.A)
+	case *ir.Cmp:
+		return isPhysRegRaw(v.A) || isPhysRegRaw(v.B)
+	case *ir.Select:
+		return isPhysRegRaw(v.Cond) || isPhysRegRaw(v.Then) || isPhysRegRaw(v.Else)
 	}
 	return false
 }
