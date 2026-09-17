@@ -60,6 +60,12 @@ func (d *decompiler) assignDst(dstArg, expr string) string {
 }
 
 func (d *decompiler) translate(l icLine) []string {
+	// Reject instructions whose operand count does not match the native
+	// signature before any case indexes l.args, so a malformed line becomes a
+	// warning instead of a panic.
+	if n, ok := arity(l.op); ok && len(l.args) != n {
+		return d.malformed(l)
+	}
 	switch l.op {
 	case "move":
 		return []string{d.assignDst(l.args[0], d.a(l, 1))}
@@ -248,37 +254,74 @@ func (d *decompiler) targetLabel(l icLine, idx int) string {
 }
 
 func (d *decompiler) branchExpr(cond string, l icLine) (string, bool) {
+	argc := len(l.args)
 	if op, ok := branchCmpOps[cond]; ok {
-		if len(l.args) < 2 {
+		if argc < 2 {
 			return "", false
 		}
 		return fmt.Sprintf("%s %s %s", d.a(l, 0), op, d.a(l, 1)), true
 	}
 	if op, ok := branchUnCmpZero[cond]; ok {
+		if argc < 1 {
+			return "", false
+		}
 		return fmt.Sprintf("%s %s", d.a(l, 0), op), true
 	}
 	switch cond {
 	case "nan":
+		if argc < 1 {
+			return "", false
+		}
 		return "isNaN(" + d.a(l, 0) + ")", true
 	case "ap":
+		if argc < 3 {
+			return "", false
+		}
 		return fmt.Sprintf("approx(%s, %s, %s)", d.a(l, 0), d.a(l, 1), d.a(l, 2)), true
 	case "na":
+		if argc < 3 {
+			return "", false
+		}
 		return fmt.Sprintf("!approx(%s, %s, %s)", d.a(l, 0), d.a(l, 1), d.a(l, 2)), true
 	case "apz":
+		if argc < 2 {
+			return "", false
+		}
 		return fmt.Sprintf("approxZero(%s, %s)", d.a(l, 0), d.a(l, 1)), true
 	case "naz":
+		if argc < 2 {
+			return "", false
+		}
 		return fmt.Sprintf("!approxZero(%s, %s)", d.a(l, 0), d.a(l, 1)), true
 	case "dns":
+		if argc < 1 {
+			return "", false
+		}
 		return "isUnset(" + d.resolve(l.args[0]) + ")", true
 	case "dse":
+		if argc < 1 {
+			return "", false
+		}
 		return "isSet(" + d.resolve(l.args[0]) + ")", true
 	case "dnvl":
+		if argc < 2 {
+			return "", false
+		}
 		return fmt.Sprintf("!isLoadValid(%s, %q)", d.resolve(l.args[0]), l.args[1]), true
 	case "dvl":
+		if argc < 2 {
+			return "", false
+		}
 		return fmt.Sprintf("isLoadValid(%s, %q)", d.resolve(l.args[0]), l.args[1]), true
 	case "dnvs":
+		if argc < 2 {
+			return "", false
+		}
 		return fmt.Sprintf("!isStoreValid(%s, %q)", d.resolve(l.args[0]), l.args[1]), true
 	case "dvs":
+		if argc < 2 {
+			return "", false
+		}
 		return fmt.Sprintf("isStoreValid(%s, %q)", d.resolve(l.args[0]), l.args[1]), true
 	}
 	return "", false
@@ -358,6 +401,13 @@ func (d *decompiler) batchStore(l icLine) string {
 func (d *decompiler) unsupported(l icLine) []string {
 	d.warnings = append(d.warnings, Warning{Line: l.num, Text: l.raw})
 	return []string{"// unsupported: " + l.raw}
+}
+
+// malformed reports an instruction whose operand count does not match the
+// native signature; it is emitted as a comment rather than translated.
+func (d *decompiler) malformed(l icLine) []string {
+	d.warnings = append(d.warnings, Warning{Line: l.num, Text: l.raw})
+	return []string{"// malformed: " + l.raw}
 }
 
 func channelAccess(dev, logic string) (string, bool) {

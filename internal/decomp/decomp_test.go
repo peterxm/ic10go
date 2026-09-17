@@ -284,3 +284,38 @@ func TestDecompileReservedLabel(t *testing.T) {
 		t.Errorf("output missing sanitized label \"return_\":\n%s", code)
 	}
 }
+
+func TestDecompileMalformedDoesNotPanic(t *testing.T) {
+	// Instructions with too few operands must become warnings, not panics.
+	cases := []string{
+		"l r0 d0\n",        // missing logic type
+		"j\n",              // missing target
+		"bdns\n",           // missing target
+		"lb r0 7 Charge\n", // missing batch mode
+		"select r0 r1\n",   // missing operands
+		"sdse\n",           // missing device
+		"s d0\n",           // missing logic/value
+		"lr r0 d0 0\n",     // missing reagent key
+		"ls r0 d0\n",       // missing index/logic
+	}
+	for _, src := range cases {
+		for _, structured := range []bool{false, true} {
+			var (
+				code  string
+				warns []Warning
+				err   error
+			)
+			if structured {
+				code, warns, err = DecompileStructured(src)
+			} else {
+				code, warns, err = Decompile(src)
+			}
+			if err != nil {
+				t.Fatalf("decompile %q (structured=%v): %v", src, structured, err)
+			}
+			if len(warns) == 0 {
+				t.Errorf("expected a warning for %q (structured=%v):\n%s", src, structured, code)
+			}
+		}
+	}
+}

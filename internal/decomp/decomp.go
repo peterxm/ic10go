@@ -334,8 +334,10 @@ func (d *decompiler) readFirstRegisters(lines []icLine) []string {
 			}
 		}
 		if hasDest {
-			if r := d.resolve(l.args[0]); isDirectReg(r) {
-				written[r] = true
+			if len(l.args) > 0 {
+				if r := d.resolve(l.args[0]); isDirectReg(r) {
+					written[r] = true
+				}
 			}
 		}
 	}
