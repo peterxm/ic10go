@@ -13,7 +13,6 @@ import (
 	"ic10go/internal/cfg"
 	"ic10go/internal/cli"
 	"ic10go/internal/codegen"
-	"ic10go/internal/decomp"
 	"ic10go/internal/diag"
 	"ic10go/internal/disasm"
 	"ic10go/internal/flow"
@@ -994,25 +993,7 @@ func cmdDecompile(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	var code string
-	var warns []decomp.Warning
-	if structured {
-		code, warns, err = decomp.DecompileStructured(string(data))
-		if err == nil {
-			if _, diags, cerr := ic10.Compile(in, []byte(code)); diags.HasErrors() || cerr != nil {
-				reason := ""
-				if len(diags.Diags) > 0 {
-					reason = diags.Diags[0].String()
-				} else if cerr != nil {
-					reason = cerr.Error()
-				}
-				fmt.Fprintf(os.Stderr, "ic10c: structured decompilation is invalid (%s), falling back to goto form\n", reason)
-				code, warns, err = decomp.Decompile(string(data))
-			}
-		}
-	} else {
-		code, warns, err = decomp.Decompile(string(data))
-	}
+	code, warns, err := ic10.Decompile(in, data, structured)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1

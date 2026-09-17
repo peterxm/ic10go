@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"ic10go/internal/decomp"
@@ -209,4 +210,44 @@ func roundTripWith(t *testing.T, path string, setup func(*vm.Machine), dec func(
 	}
 
 	compareDevices(t, orig, decVM)
+}
+
+// TestDecompileStructuredFallback checks that ic10.Decompile falls back to the
+// flat form when the structured decompiler produces source that does not
+// compile (the CLI's policy).
+func TestDecompileStructuredFallback(t *testing.T) {
+	requireIc10Code(t)
+	files := corpusFiles(t, ".ic", ".ic10")
+	tested := 0
+	for _, path := range files {
+		base := filepath.Base(path)
+		if _, ok := knownUnsupported[base]; ok {
+			continue
+		}
+		if ext := filepath.Ext(base); ext != "" {
+			if _, ok := knownUnsupported[strings.TrimSuffix(base, ext)]; ok {
+				continue
+			}
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		st, _, _ := decomp.DecompileStructured(string(src))
+		if _, diags, cerr := ic10.Compile(path, []byte(st)); !diags.HasErrors() && cerr == nil {
+			continue // structured compiles; not a fallback case
+		}
+		code, _, err := ic10.Decompile(path, src, true)
+		if err != nil {
+			t.Fatalf("%s: fallback decompile: %v", base, err)
+		}
+		if _, diags, cerr := ic10.Compile(path, []byte(code)); diags.HasErrors() || cerr != nil {
+			t.Errorf("%s: fallback output does not compile: %v", base, cerr)
+		}
+		tested++
+	}
+	if tested == 0 {
+		t.Skip("no structured compile failures in the corpus")
+	}
+	t.Logf("checked %d structured fallbacks", tested)
 }

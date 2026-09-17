@@ -31,6 +31,7 @@ type structurer struct {
 	out           strings.Builder
 	indent        int
 	emittedLabels map[string]bool
+	visited       map[int]int
 
 	succ [][]int
 	pred [][]int
@@ -39,15 +40,43 @@ type structurer struct {
 	jalTargets map[int]bool
 }
 
-// structure rewrites the flat instruction list into structured .icg source.
+// structure rewrites the flat instruction list into structured .icg source. It
+// returns "" when the structuring cannot be trusted (every basic block must be
+// emitted exactly once); the caller then falls back to the flat form.
 func (d *decompiler) structure(lines []icLine) string {
-	st := &structurer{d: d, lineBlk: map[int]int{}, loops: map[int]*sLoop{}, indent: 1, emittedLabels: map[string]bool{}}
+	st := &structurer{d: d, lineBlk: map[int]int{}, loops: map[int]*sLoop{}, indent: 1, emittedLabels: map[string]bool{}, visited: map[int]int{}}
 	st.buildBlocks(lines)
 	st.buildCFG()
 	st.computePdom()
 	st.findLoops()
 	st.emitRegion(0, len(st.blocks), -1)
+	if !st.complete() {
+		return ""
+	}
 	return st.out.String()
+}
+
+// visit records that a basic block was emitted.
+func (s *structurer) visit(i int) {
+	if i >= 0 && i < len(s.blocks) {
+		s.visited[i]++
+	}
+}
+
+// complete reports whether every basic block was emitted exactly once.
+func (s *structurer) complete() bool {
+	if len(s.blocks) == 0 {
+		return true
+	}
+	if len(s.visited) != len(s.blocks) {
+		return false
+	}
+	for i := range s.blocks {
+		if s.visited[i] != 1 {
+			return false
+		}
+	}
+	return true
 }
 
 // buildCFG computes successors and predecessors for structuring.
@@ -57,7 +86,19 @@ func (s *structurer) buildCFG() {
 	s.pred = make([][]int, n)
 	s.jalTargets = map[int]bool{}
 	for _, b := range s.blocks {
-		if b.term != nil && b.term.op == "jal" {
+		if b.term == nil {
+			continue
+		}
+		// `jal` and the `-al` branch forms are calls: their target is a
+		// function entry, not a loop header (tail-call state machines look
+		// like loops but should stay as gotos).
+		if b.term.op == "jal" {
+			if t, ok := s.labelIndex(*b.term); ok {
+				s.jalTargets[t] = true
+			}
+			continue
+		}
+		if _, _, withRA, ok := ic10asm.BranchInfo(b.term.op); ok && withRA {
 			if t, ok := s.labelIndex(*b.term); ok {
 				s.jalTargets[t] = true
 			}
@@ -396,6 +437,7 @@ func (s *structurer) emitRegion(start, end, suppress int) {
 
 func (s *structurer) emitBlock(i, end, suppress int) int {
 	b := s.blocks[i]
+	s.visit(i)
 	s.emitLabels(b)
 	for _, ins := range b.insns {
 		for _, stmt := range s.d.translate(ins) {
@@ -529,6 +571,7 @@ func (s *structurer) emitLoop(lp *sLoop) {
 				if expr, ok := s.d.branchExpr(cond, *header.term); ok {
 					s.line(fmt.Sprintf("for %s {", expr))
 					s.indent++
+					s.visit(lp.header)
 					s.emitLabels(header)
 					s.emitRegion(lp.header+1, lp.end+1, -1)
 					s.indent--
@@ -549,9 +592,10 @@ func (s *structurer) emitLoop(lp *sLoop) {
 func (s *structurer) emitLoopBody(lp *sLoop) {
 	for i := lp.header; i <= lp.end; i++ {
 		b := s.blocks[i]
-		// The latch may jump back to the header: turn it into a break.
+		// A branch back to the loop header.
 		if b.term != nil {
 			if t, ok := s.labelIndex(*b.term); ok && t == lp.header {
+				s.visit(i)
 				s.emitLabels(b)
 				for _, ins := range b.insns {
 					for _, stmt := range s.d.translate(ins) {
@@ -559,10 +603,18 @@ func (s *structurer) emitLoopBody(lp *sLoop) {
 					}
 				}
 				if cond, _, _, ok := ic10asm.BranchInfo(b.term.op); ok {
-					if inv, ok := invertCond(cond); ok {
-						if expr, ok := s.d.branchExpr(inv, *b.term); ok {
-							s.line(fmt.Sprintf("if %s { break }", expr))
+					if i == lp.end {
+						// The latch's back edge is the loop's normal
+						// iteration; falling through exits the loop.
+						if inv, ok := invertCond(cond); ok {
+							if expr, ok := s.d.branchExpr(inv, *b.term); ok {
+								s.line(fmt.Sprintf("if %s { break }", expr))
+							}
 						}
+					} else if expr, ok := s.d.branchExpr(cond, *b.term); ok {
+						// An interior back edge: taken means skip to the next
+						// iteration.
+						s.line(fmt.Sprintf("if %s { continue }", expr))
 					}
 				}
 				continue
@@ -572,6 +624,7 @@ func (s *structurer) emitLoopBody(lp *sLoop) {
 		if b.term != nil {
 			if cond, _, _, ok := ic10asm.BranchInfo(b.term.op); ok {
 				if t, ok := s.labelIndex(*b.term); ok && t == lp.end+1 {
+					s.visit(i)
 					s.emitLabels(b)
 					for _, ins := range b.insns {
 						for _, stmt := range s.d.translate(ins) {

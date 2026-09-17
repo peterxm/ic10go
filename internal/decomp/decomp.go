@@ -149,7 +149,12 @@ func decompile(src string, structured bool) (string, []Warning, error) {
 		fmt.Fprintf(&b, "    var %s = 0\n", r)
 	}
 	if structured {
-		b.WriteString(d.structure(lines))
+		if code := d.structure(lines); code != "" {
+			b.WriteString(code)
+		} else {
+			// Structuring could not be trusted; fall back to the flat form.
+			d.flat(&b, lines)
+		}
 	} else {
 		d.flat(&b, lines)
 	}
