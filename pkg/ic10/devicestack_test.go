@@ -289,3 +289,42 @@ func TestIndirectReagent(t *testing.T) {
 		t.Errorf("d0.Setting = %v, want 7", got)
 	}
 }
+
+// TestDeviceQueryByID checks that isSet/isUnset/rmap accept a register holding
+// a ReferenceId (IC10 `sdse`/`sdns`/`rmap r?`), matching the game's device
+// operand model.
+func TestDeviceQueryByID(t *testing.T) {
+	src := `func main() {
+    var id = 0.0
+    id = d5.Setting
+    d0.Setting = isSet(id)
+    d1.Setting = isUnset(id)
+    d2.Setting = rmap(id, 9)
+}`
+	code := mustCompile(t, src)
+	for _, want := range []string{"sdse", "sdns", "rmap"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("expected %s in:\n%s", want, code)
+		}
+	}
+	m := vm.New()
+	m.Set("d5", "Setting", 1)
+	m.Device("d1").Set = true
+	m.Device("d1").Values["ReferenceId"] = 1
+	m.Reagents[9] = 42
+	if err := m.Load(code); err != nil {
+		t.Fatalf("vm load: %v", err)
+	}
+	if err := m.Run(50); err != nil && err != vm.ErrStepLimit {
+		t.Fatalf("vm run: %v", err)
+	}
+	if got := m.Get("d0", "Setting"); got != 1 {
+		t.Errorf("d0.Setting = %v, want 1 (isSet)", got)
+	}
+	if got := m.Get("d1", "Setting"); got != 0 {
+		t.Errorf("d1.Setting = %v, want 0 (isUnset)", got)
+	}
+	if got := m.Get("d2", "Setting"); got != 42 {
+		t.Errorf("d2.Setting = %v, want 42 (rmap)", got)
+	}
+}

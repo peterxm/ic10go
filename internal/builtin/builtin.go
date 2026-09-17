@@ -603,6 +603,8 @@ func init() {
 
 	// Device reagent read (first argument is a device): lr r? device mode key.
 	add("readReagent", 3, true, "lr")
+	// readReagentById(reg, mode, key): lr r? rN mode key (device by ReferenceId).
+	add("readReagentById", 3, true, "lr")
 
 	// Bitwise and approximate comparison forms that IC10 has but Go-like
 	// operators do not express in a single instruction.

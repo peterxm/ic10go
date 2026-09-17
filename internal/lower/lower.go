@@ -1816,6 +1816,17 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		}
 	}
 
+	// readReagentById(reg, mode, key) reads a reagent from a device addressed by
+	// a ReferenceId (IC10 "lr r? rN mode key").
+	if id.Name == "readReagentById" && len(call.Args) == 3 {
+		devID := l.lowerExpr(call.Args[0])
+		mode := l.lowerExpr(call.Args[1])
+		key := l.lowerExpr(call.Args[2])
+		r := l.b.NewReg("readreagent")
+		l.b.Emit(&ir.LoadDyn{Dst: r, DevID: devID, Logic: mode, Reagent: key})
+		return r
+	}
+
 	// readDevSlot(reg, index, slt) / writeDevSlot(reg, index, slt, v) select the
 	// device port from a register for slot access (IC10 "ls r? drN i slt" /
 	// "ss drN i slt r?").
@@ -1927,10 +1938,11 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 					args[i] = &ir.Device{Name: d}
 					continue
 				}
-				// The game's get/put take a full device operand (d?|r?|id),
-				// so a register or a device id is allowed here too. Other
-				// device builtins still require a dN/db port.
-				if id.Name == "get" || id.Name == "put" {
+				// The game's device operand is `d?|r?|id`, so a register or a
+				// device id is allowed for the builtins that take a full
+				// device operand (get/put and the device queries below).
+				switch id.Name {
+				case "get", "put", "isSet", "isUnset", "rmap", "clr":
 					args[i] = l.lowerExpr(a)
 					continue
 				}

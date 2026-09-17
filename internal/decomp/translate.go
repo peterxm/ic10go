@@ -66,6 +66,9 @@ func (d *decompiler) translate(l icLine) []string {
 	if n, ok := arity(l.op); ok && len(l.args) != n {
 		return d.malformed(l)
 	}
+	if !d.validOperands(l) {
+		return d.invalid(l)
+	}
 	switch l.op {
 	case "move":
 		return []string{d.assignDst(l.args[0], d.a(l, 1))}
@@ -80,6 +83,10 @@ func (d *decompiler) translate(l icLine) []string {
 	case "lr":
 		if reg, ok := d.deviceRegArg(l.args[1]); ok {
 			return []string{d.assignDst(l.args[0], fmt.Sprintf("readReagent(%s, %s, %s)",
+				reg, reagentMode(l.args[2]), d.a(l, 3)))}
+		}
+		if reg, ok := d.deviceIDArg(l.args[1]); ok {
+			return []string{d.assignDst(l.args[0], fmt.Sprintf("readReagentById(%s, %s, %s)",
 				reg, reagentMode(l.args[2]), d.a(l, 3)))}
 		}
 		return []string{d.assignDst(l.args[0], fmt.Sprintf("readReagent(%s, %s, %s)",
@@ -100,11 +107,19 @@ func (d *decompiler) translate(l icLine) []string {
 		if reg, ok := d.deviceRegArg(l.args[1]); ok {
 			return []string{d.assignDst(l.args[0], fmt.Sprintf("readDevSlot(%s, %s, %s)", reg, d.a(l, 2), l.args[3]))}
 		}
+		if _, ok := d.deviceIDArg(l.args[1]); ok {
+			// `ls r? i slt` (slot by ReferenceId) has no .icg form yet.
+			return d.unsupported(l)
+		}
 		dst := d.assignDst(l.args[0], fmt.Sprintf("%s.slot[%s].%s", d.resolve(l.args[1]), d.a(l, 2), l.args[3]))
 		return []string{dst}
 	case "ss":
 		if reg, ok := d.deviceRegArg(l.args[0]); ok {
 			return []string{fmt.Sprintf("writeDevSlot(%s, %s, %s, %s)", reg, d.a(l, 1), l.args[2], d.a(l, 3))}
+		}
+		if _, ok := d.deviceIDArg(l.args[0]); ok {
+			// `ss r? i slt r?` (slot by ReferenceId) has no .icg form yet.
+			return d.unsupported(l)
 		}
 		return []string{fmt.Sprintf("%s.slot[%s].%s = %s", d.resolve(l.args[0]), d.a(l, 1), l.args[2], d.a(l, 3))}
 	case "lb", "lbn", "lbs", "lbns":
@@ -126,11 +141,23 @@ func (d *decompiler) translate(l icLine) []string {
 	case "poke":
 		return []string{fmt.Sprintf("poke(%s, %s)", d.a(l, 0), d.a(l, 1))}
 	case "sdse":
-		return []string{d.assignDst(l.args[0], "isSet("+d.resolve(l.args[1])+")")}
+		dev, ok := d.deviceArgExpr(l.args[1])
+		if !ok {
+			return d.unsupported(l)
+		}
+		return []string{d.assignDst(l.args[0], "isSet("+dev+")")}
 	case "sdns":
-		return []string{d.assignDst(l.args[0], "isUnset("+d.resolve(l.args[1])+")")}
+		dev, ok := d.deviceArgExpr(l.args[1])
+		if !ok {
+			return d.unsupported(l)
+		}
+		return []string{d.assignDst(l.args[0], "isUnset("+dev+")")}
 	case "rmap":
-		return []string{d.assignDst(l.args[0], fmt.Sprintf("rmap(%s, %s)", d.resolve(l.args[1]), d.a(l, 2)))}
+		dev, ok := d.deviceArgExpr(l.args[1])
+		if !ok {
+			return d.unsupported(l)
+		}
+		return []string{d.assignDst(l.args[0], fmt.Sprintf("rmap(%s, %s)", dev, d.a(l, 2)))}
 	case "get":
 		if isPortOperand(d.resolve(l.args[1])) {
 			return []string{d.assignDst(l.args[0], fmt.Sprintf("get(%s, %s)", d.resolve(l.args[1]), d.a(l, 2)))}
@@ -146,7 +173,11 @@ func (d *decompiler) translate(l icLine) []string {
 	case "putd":
 		return []string{fmt.Sprintf("putd(%s, %s, %s)", d.a(l, 0), d.a(l, 1), d.a(l, 2))}
 	case "clr":
-		return []string{"clr(" + d.resolve(l.args[0]) + ")"}
+		dev, ok := d.deviceArgExpr(l.args[0])
+		if !ok {
+			return d.unsupported(l)
+		}
+		return []string{"clr(" + dev + ")"}
 	case "clrd":
 		return []string{"clrById(" + d.a(l, 0) + ")"}
 	case "select":
@@ -192,14 +223,26 @@ func (d *decompiler) translate(l icLine) []string {
 		if d.resolve(l.args[0]) == "ra" {
 			return []string{"ret"}
 		}
+		if !d.jumpTargetOK(l) {
+			return d.unsupported(l)
+		}
 		return []string{d.jumpStatement(l, 0, false)}
 	case "jal":
+		if !d.jumpTargetOK(l) {
+			return d.unsupported(l)
+		}
 		return []string{d.jumpStatement(l, 0, true)}
 	case "jr":
+		if !d.jumpTargetOK(l) {
+			return d.unsupported(l)
+		}
 		return []string{d.jumpStatement(l, 0, false)}
 	}
 
 	if cond, _, withRA, ok := ic10asm.BranchInfo(l.op); ok {
+		if !d.jumpTargetOK(l) {
+			return d.unsupported(l)
+		}
 		expr, ok := d.branchExpr(cond, l)
 		if !ok {
 			return d.unsupported(l)
@@ -254,6 +297,9 @@ func (d *decompiler) targetLabel(l icLine, idx int) string {
 }
 
 func (d *decompiler) branchExpr(cond string, l icLine) (string, bool) {
+	if !d.validOperands(l) {
+		return "", false
+	}
 	argc := len(l.args)
 	if op, ok := branchCmpOps[cond]; ok {
 		if argc < 2 {
@@ -297,12 +343,20 @@ func (d *decompiler) branchExpr(cond string, l icLine) (string, bool) {
 		if argc < 1 {
 			return "", false
 		}
-		return "isUnset(" + d.resolve(l.args[0]) + ")", true
+		dev, ok := d.deviceArgExpr(l.args[0])
+		if !ok {
+			return "", false
+		}
+		return "isUnset(" + dev + ")", true
 	case "dse":
 		if argc < 1 {
 			return "", false
 		}
-		return "isSet(" + d.resolve(l.args[0]) + ")", true
+		dev, ok := d.deviceArgExpr(l.args[0])
+		if !ok {
+			return "", false
+		}
+		return "isSet(" + dev + ")", true
 	case "dnvl":
 		if argc < 2 {
 			return "", false
@@ -348,6 +402,31 @@ func (d *decompiler) deviceRegArg(devArg string) (string, bool) {
 	return "", false
 }
 
+// deviceIDArg recognises an IC10 device operand that is a register holding a
+// ReferenceId (rN / rrN, i.e. not a d?/db port or a drN port register) and
+// returns the .icg expression for that register.
+func (d *decompiler) deviceIDArg(devArg string) (string, bool) {
+	dev := d.resolve(devArg)
+	if isReg(dev) || isIndirect(dev) {
+		return d.operand(dev), true
+	}
+	return "", false
+}
+
+// deviceArgExpr renders a device operand for builtins whose device operand is
+// `d?|r?|id` (isSet/isUnset/rmap/clr): a d?/db/named device is returned as-is,
+// an id register becomes the register expression. A port register (drN) has no
+// .icg form for these builtins, so it reports false.
+func (d *decompiler) deviceArgExpr(devArg string) (string, bool) {
+	if _, ok := d.deviceRegArg(devArg); ok {
+		return "", false
+	}
+	if reg, ok := d.deviceIDArg(devArg); ok {
+		return reg, true
+	}
+	return d.resolve(devArg), true
+}
+
 func (d *decompiler) deviceRead(devArg, logic string) string {
 	dev := d.resolve(devArg)
 	if ch, ok := channelAccess(dev, logic); ok {
@@ -355,6 +434,9 @@ func (d *decompiler) deviceRead(devArg, logic string) string {
 	}
 	if reg, ok := d.deviceRegArg(devArg); ok {
 		return fmt.Sprintf("readDev(%s, LogicType.%s)", reg, logic)
+	}
+	if reg, ok := d.deviceIDArg(devArg); ok {
+		return fmt.Sprintf("readById(%s, LogicType.%s)", reg, logic)
 	}
 	return dev + "." + logic
 }
@@ -366,6 +448,9 @@ func (d *decompiler) deviceWrite(devArg, logic, val string) string {
 	}
 	if reg, ok := d.deviceRegArg(devArg); ok {
 		return fmt.Sprintf("writeDev(%s, LogicType.%s, %s)", reg, logic, val)
+	}
+	if reg, ok := d.deviceIDArg(devArg); ok {
+		return fmt.Sprintf("writeById(%s, LogicType.%s, %s)", reg, logic, val)
 	}
 	return dev + "." + logic + " = " + val
 }
@@ -408,6 +493,13 @@ func (d *decompiler) unsupported(l icLine) []string {
 func (d *decompiler) malformed(l icLine) []string {
 	d.warnings = append(d.warnings, Warning{Line: l.num, Text: l.raw})
 	return []string{"// malformed: " + l.raw}
+}
+
+// invalid reports an instruction with an operand the compiler cannot express
+// (an undefined device name, reagent, register, etc.), emitted as a comment.
+func (d *decompiler) invalid(l icLine) []string {
+	d.warnings = append(d.warnings, Warning{Line: l.num, Text: l.raw})
+	return []string{"// unsupported: " + l.raw}
 }
 
 func channelAccess(dev, logic string) (string, bool) {

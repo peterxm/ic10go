@@ -205,10 +205,23 @@ func (m *Machine) Device(name string) *Device {
 	return d
 }
 
-// dev resolves a device operand, which may be a plain port name or an IC10
-// device register such as dr15 ("d" followed by a register holding the port
-// index).
-func (m *Machine) dev(s string) *Device { return m.Device(m.devName(s)) }
+// dev resolves an IC10 DEVICE operand: a port (d0..d5/db), a port register
+// (drN), a device-id register (rN/rrN), a numeric id, or — for the VM's
+// leniency — a named device. Resolving id registers here keeps `l r?`/`s r?`
+// consistent with `ld`/`sd` (IC10's DEVICE is `d?|r?|id`).
+func (m *Machine) dev(s string) *Device {
+	if s == "db" || (len(s) == 2 && s[0] == 'd' && s[1] >= '0' && s[1] <= '5') {
+		return m.Device(s)
+	}
+	if len(s) >= 3 && s[0] == 'd' && s[1] == 'r' {
+		return m.Device(m.devName(s))
+	}
+	if _, err := m.num(s); err == nil {
+		d, _ := m.deviceByID(mustNum(m, s))
+		return d
+	}
+	return m.Device(s)
+}
 
 // deviceArg resolves a get/put device operand: a port (d0..d5/db) or device
 // register (drN) selects the port, otherwise the operand is a device id.
@@ -873,7 +886,7 @@ func (m *Machine) execOp(ins *Instr) error {
 		v := mustNum(m, a[2])
 		d.Values[logic] = v
 		if m.OnWrite != nil {
-			m.OnWrite(m.devName(a[0]), logic, v)
+			m.OnWrite(d.Name, logic, v)
 		}
 		return nil
 	case "ls":

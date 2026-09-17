@@ -285,6 +285,98 @@ func TestDecompileReservedLabel(t *testing.T) {
 	}
 }
 
+func TestDecompileDeviceIDRegister(t *testing.T) {
+	// A register device operand (`r?` holding a ReferenceId) maps to the
+	// by-id builtins, not to member access on a variable.
+	src := `l r0 r1 Temperature
+s r2 Open 1
+sdns r0 r3
+clr r4
+rmap r5 r3 7
+lr r6 r7 0 5
+`
+	code, warns, err := Decompile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	for _, want := range []string{
+		"readById(r1, LogicType.Temperature)",
+		"writeById(r2, LogicType.Open, 1)",
+		"isUnset(r3)",
+		"clr(r4)",
+		"rmap(r3, 7)",
+		"readReagentById(r7, ReagentMode.Contents, 5)",
+	} {
+		if !strings.Contains(code, want) {
+			t.Errorf("output missing %q:\n%s", want, code)
+		}
+	}
+}
+
+func TestDecompileInvalidOperand(t *testing.T) {
+	// Operands the compiler cannot express (undefined device names, reagents,
+	// out-of-range registers, illegal tokens) become warnings, not invalid .icg.
+	cases := []string{
+		"s areaLight On r4\n",       // undefined device name
+		"lr r0 dr9 Contents Iron\n", // undefined reagent hash
+		"move r0 start\n",           // undefined value
+		"move r17 1\n",              // register out of range
+		"sb <CTRLICH> Setting r0\n", // illegal token
+	}
+	for _, src := range cases {
+		code, warns, err := Decompile(src)
+		if err != nil {
+			t.Fatalf("decompile %q: %v", src, err)
+		}
+		if len(warns) == 0 {
+			t.Errorf("expected a warning for %q:\n%s", src, code)
+		}
+		if !strings.Contains(code, "// unsupported:") {
+			t.Errorf("expected the instruction to be commented out for %q:\n%s", src, code)
+		}
+	}
+}
+
+func TestDecompileRadixAndBadTargets(t *testing.T) {
+	// IC10 $hex / %bin become .icg 0x / 0b.
+	code, warns, err := Decompile("move r0 $1F\nmove r1 %1010\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	for _, want := range []string{"0x1F", "0b1010"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("output missing %q:\n%s", want, code)
+		}
+	}
+
+	// An undefined label target becomes a warning, not an invalid goto.
+	code, warns, err = Decompile("j nowhere\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) == 0 || !strings.Contains(code, "// unsupported:") {
+		t.Errorf("undefined target should be unsupported:\n%s", code)
+	}
+
+	// An out-of-range numeric target halts (end label + jump(9999)).
+	code, warns, err = Decompile("beqz r0 99\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	if !strings.Contains(code, "label L99:") || !strings.Contains(code, "jump(9999)") {
+		t.Errorf("out-of-range target should halt:\n%s", code)
+	}
+}
+
 func TestDecompileMalformedDoesNotPanic(t *testing.T) {
 	// Instructions with too few operands must become warnings, not panics.
 	cases := []string{

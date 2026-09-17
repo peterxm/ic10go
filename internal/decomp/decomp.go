@@ -39,6 +39,7 @@ type decompiler struct {
 	endLabels  []string
 	declared   map[string]bool
 	usedLabels map[string]bool
+	lineCount  int
 	tmpN       int
 	warnings   []Warning
 }
@@ -66,6 +67,7 @@ func decompile(src string, structured bool) (string, []Warning, error) {
 	}
 
 	raw := strings.Split(src, "\n")
+	d.lineCount = len(raw)
 	var lines []icLine
 	for i, l := range raw {
 		text := strings.TrimSpace(ic10asm.StripComment(l))
@@ -112,16 +114,25 @@ func decompile(src string, structured bool) (string, []Warning, error) {
 			continue
 		}
 		name := d.cleanLabel(fmt.Sprintf("L%d", t))
+		// A target outside the program (negative, or past the last line) has no
+		// instruction to land on: it halts, so give it an end label.
+		if t < 0 || (d.lineCount > 0 && t >= d.lineCount) {
+			d.labelAt[t] = name
+			d.endLabels = append(d.endLabels, name)
+			continue
+		}
 		if next, ok := d.nextLine(lines, t); ok && next == t {
 			d.labelAt[t] = name
 			continue
 		} else if ok {
 			// The target does not land on an emitted instruction (a directive
 			// or blank line): attach the label to the next instruction.
+			d.labelAt[t] = name
 			d.labelsAt[next] = append(d.labelsAt[next], name)
 			continue
 		}
 		// Past the last instruction: a jump here ends the program.
+		d.labelAt[t] = name
 		d.endLabels = append(d.endLabels, name)
 	}
 
@@ -195,9 +206,16 @@ func (d *decompiler) operand(s string) string {
 	return normalizeCall(normalizeNumber(s))
 }
 
-// normalizeNumber rewrites IC10 float literals that .icg's lexer rejects:
-// leading-dot (.85) and trailing-dot (1.) forms.
+// normalizeNumber rewrites IC10 literals that .icg's lexer rejects: leading-dot
+// (.85) and trailing-dot (1.) forms, and the native $hex / %bin prefixes
+// (which .icg spells 0x / 0b).
 func normalizeNumber(s string) string {
+	if strings.HasPrefix(s, "$") {
+		return "0x" + s[1:]
+	}
+	if strings.HasPrefix(s, "%") {
+		return "0b" + s[1:]
+	}
 	i := 0
 	if i < len(s) && (s[i] == '+' || s[i] == '-') {
 		i++
@@ -319,6 +337,11 @@ func (d *decompiler) readFirstRegisters(lines []icLine) []string {
 	readFirst := map[string]bool{}
 	for _, l := range lines {
 		if l.op == "" {
+			continue
+		}
+		// Instructions that will be emitted as a comment neither read nor
+		// write their registers, so they must not suppress a declaration.
+		if d.dropped(l) {
 			continue
 		}
 		hasDest := destOps[l.op]

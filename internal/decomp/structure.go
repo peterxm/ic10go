@@ -475,13 +475,17 @@ func (s *structurer) emitIf(i, t, end int, term icLine, cond string) int {
 	if invOK {
 		invExpr, invOK = s.d.branchExpr(inv, term)
 	}
-	fallback := func() int {
-		if exprOK {
-			s.line(fmt.Sprintf("if %s { goto %s }", expr, s.target(term)))
-		}
+	if !exprOK {
+		// The branch condition could not be expressed; fall back to the flat
+		// translation (which reports it as unsupported) rather than dropping it.
+		s.emitTranslated(term)
 		return i + 1
 	}
-	if !exprOK || !invOK {
+	fallback := func() int {
+		s.line(fmt.Sprintf("if %s { goto %s }", expr, s.target(term)))
+		return i + 1
+	}
+	if !invOK {
 		return fallback()
 	}
 

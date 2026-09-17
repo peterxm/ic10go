@@ -29,16 +29,17 @@ var semantics = map[string]Sem{
 	"poke": {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: -1},
 
 	// Device stack / pin.
-	"isSet":       {ReadsDev: true, DeviceArg: 0},
-	"isUnset":     {ReadsDev: true, DeviceArg: 0},
-	"rmap":        {ReadsDev: true, DeviceArg: 0},
-	"get":         {ReadsDev: true, DeviceArg: 0},
-	"put":         {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: 0},
-	"clr":         {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: 0},
-	"clrById":     {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: -1},
-	"getd":        {ReadsDev: true, DeviceArg: -1},
-	"putd":        {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: -1},
-	"readReagent": {ReadsDev: true, DeviceArg: 0},
+	"isSet":           {ReadsDev: true, DeviceArg: 0},
+	"isUnset":         {ReadsDev: true, DeviceArg: 0},
+	"rmap":            {ReadsDev: true, DeviceArg: 0},
+	"get":             {ReadsDev: true, DeviceArg: 0},
+	"put":             {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: 0},
+	"clr":             {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: 0},
+	"clrById":         {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: -1},
+	"getd":            {ReadsDev: true, DeviceArg: -1},
+	"putd":            {SideEffect: true, WritesDev: true, Barrier: true, DeviceArg: -1},
+	"readReagent":     {ReadsDev: true, DeviceArg: 0},
+	"readReagentById": {ReadsDev: true, DeviceArg: -1},
 
 	// Dynamic logic type / device register (lowered specially).
 	"read":         {ReadsDev: true, DeviceArg: 0},
