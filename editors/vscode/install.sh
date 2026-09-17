@@ -35,8 +35,11 @@ if command -v code >/dev/null 2>&1; then
     fi
     if [ -n "$vsix" ] && [ -f "$vsix" ]; then
         if code --install-extension "$vsix" --force >/dev/null 2>&1; then
-            # Drop a freshly packaged vsix; keep a pre-built one from dist/.
-            case "$vsix" in "$here"/*) rm -f "$vsix" ;; esac
+            # Drop a freshly packaged vsix (in editors/vscode); keep a pre-built
+            # one from dist/.
+            if [ "$(cd "$(dirname "$vsix")" && pwd)" = "$here" ]; then
+                rm -f "$vsix"
+            fi
             echo "Installed IC10 Go extension $version via the code CLI."
             echo
             echo "Reload VSCode: Command Palette -> 'Developer: Reload Window'."
