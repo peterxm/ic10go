@@ -41,6 +41,18 @@ func (c *Const) String() string {
 	return formatFloat(c.V)
 }
 
+// labelRefMark delimits a label-address placeholder. A label used as a value
+// (IC10 lets a branch operand name a label, which the assembler turns into its
+// line number) is lowered to a Const whose Raw text is such a placeholder;
+// codegen replaces it with the label block's absolute line once the layout is
+// known.
+const labelRefMark = "\x01"
+
+// LabelRef returns the placeholder for the absolute address of a label block.
+func LabelRef(blockID int) string {
+	return labelRefMark + "L" + strconv.Itoa(blockID) + labelRefMark
+}
+
 // Reg is a virtual register.
 type Reg struct {
 	ID   int

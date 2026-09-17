@@ -79,6 +79,31 @@ sbn 1220484876 HASH("Override") Open 1
 	}
 }
 
+func TestDecompileDynamicDevice(t *testing.T) {
+	src := `s dr13 Open 0
+l r3 dr13 Open
+ls r0 dr13 0 Occupied
+ss dr12 1 On r4
+`
+	code, warns, err := Decompile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	for _, want := range []string{
+		"writeDev(r13, LogicType.Open, 0)",
+		"r3 := readDev(r13, LogicType.Open)",
+		"readDevSlot(r13, 0, Occupied)",
+		"writeDevSlot(r12, 1, On, r4)",
+	} {
+		if !strings.Contains(code, want) {
+			t.Errorf("output missing %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestDecompileIndirect(t *testing.T) {
 	src := `trunc rr5 r0
 mod r0 r0 rr5

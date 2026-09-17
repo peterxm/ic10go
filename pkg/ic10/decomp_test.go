@@ -40,6 +40,12 @@ func compareDevices(t *testing.T, a, b *vm.Machine) {
 				}
 			}
 		}
+		// The IC host's stack (db) holds the chip's persistent stack, which
+		// legitimately differs between two layouts (return addresses, data
+		// segment, spills); compare every other device's stack.
+		if name == "db" {
+			continue
+		}
 		for i, va := range da.Stack {
 			vb := db.Stack[i]
 			if math.IsNaN(va) && math.IsNaN(vb) {

@@ -94,6 +94,11 @@ func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 		pureFuncs:    computePureFuncs(info),
 		labeledFuncs: computeLabeledFuncs(info),
 	}
+	l.labelNames = map[string]bool{}
+	collectLabels(info.Main.Body.List, l.labelNames)
+	for _, fi := range info.Funcs {
+		collectLabels(fi.Decl.Body.List, l.labelNames)
+	}
 	scope := map[string]ir.Value{}
 	for name, v := range info.Consts {
 		scope[name] = &ir.Const{V: v}
@@ -221,8 +226,11 @@ type lowerer struct {
 	// labelDef and labelUse track low-level label definitions and references.
 	labelDef map[string]source.Pos
 	labelUse map[string]source.Pos
-	noCheck  bool
-	opts     Options
+	// labelNames holds every label defined in the program, so a bare label
+	// used as a value (IC10 branch operand) can be told apart from a typo.
+	labelNames map[string]bool
+	noCheck    bool
+	opts       Options
 }
 
 // funcName is the source function currently being lowered ("" for main).
@@ -452,6 +460,17 @@ func (l *lowerer) lowerLabel(s *ast.LabelStmt) {
 	}
 	l.labels[name] = b
 	l.b.SetBlock(b)
+}
+
+// collectLabels records every label defined in a statement list.
+func collectLabels(list []ast.Stmt, out map[string]bool) {
+	for _, s := range list {
+		walkStmt(s, func(s ast.Stmt) {
+			if ls, ok := s.(*ast.LabelStmt); ok {
+				out[ls.Name.Name] = true
+			}
+		})
+	}
 }
 
 func (l *lowerer) lowerDecl(d ast.Decl) {
@@ -1247,6 +1266,11 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 			l.b.Emit(&ir.LoadSpecial{Dst: r, Name: e.Name})
 			return r
 		}
+		// A label used as a value: IC10 lets a branch operand name a label,
+		// which the assembler resolves to its line number.
+		if l.labelNames[e.Name] {
+			return &ir.Const{Raw: ir.LabelRef(l.labelBlock(e.Name).ID)}
+		}
 		l.diags.Errorf(e.Pos(), "undefined variable %q", e.Name)
 		return &ir.Const{V: 0}
 	case *ast.UnaryExpr:
@@ -1740,7 +1764,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			return &ir.Const{V: 0}
 		}
 		ptr := l.lowerExpr(call.Args[0])
-		logic := l.dynamicLogic(call.Args[1])
+		logic := l.deviceLogic(call.Args[1])
 		r := l.b.NewReg("read")
 		l.b.Emit(&ir.LoadDyn{Dst: r, DevPtr: ptr, Logic: logic})
 		return r
@@ -1751,7 +1775,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			return &ir.Const{V: 0}
 		}
 		ptr := l.lowerExpr(call.Args[0])
-		logic := l.dynamicLogic(call.Args[1])
+		logic := l.deviceLogic(call.Args[1])
 		src := l.lowerExpr(call.Args[2])
 		l.b.Emit(&ir.StoreDyn{DevPtr: ptr, Logic: logic, Src: src})
 		return &ir.Const{V: 0}
@@ -2336,6 +2360,18 @@ func (l *lowerer) dynamicLogic(e ast.Expr) ir.Value {
 		return r
 	}
 	return v
+}
+
+// deviceLogic lowers the logic-type argument of readDev/writeDev. A
+// LogicType.X selector is kept as a raw name so the code generator can emit it
+// directly (`l r? drN LogicType.X`); anything else is a runtime value.
+func (l *lowerer) deviceLogic(e ast.Expr) ir.Value {
+	if sel, ok := e.(*ast.SelectorExpr); ok {
+		if id, ok := sel.X.(*ast.Ident); ok && id.Name == "LogicType" {
+			return &ir.Const{Raw: "LogicType." + sel.Sel.Name}
+		}
+	}
+	return l.dynamicLogic(e)
 }
 
 // lowerOutlined emits the body of an outlined function once. Only leaf

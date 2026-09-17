@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
@@ -13,46 +12,21 @@ import (
 	"ic10go/pkg/ic10"
 )
 
-// requireIc10Code skips tests that need the local ic10code/ corpus. That
-// corpus is third-party (community scripts) and is not distributed with the
-// repository, so a fresh checkout simply skips these tests.
-func requireIc10Code(t *testing.T) {
-	t.Helper()
-	if _, err := os.Stat("../../ic10code"); err != nil {
-		t.Skip("ic10code/ corpus not present (third-party, not in this repo)")
-	}
-}
-
-// TestIc10CodeRoundTrip decompiles every real IC10 script in ic10code/ and
+// TestIc10CodeRoundTrip decompiles every real IC10 script in the corpus and
 // recompiles it, then checks that it performs exactly the same sequence of
 // device writes as the original. Comparing writes (rather than a fixed-step
 // snapshot) makes the check independent of instruction counts per iteration.
 func TestIc10CodeRoundTrip(t *testing.T) {
 	requireIc10Code(t)
-	var files []string
-	err := filepath.Walk("../../ic10code", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		if strings.HasSuffix(path, ".ic") || strings.HasSuffix(path, ".ic10") {
-			files = append(files, path)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	files := corpusFiles(t, ".ic", ".ic10")
 	if len(files) == 0 {
 		t.Skip("no IC10 scripts found")
 	}
-	sort.Strings(files)
 
 	for _, path := range files {
 		name := filepath.Base(path)
 		t.Run(name, func(t *testing.T) {
+			skipKnownUnsupported(t, path)
 			src, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)

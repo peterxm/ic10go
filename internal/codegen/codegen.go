@@ -265,6 +265,14 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 	}
 	code := sb.String()
 
+	// Resolve label-address placeholders (a label used as a value) to the
+	// absolute line number of the label block.
+	for _, b := range blocks {
+		if ref := ir.LabelRef(b.ID); strings.Contains(code, ref) {
+			code = strings.ReplaceAll(code, ref, strconv.Itoa(start[b]))
+		}
+	}
+
 	report := &Report{Total: len(lines), ByFunc: map[string]int{}}
 	for _, ln := range lines {
 		report.ByFunc[ln.fn]++
@@ -538,6 +546,10 @@ func dynDev(dev string, ptr ir.Value, colors map[*ir.Reg]int) string {
 	}
 	if r, ok := ptr.(*ir.Reg); ok {
 		return "d" + regName(r, colors)
+	}
+	// A constant port index folds to the fixed port name (d0..d5).
+	if c, ok := ptr.(*ir.Const); ok && c.Raw == "" && c.Special == "" {
+		return "d" + strconv.Itoa(int(c.V))
 	}
 	return dev
 }

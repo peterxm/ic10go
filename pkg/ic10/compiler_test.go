@@ -786,3 +786,38 @@ func TestBusInlineDeviceAlias(t *testing.T) {
 		t.Errorf("inline device alias should resolve to d3:\n%s", res.Chips[0].Code)
 	}
 }
+
+// TestLabelAddressValue checks that a label used as a value (the IC10 idiom of
+// comparing a stored return address against a code label) compiles to that
+// label's absolute line number and behaves correctly in the VM.
+func TestLabelAddressValue(t *testing.T) {
+	src := `func main() {
+    r15 := 0
+    goto work
+    label home:
+    d0.Setting = 1
+    jump(9999)
+    label work:
+    call travel
+    d0.Setting = 2
+    jump(9999)
+    label travel:
+    r15 = ra
+    if r15 < work { goto home }
+    jump(r15)
+}`
+	code := mustCompile(t, src)
+	if strings.Contains(code, "\x01") {
+		t.Fatalf("label placeholder leaked into output:\n%s", code)
+	}
+	m := vm.New()
+	if err := m.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(200); err != nil && err != vm.ErrStepLimit {
+		t.Fatalf("run: %v", err)
+	}
+	if got := m.Get("d0", "Setting"); got != 2 {
+		t.Errorf("d0.Setting = %v, want 2\n%s", got, code)
+	}
+}

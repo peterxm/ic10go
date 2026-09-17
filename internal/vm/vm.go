@@ -138,14 +138,20 @@ func (m *Machine) SetSeed(seed int64) {
 	m.rng = rand.New(rand.NewPCG(uint64(seed), 0x9E3779B97F4A7C15))
 }
 
-// logicName resolves a device logic type operand, which may be a name or a
-// register holding a logicType enum value.
+// logicName resolves a device logic type operand, which may be a name, a
+// register holding a logicType enum value, or the numeric id that a symbolic
+// LogicType.X operand resolves to at load time.
 func (m *Machine) logicName(s string) string {
 	if i, ok := regIndex(s); ok {
 		return m.logicNameByID(int(m.Regs[i]))
 	}
 	if i, ok := m.indirectIndex(s); ok {
 		return m.logicNameByID(int(m.Regs[i]))
+	}
+	if id, err := strconv.Atoi(s); err == nil {
+		if name, ok := m.LogicByID[id]; ok {
+			return name
+		}
 	}
 	return s
 }
@@ -466,6 +472,11 @@ func Parse(src string) (*Program, error) {
 		prog.Symbols["LogicType."+name] = strconv.Itoa(id)
 	}
 	resolve := func(s string) string {
+		// IC10's HASH("...") is a compile-time CRC-32; resolve it so the VM
+		// matches scripts that use symbolic hashes.
+		if h, ok := resolveHashCall(s); ok {
+			return strconv.Itoa(int(h))
+		}
 		for i := 0; i < 10; i++ {
 			v, ok := prog.Symbols[s]
 			if !ok {
@@ -542,6 +553,20 @@ func parseNum(s string) (float64, bool) {
 	}
 	if v, err := strconv.ParseFloat(s, 64); err == nil {
 		return v, true
+	}
+	return 0, false
+}
+
+// resolveHashCall parses an IC10 HASH("...") operand and returns its CRC-32 as
+// the signed 32-bit value the compiler uses for hash("...").
+func resolveHashCall(s string) (int32, bool) {
+	upper := strings.ToUpper(s)
+	if !strings.HasPrefix(upper, "HASH(") || !strings.HasSuffix(s, ")") {
+		return 0, false
+	}
+	inner := strings.TrimSpace(s[len("HASH(") : len(s)-1])
+	if len(inner) >= 2 && inner[0] == '"' && inner[len(inner)-1] == '"' {
+		return int32(builtin.Hash(inner[1 : len(inner)-1])), true
 	}
 	return 0, false
 }

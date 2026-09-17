@@ -87,9 +87,15 @@ func (d *decompiler) translate(l icLine) []string {
 	case "sd":
 		return []string{fmt.Sprintf("writeById(%s, %s, %s)", d.a(l, 0), d.a(l, 1), d.a(l, 2))}
 	case "ls":
+		if reg, ok := d.deviceRegArg(l.args[1]); ok {
+			return []string{d.assignDst(l.args[0], fmt.Sprintf("readDevSlot(%s, %s, %s)", reg, d.a(l, 2), l.args[3]))}
+		}
 		dst := d.assignDst(l.args[0], fmt.Sprintf("%s.slot[%s].%s", d.resolve(l.args[1]), d.a(l, 2), l.args[3]))
 		return []string{dst}
 	case "ss":
+		if reg, ok := d.deviceRegArg(l.args[0]); ok {
+			return []string{fmt.Sprintf("writeDevSlot(%s, %s, %s, %s)", reg, d.a(l, 1), l.args[2], d.a(l, 3))}
+		}
 		return []string{fmt.Sprintf("%s.slot[%s].%s = %s", d.resolve(l.args[0]), d.a(l, 1), l.args[2], d.a(l, 3))}
 	case "lb", "lbn", "lbs", "lbns":
 		return []string{d.assignDst(l.args[0], d.batchLoad(l))}
@@ -300,6 +306,9 @@ func (d *decompiler) deviceRead(devArg, logic string) string {
 	if ch, ok := channelAccess(dev, logic); ok {
 		return ch
 	}
+	if reg, ok := d.deviceRegArg(devArg); ok {
+		return fmt.Sprintf("readDev(%s, LogicType.%s)", reg, logic)
+	}
 	return dev + "." + logic
 }
 
@@ -307,6 +316,9 @@ func (d *decompiler) deviceWrite(devArg, logic, val string) string {
 	dev := d.resolve(devArg)
 	if ch, ok := channelAccess(dev, logic); ok {
 		return ch + " = " + val
+	}
+	if reg, ok := d.deviceRegArg(devArg); ok {
+		return fmt.Sprintf("writeDev(%s, LogicType.%s, %s)", reg, logic, val)
 	}
 	return dev + "." + logic + " = " + val
 }

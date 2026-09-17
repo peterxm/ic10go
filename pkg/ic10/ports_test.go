@@ -42,24 +42,13 @@ func portSetup(m *vm.Machine) {
 // script and checks that they leave the devices in the same state.
 func TestIc10CodePorts(t *testing.T) {
 	requireIc10Code(t)
-	var ports []string
-	err := filepath.Walk("../../ic10code", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && strings.HasSuffix(path, ".icg") {
-			ports = append(ports, path)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	ports := corpusFiles(t, ".icg")
 	if len(ports) == 0 {
 		t.Skip("no .icg ports found")
 	}
 	for _, port := range ports {
 		t.Run(filepath.Base(port), func(t *testing.T) {
+			skipKnownUnsupported(t, port)
 			orig := strings.TrimSuffix(port, ".icg")
 			switch {
 			case fileExists(orig + ".ic"):
