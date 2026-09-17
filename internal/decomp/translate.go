@@ -228,7 +228,8 @@ func (d *decompiler) translate(l icLine) []string {
 		}
 		return []string{d.jumpStatement(l, 0, false)}
 	case "jal":
-		if !d.jumpTargetOK(l) {
+		// A computed call (jal rX) has no .icg form: jump(expr) drops the link.
+		if _, ok := d.jumpTarget(l); !ok {
 			return d.unsupported(l)
 		}
 		return []string{d.jumpStatement(l, 0, true)}
@@ -242,6 +243,13 @@ func (d *decompiler) translate(l icLine) []string {
 	if cond, _, withRA, ok := ic10asm.BranchInfo(l.op); ok {
 		if !d.jumpTargetOK(l) {
 			return d.unsupported(l)
+		}
+		// A computed `-al` branch (b<cond>al ... rX) is a computed call, which
+		// .icg cannot express without dropping the link.
+		if withRA {
+			if _, ok := d.jumpTarget(l); !ok {
+				return d.unsupported(l)
+			}
 		}
 		expr, ok := d.branchExpr(cond, l)
 		if !ok {

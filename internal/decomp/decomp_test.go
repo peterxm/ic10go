@@ -411,3 +411,17 @@ func TestDecompileMalformedDoesNotPanic(t *testing.T) {
 		}
 	}
 }
+
+func TestDecompileComputedCallUnsupported(t *testing.T) {
+	// A computed call (jal rX / b<cond>al ... rX) cannot be expressed without
+	// dropping the link, so it becomes a warning.
+	for _, src := range []string{"jal r0\n", "bgeal r0 r1 r2\n"} {
+		code, warns, err := Decompile(src)
+		if err != nil {
+			t.Fatalf("decompile %q: %v", src, err)
+		}
+		if len(warns) == 0 || !strings.Contains(code, "// unsupported:") {
+			t.Errorf("computed call should be unsupported for %q:\n%s", src, code)
+		}
+	}
+}
