@@ -1,6 +1,9 @@
 package ir
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
 // Verify checks the structural invariants of a function: every block has a
 // terminator, every terminator only references blocks that are part of the
@@ -41,8 +44,83 @@ func Verify(fn *Function) error {
 				return fmt.Errorf("ir: block %d references block %d, which is not in the function", b.ID, s.ID)
 			}
 		}
+		for _, ins := range b.Instrs {
+			for _, n := range indirectRegs(ins) {
+				if !fn.ReservedRegs[n] {
+					return fmt.Errorf("ir: block %d accesses physical register r%d without reserveRegs", b.ID, n)
+				}
+			}
+		}
 	}
 	return nil
+}
+
+// indirectRegs returns the physical registers an instruction accesses
+// indirectly: a raw physical-register operand (ireg(const) lowered to "rN"),
+// or an indirect register access with a constant pointer (IC10 rrN).
+func indirectRegs(i Instr) []int {
+	var out []int
+	addValue := func(v Value) {
+		c, ok := v.(*Const)
+		if !ok || c.Raw == "" {
+			return
+		}
+		if n, ok := physRegRawIndex(c.Raw); ok {
+			out = append(out, n)
+		}
+	}
+	addPtr := func(v Value) {
+		if n, ok := constRegIndex(v); ok {
+			out = append(out, n)
+		}
+	}
+	switch v := i.(type) {
+	case *Assign:
+		addValue(v.Src)
+	case *Bin:
+		addValue(v.A)
+		addValue(v.B)
+	case *Un:
+		addValue(v.A)
+	case *Cmp:
+		addValue(v.A)
+		addValue(v.B)
+	case *Select:
+		addValue(v.Cond)
+		addValue(v.Then)
+		addValue(v.Else)
+	case *LoadIndirect:
+		addPtr(v.Ptr)
+	case *StoreIndirect:
+		addPtr(v.Ptr)
+		addValue(v.Src)
+	}
+	return out
+}
+
+// physRegRawIndex parses a raw physical-register operand ("rN").
+func physRegRawIndex(raw string) (int, bool) {
+	if len(raw) < 2 || raw[0] != 'r' {
+		return 0, false
+	}
+	n, err := strconv.Atoi(raw[1:])
+	if err != nil || n < 0 || n >= 16 {
+		return 0, false
+	}
+	return n, true
+}
+
+// constRegIndex returns the physical register index of a constant pointer.
+func constRegIndex(v Value) (int, bool) {
+	c, ok := v.(*Const)
+	if !ok || c.Raw != "" || c.Special != "" {
+		return 0, false
+	}
+	n := int(c.V)
+	if n < 0 || n >= 16 {
+		return 0, false
+	}
+	return n, true
 }
 
 // VerifyReachable is Verify plus a check that every block is reachable from the

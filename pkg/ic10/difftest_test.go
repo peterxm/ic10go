@@ -552,3 +552,42 @@ func (g *gen) devRead() string {
 		return g.devPort() + "." + logics[g.rng.Intn(len(logics))]
 	}
 }
+
+// TestDifferentialIndirect runs the differential comparison on programs that
+// use reserveRegs / setIreg / ireg (IC10 rrN). The optimiser must not reorder
+// or common up indirect register accesses across an indirect write.
+func TestDifferentialIndirect(t *testing.T) {
+	runDifferential(t, ic10.Options{}, 800, genIndirectProgram, false)
+}
+
+func genIndirectProgram(seed int64) string {
+	rng := rand.New(rand.NewSource(seed))
+	var sb strings.Builder
+	sb.WriteString("func main() {\n")
+	sb.WriteString("    reserveRegs(2, 4)\n")
+	for r := 2; r <= 4; r++ {
+		fmt.Fprintf(&sb, "    setIreg(%d, %d)\n", r, rng.Intn(20))
+	}
+	fmt.Fprintf(&sb, "    for i := 0; i < %d; i++ {\n", 2+rng.Intn(3))
+	for k := 0; k < 3+rng.Intn(4); k++ {
+		switch rng.Intn(5) {
+		case 0:
+			r := 2 + rng.Intn(3)
+			fmt.Fprintf(&sb, "        setIreg(%d, ireg(%d) + %d)\n", r, r, rng.Intn(5))
+		case 1:
+			r := 2 + rng.Intn(3)
+			fmt.Fprintf(&sb, "        setIreg(%d, %d)\n", r, rng.Intn(20))
+		case 2:
+			fmt.Fprintf(&sb, "        d0.Setting = ireg(%d)*10 + ireg(%d)\n", 2+rng.Intn(3), 2+rng.Intn(3))
+		case 3:
+			r := 2 + rng.Intn(3)
+			fmt.Fprintf(&sb, "        if ireg(%d) > %d { setIreg(%d, %d) }\n", r, rng.Intn(15), 2+rng.Intn(3), rng.Intn(20))
+		case 4:
+			fmt.Fprintf(&sb, "        d0.Setting = (ireg(%d) + ireg(%d)) %% 100\n", 2+rng.Intn(3), 2+rng.Intn(3))
+		}
+	}
+	sb.WriteString("    }\n")
+	sb.WriteString("    d0.Setting = ireg(2)*100 + ireg(3)*10 + ireg(4)\n")
+	sb.WriteString("}\n")
+	return sb.String()
+}

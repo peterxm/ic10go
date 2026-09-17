@@ -689,6 +689,12 @@ func cmdStats(args []string) int {
 	fmt.Printf("bytes      %3d / %d\n", s.Bytes, codegen.MaxBytes)
 	fmt.Printf("max line   %3d / %d\n", s.MaxLineLen, codegen.MaxLineLen)
 	fmt.Printf("registers  %3d / %d\n", s.RegsUsed, ic10.NumRegs)
+	if rep, serr := ic10.Size(files[0], data, opts); serr == nil {
+		fmt.Printf("peak live  %3d / %d\n", rep.PeakLive, ic10.NumRegs)
+		if rep.Spills > 0 {
+			fmt.Printf("spills     %3d slots\n", rep.Spills)
+		}
+	}
 	if compiled.Loader != "" {
 		ls := ic10.StatsOf(compiled.Loader)
 		fmt.Printf("loader     %3d / %d lines · %d / %d bytes (run once)\n",

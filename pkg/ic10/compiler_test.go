@@ -1020,3 +1020,43 @@ func TestLicmDoesNotHoistIndirectRegs(t *testing.T) {
 		t.Errorf("d0.Setting = %v, want 6 (licm hoisted an indirect read?)\n%s", got, code)
 	}
 }
+
+// TestRedundantLoadAcrossDynamicWrite checks that a device read is not reused
+// across a dynamic write that may target the same device.
+func TestRedundantLoadAcrossDynamicWrite(t *testing.T) {
+	src := `func main() {
+    a := d0.Setting
+    write(d0, LogicType.Setting, 99)
+    b := d0.Setting
+    d0.Setting = a + b
+}`
+	code := mustCompile(t, src)
+	m := vm.New()
+	m.Set("d0", "Setting", 1)
+	if err := m.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(50); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	if got := m.Get("d0", "Setting"); got != 100 {
+		t.Errorf("d0.Setting = %v, want 100 (stale load reused across dynamic write?)\n%s", got, code)
+	}
+}
+
+// TestSizeReportsPressure checks that Size reports the peak register pressure.
+func TestSizeReportsPressure(t *testing.T) {
+	src := `func main() {
+    a := d0.Temperature
+    b := d1.Temperature
+    c := d2.Temperature
+    d0.Setting = a + b + c
+}`
+	rep, err := ic10.Size("t.icg", []byte(src), ic10.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.PeakLive < 3 {
+		t.Errorf("PeakLive = %d, want >= 3", rep.PeakLive)
+	}
+}

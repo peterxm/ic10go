@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"ic10go/internal/codegen"
+	"ic10go/internal/ir"
 	"ic10go/internal/lower"
 	"ic10go/internal/opt"
 	"ic10go/internal/regalloc"
@@ -19,6 +20,8 @@ type SizeReport struct {
 	Limit    int            // the IC10 line limit (128)
 	ByFunc   map[string]int // source function -> lines ("" = main)
 	Outlined []string       // functions emitted once as subroutines
+	PeakLive int            // max virtual registers live at any program point
+	Spills   int            // stack slots used for register spilling
 }
 
 // Size compiles the source and returns a per-function line breakdown. It uses
@@ -46,7 +49,7 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 		if opts.SpillStack {
 			spillMode = regalloc.SpillStack
 		}
-		colors, _, err := regalloc.AllocateReservedSpillsMode(fn, NumRegs, reserved, spillMode)
+		colors, spillCount, err := regalloc.AllocateReservedSpillsMode(fn, NumRegs, reserved, spillMode)
 		if err != nil {
 			return
 		}
@@ -59,7 +62,13 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 		}
 		if bestTotal == -1 || rep.Total < bestTotal {
 			bestTotal = rep.Total
-			best = &SizeReport{Total: rep.Total, Limit: codegen.MaxLines, ByFunc: rep.ByFunc}
+			best = &SizeReport{
+				Total:    rep.Total,
+				Limit:    codegen.MaxLines,
+				ByFunc:   rep.ByFunc,
+				PeakLive: maxPressure(fn),
+				Spills:   spillCount,
+			}
 			if outline != nil {
 				for n := range outline {
 					best.Outlined = append(best.Outlined, n)
@@ -76,4 +85,36 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 		return nil, fmt.Errorf("compile failed")
 	}
 	return best, nil
+}
+
+// maxPressure returns the maximum number of virtual registers live at any
+// program point — the register pressure the allocator must fit into 16.
+func maxPressure(fn *ir.Function) int {
+	_, out := ir.Liveness(fn)
+	peak := 0
+	for _, b := range fn.Blocks {
+		live := map[*ir.Reg]bool{}
+		for r := range out[b] {
+			live[r] = true
+		}
+		for _, r := range ir.TermUses(b.Term) {
+			live[r] = true
+		}
+		if len(live) > peak {
+			peak = len(live)
+		}
+		for i := len(b.Instrs) - 1; i >= 0; i-- {
+			u, d := ir.DefUse(b.Instrs[i])
+			for _, r := range d {
+				delete(live, r)
+			}
+			for _, r := range u {
+				live[r] = true
+			}
+			if len(live) > peak {
+				peak = len(live)
+			}
+		}
+	}
+	return peak
 }

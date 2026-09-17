@@ -683,6 +683,14 @@ func redundantLoads(fn *ir.Function) bool {
 				invalidate(v.Dev)
 			case *ir.StoreSlot:
 				invalidate(v.Dev)
+			case *ir.StoreDyn:
+				// A dynamic write targets a known port or a runtime device id;
+				// invalidate that device, or every load for a runtime id.
+				if v.Dev != "" {
+					invalidate(v.Dev)
+				} else {
+					clearAll()
+				}
 			case *ir.StoreSpecial:
 				invalidate(v.Name)
 			case *ir.Batch:

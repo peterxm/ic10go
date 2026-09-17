@@ -1881,6 +1881,11 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			return &ir.Const{V: 0}
 		}
 		ptr := l.lowerExpr(call.Args[0])
+		if c, ok := ptr.(*ir.Const); ok && c.Raw == "" && c.Special == "" {
+			if n := int(c.V); n >= 0 && n < 16 && !l.b.Fn().ReservedRegs[n] {
+				l.diags.Errorf(call.Pos(), "setIreg(%d, ...) needs reserveRegs to cover r%d", n, n)
+			}
+		}
 		src := l.lowerExpr(call.Args[1])
 		l.b.Emit(&ir.StoreIndirect{Ptr: ptr, Src: src})
 		return &ir.Const{V: 0}
