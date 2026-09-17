@@ -1,0 +1,154 @@
+// 打印机主控：为自动车床/弯管机/电子装配机/工具机补充所需锭料。
+//
+// 原脚本：PrinterMaster_v3.ic10（drclaw1188/stationeers_ic10）
+// 设备：d0 = 售货机（取锭）、d1 = 自动车床、d2 = 弯管机、
+//       d3 = 电子装配机、d4 = 工具机。
+// 原理：对每台打印机读取各锭料的 Contents/Required，决定要补的锭，
+//       在售货机里找到后经 DCUTE 分拣器投递，并等待 ImportCount 变化。
+// 动态设备端口：原脚本用 r9=1..4 + `lr dr9`，这里用 checkPrinter(idx) 参数表达。
+
+const VendingMachine = d0
+const Autolathe = d1
+const PipeBender = d2
+const Electronics = d3
+const Tools = d4
+
+const MINIMUMINGOT = 50
+const LED = 1944485013
+const DCUTERIGHT = 163728359
+const DCUTELEFT = 648608238
+
+func main() {
+    var idx = 0.0
+
+    label start:
+    yield()
+    batch.write(DCUTERIGHT, "Setting", 0)
+    batch.write(DCUTERIGHT, "SettingOutput", 0)
+    batch.write(DCUTERIGHT, "On", 1)
+    batch.write(DCUTELEFT, "Setting", 0)
+    batch.write(DCUTELEFT, "SettingOutput", 0)
+    batch.write(DCUTELEFT, "On", 1)
+    batch.write(LED, "Color", Color.Green)
+    // 用变量传端口，让编译器把 checkPrinter 外提成一个子程序。
+    idx = 1
+    checkPrinter(idx)
+    idx = 2
+    checkPrinter(idx)
+    idx = 3
+    checkPrinter(idx)
+    idx = 4
+    checkPrinter(idx)
+    goto start
+}
+
+// 为一台打印机（端口 = idx）选择并投递锭料。
+func checkPrinter(idx) {
+    var ingot = 0.0
+    var r0 = 0.0
+    var r1 = 0.0
+    var r5 = 0.0
+    var lastImportCount = 0.0
+
+    ingot = 0
+
+    // Contents 低于下限，或 Required 非零，就选这种锭。
+    r0 = readReagent(idx, ReagentMode.Contents, hash("Iron"))
+    if r0 < MINIMUMINGOT { ingot = hash("ItemIronIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Iron"))
+    if r0 != 0 { ingot = hash("ItemIronIngot") }
+
+    r0 = readReagent(idx, ReagentMode.Contents, hash("Copper"))
+    if r0 < MINIMUMINGOT { ingot = hash("ItemCopperIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Copper"))
+    if r0 != 0 { ingot = hash("ItemCopperIngot") }
+
+    r0 = readReagent(idx, ReagentMode.Contents, hash("Gold"))
+    if r0 < MINIMUMINGOT { ingot = hash("ItemGoldIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Gold"))
+    if r0 != 0 { ingot = hash("ItemGoldIngot") }
+
+    r0 = readReagent(idx, ReagentMode.Required, hash("Lead"))
+    if r0 != 0 { ingot = hash("ItemLeadIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Nickel"))
+    if r0 != 0 { ingot = hash("ItemNickelIngot") }
+
+    r0 = readReagent(idx, ReagentMode.Contents, hash("Silicon"))
+    if r0 < MINIMUMINGOT { ingot = hash("ItemSiliconIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Silicon"))
+    if r0 != 0 { ingot = hash("ItemSiliconIngot") }
+
+    r0 = readReagent(idx, ReagentMode.Required, hash("Silver"))
+    if r0 != 0 { ingot = hash("ItemSilverIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Constantan"))
+    if r0 != 0 { ingot = hash("ItemConstantanIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Electrum"))
+    if r0 != 0 { ingot = hash("ItemElectrumIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Invar"))
+    if r0 != 0 { ingot = hash("ItemInvarIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Solder"))
+    if r0 != 0 { ingot = hash("ItemSolderIngot") }
+
+    r0 = readReagent(idx, ReagentMode.Contents, hash("Steel"))
+    if r0 < MINIMUMINGOT { ingot = hash("ItemSteelIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Steel"))
+    if r0 != 0 { ingot = hash("ItemSteelIngot") }
+
+    r0 = readReagent(idx, ReagentMode.Required, hash("Astroloy"))
+    if r0 != 0 { ingot = hash("ItemAstroloyIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Hastelloy"))
+    if r0 != 0 { ingot = hash("ItemHastelloyIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Inconel"))
+    if r0 != 0 { ingot = hash("ItemInconelIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Stellite"))
+    if r0 != 0 { ingot = hash("ItemStelliteIngot") }
+    r0 = readReagent(idx, ReagentMode.Required, hash("Waspaloy"))
+    if r0 != 0 { ingot = hash("ItemWaspaloyIngot") }
+
+    db.Setting = ingot
+    if ingot == 0 { return }
+
+    // 在售货机里找这种锭。
+    batch.write(LED, "Color", Color.Yellow)
+    var found = 0
+    r5 = 2
+    for r5 < 102 {
+        if VendingMachine.slot[r5].OccupantHash == ingot {
+            found = 1
+            break
+        }
+        r5 = r5 + 1
+    }
+    if found == 0 {
+        batch.write(LED, "Color", Color.Red)
+        sleep(5)
+        return
+    }
+
+    // 把锭送到对应打印机：idx 决定 DCUTE 分拣器用哪个命名通道。
+    r1 = idx == 1
+    batch.writeName(DCUTERIGHT, hash("DC:Autolathe"), "Mode", r1)
+    batch.writeName(DCUTELEFT, hash("DC:Autolathe"), "Mode", r1)
+    r1 = idx == 2
+    batch.writeName(DCUTERIGHT, hash("DC:PipeBender"), "Mode", r1)
+    batch.writeName(DCUTELEFT, hash("DC:PipeBender"), "Mode", r1)
+    r1 = idx == 3
+    batch.writeName(DCUTERIGHT, hash("DC:Electronics"), "Mode", r1)
+    batch.writeName(DCUTELEFT, hash("DC:Electronics"), "Mode", r1)
+    r1 = idx == 4
+    batch.writeName(DCUTERIGHT, hash("DC:Tools"), "Mode", r1)
+    batch.writeName(DCUTELEFT, hash("DC:Tools"), "Mode", r1)
+    lastImportCount = readDev(idx, LogicType.ImportCount)
+    VendingMachine.RequestHash = 0
+    yield()
+    VendingMachine.RequestHash = ingot
+
+    var waiting = 1
+    for waiting != 0 {
+        batch.write(LED, "Color", Color.Orange)
+        yield()
+        r0 = readDev(idx, LogicType.ImportCount)
+        if r0 != lastImportCount { waiting = 0 }
+    }
+    yield()
+}

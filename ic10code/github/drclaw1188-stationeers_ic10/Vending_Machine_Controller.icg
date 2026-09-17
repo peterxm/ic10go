@@ -1,0 +1,147 @@
+// 售货机控制器：统计售货机内物品数量并维持设定数量，超出则导出、不足则请求补货。
+//
+// 原脚本：Vending_Machine_Controller.ic10（drclaw1188/stationeers_ic10）
+// 设备：d0 = 售货机、d1 = 数量显示、d2 = 已用槽位显示、d3 = 选择旋钮、
+//       d4 = 物品请求（可选）、d5 = 输出分拣器（可选）。
+// 栈布局：从 STACKSIZE 向下，每项占 3 槽 [物品哈希, 0, 数量]；
+//         UpdateDisplay 按旋钮值算出的槽位读取对应项。
+// 需要预先在售货机栈里写好物品清单（见同目录 Stack_Writer 系列）。
+
+const VendingMachine = d0
+const QuantityDisplay = d1
+const UsedSlotsDisplay = d2
+const Dial = d3
+const ItemRequest = d4
+const OutputSorter = d5
+
+const STACKSIZE = 48
+const FIRSTSLOT = 1
+const LASTSLOT = 101
+
+func main() {
+    var curItem = 0.0
+    var curCount = 0.0
+    var curMin = 0.0
+    var curMax = 0.0
+    var slotToCheck = 0.0
+    var usedSlots = 0.0
+    var lastImportCount = 0.0
+    var lastExportCount = 0.0
+    var r0 = 0.0
+    var r1 = 0.0
+    var r2 = 0.0
+
+    if isSet(OutputSorter) { OutputSorter.Mode = 2 }
+
+    // 统计售货机里的物品，并累加到栈上的清单。
+    label CountObjects:
+    yield()
+    slotToCheck = FIRSTSLOT
+    usedSlots = 0
+    QuantityDisplay.Color = Color.Yellow
+    UsedSlotsDisplay.Color = Color.Yellow
+    sp = STACKSIZE
+    sp = sp - 4
+    label ZeroCount:
+    push(0)
+    sp = sp - 5
+    if sp >= 0 { goto ZeroCount }
+
+    label ContinueCounting:
+    slotToCheck = slotToCheck + 1
+    if slotToCheck > LASTSLOT { goto DoneCounting }
+    r1 = VendingMachine.slot[slotToCheck].OccupantHash
+    if r1 == 0 { goto ContinueCounting }
+    usedSlots = usedSlots + 1
+    r0 = VendingMachine.slot[slotToCheck].Quantity
+    sp = STACKSIZE
+    label FindInStack:
+    if sp == 0 { goto ContinueCounting }
+    curItem = pop()
+    sp = sp - 2
+    curCount = pop()
+    if r1 != curItem { goto FindInStack }
+    curCount = curCount + r0
+    push(curCount)
+    goto ContinueCounting
+
+    label DoneCounting:
+    UsedSlotsDisplay.Setting = usedSlots
+    sp = STACKSIZE
+
+    // 逐项检查库存。
+    label CheckInventory:
+    if sp == 0 { goto mainLoop }
+    curItem = pop()
+    curMax = pop()
+    curMin = pop()
+    curCount = pop()
+    QuantityDisplay.Setting = curCount
+    db.Setting = curItem
+    if isSet(ItemRequest) {
+        if curCount < curMin { goto RequestMore }
+    }
+    if isSet(OutputSorter) {
+        if curCount > curMax { goto RemoveOne }
+    }
+    goto CheckInventory
+
+    label RequestMore:
+    QuantityDisplay.Color = Color.Red
+    UsedSlotsDisplay.Color = Color.Red
+    lastImportCount = VendingMachine.ImportCount
+    ItemRequest.Setting = curItem
+    label WaitForImport:
+    yield()
+    call UpdateDisplay
+    r0 = VendingMachine.ImportCount
+    if r0 == lastImportCount { goto WaitForImport }
+    lastImportCount = r0
+    ItemRequest.Setting = 0
+    goto CountObjects
+
+    label RemoveOne:
+    QuantityDisplay.Color = Color.Orange
+    UsedSlotsDisplay.Color = Color.Orange
+    lastExportCount = VendingMachine.ExportCount
+    if isSet(OutputSorter) { OutputSorter.Output = 1 }
+    VendingMachine.RequestHash = 0
+    yield()
+    VendingMachine.RequestHash = curItem
+    label WaitForExport:
+    yield()
+    call UpdateDisplay
+    r0 = VendingMachine.ExportCount
+    if r0 == lastExportCount { goto WaitForExport }
+    lastExportCount = r0
+    goto CountObjects
+
+    // 按旋钮值定位栈项并刷新显示。
+    label UpdateDisplay:
+    sp = Dial.Setting
+    sp = sp + 1
+    sp = sp * 4
+    curItem = pop()
+    sp = sp - 2
+    curCount = pop()
+    db.Setting = curItem
+    QuantityDisplay.Setting = curCount
+    ret
+
+    // 空闲：等待进/出货计数变化。
+    label mainLoop:
+    yield()
+    r0 = VendingMachine.ImportCount
+    r1 = r0 != lastImportCount
+    lastImportCount = r0
+    r0 = VendingMachine.ExportCount
+    r2 = r0 != lastExportCount
+    lastExportCount = r0
+    r1 = r1 | r2
+    if r1 != 0 { goto CountObjects }
+    if isSet(OutputSorter) { OutputSorter.Output = 0 }
+    QuantityDisplay.Color = Color.Green
+    UsedSlotsDisplay.Color = Color.Green
+    call UpdateDisplay
+    goto mainLoop
+}

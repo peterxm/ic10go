@@ -1,0 +1,143 @@
+// 批量离心机控制器（NOS）：按应力/转速分阶段提升节气门，满料后停机卸货。
+//
+// 原脚本：batch_gas_centrifuge_nos_controller.ic10
+//       （scriptslol/stationeers-ic10-notes）
+// 设备：d0 = 卸货量旋钮、d1 = 剩余量显示。
+// 流程：setup 等旋钮设置 -> initialise 复位 -> startup/throttleUp/throttleDown
+//       用应力反馈调节气门 -> Phase1..5 逐级升速 -> unload 停机卸货 -> 循环。
+// AllTheThings 是批量控制的离心机 prefab 哈希。
+
+const settingsDial = d0
+const remainingDisplay = d1
+const AllTheThings = 1238905683
+
+func main() {
+    var cStress = 0.0
+    var pStress = 0.0
+    var currentRPM = 0.0
+    var importCount = 0.0
+    var exportCount = 0.0
+    var unloadSetting = 0.0
+    var r5 = 0.0
+    var r7 = 0.0
+    var r8 = 0.0
+
+    yield()
+
+    label setup:
+    unloadSetting = settingsDial.Setting
+    if unloadSetting > 0 { goto initialise }
+    sleep(10)
+    goto setup
+
+    label initialise:
+    batch.write(AllTheThings, "On", 1)
+    batch.write(AllTheThings, "ClearMemory", 1)
+    batch.write(AllTheThings, "Open", 0)
+
+    // 先以 10 节气门启动，直到出现应力。
+    label startup:
+    importCount = batch.read(AllTheThings, "ImportCount", "Average")
+    exportCount = batch.read(AllTheThings, "ExportCount", "Average")
+    r8 = unloadSetting - importCount
+    remainingDisplay.Setting = r8
+    batch.write(AllTheThings, "CombustionLimiter", 0)
+    cStress = batch.read(AllTheThings, "Stress", "Maximum")
+    currentRPM = batch.read(AllTheThings, "Rpm", "Maximum")
+    r5 = cStress < 25
+    r5 = r5 * 10
+    batch.write(AllTheThings, "Throttle", r5)
+    if currentRPM > 350 { goto Phase1 } // 350 转进入下一功率级
+    if r5 == 0 { goto throttleUp }
+    goto startup
+
+    // 应力稳定前慢慢加油门。
+    label throttleUp:
+    importCount = batch.read(AllTheThings, "ImportCount", "Average")
+    r8 = unloadSetting - importCount
+    remainingDisplay.Setting = r8
+    currentRPM = batch.read(AllTheThings, "Rpm", "Maximum")
+    if currentRPM > 350 { goto Phase1 }
+    pStress = batch.read(AllTheThings, "Stress", "Maximum")
+    yield()
+    yield()
+    cStress = batch.read(AllTheThings, "Stress", "Maximum")
+    r5 = cStress < pStress
+    r5 = r5 * 10
+    batch.write(AllTheThings, "Throttle", r5)
+    if r5 > 0 { goto throttleDown }
+    goto throttleUp
+
+    label throttleDown:
+    currentRPM = batch.read(AllTheThings, "Rpm", "Maximum")
+    if currentRPM > 350 { goto Phase1 }
+    pStress = batch.read(AllTheThings, "Stress", "Maximum")
+    yield()
+    yield()
+    cStress = batch.read(AllTheThings, "Stress", "Maximum")
+    r5 = cStress < pStress
+    r5 = r5 * 10
+    batch.write(AllTheThings, "Throttle", r5)
+    goto throttleDown
+
+    label Phase1:
+    importCount = batch.read(AllTheThings, "ImportCount", "Average")
+    r8 = unloadSetting - importCount
+    remainingDisplay.Setting = r8
+    currentRPM = batch.read(AllTheThings, "Rpm", "Maximum")
+    if currentRPM == 0 { goto initialise } // 停转则重启
+    batch.write(AllTheThings, "CombustionLimiter", 0)
+    batch.write(AllTheThings, "Throttle", 20)
+    if currentRPM < 550 { goto Phase1 }
+
+    label Phase2:
+    importCount = batch.read(AllTheThings, "ImportCount", "Average")
+    r8 = unloadSetting - importCount
+    remainingDisplay.Setting = r8
+    currentRPM = batch.read(AllTheThings, "Rpm", "Maximum")
+    if currentRPM == 0 { goto initialise }
+    batch.write(AllTheThings, "CombustionLimiter", 10)
+    batch.write(AllTheThings, "Throttle", 30)
+    if currentRPM < 660 { goto Phase2 }
+
+    label Phase3:
+    importCount = batch.read(AllTheThings, "ImportCount", "Average")
+    r8 = unloadSetting - importCount
+    remainingDisplay.Setting = r8
+    currentRPM = batch.read(AllTheThings, "Rpm", "Maximum")
+    if currentRPM == 0 { goto initialise }
+    batch.write(AllTheThings, "CombustionLimiter", 20)
+    batch.write(AllTheThings, "Throttle", 50)
+    if currentRPM < 760 { goto Phase3 }
+
+    label Phase4:
+    importCount = batch.read(AllTheThings, "ImportCount", "Average")
+    r8 = unloadSetting - importCount
+    remainingDisplay.Setting = r8
+    currentRPM = batch.read(AllTheThings, "Rpm", "Maximum")
+    if currentRPM == 0 { goto initialise }
+    batch.write(AllTheThings, "CombustionLimiter", 30)
+    batch.write(AllTheThings, "Throttle", 60)
+    if currentRPM < 870 { goto Phase4 }
+
+    label Phase5:
+    importCount = batch.read(AllTheThings, "ImportCount", "Average")
+    r8 = unloadSetting - importCount
+    remainingDisplay.Setting = r8
+    batch.write(AllTheThings, "CombustionLimiter", 40)
+    batch.write(AllTheThings, "Throttle", 60)
+    // 到设定量就卸货（currentRPM 沿用上一级的值）。
+    if importCount >= unloadSetting { goto unload }
+    if currentRPM < 1200 { goto Phase5 }
+
+    label unload:
+    currentRPM = batch.read(AllTheThings, "Rpm", "Maximum")
+    cStress = batch.read(AllTheThings, "Stress", "Maximum")
+    exportCount = batch.read(AllTheThings, "ExportCount", "Average")
+    batch.write(AllTheThings, "On", 0)
+    r7 = currentRPM == 0
+    batch.write(AllTheThings, "Open", r7) // 转速为 0 时开仓
+    if r7 == 0 { goto unload }
+    sleep(45) // 等待矿石卸完
+    goto initialise
+}

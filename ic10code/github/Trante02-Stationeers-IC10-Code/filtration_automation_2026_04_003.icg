@@ -1,0 +1,115 @@
+// 过滤自动化（2026-04）：读取自身槽位里的两个滤芯，校验并识别气体后运行。
+//
+// 原脚本：2026/Atmospherics/filtration_automation_2026_04_003.ic10
+//       （Trante02/Stationeers-IC10-Code）
+// self = db = 本芯片宿主（带 0/1 两个滤芯槽）。
+// 流程：init 初始化 -> idle/start -> main 每 100 次循环做一次检查链：
+//       readslots -> identifyGasType -> safetycheck -> flowcheck -> amountcheck，
+//       全部通过才 operate。
+// 说明：原脚本 flowcheck 把三次读都写进 rPressureInput（疑为笔误），这里
+//       按原样保留以保持行为一致。
+
+const self = db
+
+const hFilterSmN = 632853248
+const hFilterSmO2 = -721824748
+const hFilterSmCO2 = 3
+const hFilterSmNO = 4
+
+func main() {
+    var rCount = 0.0
+    var rTemp = 0.0
+    var rState = 0.0
+    var rTargetSubstance = 0.0
+    var rs0Occupied = 0.0
+    var rs0OccupiedHash = 0.0
+    var rs0Quantity = 0.0
+    var rs1Occupied = 0.0
+    var rs1OccupiedHash = 0.0
+    var rs1Quantity = 0.0
+    var rPressureInput = 0.0
+    var rPressureOutput = 0.0
+    var rPressureOutput2 = 0.0
+    var rTargetSubstanceAmount = 0.0
+
+    // 初始化变量。
+    rTargetSubstance = 0
+    goto idle
+
+    label readslots:
+    rs0Occupied = self.slot[0].Occupied
+    rs0OccupiedHash = self.slot[0].OccupantHash
+    rs0Quantity = self.slot[0].Quantity
+    rs1Occupied = self.slot[1].Occupied
+    rs1OccupiedHash = self.slot[1].OccupantHash
+    rs1Quantity = self.slot[1].Quantity
+    rState = rState + 1
+    ret
+
+    label safetycheck:
+    if rs0Occupied != 1 { goto shutdown }
+    if rs1Occupied != 1 { goto shutdown }
+    if rs0Quantity < 5 { goto shutdown }
+    if rs1Quantity < 5 { goto shutdown }
+    if rs0OccupiedHash != rs1OccupiedHash { goto shutdown }
+    rState = rState + 1
+    ret
+
+    label identifyGasType:
+    rTargetSubstance = 100 // 默认
+    if rs0OccupiedHash == hFilterSmN { rTargetSubstance = 1 } // Nitrogen
+    if rs0OccupiedHash == hFilterSmO2 { rTargetSubstance = 2 } // Oxygen
+    if rs0OccupiedHash == hFilterSmCO2 { rTargetSubstance = 3 } // Carbon Dioxide
+    rState = rState + 1
+    ret
+
+    label flowcheck:
+    rPressureInput = self.PressureInput
+    rPressureInput = self.PressureOutput
+    rPressureInput = self.PressureOutput2
+    if rPressureInput < 100 { goto idle } // 输入过低，待机
+    if rPressureOutput > 40000 { goto idle } // 输出过高，待机
+    if rPressureOutput2 > 40000 { goto idle } // 输出过高，待机
+    rState = rState + 1
+    ret
+
+    label amountcheck:
+    if rTargetSubstance == 1 { rTargetSubstanceAmount = self.RatioNitrogenInput }
+    if rTargetSubstance == 2 { rTargetSubstanceAmount = self.RatioOxygenInput }
+    if rTargetSubstance == 3 { rTargetSubstanceAmount = self.RatioCarbonDioxideInput }
+    if rTargetSubstanceAmount < 0.1 { goto idle }
+    rState = rState + 1
+    ret
+
+    label operate:
+    self.Mode = 1 // 非待机
+    goto start
+
+    label start:
+    rState = -4
+    goto mainLoop
+
+    label mainLoop:
+    rCount = rCount + 1
+    if rCount < 100 { goto mainLoop } // 空转计数
+    rCount = 0
+    call readslots
+    call identifyGasType
+    call safetycheck
+    call flowcheck
+    call amountcheck
+    if rState != 1 { goto mainLoop }
+    goto operate // 全部检查通过才运行
+
+    label shutdown:
+    self.Mode = 0 // 待机
+    self.On = 0 // 断电，等待工程师处理
+    goto start
+
+    label idle:
+    self.Mode = 0
+    goto start
+
+    label EoF:
+    goto start // 兜底循环
+}

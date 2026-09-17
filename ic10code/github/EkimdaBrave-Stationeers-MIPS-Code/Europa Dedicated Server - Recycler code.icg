@@ -1,0 +1,117 @@
+// 欧罗巴服务器回收站控制：驱动卸货器/回收机/分拣器，识别矿石并控制 ARC。
+//
+// 原脚本：Europa Dedicated Server - Recycler code.ic10
+//       （EkimdaBrave/Stationeers-MIPS-Code）
+// 设备：d0 = 卸货器、d1 = 回收机、d2 = 分拣器、d3 = ARC、
+//       d4 = 气体传感器、d5 = 通风口。
+// 主循环每 tick 依次执行：通风口压力控制、ARC 控制、上下电、矿石识别。
+
+const dUnloader = d0
+const dRecycler = d1
+const dSorter = d2
+const dARC = d3
+const dGasSensor = d4
+const dVent = d5
+
+func main() {
+    var rCurrentHash = 0.0
+    var rRoomPressure = 0.0
+    var rErrorCode = 0.0
+    var r0 = 0.0
+    var r1 = 0.0
+    var r2 = 0.0
+
+    label Init:
+    dVent.On = 1
+    dVent.Mode = 2
+    dARC.On = 1
+    db.Setting = -1
+    dSorter.On = 1
+    dSorter.Mode = 2
+    dSorter.Output = 0
+
+    label Start:
+    call _ActiveVentCtrl
+    call _ARCCtrl
+    call _PowerOnOff
+    yield()
+    call _IsOre
+    goto Start
+
+    // 只要槽里有东西就给设备上电。
+    label _PowerOnOff:
+    r0 = dUnloader.slot[0].Occupied
+    r1 = dUnloader.slot[1].Occupied
+    r0 = r0 | r1
+    dUnloader.On = r0
+
+    r0 = dRecycler.slot[0].Occupied
+    r1 = dRecycler.slot[1].Occupied
+    r0 = r0 | r1
+    dRecycler.On = r0
+
+    r0 = dSorter.slot[0].Occupied
+    r1 = dSorter.slot[1].Occupied
+    r2 = dSorter.slot[2].Occupied
+    r0 = r0 | r1
+    r0 = r0 | r2
+    dSorter.On = r0
+    ret
+
+    // 分拣器 0 号槽是矿石则输出 1，否则 0。
+    label _IsOre:
+    r0 = dSorter.On
+    if r0 == 0 { ret }
+    r0 = dSorter.slot[0].Occupied
+    if r0 == 0 { ret }
+    rCurrentHash = dSorter.slot[0].OccupantHash
+
+    r0 = rCurrentHash == 1758427767 // Iron
+    if r0 != 0 { goto IsOreEnd }
+    r0 = rCurrentHash == -707307845 // Copper
+    if r0 != 0 { goto IsOreEnd }
+    r0 = rCurrentHash == 1103972403 // Silicon
+    if r0 != 0 { goto IsOreEnd }
+    r0 = rCurrentHash == -1348105509 // Gold
+    if r0 != 0 { goto IsOreEnd }
+    r0 = rCurrentHash == -916518678 // Silver
+    if r0 != 0 { goto IsOreEnd }
+    r0 = rCurrentHash == 1830218956 // Nickel
+    if r0 != 0 { goto IsOreEnd }
+    r0 = rCurrentHash == -190236170 // Lead
+
+    label IsOreEnd:
+    db.Setting = rCurrentHash
+    dSorter.Output = r0
+    rCurrentHash = -1
+    ret
+
+    // 房间压力高于 1 kPa 时开通风口。
+    label _ActiveVentCtrl:
+    rRoomPressure = dGasSensor.Pressure
+    r0 = rRoomPressure > 1
+    dVent.On = r0
+    ret
+
+    // ARC 自动化：未运行时，有物品就启动并记录错误码。
+    label _ARCCtrl:
+    r0 = dARC.Activate
+    if r0 != 0 { ret }
+    r0 = dARC.slot[0].Occupied
+    r1 = dARC.slot[1].Occupied
+    r0 = r0 | r1
+    if r0 == 0 { goto ARCCtrl_End }
+    dARC.On = r0
+    r0 = dARC.On
+    if r0 == 0 { ret }
+    dARC.Activate = r0
+    sleep(1)
+    r0 = dARC.Activate // 状态检查
+    rErrorCode = r0 != 0 ? 0 : -23 // 电力不足为 -23
+    db.Setting = rErrorCode
+    ret
+
+    label ARCCtrl_End:
+    dARC.On = 0
+    ret
+}

@@ -1,0 +1,141 @@
+// 增强型自动气闸（1 格宽）：靠近传感器自动开门并循环压力。
+//
+// 原脚本：Anex-2025_Airlock_enhanced_mk3.ic10（Anexgohan/Stationeers-ic10）
+// 设备：d0/d1 = 内/外门。世界设备按名字哈希批量访问：
+//       StructureGasSensor = 气闸内气体传感器，StructureLogicSwitch = 手动拉杆，
+//       StructureProximitySensor = 全部接近传感器（含 Int/Ext 两个具名），
+//       StructureActiveVent = 全部通风口（含 Int/Ext 两个具名）。
+// 状态：0=待机 1=进入 2=循环压力 3=离开。
+// 动态门端口：用 writeDev(playerOrigin 选择) 表达原脚本的 `s dr4`。
+
+const DoorInt = d0
+const DoorExt = d1
+
+const GasSensor = hash("StructureGasSensor")
+const LeverSwitch = hash("StructureLogicSwitch")
+const pSensorAll = hash("StructureProximitySensor")
+const pSensorInt = hash("Proximity Sensor Int")
+const pSensorExt = hash("Proximity Sensor Ext")
+const ActiveVents = hash("StructureActiveVent")
+const ActiveVentInt = hash("Active Vent Int")
+const ActiveVentExt = hash("Active Vent Ext")
+
+const StateIdle = 0
+const StateEntering = 1
+const StateCycling = 2
+const StateExiting = 3
+
+func main() {
+    var state = 0.0
+    var targetPressure = 0.0
+    var playerOrigin = 0.0
+    var sensorState = 0.0
+    var temp = 0.0
+    var currentPressure = 0.0
+
+    label Start:
+    targetPressure = 100 // 用户设定的气闸压力
+    batch.write(pSensorAll, "Setting", 3)
+    DoorInt.Open = 0
+    DoorExt.Open = 0
+    DoorInt.Lock = 1
+    DoorExt.Lock = 1
+    batch.write(ActiveVents, "On", 0)
+    state = StateIdle
+    yield()
+
+    label Main:
+    yield()
+    temp = batch.read(LeverSwitch, "Open", "Average")
+    if temp != 0 { goto ManualMode }
+
+    // 状态机分派。
+    if state == StateIdle { goto HandleIdle }
+    if state == StateEntering { goto HandleEntering }
+    if state == StateCycling { goto HandleCycling }
+    if state == StateExiting { goto HandleExiting }
+    goto Main
+
+    label HandleIdle:
+    yield()
+    sensorState = batch.readName(pSensorAll, pSensorInt, "Activate", "Sum")
+    temp = batch.readName(pSensorAll, pSensorExt, "Activate", "Sum")
+    sensorState = sensorState + temp
+    if sensorState == 0 { goto Main }
+    playerOrigin = batch.readName(pSensorAll, pSensorInt, "Activate", "Sum")
+    temp = playerOrigin != 0 ? 0 : 1 // 选择要开的门
+    writeDev(temp, LogicType.Open, 1) // 间接开门
+    state = StateEntering
+    goto Main
+
+    label HandleEntering:
+    sensorState = batch.readName(pSensorAll, pSensorInt, "Activate", "Sum")
+    temp = batch.readName(pSensorAll, pSensorExt, "Activate", "Sum")
+    sensorState = sensorState + temp
+    if sensorState == 0 { goto ResetAirlock }
+    if sensorState == 2 { goto StartCycling } // 两个传感器都触发：人已进入
+    goto Main
+
+    label HandleCycling:
+    temp = DoorInt.Open
+    sensorState = DoorExt.Open
+    temp = temp | sensorState
+    if temp != 0 { goto Main } // 等待门关闭
+    currentPressure = batch.read(GasSensor, "Pressure", "Average")
+    temp = currentPressure - targetPressure
+    temp = abs(temp)
+    temp = temp <= 10 // 留一点容差补偿传感器读数延迟
+    if temp != 0 { goto StartExiting }
+    temp = currentPressure > targetPressure
+    if temp == 0 { goto Main }
+    if playerOrigin == 1 { goto VentToInterior }
+    batch.writeName(ActiveVents, ActiveVentExt, "On", 1)
+    batch.writeName(ActiveVents, ActiveVentExt, "Mode", 1)
+    goto Main
+
+    label VentToInterior:
+    batch.writeName(ActiveVents, ActiveVentInt, "On", 1)
+    batch.writeName(ActiveVents, ActiveVentInt, "Mode", 1)
+    goto Main
+
+    label HandleExiting:
+    batch.write(ActiveVents, "On", 0)
+    temp = playerOrigin != 0 ? 1 : 0 // 选择另一扇门
+    writeDev(temp, LogicType.Open, 1) // 间接开目标门
+    sensorState = batch.readName(pSensorAll, pSensorInt, "Activate", "Sum")
+    temp = batch.readName(pSensorAll, pSensorExt, "Activate", "Sum")
+    sensorState = sensorState + temp
+    if sensorState != 0 { goto Main } // 等待人离开
+    goto ResetAirlock
+
+    label StartCycling:
+    DoorInt.Open = 0
+    DoorExt.Open = 0
+    state = StateCycling
+    goto Main
+
+    label StartExiting:
+    state = StateExiting
+    goto Main
+
+    label ResetAirlock:
+    DoorInt.Open = 0
+    DoorExt.Open = 0
+    batch.write(ActiveVents, "On", 0)
+    state = StateIdle
+    goto Main
+
+    label ManualMode:
+    yield()
+    DoorInt.Lock = 0
+    DoorExt.Lock = 0
+    batch.write(ActiveVents, "On", 0)
+    temp = batch.read(LeverSwitch, "Open", "Average")
+    if temp != 0 { goto ManualMode }
+    DoorInt.Open = 0 // 拉杆归零则关门上锁
+    DoorExt.Open = 0
+    DoorInt.Lock = 1
+    DoorExt.Lock = 1
+    state = StateIdle
+    goto Main
+}

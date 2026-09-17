@@ -1,0 +1,165 @@
+// 高级熔炉配方栈写入器：把各合金配方压入芯片持久栈，供熔炉主控读取。
+//
+// 原脚本：Furnace_Master_Stack_Writer.ic10
+// 栈格式（每个合金 7 项）：合金哈希、原料1哈希、数量、原料2哈希、数量、0、0；
+// 只有一种原料的合金第二组原料用 0 占位。sp 从 0 开始，全部 push 完后栈顶
+// 即配方表末尾（读取端从 STACKSIZE 往下走）。
+//
+// 本脚本只是常量压栈，保留 push 形式以兼容原读取端的栈布局。
+
+func main() {
+    sp = 0
+
+    // Copper
+    push(-404336834)
+    push(-707307845)
+    push(1)
+    push(0)
+    push(0)
+    push(0)
+    push(0)
+
+    // Gold
+    push(226410516)
+    push(-1348105509)
+    push(1)
+    push(0)
+    push(0)
+    push(0)
+    push(0)
+
+    // Iron
+    push(-1301215609)
+    push(1758427767)
+    push(1)
+    push(0)
+    push(0)
+    push(0)
+    push(0)
+
+    // Lead
+    push(2134647745)
+    push(-190236170)
+    push(1)
+    push(0)
+    push(0)
+    push(0)
+    push(0)
+
+    // Nickel
+    push(-1406385572)
+    push(1830218956)
+    push(1)
+    push(0)
+    push(0)
+    push(0)
+    push(0)
+
+    // Silicon
+    push(-290196476)
+    push(1103972403)
+    push(1)
+    push(0)
+    push(0)
+    push(0)
+    push(0)
+
+    // Silver
+    push(-929742000)
+    push(-916518678)
+    push(1)
+    push(0)
+    push(0)
+    push(0)
+    push(0)
+
+    // Electrum = Gold + Silver
+    push(502280180)
+    push(-1348105509)
+    push(1)
+    push(-916518678)
+    push(1)
+    push(0)
+    push(0)
+
+    // Solder = Iron + Lead
+    push(-82508479)
+    push(1758427767)
+    push(1)
+    push(-190236170)
+    push(1)
+    push(0)
+    push(0)
+
+    // Steel = Iron*3 + Carbon
+    push(-654790771)
+    push(1758427767)
+    push(3)
+    push(1724793494)
+    push(1)
+    push(0)
+    push(0)
+
+    // Invar = Iron + Nickel
+    push(-297990285)
+    push(1758427767)
+    push(1)
+    push(1830218956)
+    push(1)
+    push(0)
+    push(0)
+
+    // Constantan = Copper + Nickel
+    push(1058547521)
+    push(1830218956)
+    push(1)
+    push(-707307845)
+    push(1)
+    push(0)
+    push(0)
+
+    // Inconel = Gold*2 + Steel + Nickel
+    push(-787796599)
+    push(-1348105509)
+    push(2)
+    push(-654790771)
+    push(1)
+    push(1830218956)
+    push(1)
+
+    // Stellite = Silver + Silicon*2 + Cobalt
+    push(-1897868623)
+    push(-916518678)
+    push(1)
+    push(1103972403)
+    push(2)
+    push(-983091249)
+    push(1)
+
+    // Hastelloy = Nickel + Silver*2 + Cobalt
+    push(1579842814)
+    push(1830218956)
+    push(1)
+    push(-916518678)
+    push(2)
+    push(-983091249)
+    push(1)
+
+    // Astroloy = Copper + Steel*2 + Cobalt
+    push(412924554)
+    push(-707307845)
+    push(1)
+    push(-654790771)
+    push(2)
+    push(-983091249)
+    push(1)
+
+    // Waspaloy = Silver + Nickel + Lead*2
+    push(156348098)
+    push(-916518678)
+    push(1)
+    push(1830218956)
+    push(1)
+    push(-190236170)
+    push(2)
+}

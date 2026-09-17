@@ -1,0 +1,130 @@
+// 火箭控制器：自动加注燃料、起飞、采矿、返航与卸货的完整状态机。
+//
+// 原脚本：RocketController.ic10
+// 设备：d0 = 燃料泵、d1 = 模式显示、d2 = 燃料显示、d3 = 排空泵、
+//       d4 = 货物显示、d5 = 发射拉杆。
+// 流程：start 加注 -> travel 上升 -> mining 采矿 -> return 返航 ->
+//       Unload 卸货 -> 回到 start。LED 颜色与 db.Setting 指示当前阶段。
+
+const FuelPump = d0
+const ModeDisplay = d1
+const FuelDisplay = d2
+const EmptyPump = d3
+const CargoDisplay = d4
+const LaunchLever = d5
+
+const OREMINER = -2027419821
+const ICEMINER = 74521920
+const JUNKMINER = -1446002463
+const GASMINER = -1969723301
+const SILO = 906210602
+const COMMAND = 1556756312
+const LED = 1944485013
+const SORTER = -1009150565
+const STACKER = 1585641623
+const STACKER2 = -2020231820
+const SBD = 1155865682
+
+const MAXFUEL = 5000
+const MINFUEL = 700
+const MAXCARGO = 600
+
+func main() {
+    var curMode = 0.0
+    var curFuel = 0.0
+    var curCargo = 0.0
+    var curMinables = 0.0
+    var launchReady = 0.0
+    var r0 = 0.0
+
+    label start:
+    db.Setting = 50
+    batch.write(LED, "Color", 2)
+    yield()
+    batch.write(SORTER, "On", 0)
+    batch.write(STACKER, "On", 0)
+    batch.write(STACKER2, "On", 0)
+    batch.write(SBD, "Open", 0)
+    call UpdateInfo
+    // 已在飞行中则直接进入返航流程。
+    if curMode != 0 { goto returnHome }
+
+    r0 = curFuel < MAXFUEL
+    FuelPump.On = r0
+    launchReady = r0 == 0
+    r0 = curCargo > 0
+    batch.write(SILO, "Open", r0)
+    r0 = r0 == 0
+    launchReady = launchReady & r0
+    r0 = LaunchLever.Setting
+    launchReady = launchReady & r0
+    if launchReady == 0 { goto start }
+
+    batch.write(COMMAND, "Activate", 1)
+
+    label travel:
+    db.Setting = 100
+    batch.write(LED, "Color", 5)
+    yield()
+    call UpdateInfo
+    if curMode != 4 { goto travel }
+
+    batch.write(ICEMINER, "Activate", 1)
+    batch.write(OREMINER, "Activate", 1)
+    batch.write(GASMINER, "Activate", 1)
+    batch.write(JUNKMINER, "Activate", 1)
+
+    label mining:
+    db.Setting = 200
+    batch.write(LED, "Color", 3)
+    yield()
+    call UpdateInfo
+    r0 = LaunchLever.Setting
+    if r0 == 0 { goto returnHome }
+    if curFuel < MINFUEL { goto returnHome }
+    if curCargo >= MAXCARGO { goto returnHome }
+    if curMinables != 0 { goto mining }
+    batch.write(COMMAND, "Activate", 0)
+    yield()
+    batch.write(COMMAND, "Activate", 2)
+    goto travel
+
+    label returnHome:
+    batch.write(COMMAND, "Activate", 5)
+
+    label wait:
+    db.Setting = 300
+    batch.write(LED, "Color", 11)
+    yield()
+    call UpdateInfo
+    if curMode != 0 { goto wait }
+
+    label Unload:
+    db.Setting = 400
+    batch.write(LED, "Color", 4)
+    yield()
+    batch.write(SORTER, "On", 1)
+    batch.write(STACKER, "On", 1)
+    batch.write(STACKER2, "On", 1)
+    batch.write(SBD, "Open", 1)
+    call UpdateInfo
+    r0 = curFuel > 0
+    EmptyPump.On = r0
+    r0 = curCargo > 0
+    batch.write(SILO, "Open", r0)
+    if curFuel > 0 { goto Unload }
+    if curCargo > 0 { goto Unload }
+
+    sleep(300) // 等待卸货完成
+    goto start
+
+    label UpdateInfo:
+    curFuel = batch.read(COMMAND, "Fuel", "Average")
+    if isSet(FuelDisplay) { FuelDisplay.Setting = curFuel }
+    curMode = batch.read(COMMAND, "Mode", "Average")
+    if isSet(ModeDisplay) { ModeDisplay.Setting = curMode }
+    curCargo = batch.read(SILO, "Quantity", "Sum")
+    if isSet(CargoDisplay) { CargoDisplay.Setting = curCargo }
+    curMinables = batch.read(COMMAND, "CollectableGoods", "Average")
+    ret
+}

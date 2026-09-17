@@ -1,0 +1,112 @@
+// HVAC 房间控制器 4：把房间温度循环到 HVAC 目标温度并维持目标压力。
+//
+// 原脚本：hvac_room_controller_4.ic10（scriptslol/stationeers-ic10-notes）
+// 设备：d0 = 模式选择（可选，0=离线 1=正常 2=抽真空）。
+// 需要世界中存在名为 "HVAC Thermostat" 的设备，以及 "VENT_IN"/"VENT_OUT"
+// 两组通风口（支持 Active Vent / 大小 Powered Vent 三种）。
+// 注：原脚本的 runVaccum 分支在 128 行处被截断（缺最后一条写与返回），
+//     这里按现有指令补一个 ret 以便编译；默认模式下不会走到该分支。
+
+const HVACMode = d0
+
+const OfflineMode = 0
+const NormalMode = 1
+const VaccumMode = 2
+const TargetPressure = 101 // 101 kPa
+const K = 273.15
+
+const MitterT = -693235651
+const SensorT = -1252983604
+const ActiveVentT = -1129453144
+const SPoweredVentT = 938836756
+const LPoweredVentT = -785498334
+const Sensors = hash("ROOM_SENSOR")
+const InputVents = hash("VENT_IN")
+const OutputVents = hash("VENT_OUT")
+const Thermostat = hash("HVAC Thermostat")
+const WaitPeriod = 1 // 每隔一段时间才检查一次
+
+func main() {
+    var hvacMode = 0.0
+    var hvacTemp = 0.0
+    var roomTemp = 0.0
+    var roomPres = 0.0
+    var tempDiff = 0.0
+    var r0 = 0.0
+
+    label loop:
+    call poll
+
+    // 按模式分派。
+    if hvacMode == OfflineMode { call runOffline }
+    if hvacMode == NormalMode { call runNormal }
+    if hvacMode == VaccumMode { call runVaccum }
+
+    sleep(WaitPeriod)
+    goto loop
+
+    label poll:
+    // 默认正常模式，设备存在则覆盖。
+    hvacMode = 1
+    if isSet(HVACMode) { hvacMode = HVACMode.Setting }
+
+    // 目标温度（摄氏度 -> 开尔文）。
+    hvacTemp = batch.readName(MitterT, Thermostat, "Setting", "Average")
+    hvacTemp = hvacTemp + K
+
+    // 房间温度/压力。
+    roomTemp = batch.readName(SensorT, Sensors, "Temperature", "Average")
+    roomPres = batch.readName(SensorT, Sensors, "Pressure", "Average")
+
+    // 接管通风口控制权。
+    batch.writeName(ActiveVentT, InputVents, "Lock", 0)
+    batch.writeName(ActiveVentT, OutputVents, "Lock", 0)
+    batch.writeName(SPoweredVentT, InputVents, "Lock", 0)
+    batch.writeName(SPoweredVentT, OutputVents, "Lock", 0)
+    batch.writeName(LPoweredVentT, InputVents, "Lock", 0)
+    batch.writeName(LPoweredVentT, OutputVents, "Lock", 0)
+    ret
+
+    label runOffline:
+    batch.writeName(ActiveVentT, InputVents, "On", 0)
+    batch.writeName(ActiveVentT, OutputVents, "On", 0)
+    batch.writeName(SPoweredVentT, InputVents, "On", 0)
+    batch.writeName(SPoweredVentT, OutputVents, "On", 0)
+    batch.writeName(LPoweredVentT, InputVents, "On", 0)
+    batch.writeName(LPoweredVentT, OutputVents, "On", 0)
+    ret
+
+    label runNormal:
+    // 压力不足则向内送气。
+    r0 = roomPres < TargetPressure
+    batch.writeName(ActiveVentT, InputVents, "On", r0)
+    batch.writeName(SPoweredVentT, InputVents, "On", r0)
+    batch.writeName(LPoweredVentT, InputVents, "On", r0)
+    batch.writeName(ActiveVentT, InputVents, "Mode", 0)
+    batch.writeName(SPoweredVentT, InputVents, "Mode", 0)
+    batch.writeName(LPoweredVentT, InputVents, "Mode", 0)
+
+    // 温度与目标不一致则向外排气。
+    r0 = notApprox(hvacTemp, roomTemp, 0.01)
+
+    // 调试：温差写入 db.Setting。
+    tempDiff = hvacTemp - roomTemp
+    tempDiff = abs(tempDiff)
+    db.Setting = tempDiff
+
+    batch.writeName(ActiveVentT, OutputVents, "On", r0)
+    batch.writeName(SPoweredVentT, OutputVents, "On", r0)
+    batch.writeName(LPoweredVentT, OutputVents, "On", r0)
+    batch.writeName(ActiveVentT, OutputVents, "Mode", 1)
+    batch.writeName(SPoweredVentT, OutputVents, "Mode", 1)
+    batch.writeName(LPoweredVentT, OutputVents, "Mode", 1)
+    ret
+
+    label runVaccum:
+    batch.writeName(ActiveVentT, InputVents, "On", 1)
+    batch.writeName(SPoweredVentT, InputVents, "On", 1)
+    batch.writeName(LPoweredVentT, InputVents, "On", 1)
+    batch.writeName(ActiveVentT, InputVents, "Mode", 1)
+    batch.writeName(SPoweredVentT, InputVents, "Mode", 1)
+    ret
+}

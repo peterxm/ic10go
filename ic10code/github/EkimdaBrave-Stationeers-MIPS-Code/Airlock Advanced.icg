@@ -1,0 +1,137 @@
+// 高级气闸：状态机控制内外门与通风口，自动加压/减压并防止双开门。
+//
+// 原脚本：Airlock Advanced.ic10（EkimdaBrave/Stationeers-MIPS-Code）
+// 设备：d0/d1 = 内/外门、d2 = 气体传感器、d3/d4 = 内/外通风口、
+//       d5 = 第二内通风口（可选）。
+// 状态：0 = 外门开、1 = 向外排气、2 = 向内增压、3 = 内门开、
+//       4 = 向内排气、5 = 向外增压。
+// 门按钮的“双击保护”用 Door.Open 与 Door.Setting 的差值判断。
+
+const DoorIn = d0
+const DoorEx = d1
+const GasSensor = d2
+const VentIn = d3
+const VentEx = d4
+const VentIn2 = d5
+
+const TargetInteriorPressure = 20
+const TargetExteriorPressure = 20
+
+func main() {
+    var state = 0.0
+    var activated = 0.0
+    var pressure = 0.0
+    var temp = 0.0
+    var temp2 = 0.0
+
+    VentIn.Lock = 1
+    VentEx.Lock = 1
+    if isSet(VentIn2) { VentIn2.Lock = 1 }
+
+    DoorIn.Mode = 1
+    DoorEx.Mode = 1
+    DoorIn.Lock = 0
+    DoorEx.Lock = 0 // 逻辑模式下无法锁定
+
+    label start:
+    db.Setting = state // 调试用
+    pressure = GasSensor.Pressure
+
+    // 检测按钮是否被按下（Open 与 Setting 不一致），并同步 Setting 防止连发。
+    activated = 0
+    temp = DoorIn.Open
+    temp2 = DoorIn.Setting
+    if temp != temp2 { activated = 1 }
+    DoorIn.Setting = temp
+
+    temp = DoorEx.Open
+    temp2 = DoorEx.Setting
+    if temp != temp2 { activated = 1 }
+    DoorEx.Setting = temp
+
+    if state == 0 { goto state0 }
+    if state == 1 { goto state1 }
+    if state == 2 { goto state2 }
+    if state == 3 { goto state3 }
+    if state == 4 { goto state4 }
+    if state == 5 { goto state5 }
+
+    // 0：外门开着，准备向内循环。
+    label state0:
+    if activated == 0 { goto end }
+    DoorEx.Open = 0
+    DoorIn.Open = 0
+    VentEx.Mode = 1 // 向内
+    VentEx.On = 1
+    goto nextState
+
+    // 1：向外排气。
+    label state1:
+    if activated == 1 { goto state1Vent }
+    if pressure <= 0 { goto state1Vent }
+    goto end
+    label state1Vent:
+    VentEx.On = 0
+    VentIn.Mode = 0 // 向外
+    VentIn.On = 1
+    if isSet(VentIn2) {
+        VentIn2.Mode = 0
+        VentIn2.On = 1
+    }
+    goto nextState
+
+    // 2：向内增压。
+    label state2:
+    if activated == 1 { goto state2Done }
+    if pressure >= TargetInteriorPressure { goto state2Done }
+    goto end
+    label state2Done:
+    VentIn.On = 0
+    if isSet(VentIn2) { VentIn2.On = 0 }
+    DoorIn.Open = 1
+    goto nextState
+
+    // 3：内门开着，准备向外循环。
+    label state3:
+    if activated == 0 { goto end }
+    DoorEx.Open = 0
+    DoorIn.Open = 0
+    VentIn.Mode = 1 // 向内
+    VentIn.On = 1
+    if isSet(VentIn2) {
+        VentIn2.Mode = 1
+        VentIn2.On = 1
+    }
+    goto nextState
+
+    // 4：向内排气。
+    label state4:
+    if activated == 1 { goto state4Vent }
+    if pressure <= 0 { goto state4Vent }
+    goto end
+    label state4Vent:
+    VentIn.On = 0
+    if isSet(VentIn2) { VentIn2.On = 0 }
+    VentEx.Mode = 0 // 向外
+    VentEx.On = 1
+    goto nextState
+
+    // 5：向外增压。
+    label state5:
+    if activated == 1 { goto state5Done }
+    if pressure >= TargetExteriorPressure { goto state5Done }
+    goto end
+    label state5Done:
+    VentEx.On = 0
+    DoorEx.Open = 1
+    goto nextState
+
+    label nextState:
+    state = state + 1
+    if state <= 5 { goto end }
+    state = 0
+
+    label end:
+    yield()
+    goto start
+}

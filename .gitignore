@@ -40,3 +40,10 @@ coverage.txt
 !/ic10code/stationeers-workspace/
 !/ic10code/stationeers-workspace/**
 /ic10code/stationeers-workspace/**/*.ic10
+
+# GitHub corpus: raw third-party .ic/.ic10 files are kept locally only; the
+# hand-written .icg ports are tracked.
+!/ic10code/github/
+!/ic10code/github/**
+/ic10code/github/**/*.ic10
+/ic10code/github/**/*.ic

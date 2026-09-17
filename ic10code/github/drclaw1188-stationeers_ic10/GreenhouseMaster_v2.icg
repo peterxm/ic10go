@@ -1,0 +1,87 @@
+// 温室主控：维持内部氧气/二氧化碳/气压/温度，汇总报警并控制储气罐调节器。
+//
+// 原脚本：GreenhouseMaster_v2.ic10
+// 设备：d0 = 内部气体传感器、d1 = 氧气泵、d2 = 氮气泵、d3 = CO2 泵、
+//       d4 = 加热开关、d5 = 水传感器。
+// 逻辑：读传感器 -> 与阈值比较 -> 控制泵/加热；把所有报警条件或起来写闪灯；
+//       再按储气罐压力控制氧气调节器和废气泵。
+
+const InsideSensor = d0
+const OxygenPump = d1
+const NitrogenPump = d2
+const CO2Pump = d3
+const HeatingSwitch = d4
+const WaterSensor = d5
+
+const MINO2 = 0.3
+const MINCO2 = 0.03
+const MINPRESS = 80
+const MINTEMP = 295
+const MAXTEMP = 305
+
+const FLASHINGLIGHT = -1535893860
+const CANSTORE = 1632165346
+const VOLPUMP = -321403609
+const PRESREG = 209854039
+
+const MAXCANPRES = 17500
+const ALARMVOLATILES = 0.05
+const ALARMPOLLUTANTS = 0.05
+const ALARMOXYGEN = 0.25
+const ALARMCO2 = 0.01
+const ALARMCOLD = 280
+const ALARMHOT = 315
+const ALARMHIGHPRESS = 120
+const ALARMLOWPRESS = 40
+const ALARMLOWWATERPRESS = 5
+
+func main() {
+    var oxygen = 0.0
+    var co2 = 0.0
+    var pressure = 0.0
+    var temp = 0.0
+    var waterPress = 0.0
+    var waterTemp = 0.0
+
+    label start:
+    yield()
+
+    oxygen = InsideSensor.RatioOxygen
+    co2 = InsideSensor.RatioCarbonDioxide
+    pressure = InsideSensor.Pressure
+    temp = InsideSensor.Temperature
+    waterPress = WaterSensor.Pressure
+    waterTemp = WaterSensor.Temperature
+
+    // 温度偏低加热；需要冷却时把下面一行换成 CoolingSwitch。
+    HeatingSwitch.On = temp < MINTEMP
+    // CoolingSwitch.On = temp > MAXTEMP
+
+    OxygenPump.On = oxygen < MINO2
+    CO2Pump.On = co2 < MINCO2
+    NitrogenPump.On = pressure < MINPRESS
+
+    // 任一指标越界即报警。
+    var alarm = 0
+    alarm = alarm | (InsideSensor.RatioVolatiles > ALARMVOLATILES)
+    alarm = alarm | (InsideSensor.RatioPollutant > ALARMPOLLUTANTS)
+    alarm = alarm | (oxygen < ALARMOXYGEN)
+    alarm = alarm | (co2 < ALARMCO2)
+    alarm = alarm | (temp > ALARMHOT)
+    alarm = alarm | (temp < ALARMCOLD)
+    alarm = alarm | (pressure > ALARMHIGHPRESS)
+    alarm = alarm | (pressure < ALARMLOWPRESS)
+    alarm = alarm | (waterPress < ALARMLOWWATERPRESS)
+    alarm = alarm | (waterTemp > ALARMHOT)
+    alarm = alarm | (waterTemp < ALARMCOLD)
+    batch.write(FLASHINGLIGHT, "On", alarm)
+
+    // 氧气罐未满则打开调节器，废气罐有气则抽走。
+    var canPress = batch.readName(CANSTORE, hash("GTS:Oxygen"), "Pressure", "Maximum")
+    batch.writeName(PRESREG, hash("GPR:Oxygen"), "On", canPress < MAXCANPRES)
+
+    var wastePress = batch.readName(CANSTORE, hash("GTS:Waste"), "Pressure", "Maximum")
+    batch.writeName(VOLPUMP, hash("GVP:Waste"), "On", wastePress > 0)
+
+    goto start
+}
