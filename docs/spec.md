@@ -535,6 +535,7 @@ clr(d0)                // clr
 clrById(id)            // clrd：按设备 id 清空
 rmap(d0, reagentHash)  // rmap
 readReagent(d0, LogicReagentMode.Contents, key)  // lr：读取反应物
+readReagent(reg, LogicReagentMode.Contents, key) // lr r? drN：运行期端口
 ```
 
 > 游戏的 `get` / `put` 的 device 操作数是 `d?|r?|id`，因此 `.icg` 的 `get`/`put`
@@ -554,7 +555,8 @@ writeDevSlot(ptr, 1, On, 1)                 // ss drN i slt r?
 ```
 
 > `read`/`write` 用端口，`readById`/`writeById` 用 ReferenceId，`readDev`/`writeDev`
-> 用寄存器里的端口号（`drN`），`readDevSlot`/`writeDevSlot` 是 `drN` 的槽位版本。
+> 用寄存器里的端口号（`drN`），`readDevSlot`/`writeDevSlot` 是 `drN` 的槽位版本；
+> `readReagent` 的第一个实参同样可为寄存器（`lr r? drN`）。
 > 设备栈地址/容量常量：`Stack.Size`(512)、`SorterStack.Size`(32)、
 > `PrinterStack.Size`(64)、`PrinterStack.StackPointer`(63)、
 > `PrinterStack.MissingRecipeReagent`(54)。

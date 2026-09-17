@@ -26,6 +26,7 @@
 - `sap` / `sna` / `sapz` / `snaz` 的容差公式（`max(..., ε*8)`）。
 - `sll` / `sla` / `sra` / `srl` / `rol` / `ror`、`ext` / `ins`。
 - 空批量聚合：`Average`→NaN、`Maximum`→`ninf`、其余→0。
+- `alias` / `define` 与位置无关：先收集全部符号再解析操作数，定义在引用之后也能生效（单遍扫描会把未解析的符号误建成同名设备/寄存器）。
 
 ---
 

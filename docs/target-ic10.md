@@ -125,6 +125,7 @@
 | `readById(id, lt)` / `writeById(id, lt, v)` | `ld` / `sd`（按 ReferenceId 读写逻辑类型） |
 | `readDevSlot(reg, i, slt)` / `writeDevSlot(reg, i, slt, v)` | `ls drN` / `ss drN`（运行期端口） |
 | `readReagent(dev, mode, key)` | `lr` |
+| `readReagent(reg, mode, key)` | `lr r? drN`（运行期端口） |
 
 ### 4.3 分支
 

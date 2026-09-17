@@ -408,7 +408,7 @@ ic10go/
 - `approx/approxZero/notApprox/notApproxZero/logicalNor/isNotNaN`、`isSet`/`isUnset`/`rmap`/`readReagent`、NaN 支持、`ext/ins/sla/srl/rol/ror`
 - 底层控制流：`label/goto/call/ret`、`ra/sp`、`ireg/setIreg`、`jump(expr)`
 - 动态 logicType：`read(dev, lt)` / `write(dev, lt, v)`
-- 动态设备寄存器：`readDev(idx, lt)` / `writeDev(idx, lt, v)`（IC10 `drN`）
+- 动态设备寄存器：`readDev(idx, lt)` / `writeDev(idx, lt, v)`（IC10 `drN`）、`readReagent(idx, mode, key)`（IC10 `lr r? drN`）
 - 相对跳转 `--rel-jump`（`jr`/`br*`，默认关闭）
 
 ### M4 工具链 ✅
@@ -426,7 +426,7 @@ ic10go/
 - 端到端测试：`.icg` → 编译 → VM 执行 → 断言设备状态
 - 作为优化器的语义回归基准
 - 健壮性：操作数 arity 与栈越界返回错误（不 panic）
-- 保真：游戏常量（`pi`/`deg2rad`/…）、`LineNumber`、确定性 `rand`、`rmap`、可选严格设备语义；详见 [`vm-improvements.md`](vm-improvements.md)
+- 保真：游戏常量（`pi`/`deg2rad`/…）、`LineNumber`、确定性 `rand`、`rmap`、位置无关的 `alias`/`define`、可选严格设备语义；详见 [`vm-improvements.md`](vm-improvements.md)
 
 ### M6 多芯片 ✅
 - `chip 名字 { ... }`：一个源文件多块芯片，各编译成独立程序（各自 128 行 / 4 KiB 预算与 loader）
@@ -467,7 +467,7 @@ ic10go/
 
 IC10 → `.icg` 的翻译分两步：
 
-1. **扁平翻译**（`Decompile`）：替换 `alias`/`define`，把 `r0..r15` 映射为同名变量（先读后写才发 `var`，其余首次赋值用 `:=`），控制流翻译为 `label`/`goto`/`call`/`ret`，`HASH()/STR()` → `hash()/str()`，不支持的指令告警并留注释。
+1. **扁平翻译**（`Decompile`）：替换 `alias`/`define`，把 `r0..r15` 映射为同名变量（先读后写才发 `var`，其余首次赋值用 `:=`），控制流翻译为 `label`/`goto`/`call`/`ret`，`HASH()/STR()` → `hash()/str()`，不支持的指令告警并留注释。标签名会做标识符净化：非法字符替换为 `_`，与 `.icg` 关键字冲突的（如 `return`、`for`）加 `_` 后缀。
 2. **结构化**（`DecompileStructured`，`-s`）：
    - 在**分支目标处切分基本块**（保证标签落在正确指令上）。
    - 计算**支配集**与**后支配集**，用最近公共后支配点（LCA）作为 if/else 汇合点。
