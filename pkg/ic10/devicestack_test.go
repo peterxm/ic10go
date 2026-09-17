@@ -328,3 +328,31 @@ func TestDeviceQueryByID(t *testing.T) {
 		t.Errorf("d2.Setting = %v, want 42 (rmap)", got)
 	}
 }
+
+// TestNestedCallReturnLayout checks a call whose callee calls the caller's
+// return block: the return block must still be laid out right after the call
+// (IC10's return address is pc+1).
+func TestNestedCallReturnLayout(t *testing.T) {
+	src := `func main() {
+    goto start
+    label start:
+    call a
+    label after:
+    d0.Setting = 1
+    ret
+    label a:
+    call after
+    ret
+}`
+	code := mustCompile(t, src)
+	m := vm.New()
+	if err := m.Load(code); err != nil {
+		t.Fatalf("vm load: %v", err)
+	}
+	if err := m.Run(50); err != nil && err != vm.ErrStepLimit {
+		t.Fatalf("vm run: %v", err)
+	}
+	if got := m.Get("d0", "Setting"); got != 1 {
+		t.Errorf("d0.Setting = %v, want 1", got)
+	}
+}

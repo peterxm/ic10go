@@ -162,6 +162,11 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 		}
 		blocks = append(rest, halt...)
 	}
+	// A call's return block must sit immediately after the call so that the
+	// IC10 return address (pc+1) points at the continuation. RPO usually does
+	// this, but a callee that itself calls the caller's return block can push
+	// it away.
+	blocks = orderCallReturns(blocks)
 	var lines []line
 	start := map[*ir.Block]int{}
 	add := func(text string, target *ir.Block, f string) {
@@ -367,6 +372,53 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 		return "", report, err
 	}
 	return code, report, nil
+}
+
+// orderCallReturns moves each Call/BrCall return block to sit immediately after
+// its call, which is what makes the IC10 return address (pc+1) point at the
+// continuation. A block is the return of at most one call (the lowerer creates
+// a fresh block per call), so a single pass over the calls in layout order is
+// enough.
+func orderCallReturns(blocks []*ir.Block) []*ir.Block {
+	index := func(x *ir.Block) int {
+		for i, b := range blocks {
+			if b == x {
+				return i
+			}
+		}
+		return -1
+	}
+	moveAfter := func(x, y *ir.Block) {
+		if x == y {
+			return
+		}
+		xi, yi := index(x), index(y)
+		if xi < 0 || yi < 0 || xi == yi+1 {
+			return
+		}
+		blocks = append(blocks[:xi], blocks[xi+1:]...)
+		yi = index(y)
+		blocks = append(blocks, nil)
+		copy(blocks[yi+2:], blocks[yi+1:])
+		blocks[yi+1] = x
+	}
+	var sites [][2]*ir.Block
+	for _, b := range blocks {
+		switch t := b.Term.(type) {
+		case *ir.Call:
+			if t.Return != nil {
+				sites = append(sites, [2]*ir.Block{b, t.Return})
+			}
+		case *ir.BrCall:
+			if t.Return != nil {
+				sites = append(sites, [2]*ir.Block{b, t.Return})
+			}
+		}
+	}
+	for _, s := range sites {
+		moveAfter(s[1], s[0])
+	}
+	return blocks
 }
 
 // checkCallLayout asserts that a Call/BrCall return block is laid out
