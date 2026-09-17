@@ -82,7 +82,6 @@ func TestIc10CodeRoundTripStructured(t *testing.T) {
 		name := filepath.Base(path)
 		t.Run(name, func(t *testing.T) {
 			skipKnownUnsupported(t, path)
-			skipKnownStructured(t, path)
 			src, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)

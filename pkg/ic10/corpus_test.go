@@ -66,42 +66,6 @@ var knownUnsupportedPorts = map[string]string{
 	"sorterSample": "source uses an undefined `hash` register (invalid IC10)",
 }
 
-// knownStructuredUnsupported lists scripts whose structured decompilation
-// compiles but misbehaves: the structurer does not yet handle their control
-// flow (tail-call state machines, interior back edges). The flat decompiler
-// handles them; `-s` is best-effort and only falls back to flat on a compile
-// error. Keys are file base names with or without extension.
-var knownStructuredUnsupported = map[string]string{
-	"adaptiveAirlockMonitoring":                    "structurer miscompiles the control flow",
-	"adaptiveAirlockStormEd":                       "structurer miscompiles the control flow",
-	"automated combustion centrifuge kicker":       "structurer miscompiles the control flow",
-	"filtration_automation_2026_04_003":            "structurer miscompiles the control flow",
-	"gasCentrifugeAuto":                            "structurer miscompiles the control flow",
-	"gasPressureRegulator":                         "structurer miscompiles the control flow",
-	"gasTempValve":                                 "structurer miscompiles the control flow",
-	"gasThermoStat":                                "structurer miscompiles the control flow",
-	"JakeSays Combustion Centrifuge Kicker Script": "structurer miscompiles the control flow",
-	"LU_s Greenhouse Management Script (V1)":       "structurer miscompiles the control flow",
-	"rocketElectricalUmbilical":                    "structurer miscompiles the control flow",
-	"rocketUnloader":                               "structurer miscompiles the control flow",
-	"SchmittTemplate":                              "structurer miscompiles the control flow",
-	"Vulcan - Automated Advanced Furnace":          "structurer miscompiles the control flow",
-}
-
-// skipKnownStructured skips a corpus file listed in knownStructuredUnsupported.
-func skipKnownStructured(t *testing.T, path string) {
-	t.Helper()
-	base := filepath.Base(path)
-	if reason, ok := knownStructuredUnsupported[base]; ok {
-		t.Skipf("known structured unsupported: %s", reason)
-	}
-	if ext := filepath.Ext(base); ext != "" {
-		if reason, ok := knownStructuredUnsupported[strings.TrimSuffix(base, ext)]; ok {
-			t.Skipf("known structured unsupported: %s", reason)
-		}
-	}
-}
-
 // skipKnownUnsupported skips a corpus file listed in knownUnsupported.
 func skipKnownUnsupported(t *testing.T, path string) {
 	t.Helper()

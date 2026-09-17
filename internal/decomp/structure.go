@@ -358,8 +358,27 @@ func (s *structurer) findLoops() {
 		if s.loopHasRet(t, j) {
 			continue
 		}
+		// Only structure a natural loop: blocks (header, end] must have no
+		// predecessor outside [header, end], otherwise a call or state
+		// transition enters the range mid-body and the loop is mis-structured.
+		if !s.naturalLoop(t, j) {
+			continue
+		}
 		s.loops[t] = &sLoop{header: t, end: j}
 	}
+}
+
+// naturalLoop reports whether blocks [header, end] form a natural loop: only
+// the header may have predecessors from outside the range (single entry).
+func (s *structurer) naturalLoop(header, end int) bool {
+	for k := header + 1; k <= end; k++ {
+		for _, p := range s.pred[k] {
+			if p < header || p > end {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (s *structurer) loopHasRet(header, latch int) bool {
@@ -602,20 +621,25 @@ func (s *structurer) emitLoopBody(lp *sLoop) {
 						s.line(stmt)
 					}
 				}
-				if cond, _, _, ok := ic10asm.BranchInfo(b.term.op); ok {
-					if i == lp.end {
-						// The latch's back edge is the loop's normal
-						// iteration; falling through exits the loop.
+				if i == lp.end {
+					// The latch's back edge is the loop's normal
+					// iteration; falling through exits the loop.
+					if cond, _, _, ok := ic10asm.BranchInfo(b.term.op); ok {
 						if inv, ok := invertCond(cond); ok {
 							if expr, ok := s.d.branchExpr(inv, *b.term); ok {
 								s.line(fmt.Sprintf("if %s { break }", expr))
 							}
 						}
-					} else if expr, ok := s.d.branchExpr(cond, *b.term); ok {
-						// An interior back edge: taken means skip to the next
-						// iteration.
+					}
+				} else if cond, _, _, ok := ic10asm.BranchInfo(b.term.op); ok {
+					// An interior conditional back edge: taken means skip to
+					// the next iteration.
+					if expr, ok := s.d.branchExpr(cond, *b.term); ok {
 						s.line(fmt.Sprintf("if %s { continue }", expr))
 					}
+				} else {
+					// An interior unconditional back edge.
+					s.line("continue")
 				}
 				continue
 			}
