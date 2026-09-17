@@ -384,6 +384,7 @@ label start:            // 跳转目标（编译为位置，不占额外行）
 - `goto Name` / `call Name` 解析为绝对行号。
 - `ra` 与 `sp` 是预定义的特殊寄存器，可直接读写：`ra = 0`、`x := ra`。
 - `ireg(ptr)` 读取 `ptr` 指向的寄存器，`setIreg(ptr, v)` 写入（对应 IC10 的 `rrN`）。
+- `reserveRegs(lo, hi)` 声明 `lo..hi` 这些物理寄存器只用于间接访问，寄存器分配器不会把其它值分到其中——这是安全使用 `ireg`/`setIreg` 的前提。
 - `jump(expr)` 执行计算跳转（对应 IC10 的 `j r0`），用于反编译无法静态解析的跳转。
 
 > 这些原语会让产物更难优化，建议仅在迁移旧脚本时使用；正常开发请用高层语法。
@@ -667,6 +668,7 @@ put(d1, 9, printer.missingRecipeReagent(2, hash("Iron"))) // ceil<<8 | hash<<16 
 |------|------|
 | `ireg(ptr)` | 读取 `ptr` 指向的寄存器（IC10 `rrN`） |
 | `setIreg(ptr, v)` | 写入 `ptr` 指向的寄存器 |
+| `reserveRegs(lo, hi)` | 保留物理寄存器 `lo..hi` 供间接访问 |
 | `sla/srl/rol/ror(a,b)` | 移位/旋转 |
 | `ext(src,off,len)` / `ins(field,off,len)` | 位域提取/插入 |
 

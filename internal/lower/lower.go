@@ -1663,6 +1663,29 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		return &ir.Const{V: float64(int32(builtin.Hash(s.Value)))}
 	}
 
+	// reserveRegs(lo, hi) marks physical registers the program will access
+	// indirectly (IC10 rrN via ireg/setIreg). The allocator keeps them free,
+	// which makes indirect access safe.
+	if id.Name == "reserveRegs" {
+		if len(call.Args) != 2 {
+			l.diags.Errorf(call.Pos(), "reserveRegs expects lo and hi")
+			return &ir.Const{V: 0}
+		}
+		lo, ok1 := sema.Eval(call.Args[0], l.constEnv())
+		hi, ok2 := sema.Eval(call.Args[1], l.constEnv())
+		if !ok1 || !ok2 {
+			l.diags.Errorf(call.Pos(), "reserveRegs expects constant bounds")
+			return &ir.Const{V: 0}
+		}
+		fn := l.b.Fn()
+		for i := int(lo); i <= int(hi); i++ {
+			if i >= 0 && i < len(fn.ReservedRegs) {
+				fn.ReservedRegs[i] = true
+			}
+		}
+		return &ir.Const{V: 0}
+	}
+
 	// str("...") produces a display string hash.
 	if id.Name == "str" {
 		if len(call.Args) != 1 {

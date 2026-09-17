@@ -542,10 +542,16 @@ func renderInstr(ins ir.Instr, colors map[*ir.Reg]int) (string, bool) {
 	return "", false
 }
 
-// indirectName renders the IC10 indirect register operand rrN.
+// indirectName renders the IC10 indirect register operand rrN. A constant
+// index addresses the register directly (rN).
 func indirectName(ptr ir.Value, colors map[*ir.Reg]int) string {
 	if r, ok := ptr.(*ir.Reg); ok {
 		return "r" + regName(r, colors)
+	}
+	if c, ok := ptr.(*ir.Const); ok && c.Raw == "" && c.Special == "" {
+		if n := int(c.V); n >= 0 && n < 16 {
+			return "r" + strconv.Itoa(n)
+		}
 	}
 	return "r0"
 }

@@ -423,7 +423,7 @@ func builtinResultType(name string) Type {
 		return Num
 	case "str":
 		return Str
-	case "write", "writeDev", "setIreg", "jump":
+	case "write", "writeDev", "setIreg", "jump", "reserveRegs":
 		return Void
 	case "isSet", "isUnset", "isNaN", "isNotNaN",
 		"approx", "approxZero", "notApprox", "notApproxZero",

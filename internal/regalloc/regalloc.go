@@ -46,19 +46,16 @@ func AllocateReservedSpills(fn *ir.Function, k, reserved int) (map[*ir.Reg]int, 
 // AllocateReservedSpillsMode is AllocateReservedSpills with an explicit spill
 // mode.
 func AllocateReservedSpillsMode(fn *ir.Function, k, reserved int, mode SpillMode) (map[*ir.Reg]int, int, error) {
-	if colors, ok := tryColor(fn, k); ok {
+	palette := paletteFor(fn, k, mode)
+	if colors, ok := tryColor(fn, palette); ok {
 		return colors, 0, nil
 	}
-	// The stack spill path reserves one register for the spill-load scratch;
-	// the db path addresses the housing directly and needs none.
-	avail := k
-	if mode == SpillStack {
-		avail = k - 1
-	}
+	// The stack spill path reserves one register for the spill-load scratch
+	// (already excluded from the palette); the db path needs none.
 	top := 511 - reserved
 	sp := &spiller{fn: fn, slots: map[*ir.Reg]int{}, next: top}
 	for iter := 0; iter < 64; iter++ {
-		colors, spilled := tryColorPartial(fn, avail)
+		colors, spilled := tryColorPartial(fn, palette)
 		if len(spilled) == 0 {
 			return colors, top - sp.next, nil
 		}
@@ -67,16 +64,33 @@ func AllocateReservedSpillsMode(fn *ir.Function, k, reserved int, mode SpillMode
 	return nil, 0, fmt.Errorf("register allocation did not converge")
 }
 
-func tryColor(fn *ir.Function, k int) (map[*ir.Reg]int, bool) {
-	colors, spilled := tryColorPartial(fn, k)
+// paletteFor returns the physical register indices available for colouring:
+// [0,k) minus the registers the function reserves for indirect access
+// (reserveRegs), and minus the stack-spill scratch register.
+func paletteFor(fn *ir.Function, k int, mode SpillMode) []int {
+	var p []int
+	for i := 0; i < k; i++ {
+		if fn.ReservedRegs[i] {
+			continue
+		}
+		if mode == SpillStack && i == k-1 {
+			continue // spillScratch
+		}
+		p = append(p, i)
+	}
+	return p
+}
+
+func tryColor(fn *ir.Function, palette []int) (map[*ir.Reg]int, bool) {
+	colors, spilled := tryColorPartial(fn, palette)
 	return colors, len(spilled) == 0
 }
 
-func tryColorPartial(fn *ir.Function, k int) (map[*ir.Reg]int, map[*ir.Reg]bool) {
+func tryColorPartial(fn *ir.Function, palette []int) (map[*ir.Reg]int, map[*ir.Reg]bool) {
 	fn.BuildCFG()
 	_, out := ir.Liveness(fn)
 	graph := interference(fn, out)
-	return colorGraph(fn, graph, k)
+	return colorGraph(fn, graph, palette)
 }
 
 func instrRegs(i ir.Instr) []*ir.Reg {
@@ -145,7 +159,7 @@ func allRegs(fn *ir.Function) map[*ir.Reg]bool {
 // colorGraph colours the interference graph. It first coalesces copy-related
 // registers (union-find, only when they do not interfere), then colours the
 // resulting classes with Chaitin-Briggs.
-func colorGraph(fn *ir.Function, g map[*ir.Reg]map[*ir.Reg]bool, k int) (map[*ir.Reg]int, map[*ir.Reg]bool) {
+func colorGraph(fn *ir.Function, g map[*ir.Reg]map[*ir.Reg]bool, palette []int) (map[*ir.Reg]int, map[*ir.Reg]bool) {
 	nodes := allRegs(fn)
 
 	parent := map[*ir.Reg]*ir.Reg{}
@@ -221,7 +235,7 @@ func colorGraph(fn *ir.Function, g map[*ir.Reg]map[*ir.Reg]bool, k int) (map[*ir
 		ccost[find(r)] += cost[r]
 	}
 
-	classColors, spilledClasses := chaitinBriggs(list, cadj, ccost, k)
+	classColors, spilledClasses := chaitinBriggs(list, cadj, ccost, palette)
 
 	colors := map[*ir.Reg]int{}
 	spilled := map[*ir.Reg]bool{}
@@ -238,7 +252,8 @@ func colorGraph(fn *ir.Function, g map[*ir.Reg]map[*ir.Reg]bool, k int) (map[*ir
 
 // chaitinBriggs colours the graph: simplify by removing low-degree nodes,
 // spilling the cheapest node when stuck, then assign colours in reverse.
-func chaitinBriggs(list []*ir.Reg, g map[*ir.Reg]map[*ir.Reg]bool, cost map[*ir.Reg]int, k int) (map[*ir.Reg]int, map[*ir.Reg]bool) {
+func chaitinBriggs(list []*ir.Reg, g map[*ir.Reg]map[*ir.Reg]bool, cost map[*ir.Reg]int, palette []int) (map[*ir.Reg]int, map[*ir.Reg]bool) {
+	k := len(palette)
 	degree := map[*ir.Reg]int{}
 	for _, r := range list {
 		degree[r] = len(g[r])
@@ -295,7 +310,7 @@ func chaitinBriggs(list []*ir.Reg, g map[*ir.Reg]map[*ir.Reg]bool, cost map[*ir.
 			}
 		}
 		c := -1
-		for j := 0; j < k; j++ {
+		for _, j := range palette {
 			if !used[j] {
 				c = j
 				break

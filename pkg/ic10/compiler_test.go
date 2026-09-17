@@ -880,3 +880,61 @@ func TestSpillModes(t *testing.T) {
 		t.Errorf("spilled sum = %v, want 153", got)
 	}
 }
+
+// TestReservedIndirectRegs checks that reserveRegs keeps the allocator away
+// from the reserved physical registers and that constant ireg/setIreg address
+// them directly.
+func TestReservedIndirectRegs(t *testing.T) {
+	src := `func main() {
+    reserveRegs(2, 4)
+    ptr := 2
+    setIreg(ptr, 10)
+    ptr = ptr + 1
+    setIreg(ptr, 20)
+    ptr = ptr + 1
+    setIreg(ptr, 30)
+    d0.Setting = ireg(2) + ireg(3) + ireg(4)
+}`
+	code := mustCompile(t, src)
+	if !strings.Contains(code, "move r2 10") || !strings.Contains(code, "move r3 20") ||
+		!strings.Contains(code, "move r4 30") {
+		t.Errorf("reserved registers not addressed directly:\n%s", code)
+	}
+	m := vm.New()
+	if err := m.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(50); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	if got := m.Get("d0", "Setting"); got != 60 {
+		t.Errorf("d0.Setting = %v, want 60\n%s", got, code)
+	}
+}
+
+// TestIndirectRegsRuntimePointer checks that a runtime pointer emits rrN and
+// that the pointed-to register is only touched indirectly.
+func TestIndirectRegsRuntimePointer(t *testing.T) {
+	src := `func main() {
+    reserveRegs(2, 3)
+    ptr := d0.Setting
+    ptr = ptr + 2
+    setIreg(ptr, 42)
+    d0.Setting = ireg(ptr)
+}`
+	code := mustCompile(t, src)
+	if !strings.Contains(code, "rr") {
+		t.Errorf("runtime pointer should emit rrN:\n%s", code)
+	}
+	m := vm.New()
+	m.Set("d0", "Setting", 0) // ptr = 2
+	if err := m.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(50); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	if got := m.Get("d0", "Setting"); got != 42 {
+		t.Errorf("d0.Setting = %v, want 42\n%s", got, code)
+	}
+}

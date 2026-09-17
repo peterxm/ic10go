@@ -475,6 +475,10 @@ type Function struct {
 	Blocks  []*Block
 	Entry   *Block
 	NumRegs int
+	// ReservedRegs marks physical registers the function accesses indirectly
+	// (IC10 rrN via ireg/setIreg, declared with reserveRegs). The allocator
+	// never colours a virtual register there, so indirect access is safe.
+	ReservedRegs [16]bool
 }
 
 // BuildCFG recomputes predecessor and successor lists from terminators.
