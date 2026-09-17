@@ -49,7 +49,48 @@ const spillScratch = "r15"
 type line struct {
 	text   string
 	target *ir.Block
-	fn     string // source function this line was emitted for ("" = main)
+	// imm, when set, is written instead of the target block's line number
+	// (used to branch straight to 9999 to halt).
+	imm string
+	fn  string // source function this line was emitted for ("" = main)
+}
+
+// isHaltBlock reports whether a block only halts by jumping past the program
+// (a bare `jump(9999)`). Such a block emits no line; branches to it target 9999
+// directly.
+func isHaltBlock(b *ir.Block) bool {
+	if b == nil || len(b.Instrs) != 0 {
+		return false
+	}
+	jd, ok := b.Term.(*ir.JmpDyn)
+	if !ok || jd.Table != nil {
+		return false
+	}
+	c, ok := jd.Target.(*ir.Const)
+	return ok && c.Raw == "" && c.Special == "" && c.V == 9999
+}
+
+// fallsThroughTo reports whether prev's terminator can fall through to b (which
+// is the block laid out immediately after prev).
+func fallsThroughTo(prev, b *ir.Block) bool {
+	if prev == nil || b == nil {
+		return false
+	}
+	switch t := prev.Term.(type) {
+	case *ir.Jmp:
+		return t.Target == b
+	case *ir.Goto:
+		return t.Target == b
+	case *ir.Br:
+		return t.Then == b || t.Else == b
+	case *ir.BrApprox:
+		return t.Then == b || t.Else == b
+	case *ir.BrApproxZero:
+		return t.Then == b || t.Else == b
+	case *ir.BrValid:
+		return t.Valid == b || t.Invalid == b
+	}
+	return false
 }
 
 // Report breaks the generated code down by source function.
@@ -93,13 +134,27 @@ func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, e
 // and by Layout (used for the control-flow graph).
 func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.Block, []line, map[*ir.Block]int) {
 	blocks := rpo(fn)
-	// Move halt (Ret) blocks to the end of the layout. A Ret emits no line, so
-	// a jump to one that is followed by an outlined function body would resolve
-	// into that body; putting halts last makes such jumps fall past the program.
+	// Blocks that a call returns to must be laid out right after the call and
+	// therefore stay in place even if they only halt.
+	retBlocks := map[*ir.Block]bool{}
+	for _, b := range fn.Blocks {
+		switch t := b.Term.(type) {
+		case *ir.Call:
+			if t.Return != nil {
+				retBlocks[t.Return] = true
+			}
+		case *ir.BrCall:
+			if t.Return != nil {
+				retBlocks[t.Return] = true
+			}
+		}
+	}
+	// Move halt (Ret and bare-halt) blocks to the end of the layout. They emit
+	// no line, so a jump/fallthrough to one must land past the program.
 	{
 		var rest, halt []*ir.Block
 		for _, b := range blocks {
-			if _, ok := b.Term.(*ir.Ret); ok {
+			if _, ok := b.Term.(*ir.Ret); ok || (isHaltBlock(b) && !retBlocks[b]) {
 				halt = append(halt, b)
 			} else {
 				rest = append(rest, b)
@@ -144,6 +199,14 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 		var next *ir.Block
 		if i+1 < len(blocks) {
 			next = blocks[i+1]
+		}
+		if isHaltBlock(b) {
+			// A bare halt emits no line, so branches target 9999 directly. It
+			// still needs a line when control can fall into it (the previous
+			// block falls through, or a call returns here).
+			if !retBlocks[b] && (i == 0 || !fallsThroughTo(blocks[i-1], b)) {
+				continue
+			}
 		}
 		switch t := b.Term.(type) {
 		case *ir.Jmp:
@@ -227,6 +290,14 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 		}
 	}
 
+	// Branches to a halt block target 9999 directly.
+	for i := range lines {
+		if lines[i].target != nil && isHaltBlock(lines[i].target) {
+			lines[i].imm = "9999"
+			lines[i].target = nil
+		}
+	}
+
 	// A branch to a block that produced no line would resolve past the end.
 	needNop := false
 	for _, ln := range lines {
@@ -260,7 +331,9 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 	var sb strings.Builder
 	for i, ln := range lines {
 		text, target := ln.text, ""
-		if ln.target != nil {
+		if ln.imm != "" {
+			target = ln.imm
+		} else if ln.target != nil {
 			if opts.RelJump {
 				if rt, off, ok := relativeJump(ln.text, start[ln.target]-i); ok {
 					text, target = rt, off
