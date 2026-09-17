@@ -1,0 +1,42 @@
+// 三态恒温器：温度 < 200 加热，> 205 冷却，否则空转。
+//
+// 原脚本：gasThermoStat/gasThermoStat.ic10
+// 温度回显到宿主 Setting；radiatorValve 先写、pipeHeater 后写（与原脚本一致）。
+
+const pipeHeater = d0
+const radiatorValve = d1
+const gasTempDevice = d2
+
+const minTemp = 200
+const maxTemp = 205
+
+const (
+    idle = 0
+    heating = 1
+    cooling = 2
+)
+
+func main() {
+    state := heating
+    for {
+        yield()
+
+        radiatorValve.On = state == cooling ? 1 : 0
+        pipeHeater.On = state == heating ? 1 : 0
+
+        t := gasTempDevice.Temperature
+        db.Setting = t
+
+        if state == heating {
+            if t >= maxTemp { state = idle }
+        } else if state == cooling {
+            if t < minTemp { state = idle }
+        } else {
+            if t < minTemp {
+                state = heating
+            } else if t > maxTemp {
+                state = cooling
+            }
+        }
+    }
+}

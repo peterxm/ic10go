@@ -1,0 +1,119 @@
+// 交易求解器（大型，RAW）：原始未整理版本。
+//
+// 原脚本：Trading/autoTraderLarge/solverLargeRAW.ic10
+
+func main() {
+    var r2 = 0
+    var r3 = 0
+    var r4 = 0
+    var r5 = 0
+    var r6 = 0
+    var r7 = 0
+    var r8 = 0
+    var r9 = 0
+    var r10 = 0
+    label start:
+    yield()
+    r0 := db.Setting
+    if r0 == 0 { goto start }
+    sp = 9
+    r1 := 2
+    label convertloop:
+    r13 := pop()
+    r12 := pop()
+    r11 := pop()
+    r11 = (r11 * deg2rad)
+    r12 = (r12 * deg2rad)
+    r0 = cos(r11)
+    t1 := sin(r12); setIreg(r1, t1)
+    t2 := (ireg(r1) * -1); setIreg(r1, t2)
+    t3 := (ireg(r1) * r0); setIreg(r1, t3)
+    r1 = (r1 + 1)
+    t4 := cos(r12); setIreg(r1, t4)
+    r1 = (r1 + 1)
+    r0 = sin(r11)
+    t5 := sin(r12); setIreg(r1, t5)
+    t6 := (ireg(r1) * r0); setIreg(r1, t6)
+    r1 = (r1 + 1)
+    r13 = (r13 * deg2rad)
+    r13 = cos(r13)
+    r0 = (sp + 2)
+    put(db, r0, r13)
+    if sp != 0 { goto convertloop }
+    r0 = (r5 * r10)
+    r1 = (r7 * r8)
+    r0 = (r0 - r1)
+    r12 = (r3 * r0)
+    r0 = (r5 * r9)
+    r1 = (r6 * r8)
+    r0 = (r0 - r1)
+    r0 = (r4 * r0)
+    r12 = (r0 - r12)
+    r0 = (r6 * r10)
+    r1 = (r7 * r9)
+    r1 = (r0 - r1)
+    r0 = (r2 * r1)
+    r12 = (r12 + r0)
+    r0 = get(db, 8)
+    r13 = (r1 * r0)
+    r0 = (r3 * r10)
+    r1 = (r4 * r9)
+    r0 = (r0 - r1)
+    r1 = get(db, 5)
+    r0 = (r0 * r1)
+    r13 = (r13 - r0)
+    r0 = (r3 * r7)
+    r1 = (r4 * r6)
+    r0 = (r0 - r1)
+    r1 = get(db, 2)
+    r0 = (r0 * r1)
+    r13 = (r13 + r0)
+    r13 = (r13 / r12)
+    r0 = (r2 * r7)
+    r14 := (r4 * r5)
+    r14 = (r0 - r14)
+    r14 = (r14 * r1)
+    r0 = (r2 * r10)
+    r1 = (r4 * r8)
+    r0 = (r0 - r1)
+    r1 = get(db, 5)
+    r0 = (r0 * r1)
+    r14 = (r0 - r14)
+    r0 = (r5 * r10)
+    r1 = (r7 * r8)
+    r0 = (r0 - r1)
+    r1 = get(db, 8)
+    r0 = (r0 * r1)
+    r14 = (r14 - r0)
+    r14 = (r14 / r12)
+    r0 = (r5 * r9)
+    r15 := (r6 * r8)
+    r0 = (r0 - r15)
+    r15 = (r0 * r1)
+    r0 = (r2 * r9)
+    r1 = (r3 * r8)
+    r0 = (r0 - r1)
+    r1 = get(db, 5)
+    r0 = (r0 * r1)
+    r15 = (r15 - r0)
+    r0 = (r2 * r6)
+    r1 = (r3 * r5)
+    r0 = (r0 - r1)
+    r1 = get(db, 2)
+    r0 = (r0 * r1)
+    r15 = (r15 + r0)
+    r15 = (r15 / r12)
+    r11 = (r13 * -1)
+    r11 = atan2(r15, r11)
+    r11 = (r11 * rad2deg)
+    r12 = (r13 * r13)
+    r0 = (r15 * r15)
+    r12 = (r12 + r0)
+    r12 = sqrt(r12)
+    r12 = atan2(r12, r14)
+    r12 = (r12 * rad2deg)
+    put(db, 0, r11)
+    put(db, 1, r12)
+    db.Setting = 0
+    goto start
+}

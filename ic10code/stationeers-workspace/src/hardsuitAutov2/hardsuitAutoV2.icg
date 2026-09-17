@@ -1,0 +1,83 @@
+// 宇航服自动控制：外部环境不安全时关闭头盔，安全时打开；
+// 并根据氧气分压循环过滤。
+//
+// 原脚本：hardsuitAutov2/hardsuitAutoV2.ic10
+// hardsuit = db（IC 宿主），helmet = d0。
+// 头盔未锁定时放弃控制（等待玩家上锁）。
+
+const hardsuit = db
+const helmet = d0
+
+const minSafePress = 35
+const maxSafePress = 200
+const minSafeTemp = 269
+const maxSafeTemp = 313.15
+
+func main() {
+    pressTriggered := 0
+    filterCycling := 0
+
+    helmet.SoundAlert = 25
+    for {
+        locked := helmet.Lock
+        isOpen := helmet.Open
+        if locked == 0 { continue }
+
+        extTemp := hardsuit.TemperatureExternal
+        extPress := hardsuit.PressureExternal
+        ratioOxy := helmet.RatioOxygen
+        currPress := helmet.Pressure
+        oxyPartialPress := ratioOxy * currPress
+
+        hardsuit.On = 1
+        hardsuit.AirRelease = 1
+
+        unsafe := extPress > maxSafePress || extPress < minSafePress ||
+            extTemp > maxSafeTemp || extTemp < minSafeTemp
+
+        if unsafe {
+            if pressTriggered == 0 {
+                helmet.Open = 0
+                pressTriggered = 1
+                helmet.SoundAlert = 16
+                yield()
+                sleep(2)
+                helmet.SoundAlert = 21
+                yield()
+                sleep(2)
+            }
+        } else {
+            helmet.Open = 1
+            if pressTriggered != 0 {
+                pressTriggered = 0
+                helmet.SoundAlert = 20
+                yield()
+                sleep(2)
+            }
+        }
+
+        // 过滤循环：氧气分压 <= 24 开过滤，> 24 关。
+        if isOpen == 1 {
+            filterCycling = 0
+            hardsuit.Filtration = 0
+        } else if filterCycling == 1 {
+            if oxyPartialPress > 24 {
+                filterCycling = 0
+                hardsuit.Filtration = 0
+            }
+        } else if oxyPartialPress < 27 {
+            filterCycling = 1
+            hardsuit.Filtration = 1
+            if oxyPartialPress > 24 {
+                filterCycling = 0
+                hardsuit.Filtration = 0
+            }
+        } else {
+            filterCycling = 0
+            hardsuit.Filtration = 0
+        }
+
+        helmet.SoundAlert = 0
+        yield()
+    }
+}

@@ -1,0 +1,12 @@
+// 分拣器编程：过滤掉 ItemPureIceVolatiles（NotEquals）。
+//
+// 原脚本：sorterAutomate/sorterSample.ic10
+// 原脚本 `define r0 HASH(...)` 后写 `sll r0 hash 8`，`hash` 未定义，属于无效脚本；
+// 这里按意图直接写入栈地址 0。
+
+const sorter = d0
+
+func main() {
+    sorter.Mode = 1
+    put(sorter, 0, sorter.filterPrefabHashNotEquals(hash("ItemPureIceVolatiles")))
+}

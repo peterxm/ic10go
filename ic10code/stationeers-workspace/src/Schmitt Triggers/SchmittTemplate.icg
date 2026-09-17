@@ -1,0 +1,24 @@
+// 施密特触发器模板：温度高于 maxTemp 开冷却，低于 minTemp 关。
+//
+// 原脚本：Schmitt Triggers/SchmittTemplate.ic10
+// 用途：把 gasTempDevice 的温度回显到宿主 Setting，并驱动 radiatorValve。
+
+const radiatorValve = d0
+const gasTempDevice = d1
+
+const minTemp = 650
+const maxTemp = 700
+
+func main() {
+    cooling := false
+    for {
+        yield()
+
+        t := gasTempDevice.Temperature
+        db.Setting = t
+
+        if t >= maxTemp { cooling = true }
+        if t < minTemp { cooling = false }
+        radiatorValve.On = cooling ? 1 : 0
+    }
+}

@@ -1,0 +1,12 @@
+// 分拣器编程：过滤掉挥发物（NotEquals）。
+//
+// 原脚本：sorterAutomate/NOTvolatilesSorter.ic10
+// 注意：原脚本循环条件为 `breq sp 1`，只写入了栈地址 1、2，
+// 地址 0（第一个 push 的 ItemPureIceVolatiles）实际被遗漏，这里保持原行为。
+
+const sorter = d0
+
+func main() {
+    put(sorter, 1, sorter.filterPrefabHashNotEquals(hash("ItemPureIceLiquidVolatiles")))
+    put(sorter, 2, sorter.filterPrefabHashNotEquals(hash("ItemVolatiles")))
+}

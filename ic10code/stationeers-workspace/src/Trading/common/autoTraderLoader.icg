@@ -1,0 +1,20 @@
+// 自动交易路线栈装载：把 13 个交易类别 hash 压入宿主栈。
+//
+// 原脚本：Trading/common/autoTraderLoader.ic10
+
+func main() {
+    clr(db)
+    push(0)          // no filter
+    push(-1374574351) // ore
+    push(54412100)    // alloy
+    push(-82964957)   // food
+    push(-1077922067) // seed
+    push(-470575659)  // gas
+    push(175935584)   // construction
+    push(135244511)   // liquid
+    push(1325142661)  // tools
+    push(-1650376125) // consumables
+    push(-1590718013) // appliances
+    push(-188927486)  // genetics
+    push(649254485)   // rare
+}

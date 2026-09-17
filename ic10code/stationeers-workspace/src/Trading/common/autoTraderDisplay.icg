@@ -1,0 +1,55 @@
+// 自动交易显示：把选择旋钮映射为类别文字，并显示是否找到交易者。
+//
+// 原脚本：Trading/common/autoTraderDisplay.ic10
+
+const selectionDial = d0
+const selectionLED = d1
+const trackerProgram = d2
+const foundTraderLED = d3
+
+func main() {
+    for {
+        if isSet(selectionLED) {
+            selectionLED.Color = 2
+            selectionLED.Mode = 10
+
+            sel := selectionDial.Setting
+            if sel == 0 {
+                selectionLED.Setting = str("NONE")
+            } else if sel == 1 {
+                selectionLED.Setting = str("ORE")
+            } else if sel == 2 {
+                selectionLED.Setting = str("ALOY")
+            } else if sel == 3 {
+                selectionLED.Setting = str("FOOD")
+            } else if sel == 4 {
+                selectionLED.Setting = str("SEED")
+            } else if sel == 5 {
+                selectionLED.Setting = str("GAS")
+            } else if sel == 6 {
+                selectionLED.Setting = str("BULD")
+            } else if sel == 7 {
+                selectionLED.Setting = str("LIQD")
+            } else if sel == 8 {
+                selectionLED.Setting = str("TOOL")
+            } else if sel == 9 {
+                selectionLED.Setting = str("CNSM")
+            } else if sel == 10 {
+                selectionLED.Setting = str("APPL")
+            } else if sel == 11 {
+                selectionLED.Setting = str("GENE")
+            } else if sel == 12 {
+                selectionLED.Setting = str("RARE")
+            } else {
+                selectionLED.Setting = str("NONE")
+            }
+        }
+
+        if isSet(foundTraderLED) && isSet(trackerProgram) {
+            foundTraderLED.Color = 6
+            foundTraderLED.On = trackerProgram.Setting
+        }
+
+        yield()
+    }
+}

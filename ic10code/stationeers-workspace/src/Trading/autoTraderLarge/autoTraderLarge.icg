@@ -1,0 +1,74 @@
+// 大型自动交易：用中/大碟形天线扫描并锁定远距离交易者。
+//
+// 原脚本：Trading/autoTraderLarge/autoTraderLarge.ic10
+// 结构沿用原脚本的 label/goto。
+
+func main() {
+    var r7 = 0
+    label findContact:
+    d1.BestContactFilter = -1
+    d2.BestContactFilter = -1
+    d1.Setting = 1900
+    d1.Setting = 2000
+    d2.Setting = 2000
+    r1 := d1.Horizontal
+    r0 := (r1 + 7)
+    d1.Horizontal = r0
+    r1 = (r0 >= 360)
+    r7 = (r7 + r1)
+    r1 = (r1 * 45)
+    r1 = (r1 % 360)
+    r0 = (r0 * 0.01745)
+    r0 = (r0 + r1)
+    r0 = sin(r0)
+    r0 = (r0 * 45)
+    r0 = (r0 + 45)
+    d1.Vertical = r0
+    label L26:
+    r0 = d1.Idle
+    yield()
+    if r0 != 1 { goto L26 }
+    sleep(1)
+    r1 = d0.Setting
+    r0 = d1.ContactTypeId
+    r1 = get(db, r1)
+    if r0 != r1 { goto findContact }
+    r0 = d1.InterrogationProgress
+    if r0 == 1 { goto findContact }
+    r0 = d1.SignalID
+    d2.BestContactFilter = r0
+    r0 = d1.Horizontal
+    d2.Horizontal = r0
+    r0 = d1.Vertical
+    d2.Vertical = r0
+    label L44:
+    r0 = d2.Idle
+    yield()
+    if r0 != 1 { goto L44 }
+    d2.Setting = 49999
+    yield()
+    d2.Setting = 50000
+    sleep(1)
+    label L51:
+    r0 = d2.SignalID
+    if r0 == -1 { goto findContact }
+    r0 = d2.MinimumWattsToContact
+    yield()
+    if r0 == -1 { goto L51 }
+    if r0 < 200 { goto findContact }
+    r0 = d2.MinimumWattsToContact
+    r1 = d2.WattsReachingContact
+    if r1 < r0 { goto findContact }
+    d2.Activate = 0
+    yield()
+    d2.Activate = 1
+    yield()
+    label L65:
+    r0 = d2.SignalID
+    yield()
+    if r0 == -1 { goto findContact }
+    r0 = d2.InterrogationProgress
+    yield()
+    if r0 != 1 { goto L65 }
+    goto findContact
+}

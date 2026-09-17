@@ -1,0 +1,11 @@
+// 分拣器编程：只保留 ItemVolatiles（Equals）。
+//
+// 原脚本：sorterAutomate/volatileSorter.ic10
+
+const sorter = d0
+
+func main() {
+    clr(sorter)
+    sorter.Mode = 1
+    put(sorter, 0, sorter.filterPrefabHash(hash("ItemVolatiles")))
+}

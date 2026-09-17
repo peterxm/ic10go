@@ -1,0 +1,51 @@
+// 危险时关闭内门/气密门，并让 LED 变红，等待 15 秒后再检查。
+//
+// 原脚本：Interior Airlocks/interiorHazardDoorCloser/interiorHazardDoorCloser.ic10
+// 危险判定：传感器压力/温度越界、燃烧、或多种气体比例超标。
+
+const ledHash = 1944485013
+const sensHash = -1252983604
+const glassDoorHash = -324331872
+const compDoorHash = -793837322
+
+const minPress = 40
+const maxPress = 170
+const minTemp = 266.17
+const maxTemp = 308.15
+const maxRatio = 0.005
+
+// 返回 1 表示检测到危险。
+func checkMode() num {
+    mode := 0
+
+    if batch.read(sensHash, "Pressure", "Minimum") <= minPress { mode = 1 }
+    if batch.read(sensHash, "Pressure", "Maximum") >= maxPress { mode = 1 }
+    if batch.read(sensHash, "Temperature", "Minimum") <= minTemp { mode = 1 }
+    if batch.read(sensHash, "Temperature", "Maximum") >= maxTemp { mode = 1 }
+    if batch.read(sensHash, "Combustion", "Maximum") == 1 { mode = 1 }
+    if batch.read(sensHash, "RatioMethane", "Maximum") >= maxRatio { mode = 1 }
+    if batch.read(sensHash, "RatioHydrochloricAcid", "Maximum") >= maxRatio { mode = 1 }
+    if batch.read(sensHash, "RatioHydrazine", "Maximum") >= maxRatio { mode = 1 }
+    if batch.read(sensHash, "RatioSilanol", "Maximum") >= maxRatio { mode = 1 }
+    if batch.read(sensHash, "RatioHydrogen", "Maximum") >= maxRatio { mode = 1 }
+    if batch.read(sensHash, "RatioOzone", "Maximum") >= maxRatio { mode = 1 }
+
+    db.Setting = mode
+    return mode
+}
+
+func main() {
+    for {
+        yield()
+        batch.write(ledHash, "On", 1)
+
+        if checkMode() == 0 {
+            batch.write(ledHash, "Color", 2)
+        } else {
+            batch.write(glassDoorHash, "Open", 0)
+            batch.write(compDoorHash, "Open", 0)
+            batch.write(ledHash, "Color", 4)
+            sleep(15)
+        }
+    }
+}

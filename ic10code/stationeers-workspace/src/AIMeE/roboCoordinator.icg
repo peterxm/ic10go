@@ -1,0 +1,128 @@
+// Aimee 协调器：把航点表写入每台机器人，并处理卸载/召回。
+//
+// 原脚本：AIMeE/roboCoordinator.ic10
+// 设备：d0 = 平板（坐标）、d1 = 启动按钮、d2/d3 = X/Z 显示屏。
+// 结构沿用原脚本的 label/goto（含运行时标签地址比较）。
+
+const tablet = d0
+const startButton = d1
+const posXDisplay = d2
+const posZDisplay = d3
+
+const lastWaypoint = 6
+const unloadRadius = 2.5
+const chargeError = 70000
+const damageError = 0
+const miningRange = 30
+const timeoutError = 600
+
+func main() {
+    var r0 = 0
+    var r1 = 0
+    var r2 = 0
+    var r3 = 0
+    var r4 = 0
+    var r5 = 0
+    var r6 = 0
+    var r7 = 0
+    var r8 = 0
+    var r9 = 0
+    var r11 = 0
+    var r12 = 0
+    var r13 = 0
+    var r14 = 0
+    var r15 = 0
+
+    label code:
+    db.Setting = 0
+    r5 = -1
+    r6 = lastWaypoint * 2
+    r7 = -645
+    r8 = 716
+    r0 = get(db, 510)
+    r1 = get(db, 511)
+    if r0 == 0 { goto L44 }
+    r7 = r0
+    r8 = r1
+    label L44:
+    r9 = 0
+    r5 = 0
+    label L49:
+    sp = 20
+    label aimeeStackLoadLoop:
+    if sp == 0 { goto aimeeStackLoadLoopEnd }
+    call getTabletCoords
+    r0 = ceil(r7)
+    if isSet(posXDisplay) { posXDisplay.Setting = r0 }
+    r0 = ceil(r8)
+    if isSet(posZDisplay) { posZDisplay.Setting = r0 }
+    r15 = pop()
+    r15 = batch.readName(hash("StructureCircuitHousingCompact"), r15, "ReferenceId", "Sum")
+    if r15 == 0 { goto aimeeStackLoadLoop }
+    call getUnloadOffset
+    r3 = -645 + r0
+    putd(r15, 0, r3)
+    call getUnloadOffset
+    r3 = 716 + r0
+    putd(r15, 1, r3)
+    putd(r15, 2, -645)
+    putd(r15, 3, 711)
+    putd(r15, 4, -645)
+    putd(r15, 5, 708)
+    putd(r15, 6, -611)
+    putd(r15, 7, 709)
+    putd(r15, 8, -603)
+    putd(r15, 9, 768)
+    putd(r15, 10, -774)
+    putd(r15, 11, 759)
+    putd(r15, 12, 0)
+    putd(r15, 13, 0)
+    putd(r15, 14, 0)
+    putd(r15, 15, 0)
+    putd(r15, 511, r6)
+    putd(r15, 510, chargeError)
+    putd(r15, 509, r5)
+    putd(r15, 508, timeoutError)
+    putd(r15, 507, miningRange)
+    r0 = r6 - 1
+    putd(r15, r0, r8)
+    r0 = r6 - 2
+    putd(r15, r0, r7)
+    r9 = r9 + 1
+    yield()
+    goto aimeeStackLoadLoop
+    label aimeeStackLoadLoopEnd:
+    sp = 20
+    r9 = r9 + 1
+    if r9 < 1800 { goto L102 }
+    r9 = 0
+    r5 = 0
+    label L102:
+    yield()
+    goto aimeeStackLoadLoop
+
+    label getUnloadOffset:
+    r1 = unloadRadius
+    r0 = rand()
+    r0 = r1 * r0
+    r1 = rand()
+    if r1 > 0.5 { goto L112 }
+    r0 = r0 * -1
+    label L112:
+    ret
+
+    label getTabletCoords:
+    if isUnset(tablet) { jump(ra) }
+    if isUnset(startButton) { jump(ra) }
+    r0 = startButton.Activate
+    if r0 != 1 { jump(ra) }
+    r7 = tablet.PositionX
+    put(db, 510, r7)
+    r8 = tablet.PositionZ
+    put(db, 511, r8)
+    db.Setting = 1
+    sleep(3)
+    db.Setting = 0
+    startButton.Activate = 0
+    goto code
+}

@@ -1,0 +1,26 @@
+// 把 20 个 Aimee 机器人的名称 hash 写入宿主内存地址 0..19。
+//
+// 原脚本：AIMeE/roboCoordinatorStackloading.ic10
+
+func main() {
+    put(db, 0, hash("aimee1"))
+    put(db, 1, hash("aimee2"))
+    put(db, 2, hash("aimee3"))
+    put(db, 3, hash("aimee4"))
+    put(db, 4, hash("aimee5"))
+    put(db, 5, hash("aimee6"))
+    put(db, 6, hash("aimee7"))
+    put(db, 7, hash("aimee8"))
+    put(db, 8, hash("aimee9"))
+    put(db, 9, hash("aimee10"))
+    put(db, 10, hash("aimee11"))
+    put(db, 11, hash("aimee12"))
+    put(db, 12, hash("aimee13"))
+    put(db, 13, hash("aimee14"))
+    put(db, 14, hash("aimee15"))
+    put(db, 15, hash("aimee16"))
+    put(db, 16, hash("aimee17"))
+    put(db, 17, hash("aimee18"))
+    put(db, 18, hash("aimee19"))
+    put(db, 19, hash("aimee20"))
+}

@@ -1,0 +1,23 @@
+// 简单的漫游动作循环：前进、等待、转向、等待。
+//
+// 原脚本：AIMeE/useless/baseRoamer.ic10
+
+func main() {
+    for {
+        db.Mode = 1
+        yield()
+        sleep(10)
+
+        db.Mode = 0
+        yield()
+        sleep(7)
+
+        db.Mode = 3
+        yield()
+        sleep(7)
+
+        db.Mode = 0
+        yield()
+        sleep(20)
+    }
+}

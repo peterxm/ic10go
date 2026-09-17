@@ -1,0 +1,73 @@
+// Aimee 机器人状态显示：状态文字 LED、电量、可采矿量、错误灯。
+//
+// 原脚本：AIMeE/displays/robostatusdisplay.ic10
+// 注意：原脚本把 `db.Setting = Mode` 放在 errorLED（d5）的连接判断内，
+// 即未接 errorLED 时不写 Setting——这里保持原行为以便行为等价。
+
+const robotXmitter = d0
+const roboroutine = d1
+const statusLED = d2
+const chargeLED = d3
+const mineableLED = d4
+const errorLED = d5
+
+const weatherHash = 1997212478
+
+func main() {
+    for {
+        if robotXmitter.slot[0].Charge < get(roboroutine, 505) {
+            sleep(1)
+            statusLED.Color = 3
+            statusLED.Setting = str("CHRG")
+        }
+
+        if batch.read(weatherHash, "NextWeatherEventTime", "Sum") != 0 {
+            sleep(1)
+            statusLED.Color = 3
+            statusLED.Setting = str("STRM")
+        }
+
+        sleep(2)
+        statusLED.Color = 2
+        statusLED.Mode = 10
+
+        mode := robotXmitter.Mode
+        if mode == 0 {
+            statusLED.Setting = str("IDLE")
+        } else if mode == 2 {
+            statusLED.Setting = str("MOVE")
+        } else if mode == 3 {
+            statusLED.Setting = str("MINE")
+        } else if mode == 4 {
+            statusLED.Setting = str("OFLD")
+        } else if mode == 5 {
+            statusLED.Setting = str("STCK")
+        }
+
+        if isSet(chargeLED) {
+            chargeLED.Mode = 2
+            chargeLED.Color = 2
+            chargeLED.Setting = robotXmitter.slot[0].Charge
+        }
+
+        if isSet(mineableLED) {
+            mineableLED.Mode = 0
+            mineableLED.Color = 2
+            if robotXmitter.Mode == 3 {
+                mineableLED.Setting = robotXmitter.MineablesInVicinity
+            }
+        }
+
+        if isSet(errorLED) {
+            errorLED.Color = 3
+            if roboroutine.Setting == 0 {
+                errorLED.On = 0
+            } else {
+                errorLED.On = 1
+            }
+            db.Setting = robotXmitter.Mode
+        }
+
+        yield()
+    }
+}

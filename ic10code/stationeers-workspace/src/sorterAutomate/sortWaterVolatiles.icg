@@ -1,0 +1,41 @@
+// 三台分拣器：挥发物 / 矿石 / 水冰，各自编程 Equals 过滤。
+//
+// 原脚本：sorterAutomate/sortWaterVolatiles.ic10
+// 可选分拣器（d1、d2）未连接时用 isSet 跳过。
+
+const sorterVolatiles = d0
+const sorterOre = d1
+const sorterWater = d2
+
+func main() {
+    batch.write(hash("StructureLogicSorter"), "On", 1)
+
+    if isSet(sorterVolatiles) {
+        sorterVolatiles.Mode = 1
+        put(sorterVolatiles, 0, sorter.filterPrefabHash(hash("ItemPureIceVolatiles")))
+        put(sorterVolatiles, 1, sorter.filterPrefabHash(hash("ItemPureIceLiquidVolatiles")))
+        put(sorterVolatiles, 2, sorter.filterPrefabHash(hash("ItemVolatiles")))
+    }
+
+    if isSet(sorterOre) {
+        sorterOre.Mode = 1
+        put(sorterOre, 0, sorter.filterPrefabHash(hash("ItemReagentMix")))
+        put(sorterOre, 1, sorter.filterPrefabHash(hash("ItemIronOre")))
+        put(sorterOre, 2, sorter.filterPrefabHash(hash("ItemCopperOre")))
+        put(sorterOre, 3, sorter.filterPrefabHash(hash("ItemCoalOre")))
+        put(sorterOre, 4, sorter.filterPrefabHash(hash("ItemSiliconOre")))
+        put(sorterOre, 5, sorter.filterPrefabHash(hash("ItemGoldOre")))
+        put(sorterOre, 6, sorter.filterPrefabHash(hash("ItemSilverOre")))
+        put(sorterOre, 7, sorter.filterPrefabHash(hash("ItemCobaltOre")))
+        put(sorterOre, 8, sorter.filterPrefabHash(hash("ItemLeadOre")))
+        put(sorterOre, 9, sorter.filterPrefabHash(hash("ItemNickelOre")))
+        put(sorterOre, 10, sorter.filterPrefabHash(hash("ItemUraniumOre")))
+    }
+
+    if isSet(sorterWater) {
+        sorterWater.Mode = 1
+        put(sorterWater, 0, sorter.filterPrefabHash(hash("ItemPureIce")))
+        put(sorterWater, 1, sorter.filterPrefabHash(hash("ItemIce")))
+        put(sorterWater, 2, sorter.filterPrefabHash(hash("ItemPureIceSteam")))
+    }
+}

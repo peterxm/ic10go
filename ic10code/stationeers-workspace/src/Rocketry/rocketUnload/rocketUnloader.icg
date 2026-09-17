@@ -1,0 +1,62 @@
+// 火箭卸货：拉杆切换，卸空后自动复位拉杆。
+//
+// 原脚本：Rocketry/rocketUnload/rocketUnloader.ic10
+
+const lever = d0
+const cargoUmbilical = d1
+const LED = d2
+
+const cargoSmallHash = -1493672123
+const cargoMediumHash = 1151864003
+
+const (
+    idle = 0
+    unloading = 1
+    done = 2
+)
+
+func main() {
+    state := idle
+    for {
+        if state == idle {
+            LED.On = 1
+            LED.Color = 2
+            cargoUmbilical.Open = 0
+            batch.write(cargoSmallHash, "Open", 0)
+            batch.write(cargoMediumHash, "Open", 0)
+            batch.write(cargoMediumHash, "On", 0)
+            batch.write(cargoMediumHash, "On", 0)
+            if lever.On == 1 { state = unloading } else { yield() }
+        } else if state == unloading {
+            cargoUmbilical.Open = 1
+            batch.write(cargoSmallHash, "On", 1)
+            batch.write(cargoMediumHash, "On", 1)
+            batch.write(cargoSmallHash, "Open", 1)
+            batch.write(cargoMediumHash, "Open", 1)
+            for {
+                LED.On = 1
+                LED.Color = 4
+                if lever.On == 0 {
+                    state = done
+                    break
+                }
+                qty := batch.read(cargoSmallHash, "Quantity", "Sum") +
+                    batch.read(cargoMediumHash, "Quantity", "Sum")
+                if qty == 0 {
+                    state = done
+                    break
+                }
+                yield()
+            }
+        } else {
+            sleep(5)
+            batch.write(cargoSmallHash, "Open", 0)
+            batch.write(cargoMediumHash, "Open", 0)
+            batch.write(cargoMediumHash, "On", 0)
+            batch.write(cargoSmallHash, "On", 0)
+            yield()
+            lever.On = 0
+            state = idle
+        }
+    }
+}

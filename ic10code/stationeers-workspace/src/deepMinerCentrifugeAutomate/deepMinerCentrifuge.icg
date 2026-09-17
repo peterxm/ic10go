@@ -1,0 +1,26 @@
+// 深层矿机离心机自动化：处理满 50 试剂后打开、清空，再重新初始化。
+//
+// 原脚本：deepMinerCentrifugeAutomate/deepMinerCentrifuge.ic10
+// 通过设备类型 hash（690945935）批量控制所有离心机。
+
+const centrifugeHash = 690945935
+const processAmount = 50
+
+func main() {
+    for {
+        batch.write(centrifugeHash, "On", 1)
+        batch.write(centrifugeHash, "ClearMemory", 1)
+
+        // 等待处理满 50
+        for batch.read(centrifugeHash, "Reagents", "Average") < processAmount {
+            sleep(1)
+        }
+
+        // 打开并等待清空
+        batch.write(centrifugeHash, "Open", 1)
+        for batch.read(centrifugeHash, "Reagents", "Average") != 0 {
+            sleep(1)
+        }
+        batch.write(centrifugeHash, "Open", 0)
+    }
+}

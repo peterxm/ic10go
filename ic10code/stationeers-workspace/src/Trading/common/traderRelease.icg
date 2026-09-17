@@ -1,0 +1,50 @@
+// 交易台释放：按钮按下时脉冲对应发射台 Activate。
+//
+// 原脚本：Trading/common/traderRelease.ic10
+// 说明：未连接按钮时每轮都会把对应发射台 Activate 置 1（原脚本行为）。
+
+const button1 = d0
+const button2 = d1
+const button3 = d2
+const pad1 = d3
+const pad2 = d4
+const pad3 = d5
+
+func main() {
+    for {
+        if isSet(button1) {
+            if button1.Setting != 0 {
+                pad1.Activate = 0
+                yield()
+                pad1.Activate = 1
+            }
+        } else {
+            yield()
+            pad1.Activate = 1
+        }
+
+        if isSet(button2) {
+            if button2.Setting != 0 {
+                pad2.Activate = 0
+                yield()
+                pad2.Activate = 1
+            }
+        } else {
+            yield()
+            pad2.Activate = 1
+        }
+
+        if isSet(button3) {
+            if button3.Setting != 0 {
+                pad3.Activate = 0
+                yield()
+                pad3.Activate = 1
+            }
+        } else {
+            yield()
+            pad3.Activate = 1
+        }
+
+        yield()
+    }
+}

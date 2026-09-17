@@ -1,0 +1,36 @@
+// 精确气体混合器：按两路进气温度计算混合比例，并输出挥发物比例上限保护。
+//
+// 原脚本：precisionGasMixer/gasMixerCalculator.ic10
+// r = (r'*T1) / ((1-r')*T2 + r'*T1)，再乘 100 写入混合器 Setting。
+
+const gasMixer = d0
+const gas1Analyzer = d1
+const gas2Analyzer = d2
+const outputAnalyzer = d3
+
+const desiredMixerSetting = 0.65
+const maxVolatilesRatio = 0.65
+
+func main() {
+    for {
+        gas1Analyzer.On = 1
+        gas2Analyzer.On = 1
+        outputAnalyzer.On = 1
+
+        t1 := gas1Analyzer.Temperature
+        t2 := gas2Analyzer.Temperature
+
+        numerator := desiredMixerSetting * t1
+        denominator := (1-desiredMixerSetting)*t2 + desiredMixerSetting*t1
+        setting := numerator / denominator * 100
+
+        if setting == 0 {
+            setting = 100
+        } else if outputAnalyzer.RatioVolatiles > maxVolatilesRatio {
+            setting = 100
+        }
+
+        gasMixer.Setting = setting
+        yield()
+    }
+}

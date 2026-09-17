@@ -1,0 +1,111 @@
+// 旁路气闸：两侧温压一致时像气闸一样工作，之后像舱壁门。
+//
+// 原脚本：Deprecated/Interior Airlocks/bypassBulkheadAirlock/interiorAirlock.ic10
+// 设备：d0/d1 = 内/外门、d2/d3 = 内/外通风口、d4 = 传感器、d5 = LED。
+
+func main() {
+    var r10 = 0
+    d3.Lock = 1
+    d2.Lock = 1
+    d1.Mode = 1
+    d0.Mode = 1
+    r0 := d1.Open
+    if r0 == 0 { goto openInner }
+    label openOuter:
+    d2.On = 0
+    d3.On = 0
+    d0.Open = 0
+    d0.Setting = 0
+    d1.Open = 1
+    d1.Setting = 1
+    label waitOuter:
+    yield()
+    call checkMode
+    r0 = d1.Setting
+    r1 := d0.Setting
+    if r0 != r1 { goto waitOuter }
+    d1.Open = 0
+    d1.Setting = 0
+    d0.Setting = 0
+    yield()
+    yield()
+    if r10 == 1 { goto openInner }
+    d3.Mode = 1
+    d3.On = 1
+    d5.Color = 4
+    label ventOuter:
+    yield()
+    r0 = d1.Setting
+    if r0 != 0 { goto openOuter }
+    r0 = d4.Pressure
+    if r0 > 0 { goto ventOuter }
+    d3.On = 0
+    d2.Mode = 0
+    d2.On = 1
+    label pressInner:
+    yield()
+    r0 = d0.Setting
+    if r0 != 0 { goto openInner }
+    r0 = d4.Pressure
+    if r0 < 20 { goto pressInner }
+    label openInner:
+    d2.On = 0
+    d3.On = 0
+    d1.Open = 0
+    d1.Setting = 0
+    d0.Open = 1
+    d0.Setting = 1
+    label waitInner:
+    yield()
+    call checkMode
+    r0 = d1.Setting
+    r1 = d0.Setting
+    if r0 != r1 { goto waitInner }
+    d0.Open = 0
+    d0.Setting = 0
+    d1.Setting = 0
+    yield()
+    yield()
+    if r10 == 1 { goto openOuter }
+    d2.Mode = 1
+    d2.On = 1
+    d5.Color = 4
+    label ventInner:
+    yield()
+    r0 = d0.Setting
+    if r0 != 0 { goto openInner }
+    r0 = d4.Pressure
+    if r0 != 0 { goto ventInner }
+    d2.On = 0
+    d3.Mode = 0
+    d3.On = 1
+    label pressOuter:
+    yield()
+    r0 = d1.Setting
+    if r0 != 0 { goto openOuter }
+    r0 = d4.Pressure
+    if r0 < 20 { goto pressOuter }
+    goto openOuter
+    label checkMode:
+    r0 = d4.Pressure
+    r1 = batch.read(-1252983604, "Pressure", "Average")
+    r2 := batch.read(-1252983604, "Pressure", "Minimum")
+    r10 = (r0 != r2)
+    r0 = approx(r0, r1, 0.15)
+    r10 = (r10 & r0)
+    r0 = d4.Temperature
+    r1 = batch.read(-1252983604, "Temperature", "Minimum")
+    r0 = approx(r0, r1, 0.15)
+    r10 = (r10 & r0)
+    r0 = batch.read(-1252983604, "RatioVolatiles", "Maximum")
+    r0 = (r0 < 0.005)
+    r10 = (r10 & r0)
+    r0 = batch.read(-1252983604, "RatioPollutant", "Maximum")
+    r0 = (r0 < 0.005)
+    r10 = (r10 & r0)
+    db.Setting = r10
+    r0 = (r10 * -3)
+    r0 = (r0 + 5)
+    d5.Color = r0
+    ret
+}

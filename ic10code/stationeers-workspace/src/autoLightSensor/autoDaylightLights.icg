@@ -1,0 +1,23 @@
+// 白天关灯；夜间有人时开灯并等待 180 秒。
+//
+// 原脚本：autoLightSensor/autoDaylightLights.ic10
+// 白天判定：太阳能板（1076425094）Activate 最大值非 0。
+
+const solarHash = 1076425094
+const occupancyHash = 322782515
+const lightsHash = 555215790
+
+func main() {
+    for {
+        daylight := batch.read(solarHash, "Activate", "Maximum")
+        if daylight == 0 {
+            occupied := batch.read(occupancyHash, "Activate", "Maximum")
+            batch.write(lightsHash, "On", occupied)
+            if occupied == 0 { return }
+            sleep(180)
+        } else {
+            batch.write(lightsHash, "On", 0)
+            yield()
+        }
+    }
+}

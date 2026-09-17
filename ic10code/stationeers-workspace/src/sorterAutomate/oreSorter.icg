@@ -1,0 +1,22 @@
+// 分拣器编程：过滤掉常见矿石（NotEquals）。
+//
+// 原脚本：sorterAutomate/oreSorter.ic10
+// 原脚本第 20 行 `sll r0 hash 8` 使用了未定义的 `hash` 寄存器，属于无效脚本；
+// 这里按意图使用当前弹出的 hash，并把 11 个过滤器都写到栈地址 0..10。
+
+const sorter = d0
+
+func main() {
+    sorter.Mode = 1
+    put(sorter, 0, sorter.filterPrefabHashNotEquals(hash("ItemReagentMix")))
+    put(sorter, 1, sorter.filterPrefabHashNotEquals(hash("ItemIronOre")))
+    put(sorter, 2, sorter.filterPrefabHashNotEquals(hash("ItemCopperOre")))
+    put(sorter, 3, sorter.filterPrefabHashNotEquals(hash("ItemCoalOre")))
+    put(sorter, 4, sorter.filterPrefabHashNotEquals(hash("ItemSiliconOre")))
+    put(sorter, 5, sorter.filterPrefabHashNotEquals(hash("ItemGoldOre")))
+    put(sorter, 6, sorter.filterPrefabHashNotEquals(hash("ItemSilverOre")))
+    put(sorter, 7, sorter.filterPrefabHashNotEquals(hash("ItemCobaltOre")))
+    put(sorter, 8, sorter.filterPrefabHashNotEquals(hash("ItemLeadOre")))
+    put(sorter, 9, sorter.filterPrefabHashNotEquals(hash("ItemNickelOre")))
+    put(sorter, 10, sorter.filterPrefabHashNotEquals(hash("ItemUraniumOre")))
+}

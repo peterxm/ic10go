@@ -1,0 +1,14 @@
+// 电弧炉自动化：第 0 槽有物品时激活。
+//
+// 原脚本：arcFurnaceAutomate/arcFurnaceAutomate.ic10
+
+const furnace = d0
+
+func main() {
+    for {
+        if furnace.slot[0].Occupied != 0 {
+            furnace.Activate = 1
+        }
+        sleep(3)
+    }
+}

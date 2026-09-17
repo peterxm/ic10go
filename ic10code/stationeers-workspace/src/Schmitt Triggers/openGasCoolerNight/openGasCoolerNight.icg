@@ -1,0 +1,38 @@
+// 夜间气体冷却施密特触发器：只在夜间（太阳能无输出）开冷却。
+//
+// 原脚本：Schmitt Triggers/openGasCoolerNight/openGasCoolerNight.ic10
+// 温度 >= 233.5 开，< 233.15 关；夜间判定：太阳能板 Activate 最大值为 0。
+// 注意：原脚本用 `seq`（相等）而非 `and` 组合，即 (温度>=max) == 夜间，
+// 因此白天且温度低于 max 时也会进入冷却——这里保持原行为以便行为等价。
+// 写入顺序也与原脚本一致（先置输入，再回显温度）。
+
+const gasTempDevice = d0
+const input1 = d1
+const input2 = d2
+const input3 = d3
+const solarHash = 1076425094
+
+const minTemp = 233.15
+const maxTemp = 233.5
+
+func setInputs(on) {
+    input1.On = on
+    input2.On = on
+    input3.On = on
+}
+
+func main() {
+    cooling := false
+    for {
+        yield()
+
+        setInputs(cooling ? 1 : 0)
+
+        t := gasTempDevice.Temperature
+        db.Setting = t
+
+        night := batch.read(solarHash, "Activate", "Maximum") == 0
+        if (t >= maxTemp) == night { cooling = true }
+        if (t < minTemp) == night { cooling = false }
+    }
+}

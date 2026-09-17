@@ -1,0 +1,9 @@
+// 分拣器编程：只保留 ItemSpaceIce（Equals）。
+//
+// 原脚本：sorterAutomate/ONLYspaceice.ic10
+
+const sorter = d0
+
+func main() {
+    put(sorter, 0, sorter.filterPrefabHash(hash("ItemSpaceIce")))
+}

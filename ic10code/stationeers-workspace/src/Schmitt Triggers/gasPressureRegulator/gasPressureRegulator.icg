@@ -1,0 +1,37 @@
+// 压力调节施密特触发器：压力 >= 45000 关阀，< 0 开阀。
+//
+// 原脚本：Schmitt Triggers/gasPressureRegulator/gasPressureRegulator.ic10
+// input2..4 是可选的，未连接时跳过（原脚本用 bdns 判断）。
+
+const pressureReading = d0
+const input1 = d1
+const input2 = d2
+const input3 = d3
+const input4 = d4
+
+const minPressure = 0
+const maxPressure = 45000
+
+// 把可选输入阀一起置为 on（未连接的设备跳过）。
+func setInputs(on) {
+    input1.On = on
+    if isSet(input2) { input2.On = on }
+    if isSet(input3) { input3.On = on }
+    if isSet(input4) { input4.On = on }
+}
+
+func main() {
+    low := true
+    for {
+        yield()
+
+        pressureReading.On = 1
+        setInputs(low ? 1 : 0)
+
+        p := pressureReading.Pressure
+        db.Setting = p
+
+        if low && p >= maxPressure { low = false }
+        if !low && p < minPressure { low = true }
+    }
+}

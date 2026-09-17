@@ -1,0 +1,24 @@
+// 宇航服风暴预警：天气站预报时间 > 0 时播放警报音。
+//
+// 原脚本：stormWarning/hardsuitStormWarning.ic10
+// NextWeatherEventTime <= 0 表示暂无事件，循环等待。
+
+const hardsuit = d0
+const weatherStation = d1
+
+func stormAlert() {
+    hardsuit.SoundAlert = 17
+    sleep(1)
+    hardsuit.SoundAlert = 18
+    sleep(300)
+    hardsuit.SoundAlert = 0
+}
+
+func main() {
+    for {
+        for weatherStation.NextWeatherEventTime <= 0 {
+            yield()
+        }
+        stormAlert()
+    }
+}

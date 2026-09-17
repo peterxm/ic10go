@@ -115,7 +115,7 @@ go test ./...
 - 覆盖：寄存器复用、比较融合、select、死代码消除、批量聚合、栈、通道、槽位、真实脚本 `solar_tracker`
 - 前端/IR：`internal/ir` 的 `Verify`/`DefUse`/`Liveness` 单测，`internal/sema` 的函数体类型检查单测（含 `str` 显示串等不误报用例）
 - 工具：`fmt` 幂等性、`stats`、`disasm`、LSP 诊断与补全
-- 真实脚本：`ic10code/` 下的每个 `.ic`/`.ic10` 都做**反编译→重编译→设备写入序列对比**（`TestIc10CodeRoundTrip`）与 **minify 等价性**（`TestMinifyIc10Code`）；第三方脚本仅本地保留，缺失时自动跳过
+- 真实脚本：`ic10code/` 下的每个 `.ic`/`.ic10` 都做**反编译→重编译→设备写入序列对比**（`TestIc10CodeRoundTrip`）与 **minify 等价性**（`TestMinifyIc10Code`）；每个 `.icg` 端口还会与其同目录的 `.ic`/`.ic10` 做**设备状态集合等价**（`TestIc10CodePorts`）。第三方脚本仅本地保留，缺失时自动跳过；可用 `IC10CODE_EXTRA=/path/to/repo`（冒号分隔多个路径，类似 `PATH`）追加外部脚本仓库。`ic10code/stationeers-workspace/` 是 [StormCircuit/Stationeers-Workspace](https://github.com/StormCircuit/Stationeers-Workspace) 语料的本地副本：原始 `.ic10` 被 `.gitignore` 忽略，仅提交手工改写的 `.icg` 端口。`knownUnsupported`（`pkg/ic10/corpus_test.go`）列出已知的无效源码 / 超预算脚本并注明原因。
 - 数据段：`data` 表端到端（loader→runtime、版本哨兵、`--data-access stack`、`--data-layout middle`、`--auto-table`），见 `pkg/ic10/data_test.go` 与 `experiments/data-segment/`
 
 ## 文档

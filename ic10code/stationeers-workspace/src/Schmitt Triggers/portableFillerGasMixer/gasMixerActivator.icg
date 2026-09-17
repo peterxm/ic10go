@@ -1,0 +1,32 @@
+// 便携气体混合器激活器：拉杆启动后关闭吹扫、打开气阀，
+// 直到拉杆复位或输出压力达到 19000 kPa。
+//
+// 原脚本：Schmitt Triggers/portableFillerGasMixer/gasMixerActivator.ic10
+
+const activationLever = d0
+const outputAnalyzer = d1
+
+const purgeVentsHash = -1129453144
+const gasValvesHash = -1280984102
+const maxPressure = 19000
+
+func main() {
+    for {
+        // 等待启动：拉杆置 0，吹扫开、气阀关
+        activationLever.Open = 0
+        batch.write(gasValvesHash, "On", 0)
+        batch.write(purgeVentsHash, "On", 1)
+        for activationLever.Open != 1 {
+            yield()
+        }
+
+        // 初始化：吹扫关、气阀开
+        batch.write(purgeVentsHash, "On", 0)
+        batch.write(gasValvesHash, "On", 1)
+
+        // 运行直到拉杆复位或压力到顶
+        for activationLever.Open != 0 && outputAnalyzer.Pressure < maxPressure {
+            yield()
+        }
+    }
+}

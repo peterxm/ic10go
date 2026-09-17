@@ -1,0 +1,145 @@
+// Dirci 协调器：根据两台售货机与机器人占用情况，召回 Dirci 并装载路线。
+//
+// 原脚本：Dirci/dirciCoordinator.ic10
+// 设备：d0 = robotXmitter、d1 = dirciRoutine、d2 = recallSwitch、d3/d4 = 售货机。
+// 结构沿用原脚本的 label/goto。
+
+const robotXmitter = d0
+const dirciRoutine = d1
+const recallSwitch = d2
+const vending1 = d3
+const vending2 = d4
+
+const chargeError = 20000
+const ticksToMove = 45
+
+func main() {
+    put(dirciRoutine, 510, chargeError)
+    put(dirciRoutine, 509, ticksToMove)
+    put(dirciRoutine, 500, 0)
+
+    var r0 = 0
+    var r1 = 0
+    var r2 = 0
+    var r3 = 0
+    var r4 = 0
+    var r5 = 0
+    var targetStatus = 0
+    var currStatus = 0
+    var vendOccuSlots = 0
+    var roboOccuSlots = 0
+
+    db.Setting = 0
+    label L19:
+    r0 = recallSwitch.Setting
+    if r0 != 0 { goto L19 }
+
+    label monitorLoop:
+    yield()
+
+    roboOccuSlots = 0
+    r0 = 2
+    label roboSlotsCalc:
+    r2 = robotXmitter.slot[r0].Occupied
+    roboOccuSlots = roboOccuSlots + r2
+    r0 = r0 + 1
+    if r0 == 12 { goto L31 }
+    goto roboSlotsCalc
+    label L31:
+    if roboOccuSlots == 0 { goto L34 }
+    db.Setting = 0
+    goto monitorLoop
+
+    label L34:
+    vendOccuSlots = 0
+    r0 = 2
+    r1 = 0
+    label vend1SlotsCalc:
+    r2 = vending1.slot[r0].Occupied
+    r1 = r1 + r2
+    r0 = r0 + 1
+    if r0 == 102 { goto L46 }
+    goto vend1SlotsCalc
+    label L46:
+    r4 = r1
+    vendOccuSlots = vendOccuSlots + r1
+
+    r0 = 2
+    r1 = 0
+    label vend2SlotsCalc:
+    r2 = vending2.slot[r0].Occupied
+    r1 = r1 + r2
+    r0 = r0 + 1
+    if r0 == 102 { goto L56 }
+    goto vend2SlotsCalc
+    label L56:
+    r5 = r1
+    vendOccuSlots = vendOccuSlots + r1
+    if vendOccuSlots != 0 { goto L61 }
+    db.Setting = 1
+    goto monitorLoop
+
+    label L61:
+    if currStatus == 1 { goto checkV1Sticky }
+    if currStatus == 2 { goto checkV2Sticky }
+    if r4 > 0 { goto pickV1 }
+    goto pickV2
+    label checkV1Sticky:
+    if r4 > 0 { goto pickV1 }
+    goto pickV2
+    label checkV2Sticky:
+    if r5 > 0 { goto pickV2 }
+    goto pickV1
+    label pickV1:
+    targetStatus = 1
+    goto evalReroute
+    label pickV2:
+    targetStatus = 2
+
+    label evalReroute:
+    if currStatus == targetStatus { goto releaseLock }
+    r1 = get(dirciRoutine, 500)
+    if r1 == 0 { goto requestReroute }
+    if r1 == 2 { goto loadSelectedRoute }
+    goto monitorLoop
+    label requestReroute:
+    put(dirciRoutine, 500, 1)
+    label L88:
+    r0 = get(dirciRoutine, 500)
+    if r0 != 2 { goto L88 }
+
+    label loadSelectedRoute:
+    r0 = 0
+    r1 = get(db, r0)
+    r1 = r0 + r1
+    r0 = r0 + 1
+    if targetStatus == 1 { goto routeLoad }
+    r0 = r1
+    r0 = r0 + 1
+    r1 = get(db, r0)
+    r1 = r0 + r1
+    r0 = r0 + 1
+    if targetStatus == 2 { goto routeLoad }
+
+    label routeLoad:
+    r3 = 0
+    label routeLoop:
+    if r0 > r1 { goto endVendCheck }
+    r2 = get(db, r0)
+    put(dirciRoutine, r3, r2)
+    r0 = r0 + 1
+    r3 = r3 + 1
+    goto routeLoop
+    label endVendCheck:
+    put(dirciRoutine, 511, r3)
+    currStatus = targetStatus
+    put(dirciRoutine, 500, 3)
+    label L118:
+    r0 = get(dirciRoutine, 500)
+    if r0 != 4 { goto L118 }
+    put(dirciRoutine, 500, 0)
+
+    label releaseLock:
+    db.Setting = 0
+    goto monitorLoop
+}

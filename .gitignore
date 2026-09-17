@@ -34,3 +34,9 @@ coverage.txt
 !/ic10code/氧气过滤灌装.icg
 !/ic10code/逻辑分拣器分拣矿石.ic
 !/ic10code/逻辑分拣器分拣矿石.icg
+
+# Stationeers-Workspace corpus (StormCircuit): the raw third-party .ic10 files
+# are kept locally only; the hand-written .icg ports are tracked.
+!/ic10code/stationeers-workspace/
+!/ic10code/stationeers-workspace/**
+/ic10code/stationeers-workspace/**/*.ic10

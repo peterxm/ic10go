@@ -1,0 +1,124 @@
+// 自适应气闸（风暴版）：内外门/通风口状态机，支持高级/简易两种模式。
+//
+// 原脚本：Deprecated/Interior Airlocks/adaptiveAirlockStormEd/adaptiveAirlockStormEd.ic10
+// 设备：d0/d1 = 内/外门、d2 = 进气口、d3 = 可选排气口、d4 = 压力传感器、d5 = 二极管。
+// 动态设备端口 dr10..dr13 用 readDev/writeDev 表达。
+
+func main() {
+    label beforeAll:
+    d0.Mode = 1
+    d1.Mode = 1
+    d0.Lock = 0
+    d1.Lock = 0
+    d2.On = 0
+    if isUnset(d3) { goto L22 }
+    d3.On = 0
+    label L22:
+    d5.On = 1
+    r15 := 0
+    r14 := 0
+    yield()
+    r0 := d0.Open
+    r1 := d1.Open
+    if r0 == r1 { goto setup }
+    r12 := logicalNor(r0, 0)
+    r13 := (r1 ^ 1)
+    if r0 != 0 { call stateInterior }
+    if r1 != 0 { call stateExterior }
+    label setup:
+    d0.Open = 0
+    d1.Open = 1
+    goto beforeAll
+    label stateInterior:
+    yield()
+    call isAnyDoorActivated
+    if r0 != 1 { goto transitionToExterior }
+    goto stateInterior
+    label stateExterior:
+    yield()
+    call isAnyDoorActivated
+    if r0 != 1 { goto transitionToInterior }
+    goto stateExterior
+    label emergencyState:
+    r0 = d5.On
+    if r0 != 0 { goto beforeAll }
+    d0.Mode = 0
+    d1.Mode = 0
+    d0.Lock = 0
+    d1.Lock = 0
+    yield()
+    goto emergencyState
+    label transitionToExterior:
+    r15 = d4.Pressure
+    r13 = 0
+    r12 = 1
+    r11 := 2
+    r10 := 3
+    r9 := max(r14, 0.001)
+    r8 := max(r15, 0.001)
+    call closeDoors
+    call depressurize
+    if isSet(d3) { call pressurize }
+    call openDoors
+    goto stateExterior
+    label transitionToInterior:
+    r14 = d4.Pressure
+    r13 = 1
+    r12 = 0
+    r11 = 3
+    r10 = 2
+    r9 = max(r15, 0.001)
+    r8 = max(r14, 0.001)
+    call closeDoors
+    if isSet(d3) { call depressurize }
+    call pressurize
+    call openDoors
+    goto stateInterior
+    label isAnyDoorActivated:
+    r0 = db.Setting
+    if r0 == 0 { goto L87 }
+    db.Setting = 0
+    label L87:
+    ret
+    label closeDoors:
+    d1.Lock = 1
+    d0.Lock = 1
+    writeDev(r13, LogicType.Open, 0)
+    label L92:
+    r3 := readDev(r13, LogicType.Open)
+    if r3 != 0 { goto L92 }
+    ret
+    label openDoors:
+    writeDev(r12, LogicType.Open, 1)
+    label L97:
+    r0 = readDev(r12, LogicType.Open)
+    if r0 == 0 { goto L97 }
+    d1.Lock = 0
+    d0.Lock = 0
+    d5.Setting = 1
+    ret
+    label depressurize:
+    writeDev(r11, LogicType.Mode, 1)
+    writeDev(r11, LogicType.On, 1)
+    label L106:
+    r0 = d5.On
+    if r0 == 0 { goto emergencyState }
+    r0 = d4.Pressure
+    r1 = (r0 / r8)
+    d5.Setting = r1
+    if r0 != 0 { goto L106 }
+    writeDev(r11, LogicType.On, 0)
+    ret
+    label pressurize:
+    writeDev(r10, LogicType.Mode, 0)
+    writeDev(r10, LogicType.On, 1)
+    label L117:
+    r0 = d5.On
+    if r0 == 0 { goto emergencyState }
+    r0 = d4.Pressure
+    r1 = (r0 / r9)
+    d5.Setting = r1
+    if r0 < r9 { goto L117 }
+    writeDev(r10, LogicType.On, 0)
+    ret
+}

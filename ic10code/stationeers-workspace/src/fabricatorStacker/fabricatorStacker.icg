@@ -1,0 +1,152 @@
+// 制造机 + 堆叠器控制面板（LED 显示屏 / 小键盘 / 开关 / 滑条）。
+//
+// 原脚本：fabricatorStacker/fabricatorStacker.ic10
+// 通过设备类型 hash + 名称 hash 批量读写模块化面板。
+// 状态：reset（复位进度条）→ idle（待机）→ production（制造）→ emptyInventory（清空）。
+
+const fabricator = d0
+const stacker = d1
+
+const ledDisplay = hash("ModularDeviceLEDdisplay2")
+const keypad = hash("ModularDeviceNumpad")
+const switchDev = hash("ModularDeviceSwitch")
+const flipSwitch = hash("ModularDeviceFlipSwitch")
+const diodeSlide = hash("ModularDeviceSliderDiode2")
+
+const displayProgress = hash("Progress")
+const displayAmount = hash("Amount")
+const inputPower = hash("Power Switch")
+const inputAmount = hash("Select Amount")
+const inputStack = hash("Stack Switch")
+
+func main() {
+    var r0 = 0
+    var stackSize = 0
+    var producedSize = 0
+    var productionMode = 0
+
+    label reset:
+    fabricator.Activate = 0
+    batch.writeName(keypad, inputAmount, "Setting", 1)
+    r0 = stacker.slot[2].Quantity
+    if r0 == 0 { goto L27 }
+    r0 = 500
+    stacker.Setting = r0
+    exportStacker()
+    label L27:
+    fabricator.ClearMemory = 1
+    batch.writeName(diodeSlide, displayProgress, "Color", Color.Yellow)
+    batch.writeName(diodeSlide, displayProgress, "Setting", 1)
+    yield()
+    batch.writeName(diodeSlide, displayProgress, "Setting", 0)
+    yield()
+    batch.writeName(diodeSlide, displayProgress, "Setting", 1)
+    yield()
+    batch.writeName(diodeSlide, displayProgress, "Setting", 0)
+    batch.writeName(diodeSlide, displayProgress, "Color", Color.Green)
+
+    label idle:
+    r0 = batch.readName(switchDev, inputPower, "On", "Sum")
+    if r0 == 1 { goto L41 }
+    batch.writeName(switchDev, inputPower, "Color", Color.Red)
+    fabricator.On = 0
+    stacker.On = 0
+    batch.writeName(keypad, inputAmount, "Color", Color.Black)
+    batch.writeName(diodeSlide, displayProgress, "On", 0)
+    batch.writeName(ledDisplay, displayAmount, "Mode", 10)
+    batch.writeName(ledDisplay, displayAmount, "Setting", str(" "))
+    goto reset
+    label L41:
+    setAllOn()
+    yield()
+    r0 = fabricator.Activate
+    if r0 != 0 { goto production }
+    r0 = fabricator.Open
+    if r0 != 0 { goto emptyInventory }
+    productionMode = batch.readName(flipSwitch, inputStack, "On", "Sum")
+    if productionMode != 0 { goto L57 }
+    r0 = batch.readName(keypad, inputAmount, "Setting", "Sum")
+    if r0 != 0 { goto L52 }
+    r0 = 1
+    label L52:
+    if r0 <= 500 { goto L54 }
+    r0 = 500
+    label L54:
+    stackSize = r0
+    batch.writeName(ledDisplay, displayAmount, "Mode", 0)
+    batch.writeName(ledDisplay, displayAmount, "Setting", stackSize)
+    label L57:
+    if productionMode == 0 { goto L62 }
+    batch.writeName(keypad, inputAmount, "Setting", 0)
+    stackSize = 500
+    batch.writeName(ledDisplay, displayAmount, "Mode", 10)
+    batch.writeName(ledDisplay, displayAmount, "Setting", str("1Stack"))
+    label L62:
+    stacker.Setting = stackSize
+    goto idle
+
+    label production:
+    r0 = fabricator.Activate
+    if r0 == 0 { goto reset }
+    batch.writeName(ledDisplay, displayAmount, "Mode", 10)
+    batch.writeName(ledDisplay, displayAmount, "Setting", str("CRAFT"))
+    producedSize = fabricator.ExportCount
+    if productionMode != 0 { goto L72 }
+    r0 = producedSize / stackSize
+    label L72:
+    if productionMode == 0 { goto L76 }
+    stackSize = stacker.slot[2].MaxQuantity
+    if stackSize != 0 { goto L76 }
+    stackSize = 500
+    label L76:
+    r0 = producedSize / stackSize
+    if stackSize != 1 { goto L79 }
+    r0 = fabricator.CompletionRatio
+    label L79:
+    batch.writeName(diodeSlide, displayProgress, "Setting", r0)
+    if producedSize == stackSize { goto reset }
+    goto production
+
+    label emptyInventory:
+    batch.writeName(ledDisplay, displayAmount, "Mode", 10)
+    batch.writeName(ledDisplay, displayAmount, "Setting", str("PURGE"))
+    batch.writeName(diodeSlide, displayProgress, "Color", Color.Red)
+    batch.writeName(diodeSlide, displayProgress, "Setting", 1)
+    r0 = fabricator.Open
+    if r0 == 0 { goto reset }
+    r0 = 500
+    stacker.Setting = r0
+    r0 = stacker.slot[2].Quantity
+    if r0 == 0 { goto L94 }
+    exportStacker()
+    label L94:
+    goto emptyInventory
+}
+
+func exportStacker() {
+    yield()
+    stacker.Activate = 1
+    yield()
+    stacker.Activate = 0
+}
+
+func setAllOn() {
+    batch.writeName(switchDev, inputPower, "Color", Color.Green)
+    stacker.On = 1
+    batch.writeName(keypad, inputAmount, "Color", Color.Green)
+    batch.writeName(keypad, inputAmount, "On", 1)
+    batch.writeName(diodeSlide, displayProgress, "On", 1)
+    r0 := fabricator.On
+    if r0 == 1 { return }
+    fabricator.On = 1
+    r0 = 0
+    label L111:
+    if r0 >= 1 { goto L116 }
+    r0 = r0 + 0.2
+    batch.writeName(diodeSlide, displayProgress, "Setting", r0)
+    yield()
+    goto L111
+    label L116:
+    yield()
+    batch.writeName(diodeSlide, displayProgress, "Setting", 0)
+}

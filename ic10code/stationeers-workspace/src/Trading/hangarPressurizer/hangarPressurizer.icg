@@ -1,0 +1,108 @@
+// 机库增压器：根据批次压力控制舱门与气体传感器。
+//
+// 原脚本：Trading/hangarPressurizer/hangarPressurizer.ic10
+
+func main() {
+    label currSwitchOff:
+    batch.writeName(-785498334, hash("Interior Vent"), "On", 0)
+    batch.writeName(-785498334, hash("Exterior Vent"), "On", 0)
+    batch.writeName(337416191, hash("Interior Door"), "Open", 0)
+    batch.writeName(337416191, hash("Exterior Door"), "Open", 1)
+    batch.write(1736080881, "Open", 1)
+    batch.write(-566348148, "Open", 1)
+    batch.write(-1351081801, "Open", 1)
+    r0 := d0.Activate
+    d5.Activate = r0
+    r0 = d1.Setting
+    if r0 == 1 { goto evacuateToxicAir }
+    d2.Mode = 10
+    d2.Setting = str("Prime")
+    r0 = batch.read(-1252983604, "Pressure", "Minimum")
+    r0 = (r0 * 1000)
+    d3.Setting = r0
+    d4.Mode = 10
+    r0 = d5.Mode
+    if r0 != 4 { goto L42 }
+    d4.Setting = str("Ready")
+    goto L43
+    label L42:
+    d4.Setting = str("Empty")
+    label L43:
+    yield()
+    goto currSwitchOff
+    label currSwitchOn:
+    batch.writeName(-785498334, hash("Interior Vent"), "On", 0)
+    batch.writeName(-785498334, hash("Exterior Vent"), "On", 0)
+    batch.writeName(337416191, hash("Interior Door"), "Open", 1)
+    batch.writeName(337416191, hash("Exterior Door"), "Open", 0)
+    r0 = d1.Setting
+    if r0 == 0 { goto depressurizeCleanAir }
+    d3.Mode = 14
+    r0 = batch.read(-1252983604, "Pressure", "Minimum")
+    r0 = (r0 * 1000)
+    d3.Setting = r0
+    d2.Mode = 10
+    d2.Setting = str("Safe!")
+    r0 = d5.Mode
+    if r0 != 4 { goto L63 }
+    d4.Setting = str("Ready")
+    goto L64
+    label L63:
+    d4.Setting = str("Empty")
+    label L64:
+    yield()
+    goto currSwitchOn
+    label evacuateToxicAir:
+    batch.writeName(-785498334, hash("Exterior Vent"), "On", 1)
+    batch.writeName(-785498334, hash("Exterior Vent"), "Mode", 1)
+    batch.writeName(337416191, hash("Interior Door"), "Open", 0)
+    batch.writeName(337416191, hash("Exterior Door"), "Open", 0)
+    batch.write(1736080881, "Open", 0)
+    batch.write(-566348148, "Open", 0)
+    batch.write(-1351081801, "Open", 0)
+    batch.write(337416191, "Open", 0)
+    r0 = batch.read(-1252983604, "Pressure", "Maximum")
+    if r0 == 0 { goto pressurizeCleanAir }
+    d3.Mode = 14
+    r0 = (r0 * 1000)
+    d3.Setting = r0
+    d2.Mode = 10
+    d2.Setting = str("Evac")
+    yield()
+    goto evacuateToxicAir
+    label pressurizeCleanAir:
+    batch.writeName(-785498334, hash("Exterior Vent"), "On", 0)
+    batch.writeName(-785498334, hash("Interior Vent"), "Mode", 0)
+    batch.writeName(-785498334, hash("Interior Vent"), "On", 1)
+    batch.writeName(337416191, hash("Interior Door"), "Open", 0)
+    batch.writeName(337416191, hash("Exterior Door"), "Open", 0)
+    batch.write(1736080881, "Open", 0)
+    batch.write(-566348148, "Open", 0)
+    batch.write(-1351081801, "Open", 0)
+    r0 = batch.read(-1252983604, "Pressure", "Minimum")
+    if r0 >= 40 { goto currSwitchOn }
+    d3.Mode = 14
+    r0 = (r0 * 1000)
+    d3.Setting = r0
+    d2.Mode = 10
+    d2.Setting = str("Fill")
+    yield()
+    goto pressurizeCleanAir
+    label depressurizeCleanAir:
+    batch.writeName(-785498334, hash("Interior Vent"), "Mode", 1)
+    batch.writeName(-785498334, hash("Interior Vent"), "On", 1)
+    batch.writeName(337416191, hash("Interior Door"), "Open", 0)
+    batch.writeName(337416191, hash("Exterior Door"), "Open", 0)
+    batch.write(1736080881, "Open", 0)
+    batch.write(-566348148, "Open", 0)
+    batch.write(-1351081801, "Open", 0)
+    d2.Mode = 10
+    d2.Setting = str("Depres")
+    r0 = batch.read(-1252983604, "Pressure", "Minimum")
+    if r0 == 0 { goto currSwitchOff }
+    d3.Mode = 14
+    r0 = (r0 * 1000)
+    d3.Setting = r0
+    yield()
+    goto depressurizeCleanAir
+}

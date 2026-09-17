@@ -1,0 +1,23 @@
+// 自适应气闸监控：任一按钮被按下时清除其 Activate。
+//
+// 原脚本：Deprecated/Interior Airlocks/adaptiveAirlockStormEd/adaptiveAirlockMonitoring.ic10
+// 说明：原脚本的 cycleWait/cycleCheck 块没有任何跳转进入（死代码），这里省略。
+
+const interiorButton = d0
+const exteriorButton = d1
+const airlockButton = d2
+const airlockHousing = d3
+
+func main() {
+    for {
+        yield()
+
+        if interiorButton.Activate > 0 {
+            interiorButton.Activate = 0
+        } else if exteriorButton.Activate > 0 {
+            exteriorButton.Activate = 0
+        } else if airlockButton.Activate > 0 {
+            airlockButton.Activate = 0
+        }
+    }
+}

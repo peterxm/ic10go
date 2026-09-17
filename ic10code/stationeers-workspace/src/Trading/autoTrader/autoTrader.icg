@@ -1,0 +1,114 @@
+// 自动交易协调器：扫描/锁定交易者并驱动求解器。
+//
+// 原脚本：Trading/autoTrader/autoTrader.ic10
+// 结构沿用原脚本的 label/goto。
+
+func main() {
+    var r4 = 0
+    var r7 = 0
+    label findContact:
+    d2.BestContactFilter = -1
+    d2.Setting = 3000
+    call moveScannerDish
+    call setFilter
+    r0 := d2.ContactTypeId
+    if r0 != r4 { goto findContact }
+    r0 = d2.InterrogationProgress
+    if r0 == 1 { goto findContact }
+    r0 = d2.SignalID
+    d2.BestContactFilter = r0
+    label L18:
+    r0 = d2.Idle
+    if r0 != 1 { goto L18 }
+    yield()
+    d2.Setting = 7500
+    sleep(2)
+    label L23:
+    r0 = d2.SignalID
+    if r0 == -1 { goto findContact }
+    r0 = d2.MinimumWattsToContact
+    if r0 == -1 { goto L23 }
+    if r0 < 200 { goto findContact }
+    r0 = d2.MinimumWattsToContact
+    r1 := d2.WattsReachingContact
+    if r1 > r0 { goto L32 }
+    call solverRoutine
+    label L32:
+    d2.Activate = 0
+    yield()
+    d2.Activate = 1
+    yield()
+    label L36:
+    r0 = d2.SignalID
+    if r0 == -1 { goto findContact }
+    r0 = d2.MinimumWattsToContact
+    r1 = d2.WattsReachingContact
+    if r1 < r0 { goto findContact }
+    r0 = d2.InterrogationProgress
+    if r0 != 1 { goto L36 }
+    goto findContact
+    label setFilter:
+    r4 = d1.Setting
+    r4 = get(db, r4)
+    ret
+    label moveScannerDish:
+    r1 = d2.Horizontal
+    r0 = (r1 + 7)
+    d2.Horizontal = r0
+    r1 = (r0 >= 360)
+    r7 = (r7 + r1)
+    r1 = (r1 * 45)
+    r1 = (r1 % 360)
+    r0 = (r0 * 0.01745)
+    r0 = (r0 + r1)
+    r0 = sin(r0)
+    r0 = (r0 * 45)
+    r0 = (r0 + 45)
+    d2.Vertical = r0
+    label L63:
+    r0 = d2.Idle
+    if r0 != 1 { goto L63 }
+    sleep(2)
+    ret
+    label solverRoutine:
+    r13 := 0
+    r15 := ra
+    label loadSolver:
+    label L71:
+    r0 = d2.SignalID
+    if r0 == -1 { goto findContact }
+    r0 = d2.Idle
+    if r0 == 0 { goto L71 }
+    r0 = d2.SignalStrength
+    if r0 == -1 { goto L71 }
+    sleep(5)
+    r1 = d2.Horizontal
+    put(d0, r13, r1)
+    r13 = (r13 + 1)
+    r1 = d2.Vertical
+    put(d0, r13, r1)
+    r13 = (r13 + 1)
+    r1 = d2.SignalStrength
+    put(d0, r13, r1)
+    r13 = (r13 + 1)
+    if r13 == 9 { goto L92 }
+    r0 = d2.Horizontal
+    r0 = (r0 + 15)
+    d2.Horizontal = r0
+    goto loadSolver
+    label L92:
+    d0.Setting = 1
+    label L93:
+    r0 = d0.Setting
+    if r0 == 1 { goto L93 }
+    sleep(2)
+    r0 = get(d0, 0)
+    d2.Horizontal = r0
+    r0 = get(d0, 1)
+    d2.Vertical = r0
+    label L100:
+    r0 = d2.Idle
+    if r0 != 1 { goto L100 }
+    yield()
+    jump(r15)
+}

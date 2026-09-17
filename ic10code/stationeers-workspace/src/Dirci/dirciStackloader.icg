@@ -1,0 +1,29 @@
+// Dirci 路线装载：清空内存并把 8 个航点、最后一个航点索引、电量阈值写入。
+//
+// 原脚本：Dirci/dirciStackloader.ic10
+// 地址 511 = 最后一个航点 * 2（与 sp 比较），510 = 电量阈值。
+
+const lastWaypoint = 6
+const chargeError = 20000
+
+func main() {
+    clr(db)
+    put(db, 0, -277)
+    put(db, 1, -1207)
+    put(db, 2, -275)
+    put(db, 3, -1209)
+    put(db, 4, -274)
+    put(db, 5, -1237)
+    put(db, 6, -256)
+    put(db, 7, -1236)
+    put(db, 8, -232)
+    put(db, 9, -1044)
+    put(db, 10, -214)
+    put(db, 11, -1016)
+    put(db, 12, 0)
+    put(db, 13, 0)
+    put(db, 14, 0)
+    put(db, 15, 0)
+    put(db, 511, lastWaypoint*2)
+    put(db, 510, chargeError)
+}

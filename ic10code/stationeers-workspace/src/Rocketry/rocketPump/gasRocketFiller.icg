@@ -1,0 +1,67 @@
+// 火箭燃料加注：空闲 / 加注 / 安全检查三态。
+//
+// 原脚本：Rocketry/rocketPump/gasRocketFiller.ic10
+// 空闲时安全阀 45050 kPa；加注时 59000 kPa；到 45 MPa 或拉杆复位后
+// 进入安全检查，压力降到 45.05 MPa 以下再回到空闲。
+
+const pressureReading = d0
+const fuelPump = d1
+const lever = d2
+const LED = d3
+const safetyValve = d4
+
+const umbilicalHash = -1814939203
+const maxPressure = 45000
+
+const (
+    idle = 0
+    filling = 1
+    safety = 2
+)
+
+func main() {
+    state := idle
+    for {
+        if state == idle {
+            pressureReading.On = 1
+            safetyValve.Setting = 45050
+            safetyValve.On = 1
+            fuelPump.On = 0
+            batch.write(umbilicalHash, "Open", 0)
+            LED.On = 1
+            LED.Color = 2
+            if lever.Setting == 1 { state = filling }
+        } else if state == filling {
+            pressureReading.On = 1
+            safetyValve.Setting = 59000
+            safetyValve.On = 1
+            LED.On = 1
+            LED.Color = 4
+            p := pressureReading.Pressure
+            db.Setting = p
+            if p >= maxPressure {
+                state = safety
+            } else if lever.Setting == 0 {
+                state = safety
+            } else {
+                batch.write(umbilicalHash, "Open", 1)
+                fuelPump.On = 1
+                yield()
+            }
+        } else {
+            lever.On = 0
+            safetyValve.Setting = 45000
+            safetyValve.On = 1
+            fuelPump.On = 0
+            LED.On = 1
+            LED.Color = 3
+            p := pressureReading.Pressure
+            db.Setting = p
+            if p <= maxPressure+50 {
+                state = idle
+            } else {
+                yield()
+            }
+        }
+    }
+}

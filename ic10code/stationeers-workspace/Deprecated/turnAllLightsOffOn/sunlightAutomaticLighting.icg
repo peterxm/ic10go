@@ -1,0 +1,48 @@
+// 根据日光的开关，批量打开/关闭所有灯。
+//
+// 原脚本：Deprecated/turnAllLightsOffOn/sunlightAutomaticLighting.ic10
+// 灯的 hash 列表压入宿主栈，弹出到哨兵值后重新装载。
+
+const solarSensor = d0
+const sentinel = -1860064656
+
+func addLightsToStack() {
+    clr(db)
+    push(sentinel)
+    push(797794350)
+    push(555215790)
+    push(-1306415132)
+    push(1592905386)
+    push(1944485013)
+    push(1847265835)
+    push(576516101)
+    push(1514476632)
+    push(1436121888)
+}
+
+func main() {
+    addLightsToStack()
+
+    for {
+        level := solarSensor.Activate
+        if level == 1 {
+            for {
+                v := pop()
+                batch.write(v, "On", 0)
+                if v == sentinel { break }
+                yield()
+            }
+        } else if level == 0 {
+            for {
+                v := pop()
+                batch.write(v, "On", 1)
+                if v == sentinel { break }
+                yield()
+            }
+        } else {
+            yield()
+            sleep(20)
+        }
+        addLightsToStack()
+    }
+}

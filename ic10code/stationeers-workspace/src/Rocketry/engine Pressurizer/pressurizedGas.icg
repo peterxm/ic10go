@@ -1,0 +1,39 @@
+// 引擎增压泵：压力低于 44 MPa 时启动，按目标压力/体积/储罐压力计算泵功率。
+//
+// 原脚本：Rocketry/engine Pressurizer/pressurizedGas.ic10
+// 功率 = (目标压力 - 当前压力) * 引擎体积 / 储罐压力，钳制在 1..20。
+
+const engAnaly = d0
+const enginePump = d1
+const storagAnaly = d2
+
+const minPressure = 44000
+const targetPressure = 45000
+const maxClamp = 20
+
+func main() {
+    high := true
+    for {
+        engAnaly.On = 1
+        storagAnaly.On = 1
+
+        if high {
+            enginePump.On = 0
+            p := engAnaly.Pressure
+            db.Setting = p
+            if p < minPressure { high = false }
+            yield()
+        } else {
+            enginePump.On = 1
+            p := engAnaly.Pressure
+            if p >= targetPressure {
+                high = true
+            } else {
+                setting := clamp((targetPressure-p)*engAnaly.Volume/storagAnaly.Pressure, 1, maxClamp)
+                enginePump.Setting = setting
+                db.Setting = setting
+            }
+            yield()
+        }
+    }
+}

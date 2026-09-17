@@ -1,0 +1,42 @@
+// 简单过滤管理器施密特触发器：分析仪压力 >= 510 开过滤，< 200 关。
+//
+// 原脚本：Schmitt Triggers/simpleFiltrationManager/simpleFiltration.ic10
+// 通过设备类型 hash + 名称 hash 批量控制同名网络上的设备。
+
+const pressureDevice = d0
+
+const minPressure = 200
+const maxPressure = 510
+
+const flammableName = hash("Flammable Series")
+const pumpName = hash("Pump Series")
+const overpressureName = hash("Overpressure Series")
+const analyzerName = hash("Analyzer Series")
+
+const flammableHash = -348054045
+const pumpHash1 = -321403609
+const pumpHash2 = 1310794736
+const overpressureHash1 = 209854039
+const overpressureHash2 = -1149857558
+
+func main() {
+    pressureHash := pressureDevice.PrefabHash
+
+    filtering := false
+    for {
+        yield()
+
+        p := batch.readName(pressureHash, analyzerName, "Pressure", "Maximum")
+        db.Setting = p
+
+        if p >= maxPressure { filtering = true }
+        if p < minPressure { filtering = false }
+
+        batch.writeName(pressureHash, analyzerName, "On", 1)
+        batch.writeName(flammableHash, flammableName, "On", filtering ? 1 : 0)
+        batch.writeName(pumpHash1, pumpName, "On", filtering ? 1 : 0)
+        batch.writeName(pumpHash2, pumpName, "On", filtering ? 1 : 0)
+        batch.writeName(overpressureHash1, overpressureName, "On", filtering ? 1 : 0)
+        batch.writeName(overpressureHash2, overpressureName, "On", filtering ? 1 : 0)
+    }
+}

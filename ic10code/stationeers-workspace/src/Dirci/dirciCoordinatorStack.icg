@@ -1,0 +1,49 @@
+// Dirci 路线栈装载（Coordinator 版）：把两条路线压入宿主栈。
+//
+// 原脚本：Dirci/dirciCoordinatorStack.ic10
+// 路线 1（太空冰，长度 14）从地址 1 开始，路线 2（太空矿，长度 20）从地址 16 开始。
+
+func main() {
+    clr(db)
+    sp = 0
+
+    // 路线 1
+    push(14)
+    push(-278)
+    push(-1207)
+    push(-275)
+    push(-1208)
+    push(-274)
+    push(-1237)
+    push(-256)
+    push(-1236)
+    push(-232)
+    push(-1044)
+    push(-215)
+    push(-1030)
+    push(-214)
+    push(-1016)
+
+    // 路线 2
+    push(20)
+    push(-274)
+    push(-1206)
+    push(-275)
+    push(-1208)
+    push(-274)
+    push(-1237)
+    push(-256)
+    push(-1236)
+    push(-265)
+    push(-1158)
+    push(-285)
+    push(-1049)
+    push(-421)
+    push(-1046)
+    push(-462)
+    push(-1066)
+    push(-464)
+    push(-1046)
+    push(-441)
+    push(-1047)
+}

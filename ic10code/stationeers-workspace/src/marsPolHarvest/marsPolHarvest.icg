@@ -1,0 +1,48 @@
+// 火星极地采冰：空闲/冷凝两态切换，控制若干泵阀与分析仪。
+//
+// 原脚本：marsPolHarvest/marsPolHarvest.ic10
+// 注意：原脚本 idle→condensing 用 `seq`（相等）组合条件，
+// 即 (液量<20000) == (温度>273.15)，这里保持原行为以便行为等价。
+
+const analyzerHash = -2113838091
+const pumpAHash = 938836756
+const pumpBHash = -785498334
+const pumpCHash = 1420719315
+const condenseHash = 2015439334
+const tempSensorHash = -1252983604
+
+const volumeLimit = 20000
+const freezing = 273.15
+
+func main() {
+    condensing := false
+    for {
+        if condensing {
+            batch.write(condenseHash, "On", 1)
+            batch.write(pumpAHash, "On", 1)
+            batch.write(pumpBHash, "On", 1)
+            batch.write(pumpCHash, "On", 1)
+
+            vol := batch.read(analyzerHash, "VolumeOfLiquid", "Maximum")
+            db.Setting = vol
+            if vol >= volumeLimit { condensing = false }
+
+            t := batch.read(tempSensorHash, "Temperature", "Minimum")
+            if t <= freezing { condensing = false }
+
+            yield()
+        } else {
+            batch.write(analyzerHash, "On", 1)
+            batch.write(pumpAHash, "On", 0)
+            batch.write(pumpBHash, "On", 0)
+            batch.write(pumpCHash, "On", 1)
+
+            vol := batch.read(analyzerHash, "VolumeOfLiquid", "Maximum")
+            db.Setting = vol
+            t := batch.read(tempSensorHash, "Temperature", "Minimum")
+            if (vol < volumeLimit) == (t > freezing) { condensing = true }
+
+            yield()
+        }
+    }
+}

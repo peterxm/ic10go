@@ -1,0 +1,20 @@
+// 有人时开灯，开灯后等待 180 秒再检查。
+//
+// 原脚本：autoLightSensor/autoLightSensor.ic10
+// 占用传感器（322782515）最大 Activate > 0 表示有人。
+
+const occupancyHash = 322782515
+const lightsHash = 555215790
+
+func main() {
+    for {
+        occupied := batch.read(occupancyHash, "Activate", "Maximum")
+        if occupied != 0 {
+            batch.write(lightsHash, "On", occupied)
+            sleep(180)
+        } else {
+            batch.write(lightsHash, "On", 0)
+            yield()
+        }
+    }
+}

@@ -1,0 +1,29 @@
+// 电力脐带：拉杆切换 LED 颜色并开合所有电力脐带。
+//
+// 原脚本：Rocketry/rocketElectricUmbilical/rocketElectricalUmbilical.ic10
+
+const lever = d0
+const LED = d2
+
+const umbilicalHash = 1529453938
+
+func main() {
+    on := false
+    for {
+        if on {
+            LED.On = 1
+            LED.Color = 4
+            batch.write(umbilicalHash, "Open", 1)
+            if lever.On != 1 { on = false }
+        } else {
+            LED.On = 1
+            LED.Color = 2
+            batch.write(umbilicalHash, "Open", 0)
+            if lever.On == 1 {
+                on = true
+            } else {
+                yield()
+            }
+        }
+    }
+}

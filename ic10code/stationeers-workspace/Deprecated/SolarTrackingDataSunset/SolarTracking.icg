@@ -1,0 +1,48 @@
+// 太阳能板追踪（单/双板 + 可选显示）。
+//
+// 原脚本：Deprecated/SolarTrackingDataSunset/SolarTracking.ic10
+// 设备：d0 = 日光传感器、d1 = 显示器（可选）、d2/d3 = 太阳能板。
+// 传感器与板电源口角度：传感器 0°、板 90°。
+
+const Sensor = d0
+const Display = d1
+const PanelType1 = d2
+const PanelType2 = d3
+
+const sensorDataAngle = 0
+const panelPowerAngle = 90
+
+func main() {
+    correctionAngle := sensorDataAngle - panelPowerAngle - 90
+    panel1Hash := PanelType1.PrefabHash
+    panel2Hash := 0
+    if isSet(PanelType2) {
+        panel2Hash = PanelType2.PrefabHash
+    }
+    if isSet(Display) {
+        Display.Mode = 2
+    }
+
+    for {
+        yield()
+
+        angleVertical := 90 - Sensor.Vertical
+        angleHorizontal := Sensor.Horizontal + correctionAngle
+
+        if isSet(Display) {
+            output := batch.read(panel1Hash, "Charge", "Sum")
+            if isSet(PanelType2) {
+                output += batch.read(panel2Hash, "Charge", "Sum")
+            }
+            Display.Setting = output
+        }
+
+        batch.write(panel1Hash, "Vertical", angleVertical)
+        batch.write(panel1Hash, "Horizontal", angleHorizontal)
+
+        if isSet(PanelType2) {
+            batch.write(panel2Hash, "Vertical", angleVertical)
+            batch.write(panel2Hash, "Horizontal", angleHorizontal)
+        }
+    }
+}

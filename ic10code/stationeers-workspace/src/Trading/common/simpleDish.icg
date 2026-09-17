@@ -1,0 +1,15 @@
+// 简易碟形天线：用两个旋钮控制水平/垂直角度。
+//
+// 原脚本：Trading/common/simpleDish.ic10
+
+const dish = d0
+const horDial = d1
+const vertDial = d2
+
+func main() {
+    for {
+        dish.Horizontal = horDial.Setting
+        dish.Vertical = vertDial.Setting
+        yield()
+    }
+}

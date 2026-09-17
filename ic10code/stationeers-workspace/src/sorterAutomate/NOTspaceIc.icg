@@ -1,0 +1,9 @@
+// 分拣器编程：过滤掉 ItemSpaceIce（NotEquals）。
+//
+// 原脚本：sorterAutomate/NOTspaceIc.ic10
+
+const sorter = d0
+
+func main() {
+    put(sorter, 0, sorter.filterPrefabHashNotEquals(hash("ItemSpaceIce")))
+}

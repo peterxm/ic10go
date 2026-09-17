@@ -1,0 +1,38 @@
+// 温度阀施密特触发器：温度 > 276 开阀，< 275 关阀。
+//
+// 原脚本：Schmitt Triggers/gasTempValve/gasTempValve.ic10
+// 启动时先默认关闭，关闭状态每轮 sleep(10) 减少轮询。
+
+const outputValve = d0
+const inputValve = d1
+const gasTempDevice = d2
+
+const minTemp = 275
+const maxTemp = 276
+
+func setValves(on) {
+    outputValve.On = on
+    inputValve.On = on
+}
+
+func main() {
+    setValves(0)
+    yield()
+
+    open := false
+    for {
+        yield()
+
+        setValves(open ? 1 : 0)
+
+        t := gasTempDevice.Temperature
+        db.Setting = t
+
+        if open {
+            if t < minTemp { open = false }
+        } else {
+            if t > maxTemp { open = true }
+            sleep(10)
+        }
+    }
+}

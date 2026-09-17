@@ -1,0 +1,51 @@
+// 火箭仪表盘：燃料、货物、电量三块表。
+//
+// 原脚本：Rocketry/rocket displays/rocketDisplay.ic10
+// cargoMeter 可选（未连接时跳过）。
+
+const fuelMeter = d0
+const cargoMeter = d1
+const powerMeter = d2
+const fuelAnalyzer = d3
+
+const powerSmallHash = -1125305264
+const powerLargeHash = -2123455080
+const cargoSmallHash = -1493672123
+const cargoMediumHash = 1151864003
+
+const fuelCapacity = 45000
+
+func main() {
+    fuelMeter.On = 1
+    fuelMeter.Color = 3
+    if isSet(cargoMeter) {
+        cargoMeter.On = 1
+        cargoMeter.Color = 1
+        cargoMeter.Maximum = 1
+    }
+    powerMeter.On = 1
+    powerMeter.Color = 5
+
+    powerMeter.Maximum = batch.read(powerSmallHash, "Maximum", "Sum") +
+        batch.read(powerLargeHash, "Maximum", "Sum")
+    fuelMeter.Maximum = fuelCapacity
+
+    for {
+        fuelMeter.Setting = fuelAnalyzer.Pressure
+        powerMeter.Setting = batch.read(powerSmallHash, "Charge", "Sum") +
+            batch.read(powerLargeHash, "Charge", "Sum")
+
+        if isSet(cargoMeter) {
+            small := batch.read(cargoSmallHash, "Ratio", "Average")
+            medium := batch.read(cargoMediumHash, "Ratio", "Average")
+            if isNaN(small) {
+                cargoMeter.Setting = medium
+            } else if isNaN(medium) {
+                cargoMeter.Setting = small
+            } else {
+                cargoMeter.Setting = (small + medium) / 2
+            }
+        }
+        yield()
+    }
+}

@@ -1,0 +1,66 @@
+// 气体离心机自动化：待机 → 启动 → 高速 → 卸料。
+//
+// 原脚本：gasCentrifuge/gasCentrifugeAuto.ic10
+// 用 label/goto 忠实还原原脚本的状态机（含各处 yield 的位置）。
+
+const gasFuge = d0
+
+func main() {
+    var r0 = 0
+    var r1 = 0
+
+    label idle:
+    gasFuge.On = 0
+    gasFuge.Throttle = 0
+    gasFuge.CombustionLimiter = 0
+    gasFuge.Open = 0
+    r0 = gasFuge.slot[0].Occupied
+    if r0 == 1 { goto beginProcessing }
+    yield()
+    goto idle
+
+    label beginProcessing:
+    gasFuge.On = 1
+    gasFuge.Throttle = 10
+    gasFuge.CombustionLimiter = 10
+    r0 = gasFuge.Rpm == 0
+    r1 = gasFuge.Stress == 0
+    r0 = r0 || r1
+    yield()
+    if r0 == 1 { goto beginProcessing }
+    gasFuge.Throttle = 10
+    gasFuge.CombustionLimiter = 10
+    r0 = gasFuge.Rpm > 245
+    r1 = gasFuge.Stress == 0
+    r0 = r0 || r1
+    if r0 == 1 { goto highRPM }
+    yield()
+    goto beginProcessing
+
+    label highRPM:
+    sleep(10)
+    gasFuge.On = 1
+    gasFuge.Throttle = 100
+    gasFuge.CombustionLimiter = 100
+    r0 = gasFuge.slot[0].Occupied
+    yield()
+    if r0 != 0 { goto highRPM }
+    sleep(2)
+    r0 = gasFuge.slot[0].Occupied
+    yield()
+    if r0 == 0 { goto unload }
+    goto highRPM
+
+    label unload:
+    gasFuge.On = 0
+    gasFuge.Throttle = 0
+    gasFuge.CombustionLimiter = 0
+    gasFuge.Open = 1
+    r0 = gasFuge.slot[1].Occupied
+    if r0 != 0 { goto unload }
+    sleep(2)
+    r0 = gasFuge.slot[1].Occupied
+    if r0 == 0 { goto idle }
+    yield()
+    goto unload
+}

@@ -1,0 +1,62 @@
+// Dirci 机器人状态显示：状态文字 LED、电量、错误灯。
+//
+// 原脚本：Dirci/displays/dircistatusdisplay.ic10
+// 注意：`db.Setting = Mode` 位于 errorLED（d5）的连接判断内，保持原行为。
+
+const robotXmitter = d0
+const roboroutine = d1
+const statusLED = d2
+const chargeLED = d3
+const errorLED = d5
+
+const weatherHash = 1997212478
+
+func main() {
+    for {
+        if robotXmitter.slot[0].Charge < get(roboroutine, 505) {
+            sleep(1)
+            statusLED.Color = 3
+            statusLED.Setting = str("CHRG")
+            sleep(2)
+        }
+
+        if batch.read(weatherHash, "NextWeatherEventTime", "Sum") != 0 {
+            sleep(1)
+            statusLED.Color = 3
+            statusLED.Setting = str("STRM")
+            sleep(2)
+        }
+
+        statusLED.Color = 2
+        statusLED.Mode = 10
+
+        mode := robotXmitter.Mode
+        if mode == 0 {
+            statusLED.Setting = str("IDLE")
+        } else if mode == 1 {
+            statusLED.Setting = str("MOVE")
+        } else if mode == 2 {
+            statusLED.Setting = str("LOAD")
+        } else if mode == 3 {
+            statusLED.Setting = str("OFLD")
+        }
+
+        if isSet(chargeLED) {
+            chargeLED.Mode = 2
+            chargeLED.Color = 2
+            chargeLED.Setting = robotXmitter.slot[0].Charge
+        }
+
+        if isSet(errorLED) {
+            errorLED.Color = 3
+            if roboroutine.Setting == 0 {
+                errorLED.On = 0
+            } else {
+                errorLED.On = 1
+            }
+            db.Setting = robotXmitter.Mode
+        }
+
+        yield()
+    }
+}

@@ -1,0 +1,22 @@
+// 生长灯自动化：每天亮 lightTime 秒（一天按 1200 秒计）。
+//
+// 原脚本：Schmitt Triggers/growLightAutomation/growlightAuto.ic10
+// lightTimeMemory 的 Setting = 植物每天需要的光照秒数。
+
+const lightTimeMemory = d0
+const stopWatch = d1
+const growLightsHash = -1758710260
+
+const dayLength = 1200
+
+func main() {
+    lightTime := lightTimeMemory.Setting
+    stopWatch.Activate = 1
+
+    for {
+        yield()
+
+        cycleTime := stopWatch.Time % dayLength
+        batch.write(growLightsHash, "On", cycleTime < lightTime ? 1 : 0)
+    }
+}

@@ -1,0 +1,122 @@
+// Dirci 采矿例行程序：装载 → 前往矿区 → 采矿 → 返回卸载。
+//
+// 原脚本：Dirci/dirciroutine.ic10
+// 设备：d0 = 机器人发射器、d1 = dirciRoutine、d2 = 召回开关。
+// 保留原脚本的运行时标签地址比较。
+
+func main() {
+    var r0 = 0
+    d0.Mode = 0
+    label arrivedHome:
+    sp = 0
+    r12 := get(db, 511)
+    call getInventory
+    if r0 != 0 { goto endReroute }
+    r0 = get(db, 500)
+    if r0 == 3 { goto rerouteDone }
+    if r0 != 1 { goto endReroute }
+    put(db, 500, 2)
+    label L14:
+    r0 = get(db, 500)
+    if r0 != 3 { goto L14 }
+    sp = 4
+    goto goingHome
+    label rerouteDone:
+    put(db, 500, 4)
+    label endReroute:
+    call batteryWeatherCheckRecall
+    if r0 != 0 { goto arrivedHome }
+    r2 := 0
+    label loadingLoop:
+    d0.Mode = 2
+    yield()
+    r2 = (r2 + 1)
+    r0 = d0.Mode
+    if r0 == 4 { goto goingToWork }
+    r1 := get(db, 509)
+    if r2 < r1 { goto loadingLoop }
+    goto goingToWork
+    label goingHome:
+    call batteryWeatherCheckRecall
+    if sp <= 0 { goto arrivedHome }
+    sp = (sp - 1)
+    r3 := get(db, sp)
+    sp = (sp - 1)
+    r2 = get(db, sp)
+    d0.TargetX = r2
+    d0.TargetZ = r3
+    call travel
+    goto goingHome
+    label goingToWork:
+    call batteryWeatherCheckRecall
+    if r0 != 0 { goto goingHome }
+    r2 = get(db, sp)
+    sp = (sp + 1)
+    r3 = get(db, sp)
+    sp = (sp + 1)
+    d0.TargetX = r2
+    d0.TargetZ = r3
+    call travel
+    if sp >= r12 { goto workSite }
+    goto goingToWork
+    label workSite:
+    d0.Mode = 3
+    label L58:
+    r0 = batch.read(1997212478, "NextWeatherEventTime", "Sum")
+    if r0 != 0 { goto L58 }
+    call batteryWeatherCheckRecall
+    if r0 != 0 { goto goingHome }
+    call getInventory
+    if r0 == 0 { goto goingHome }
+    goto workSite
+    label getInventory:
+    r1 = 2
+    r2 = 0
+    label occupiedSlotsCalc:
+    r0 = d0.Mode
+    if r0 == 5 { goto goingHome }
+    r0 = d0.slot[r1].Occupied
+    r2 = (r2 + r0)
+    r1 = (r1 + 1)
+    if r1 == 12 { goto L76 }
+    goto occupiedSlotsCalc
+    label L76:
+    r0 = r2
+    ret
+    label travel:
+    r15 := ra
+    label travelLoop:
+    d0.Mode = 1
+    r0 = d0.PositionY
+    d0.TargetY = r0
+    call batteryWeatherCheckRecall
+    if r0 == 0 { goto L90 }
+    if r15 < goingToWork { goto L90 }
+    r15 = goingHome
+    sp = (sp - 2)
+    d0.Mode = 0
+    label L90:
+    yield()
+    r0 = d0.Mode
+    if r0 != 0 { goto travelLoop }
+    jump(r15)
+    label batteryWeatherCheckRecall:
+    r0 = d1.Setting
+    if isUnset(d2) { goto L99 }
+    r1 = d2.Setting
+    r3 = (r0 | r1)
+    label L99:
+    if r0 == 0 { goto L101 }
+    r14 := 0
+    label L101:
+    r0 = d0.slot[0].Charge
+    r1 = get(db, 510)
+    r2 = (r0 < r1)
+    r2 = (r2 | r14)
+    db.Setting = r2
+    r0 = batch.read(1997212478, "NextWeatherEventTime", "Sum")
+    r0 = (r0 != 0)
+    r0 = (r0 | r3)
+    r0 = (r2 | r0)
+    ret
+}

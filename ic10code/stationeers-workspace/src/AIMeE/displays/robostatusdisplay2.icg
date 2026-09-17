@@ -1,0 +1,44 @@
+// Aimee 机器人位置/进度显示：X/Z 坐标、槽位占用进度条、召回指示灯。
+//
+// 原脚本：AIMeE/displays/robostatusdisplay2.ic10
+
+const robotXmitter = d0
+const posXLED = d1
+const posZLED = d2
+const progressLED = d3
+const recallLever = d4
+const recallLED = d5
+
+func main() {
+    for {
+        if isSet(posXLED) {
+            posXLED.Color = 2
+            posXLED.Mode = 0
+            posXLED.Setting = ceil(robotXmitter.PositionX)
+        }
+
+        if isSet(posZLED) {
+            posZLED.Mode = 0
+            posZLED.Color = 2
+            posZLED.Setting = ceil(robotXmitter.PositionZ)
+        }
+
+        if isSet(progressLED) {
+            progressLED.Color = 2
+            progressLED.On = 1
+            recallLED.Color = 2
+
+            n := 0
+            for i := 2; i < 10; i++ {
+                n += robotXmitter.slot[i].Occupied
+            }
+            progressLED.Setting = n / 8
+        }
+
+        if isSet(recallLever) {
+            recallLED.On = recallLever.Setting
+        }
+
+        yield()
+    }
+}

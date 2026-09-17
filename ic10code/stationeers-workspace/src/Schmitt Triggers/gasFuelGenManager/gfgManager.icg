@@ -1,0 +1,24 @@
+// GasFuelGenerator 施密特控制：燃料比例 < 25 开，> 50 关。
+//
+// 原脚本：Schmitt Triggers/gasFuelGenManager/gfgManager.ic10
+// ratioChip 的 Setting 是当前比例；比例回显到宿主 Setting。
+
+const ratioChip = d0
+const gfgHash = 1165997963
+
+const minRatio = 25
+const maxRatio = 50
+
+func main() {
+    generating := false
+    for {
+        yield()
+
+        ratio := ratioChip.Setting
+        db.Setting = ratio
+
+        if ratio < minRatio { generating = true }
+        if ratio > maxRatio { generating = false }
+        batch.write(gfgHash, "On", generating ? 1 : 0)
+    }
+}

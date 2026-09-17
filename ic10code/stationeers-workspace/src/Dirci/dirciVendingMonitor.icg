@@ -1,0 +1,25 @@
+// Dirci 售货机监视器：统计售货机与机器人槽位占用数，
+// 两者都为空时把宿主 Setting 置 1（召回）。
+//
+// 原脚本：Dirci/dirciVendingMonitor.ic10
+
+const vending = d0
+const robotXmitter = d1
+
+func main() {
+    for {
+        vendOccuSlots := 0
+        for index := 2; index < 102; index++ {
+            vendOccuSlots += vending.slot[index].Occupied
+        }
+
+        roboOccuSlots := 0
+        for index := 2; index < 12; index++ {
+            roboOccuSlots += robotXmitter.slot[index].Occupied
+        }
+
+        yield()
+        db.Setting = (vendOccuSlots == 0 && roboOccuSlots == 0) ? 1 : 0
+        yield()
+    }
+}

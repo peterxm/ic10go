@@ -1,0 +1,10 @@
+// 分拣器编程：只保留 ItemIce（Equals）。
+//
+// 原脚本：sorterAutomate/waterSorter.ic10
+
+const sorter = d0
+
+func main() {
+    clr(sorter)
+    put(sorter, 0, sorter.filterPrefabHash(hash("ItemIce")))
+}

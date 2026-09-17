@@ -1,0 +1,24 @@
+// 施密特触发器：批量控制网络上所有气体冷却器。
+//
+// 原脚本：Schmitt Triggers/gasCooler/gasCooler.ic10
+// 温度 >= 268 开冷却，< 267 关；温度回显到宿主 Setting。
+
+const gasTempDevice = d0
+const coolerHash = -2113838091
+
+const minTemp = 267
+const maxTemp = 268
+
+func main() {
+    cooling := false
+    for {
+        yield()
+
+        t := gasTempDevice.Temperature
+        db.Setting = t
+
+        if t >= maxTemp { cooling = true }
+        if t < minTemp { cooling = false }
+        batch.write(coolerHash, "On", cooling ? 1 : 0)
+    }
+}
