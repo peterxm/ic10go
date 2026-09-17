@@ -14,6 +14,7 @@ import (
 	"strings"
 	"unicode"
 
+	"ic10go/internal/builtin"
 	"ic10go/internal/ic10asm"
 	"ic10go/internal/token"
 )
@@ -208,7 +209,20 @@ func (d *decompiler) operand(s string) string {
 	if isIndirect(s) {
 		return "ireg(" + strings.TrimPrefix(s, "r") + ")"
 	}
-	return normalizeCall(normalizeNumber(s))
+	return normalizeCall(normalizeHash(normalizeNumber(s)))
+}
+
+// normalizeHash rewrites a numeric prefab hash back to hash("Name") when the
+// value is a known prefab. It is semantically identical but far more readable.
+func normalizeHash(s string) string {
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return s
+	}
+	if name, ok := builtin.PrefabByHash[uint32(int32(v))]; ok {
+		return "hash(" + strconv.Quote(name) + ")"
+	}
+	return s
 }
 
 // normalizeNumber rewrites IC10 literals that .icg's lexer rejects: leading-dot

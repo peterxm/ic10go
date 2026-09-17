@@ -71,10 +71,10 @@ sbn 1220484876 HASH("Override") Open 1
 	if len(warns) != 0 {
 		t.Fatalf("unexpected warnings: %v", warns)
 	}
-	if !strings.Contains(code, `batch.readName(-400115994, hash("Bank 1"), "Ratio", "Average")`) {
+	if !strings.Contains(code, `batch.readName(hash("StructureBattery"), hash("Bank 1"), "Ratio", "Average")`) {
 		t.Errorf("batch read not translated:\n%s", code)
 	}
-	if !strings.Contains(code, `batch.writeName(1220484876, hash("Override"), "Open", 1)`) {
+	if !strings.Contains(code, `batch.writeName(hash("StructureLogicSwitch"), hash("Override"), "Open", 1)`) {
 		t.Errorf("batch write not translated:\n%s", code)
 	}
 }
