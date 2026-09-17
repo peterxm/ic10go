@@ -11,7 +11,7 @@
 
 ## 项目简介
 
-`ic10go` 是一个把 **Go 风格语言 `.icg`** 编译为 **Stationeers IC10** 机器码的编译器。IC10 的预算只有 **128 行 / 4 KiB / 每行 90 字符**，手写大型脚本极易超限；`ic10go` 提供现代语言特性（`if` / `for` / `switch`、`for range`、`case lo..hi` 区间、`if`/`switch` 初始化、标签 `break`/`continue`、函数编译期全内联、设备属性与槽位、设备栈与分拣/打印栈指令构建器、批量 IO、网络通道、枚举），并通过寄存器分配与复用、常量折叠、CSE、循环不变量外提、分支融合、寄存器溢出到栈等优化把程序压进预算。
+`ic10go` 是一个把 **Go 风格语言 `.icg`** 编译为 **Stationeers IC10** 机器码的编译器。IC10 的预算只有 **128 行 / 4 KiB / 每行 90 字符**，手写大型脚本极易超限；`ic10go` 提供现代语言特性（`if` / `for` / `switch`、`for range`、`case lo..hi` 区间、`if`/`switch` 初始化、标签 `break`/`continue`、函数内联/外提、设备属性与槽位、设备栈与分拣/打印栈指令构建器、批量 IO、网络通道、枚举），并通过寄存器分配与复用、常量折叠、CSE、循环不变量外提、分支融合、寄存器溢出到宿主栈（`get/put db`）等优化把程序压进预算。
 
 它还实现了**持久栈数据段**：用 `data` 表把大块常量 / 查表放进芯片的持久栈，`switch ... table` 自动表化，从而突破 128 行限制。
 
@@ -21,7 +21,7 @@
 
 ## About (English)
 
-`ic10go` compiles a Go-like language (`.icg`) to **Stationeers IC10** machine code. With a hard budget of **128 lines / 4 KiB / 90 chars per line**, large hand-written IC10 scripts are painful; `ic10go` brings modern syntax (`if` / `for` / `switch`, `for range`, `case lo..hi` intervals, `if`/`switch` init statements, labeled `break`/`continue`, fully inlined functions, device properties, device stacks and sorter/printer stack-instruction builders, batch IO, channels, enums) plus register allocation, constant folding, CSE, LICM, branch fusion and stack spilling to fit the budget. A **persistent-stack data segment** (`data` tables, `switch ... table`) moves large tables out of the 128-line program. **Multi-chip** support lets one `.icg` declare several `chip Name { ... }` programs (each with its own budget and loader, sharing top-level declarations) that talk over `bus Name { slots }` + per-chip `use Name on dev:conn` named network channels. Toolchain: `ic10c` (`build` / `run` with a built-in VM / `fmt` / `decompile` / `minify` / `disasm` / `stats` / `lsp`) and a VSCode extension.
+`ic10go` compiles a Go-like language (`.icg`) to **Stationeers IC10** machine code. With a hard budget of **128 lines / 4 KiB / 90 chars per line**, large hand-written IC10 scripts are painful; `ic10go` brings modern syntax (`if` / `for` / `switch`, `for range`, `case lo..hi` intervals, `if`/`switch` init statements, labeled `break`/`continue`, inlined/outlined functions, device properties, device stacks and sorter/printer stack-instruction builders, batch IO, channels, enums) plus register allocation, constant folding, CSE, LICM, branch fusion and housing-stack spilling (`get/put db`) to fit the budget. A **persistent-stack data segment** (`data` tables, `switch ... table`) moves large tables out of the 128-line program. **Multi-chip** support lets one `.icg` declare several `chip Name { ... }` programs (each with its own budget and loader, sharing top-level declarations) that talk over `bus Name { slots }` + per-chip `use Name on dev:conn` named network channels. Toolchain: `ic10c` (`build` / `run` with a built-in VM / `fmt` / `decompile` / `minify` / `disasm` / `stats` / `lsp`) and a VSCode extension.
 
 ## Topics
 

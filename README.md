@@ -68,11 +68,11 @@ ic10c build --json <file.icg> # 输出机器可读的 JSON（chips[] 代码/load
 ic10c build --chip NAME <file.icg>  # 多芯片：只输出指定芯片到 stdout
 ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
             [--data-layout top|middle] [--unsafe] [--auto-table] [--jump-table] \
-            [--fast] [--rel-jump] <file.icg>
+            [--fast] [--rel-jump] [--spill db|stack] <file.icg>
                               # 兼容保留；loader 现在会自动输出（默认 <file>.data.ic）
 ic10c build --data-only [--chip NAME] <file.icg>  # 只输出一次性 loader（数据段 + 外提设置）
 ic10c run    <file.icg>       # 编译并在内置 VM 中运行（多芯片锁步；--steps/--set/--trace）
-ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] <file.icg>
+ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] [--spill db|stack] <file.icg>
                               # 行 / 字节 / 寄存器预算（多芯片按芯片分组；含 loader 预算）+ 数据段 / 栈冲突警告
 ic10c size   <file.icg>       # 按函数拆分行预算（找最占行数的函数）
 ic10c graph  [--level source|ir] [--func NAME] [--no-lines] [-o FILE] <file.icg>

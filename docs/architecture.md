@@ -232,17 +232,24 @@ Ret
 
 ### 6.4 溢出
 
-按优先级：
+寄存器压力超过可用寄存器数（16 减去 `reserveRegs` 保留的物理寄存器）时发生。
+溢出槽从数据段下方固定高地址向下分配，默认用宿主栈 `get/put db` 读写：
 
-1. **重物化**：常量直接嵌入指令，永不占寄存器。
-2. **重算**：廉价纯表达式在使用点重算。
-3. **栈溢出**：固定地址 `poke` 写入；读取时需恢复 `sp` 后 `peek`（或按栈纪律 push/pop）。仅在寄存器压力 > 16 时发生。
+- **`get/put db`（默认）**：每次加载 1 行，且不需要暂存寄存器，因此溢出时仍可
+  用满 16 个寄存器。
+- **`--spill stack`（回退）**：固定地址 `poke` 写入，读取时恢复 `sp` 后 `peek`
+  （每次加载 5 行），并保留 `r15` 作暂存。
+
+分配器按轮迭代：着色失败 → 溢出代价最低的值 → 重新着色，直到收敛。溢出过程
+自身产生的短命临时值代价被抬高，避免反复溢出它们（否则不收敛）。
 
 ### 6.5 保留寄存器
 
 - `ra`：IC10 返回地址，不参与分配。
 - `sp`：栈指针，不参与分配。
 - 仅当使用外提（`jal`）时才需要 `ra`。
+- `reserveRegs(lo, hi)` 声明的物理寄存器不参与分配，供 `ireg`/`setIreg`
+  （`rrN`）间接访问——这是安全使用间接寄存器的前提。
 
 ### 6.6 寄存器压力报告
 
@@ -271,7 +278,7 @@ Ret
 | `readById(id, lt)` / `writeById(id, lt, v)` | `ld r (id) (r_lt)` / `sd (id) (r_lt) v` |
 | `readDev(i, lt)` / `writeDev(i, lt, v)` | `l r drN (r_lt)` / `s drN (r_lt) v` |
 | `readDevSlot(i, n, slt)` / `writeDevSlot(i, n, slt, v)` | `ls r drN n slt` / `ss drN n slt v` |
-| `ireg(p)` / `setIreg(p, v)` | `move r rrN` / `move rrN r` |
+| `ireg(p)` / `setIreg(p, v)` | `move r rrN` / `move rrN r`（`p` 为常量时直接寻址 `rN`，需 `reserveRegs` 覆盖） |
 | `batch.read(...)` | `lb ...` |
 | `sorter.*` / `printer.*` | 编译期按位段打包为常量（再 `put` 到设备栈） |
 | `yield()` | `yield` |
