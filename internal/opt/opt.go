@@ -441,6 +441,7 @@ func rewriteUses(i ir.Instr, val map[*ir.Reg]ir.Value) bool {
 		v.DevPtr = rw(v.DevPtr)
 		v.DevID = rw(v.DevID)
 		v.Logic = rwLogic(v.Logic, val, &changed)
+		v.Reagent = rw(v.Reagent)
 	case *ir.StoreDyn:
 		v.DevPtr = rw(v.DevPtr)
 		v.DevID = rw(v.DevID)
@@ -2139,7 +2140,7 @@ func instrKey(i ir.Instr, reg func(*ir.Reg) string) string {
 	case *ir.StoreSlot:
 		return "storeslot|" + v.Dev + "|" + vk(v.DevPtr) + "|" + v.Logic + "|" + vk(v.Index) + "|" + vk(v.Src)
 	case *ir.LoadDyn:
-		return "loaddyn|" + v.Dev + "|" + vk(v.DevPtr) + "|" + vk(v.DevID) + "|" + vk(v.Logic) + "|" + reg(v.Dst)
+		return "loaddyn|" + v.Dev + "|" + vk(v.DevPtr) + "|" + vk(v.DevID) + "|" + vk(v.Logic) + "|" + vk(v.Reagent) + "|" + reg(v.Dst)
 	case *ir.StoreDyn:
 		return "storedyn|" + v.Dev + "|" + vk(v.DevPtr) + "|" + vk(v.DevID) + "|" + vk(v.Logic) + "|" + vk(v.Src)
 	case *ir.LoadSpecial:

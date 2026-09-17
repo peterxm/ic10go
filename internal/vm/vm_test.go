@@ -256,3 +256,25 @@ func TestWorldWire(t *testing.T) {
 		t.Errorf("d0.Setting = %v, want 42 (wired access points not shared)", got)
 	}
 }
+
+func TestForwardAliasResolution(t *testing.T) {
+	// IC10 aliases are position independent: `self` is aliased to db after it
+	// is used, so the write must land on db rather than a device named "self".
+	src := "s self Mode 1\nalias self db\n"
+	m := run(t, src, 10)
+	if got := m.Get("db", "Mode"); got != 1 {
+		t.Errorf("db.Mode = %v, want 1", got)
+	}
+	if _, ok := m.Devices["self"]; ok {
+		t.Errorf("created a device named %q; alias was not resolved", "self")
+	}
+}
+
+func TestForwardDefineResolution(t *testing.T) {
+	// A define used above its definition must still be substituted.
+	src := "move r0 LIMIT\ns d0 Setting r0\ndefine LIMIT 42\n"
+	m := run(t, src, 10)
+	if got := m.Get("d0", "Setting"); got != 42 {
+		t.Errorf("d0.Setting = %v, want 42", got)
+	}
+}

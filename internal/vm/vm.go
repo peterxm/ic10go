@@ -486,6 +486,21 @@ func Parse(src string) (*Program, error) {
 		}
 		return s
 	}
+	// IC10 aliases/defines are position independent: collect them all before
+	// resolving any operand. A single pass would leave a symbol used above its
+	// `alias`/`define` line unresolved and turn it into a bogus device/register
+	// with that name.
+	for _, raw := range lines {
+		line := strings.TrimSpace(ic10asm.StripComment(raw))
+		if line == "" || ic10asm.IsLabel(line) {
+			continue
+		}
+		fields := ic10asm.Tokenize(line)
+		op := strings.ToLower(fields[0])
+		if (op == "alias" || op == "define") && len(fields) >= 3 {
+			prog.Symbols[fields[1]] = strings.Join(fields[2:], " ")
+		}
+	}
 	for i, raw := range lines {
 		line := strings.TrimSpace(ic10asm.StripComment(raw))
 		if line == "" {
@@ -499,9 +514,6 @@ func Parse(src string) (*Program, error) {
 		op := strings.ToLower(fields[0])
 		switch op {
 		case "alias", "define":
-			if len(fields) >= 3 {
-				prog.Symbols[fields[1]] = strings.Join(fields[2:], " ")
-			}
 			continue
 		}
 		args := make([]string, 0, len(fields)-1)

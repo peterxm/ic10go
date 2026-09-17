@@ -583,6 +583,10 @@ func renderInstr(ins ir.Instr, colors map[*ir.Reg]int) (string, bool) {
 		return "ls " + regName(v.Dst, colors) + " " + dynDev(v.Dev, v.DevPtr, colors) + " " +
 			valueText(v.Index, colors) + " " + v.Logic, true
 	case *ir.LoadDyn:
+		if v.Reagent != nil {
+			return "lr " + regName(v.Dst, colors) + " " + dynDev(v.Dev, v.DevPtr, colors) + " " +
+				valueText(v.Logic, colors) + " " + valueText(v.Reagent, colors), true
+		}
 		if v.DevID != nil {
 			return "ld " + regName(v.Dst, colors) + " " + valueText(v.DevID, colors) + " " +
 				valueText(v.Logic, colors), true

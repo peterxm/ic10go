@@ -243,12 +243,17 @@ type StoreSlot struct {
 // (IC10 "l r? d? rN"). When DevPtr is set the device port is also chosen at
 // runtime from the register it names (IC10 "l r? drN rM"). When DevID is set
 // the device is addressed by its ReferenceId (IC10 "ld r? id rN").
+//
+// When Reagent is set the node is instead an indirect reagent read
+// (IC10 "lr r? drN mode key"): Logic holds the reagent mode and Reagent the
+// reagent hash.
 type LoadDyn struct {
-	Dst    *Reg
-	Dev    string
-	DevPtr Value
-	DevID  Value
-	Logic  Value
+	Dst     *Reg
+	Dev     string
+	DevPtr  Value
+	DevID   Value
+	Logic   Value
+	Reagent Value
 }
 
 // StoreDyn writes a device logic value whose logic type is chosen at runtime.

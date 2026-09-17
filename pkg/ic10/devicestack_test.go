@@ -261,3 +261,31 @@ func TestDevSlot(t *testing.T) {
 		t.Errorf("d0.Setting = %v, want 1", got)
 	}
 }
+
+// TestIndirectReagent checks that readReagent accepts a register holding the
+// device port (IC10 "lr r? drN mode key"), not just a dN/db operand.
+func TestIndirectReagent(t *testing.T) {
+	// Take the port from a device so it stays a runtime value: a constant port
+	// is folded into a direct dN operand by the optimiser.
+	src := `func main() {
+    var idx = 0.0
+    idx = d5.Setting
+    d0.Setting = readReagent(idx, ReagentMode.Contents, 12345)
+}`
+	code := mustCompile(t, src)
+	if !strings.Contains(code, "lr ") || !strings.Contains(code, "dr") {
+		t.Fatalf("expected an indirect reagent load (lr ... drN ...):\n%s", code)
+	}
+	m := vm.New()
+	m.Set("d5", "Setting", 1)
+	m.Device("d1").Reagents[12345] = 7
+	if err := m.Load(code); err != nil {
+		t.Fatalf("vm load: %v", err)
+	}
+	if err := m.Run(50); err != nil && err != vm.ErrStepLimit {
+		t.Fatalf("vm run: %v", err)
+	}
+	if got := m.Get("d0", "Setting"); got != 7 {
+		t.Errorf("d0.Setting = %v, want 7", got)
+	}
+}

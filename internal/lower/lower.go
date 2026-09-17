@@ -1802,6 +1802,20 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		return &ir.Const{V: 0}
 	}
 
+	// readReagent(reg, mode, key) reads a reagent from a device port chosen at
+	// runtime (IC10 "lr r? drN mode key"). With a dN/db device it falls through
+	// to the ordinary builtin.
+	if id.Name == "readReagent" && len(call.Args) == 3 {
+		if _, ok := l.deviceName(call.Args[0]); !ok {
+			ptr := l.lowerExpr(call.Args[0])
+			mode := l.lowerExpr(call.Args[1])
+			key := l.lowerExpr(call.Args[2])
+			r := l.b.NewReg("readreagent")
+			l.b.Emit(&ir.LoadDyn{Dst: r, DevPtr: ptr, Logic: mode, Reagent: key})
+			return r
+		}
+	}
+
 	// readDevSlot(reg, index, slt) / writeDevSlot(reg, index, slt, v) select the
 	// device port from a register for slot access (IC10 "ls r? drN i slt" /
 	// "ss drN i slt r?").

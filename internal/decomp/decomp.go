@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"ic10go/internal/ic10asm"
+	"ic10go/internal/token"
 )
 
 // Warning describes an instruction that could not be translated.
@@ -419,6 +420,11 @@ func (d *decompiler) cleanLabel(raw string) string {
 	}
 	if r := rune(s[0]); !(r == '_' || unicode.IsLetter(r)) {
 		s = "L" + s
+	}
+	// A label must not collide with a .icg keyword (e.g. an IC10 label named
+	// "return" or "for"): suffix it so the decompiled source still parses.
+	if token.Lookup(s) != token.Ident {
+		s += "_"
 	}
 	base := s
 	for i := 2; d.usedLabels[s]; i++ {

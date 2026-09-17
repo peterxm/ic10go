@@ -268,3 +268,19 @@ move r1 2
 		}
 	}
 }
+
+func TestDecompileReservedLabel(t *testing.T) {
+	// An IC10 label that collides with a .icg keyword must be renamed so the
+	// decompiled source still parses.
+	src := "return:\nmove r0 1\nbeqz r0 return\n"
+	code, _, err := Decompile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(code, "label return:") {
+		t.Errorf("emitted reserved label \"return\":\n%s", code)
+	}
+	if !strings.Contains(code, "label return_:") {
+		t.Errorf("output missing sanitized label \"return_\":\n%s", code)
+	}
+}

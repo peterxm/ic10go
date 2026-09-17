@@ -72,8 +72,12 @@ func (d *decompiler) translate(l icLine) []string {
 		}
 		return []string{d.assignDst(l.args[0], d.deviceRead(l.args[1], l.args[2]))}
 	case "lr":
+		if reg, ok := d.deviceRegArg(l.args[1]); ok {
+			return []string{d.assignDst(l.args[0], fmt.Sprintf("readReagent(%s, %s, %s)",
+				reg, reagentMode(l.args[2]), d.a(l, 3)))}
+		}
 		return []string{d.assignDst(l.args[0], fmt.Sprintf("readReagent(%s, %s, %s)",
-			d.resolve(l.args[1]), reagentMode(d.a(l, 2)), d.a(l, 3)))}
+			d.resolve(l.args[1]), reagentMode(l.args[2]), d.a(l, 3)))}
 	case "s":
 		if d.isDynLogic(l.args[1]) {
 			if reg, ok := d.deviceRegArg(l.args[0]); ok {
@@ -390,12 +394,14 @@ func modeText(s string) string {
 // reagentMode renders the IC10 lr mode operand as a ReagentMode enum name.
 func reagentMode(s string) string {
 	switch strings.TrimSpace(s) {
-	case "0":
+	case "0", "Contents", "ReagentMode.Contents", "LogicReagentMode.Contents":
 		return "ReagentMode.Contents"
-	case "1":
+	case "1", "Required", "ReagentMode.Required", "LogicReagentMode.Required":
 		return "ReagentMode.Required"
-	case "2":
+	case "2", "Recipe", "ReagentMode.Recipe", "LogicReagentMode.Recipe":
 		return "ReagentMode.Recipe"
+	case "3", "TotalContents", "ReagentMode.TotalContents", "LogicReagentMode.TotalContents":
+		return "ReagentMode.TotalContents"
 	}
 	return s
 }
