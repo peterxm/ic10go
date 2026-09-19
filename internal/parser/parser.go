@@ -702,7 +702,18 @@ func (p *parser) parseBinary(minPrec int) ast.Expr {
 
 func (p *parser) parseUnary() ast.Expr {
 	switch p.cur().Kind {
-	case token.Not, token.Tilde, token.Minus, token.Plus:
+	case token.Minus, token.Plus:
+		t := p.advance()
+		// Fold the sign into a numeric literal so unit conversion sees it:
+		// "-45c" must convert to -45C (228.15K), not negate 45C (=-318.15K).
+		if p.cur().Kind == token.Number {
+			n := p.advance()
+			text := t.Text + n.Text
+			return &ast.NumberLit{NodeBase: base(t.Pos), Value: parseNumber(text), Text: text}
+		}
+		x := p.parseUnary()
+		return &ast.UnaryExpr{NodeBase: base(t.Pos), Op: t.Kind, X: x}
+	case token.Not, token.Tilde:
 		t := p.advance()
 		x := p.parseUnary()
 		return &ast.UnaryExpr{NodeBase: base(t.Pos), Op: t.Kind, X: x}
@@ -788,21 +799,33 @@ func parseNumber(text string) float64 {
 	if v, ok := token.ConvertUnit(s); ok {
 		return v
 	}
+	neg := false
+	switch {
+	case strings.HasPrefix(s, "+"):
+		s = s[1:]
+	case strings.HasPrefix(s, "-"):
+		neg = true
+		s = s[1:]
+	}
+	var v float64
 	switch {
 	case strings.HasPrefix(s, "0x"), strings.HasPrefix(s, "0X"):
-		if v, err := strconv.ParseUint(s[2:], 16, 64); err == nil {
-			return float64(v)
+		if u, err := strconv.ParseUint(s[2:], 16, 64); err == nil {
+			v = float64(u)
 		}
 	case strings.HasPrefix(s, "0b"), strings.HasPrefix(s, "0B"):
-		if v, err := strconv.ParseUint(s[2:], 2, 64); err == nil {
-			return float64(v)
+		if u, err := strconv.ParseUint(s[2:], 2, 64); err == nil {
+			v = float64(u)
 		}
 	default:
-		if v, err := strconv.ParseFloat(s, 64); err == nil {
-			return v
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			v = f
 		}
 	}
-	return 0
+	if neg {
+		v = -v
+	}
+	return v
 }
 
 // syncTop skips tokens until the next likely top-level declaration.
