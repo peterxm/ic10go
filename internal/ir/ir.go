@@ -495,6 +495,26 @@ type Function struct {
 	// UserStackUses records every explicit user access to the persistent stack
 	// so a later pass can check it against the compiler's region.
 	UserStackUses []UserStackUse
+	// UserLimit is the size of the user stack region: a constant stack address
+	// below it is user code's, at or above DataBase it is the compiler's (data
+	// segment). Set by the compiler before optimisation.
+	UserLimit int
+	// DataBase is the first stack slot of the compiler's data segment (512 when
+	// the program has none).
+	DataBase int
+	// NoMem2Reg disables user-stack promotion even when PrivateStack is set.
+	// The compiler tries both and keeps the shorter runtime.
+	NoMem2Reg bool
+	// RedundantDeviceWrites enables removing a constant device write that
+	// repeats the previous write to the same device+logic. It changes the
+	// observable write sequence, so it is off by default.
+	RedundantDeviceWrites bool
+	// PrivateStack means the program's user stack slots are not read by any
+	// other program, so the optimizer may keep them in registers (registers
+	// persist across ticks just like the stack). Single-chip programs default
+	// to it; the `// icg: private-stack` / `// icg: shared-stack` pragma
+	// overrides.
+	PrivateStack bool
 }
 
 // UserStackUse is one explicit user access to the persistent stack

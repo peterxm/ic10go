@@ -30,14 +30,18 @@ var pipeline = []pass{
 	{"constProp", constProp},
 	{"fold", foldAll},
 	{"simplify", simplify},
+	{"pushpop", eliminatePushPop},
+	{"mem2reg", promoteUserStack},
 	{"redundantLoads", redundantLoads},
 	{"cse", globalCSE},
 	{"select", selectConvert},
 	{"foldBranches", foldBranches},
+	{"fuseBranches", fuseBranches},
 	{"licm", licm},
 	{"dce", dce},
 	{"removeUnreachable", removeUnreachable},
 	{"deadStores", deadStores},
+	{"redundantDeviceStores", redundantDeviceStores},
 	{"threadJumps", threadJumps},
 }
 
@@ -652,6 +656,32 @@ func redundantLoads(fn *ir.Function) bool {
 			}
 			delete(byReg, r)
 		}
+		invalidateKey := func(key string) {
+			delete(seen, key)
+			for dev, keys := range byDevice {
+				for i, k := range keys {
+					if k == key {
+						byDevice[dev] = append(keys[:i], keys[i+1:]...)
+						break
+					}
+				}
+			}
+			for r, keys := range byReg {
+				for i, k := range keys {
+					if k == key {
+						byReg[r] = append(keys[:i], keys[i+1:]...)
+						break
+					}
+				}
+			}
+		}
+		invalidateDevsExcept := func(keep string) {
+			for dev := range byDevice {
+				if dev != keep {
+					invalidate(dev)
+				}
+			}
+		}
 		clearAll := func() {
 			clear(seen)
 			clear(byDevice)
@@ -700,19 +730,39 @@ func redundantLoads(fn *ir.Function) bool {
 					clearAll()
 				}
 			case *ir.Builtin:
-				if hasSideEffect(v) {
+				if !hasSideEffect(v) {
+					continue
+				}
+				k := loadWrite(v)
+				switch {
+				case k.all:
 					clearAll()
-					// Forward a subsequent get of the same slot to the stored
-					// value (store-to-load forwarding).
-					if v.Name == "put" && len(v.Args) == 3 {
+				case k.allDevs:
+					invalidateDevsExcept("db")
+				case k.key != "":
+					invalidateKey(k.key)
+				case k.dev != "":
+					invalidate(k.dev)
+				}
+				if v.Name == "push" || v.Name == "pop" {
+					invalidate("sp")
+				}
+				// Forward a subsequent get of the same slot to the stored value
+				// (store-to-load forwarding).
+				switch v.Name {
+				case "put":
+					if len(v.Args) == 3 {
 						if d, isDev := v.Args[0].(*ir.Device); isDev {
 							key := "g|" + d.Name + "|" + valKey(v.Args[1])
 							add(key, d.Name, v.Args[2], depsOf(v.Args[1]))
 						}
 					}
-				} else if v.Name == "pop" || v.Name == "push" {
-					// These mutate the stack pointer.
-					invalidate("sp")
+				case "poke":
+					if len(v.Args) == 2 {
+						if _, isConst := v.Args[0].(*ir.Const); isConst {
+							add("g|db|"+valKey(v.Args[0]), "db", v.Args[1], nil)
+						}
+					}
 				}
 			}
 		}
@@ -832,6 +882,41 @@ func globalCSE(fn *ir.Function) bool {
 			}
 			delete(byDev, dev)
 		}
+		invalidateKey := func(key string) {
+			e, ok := avail[key]
+			if !ok {
+				return
+			}
+			delete(avail, key)
+			if e.reg != nil {
+				delete(rev[e.reg], key)
+			}
+			for _, v := range e.ops {
+				if rr, ok := v.(*ir.Reg); ok {
+					delete(rev[rr], key)
+				}
+			}
+			if e.dev != "" {
+				keys := byDev[e.dev]
+				for i, k := range keys {
+					if k == key {
+						byDev[e.dev] = append(keys[:i], keys[i+1:]...)
+						break
+					}
+				}
+			}
+		}
+		invalidateDevsExcept := func(keep string) {
+			for dev, keys := range byDev {
+				if dev == keep {
+					continue
+				}
+				for _, key := range keys {
+					delete(avail, key)
+				}
+				delete(byDev, dev)
+			}
+		}
 		clearLoads := func() {
 			for key, e := range avail {
 				if e.dev != "" {
@@ -839,6 +924,18 @@ func globalCSE(fn *ir.Function) bool {
 				}
 			}
 			clear(byDev)
+		}
+		applyKill := func(k loadKill) {
+			switch {
+			case k.all:
+				clearLoads()
+			case k.allDevs:
+				invalidateDevsExcept("db")
+			case k.key != "":
+				invalidateKey(k.key)
+			case k.dev != "":
+				invalidateDev(k.dev)
+			}
 		}
 		for idx, ins := range b.Instrs {
 			key, operands, dev, ok := exprKey(ins)
@@ -856,11 +953,7 @@ func globalCSE(fn *ir.Function) bool {
 			if d != nil {
 				invalidate(d)
 			}
-			if wdev, all := loadWrite(ins); all {
-				clearLoads()
-			} else if wdev != "" {
-				invalidateDev(wdev)
-			}
+			applyKill(loadWrite(ins))
 			if ok && !containsReg(operands, d) {
 				register(key, availExpr{reg: d, ops: operands, dev: dev})
 			}
@@ -962,6 +1055,41 @@ func transferAvail(b *ir.Block, in map[string]availExpr) map[string]availExpr {
 		}
 		delete(byDev, dev)
 	}
+	invalidateKey := func(key string) {
+		e, ok := avail[key]
+		if !ok {
+			return
+		}
+		delete(avail, key)
+		if e.reg != nil {
+			delete(rev[e.reg], key)
+		}
+		for _, v := range e.ops {
+			if rr, ok := v.(*ir.Reg); ok {
+				delete(rev[rr], key)
+			}
+		}
+		if e.dev != "" {
+			keys := byDev[e.dev]
+			for i, k := range keys {
+				if k == key {
+					byDev[e.dev] = append(keys[:i], keys[i+1:]...)
+					break
+				}
+			}
+		}
+	}
+	invalidateDevsExcept := func(keep string) {
+		for dev, keys := range byDev {
+			if dev == keep {
+				continue
+			}
+			for _, key := range keys {
+				delete(avail, key)
+			}
+			delete(byDev, dev)
+		}
+	}
 	clearLoads := func() {
 		for key, e := range avail {
 			if e.dev != "" {
@@ -970,17 +1098,25 @@ func transferAvail(b *ir.Block, in map[string]availExpr) map[string]availExpr {
 		}
 		clear(byDev)
 	}
+	applyKill := func(k loadKill) {
+		switch {
+		case k.all:
+			clearLoads()
+		case k.allDevs:
+			invalidateDevsExcept("db")
+		case k.key != "":
+			invalidateKey(k.key)
+		case k.dev != "":
+			invalidateDev(k.dev)
+		}
+	}
 	for _, ins := range b.Instrs {
 		key, operands, dev, ok := exprKey(ins)
 		d := ir.DefOf(ins)
 		if d != nil {
 			invalidate(d)
 		}
-		if wdev, all := loadWrite(ins); all {
-			clearLoads()
-		} else if wdev != "" {
-			invalidateDev(wdev)
-		}
+		applyKill(loadWrite(ins))
 		if ok && !containsReg(operands, d) {
 			register(key, availExpr{reg: d, ops: operands, dev: dev})
 		}
@@ -1074,42 +1210,76 @@ func exprKey(i ir.Instr) (key string, operands []ir.Value, dev string, ok bool) 
 	return "", nil, "", false
 }
 
-// loadWrite reports the device a store writes, or all=true when it may write
-// any device or stack slot (so every load must be invalidated).
-func loadWrite(i ir.Instr) (dev string, all bool) {
+// loadKill describes what a write invalidates for load commoning. The zero
+// value invalidates nothing.
+type loadKill struct {
+	all     bool   // every load
+	dev     string // every load from this device
+	key     string // one exact load key
+	allDevs bool   // every device load, but not the stack (yield/sleep)
+}
+
+// loadWrite reports what a store invalidates.
+func loadWrite(i ir.Instr) loadKill {
 	switch v := i.(type) {
 	case *ir.Store:
-		return v.Dev, false
+		return loadKill{dev: v.Dev}
 	case *ir.StoreSlot:
-		return v.Dev, false
+		return loadKill{dev: v.Dev}
 	case *ir.StoreSpecial:
-		return v.Name, false
+		return loadKill{dev: v.Name}
 	case *ir.StoreDyn, *ir.StoreIndirect:
-		return "", true
+		return loadKill{all: true}
 	case *ir.Batch:
 		switch v.Kind {
 		case ir.BatchStore, ir.BatchStoreName, ir.BatchStoreSlot:
 			if dev, ok := constText(v.Device); ok {
-				return dev, false
+				return loadKill{dev: dev}
 			}
-			return "", true
+			return loadKill{all: true}
 		}
 	case *ir.Builtin:
 		sem := builtin.SemOf(v.Name)
 		if sem.WritesDev {
+			switch v.Name {
+			case "put":
+				if d, ok := v.Args[0].(*ir.Device); ok {
+					// put db N only changes slot N; a dynamic address may hit
+					// any slot.
+					if k, ok := stackSlotKey(d.Name, v.Args[1]); ok {
+						return loadKill{key: k}
+					}
+					return loadKill{dev: d.Name}
+				}
+			case "poke":
+				if k, ok := stackSlotKey("db", v.Args[0]); ok {
+					return loadKill{key: k}
+				}
+				return loadKill{dev: "db"}
+			case "push", "pop":
+				// sp moves, so any stack slot may have been written.
+				return loadKill{dev: "db"}
+			}
 			if sem.DeviceArg >= 0 && sem.DeviceArg < len(v.Args) {
 				if d, ok := v.Args[sem.DeviceArg].(*ir.Device); ok {
-					return d.Name, false
+					return loadKill{dev: d.Name}
 				}
 			}
-			// putd/poke/push/pop/clr/clrById may change any device or slot.
-			return "", true
+			return loadKill{all: true}
 		}
 		if sem.Barrier {
-			// yield/sleep/hcf: time passes, so any device may change.
-			return "", true
+			// yield/sleep/hcf: devices may change between ticks, but the stack
+			// is only written by this program.
+			return loadKill{allDevs: true}
 		}
-		return "", false
+	}
+	return loadKill{}
+}
+
+// stackSlotKey is the load key a constant housing-stack write invalidates.
+func stackSlotKey(dev string, addr ir.Value) (string, bool) {
+	if _, ok := addr.(*ir.Const); ok {
+		return "g|" + dev + "|" + valKey(addr), true
 	}
 	return "", false
 }
@@ -1298,6 +1468,252 @@ func foldBranches(fn *ir.Function) bool {
 		}
 	}
 	return changed
+}
+
+// fuseBranches folds a block-local comparison whose result is only used by the
+// terminator into the branch itself, so the comparison line disappears. It
+// covers the `seq`/`seqz`/`sne`/`snez` patterns produced for a `switch` tag or
+// a parenthesised `if`.
+func fuseBranches(fn *ir.Function) bool {
+	uses := map[*ir.Reg]int{}
+	for _, b := range fn.Blocks {
+		for _, ins := range b.Instrs {
+			u, _ := ir.DefUse(ins)
+			for _, r := range u {
+				uses[r]++
+			}
+		}
+		for _, r := range ir.TermUses(b.Term) {
+			uses[r]++
+		}
+	}
+	changed := false
+	for _, b := range fn.Blocks {
+		br, ok := b.Term.(*ir.Br)
+		if !ok {
+			continue
+		}
+		// Normalise `A == 0` / `A != 0` to the unary Zero/NonZero conditions.
+		cond, a := br.Cond, br.A
+		if br.B != nil {
+			c, isConst := br.B.(*ir.Const)
+			if !isConst || c.V != 0 || (br.Cond != ir.Eq && br.Cond != ir.Ne) {
+				continue
+			}
+			if br.Cond == ir.Eq {
+				cond = ir.Zero
+			} else {
+				cond = ir.NonZero
+			}
+		}
+		if cond != ir.Zero && cond != ir.NonZero {
+			continue
+		}
+		r, ok := a.(*ir.Reg)
+		if !ok || uses[r] != 1 {
+			continue
+		}
+		idx, cmp := -1, (*ir.Cmp)(nil)
+		for i, ins := range b.Instrs {
+			d := ir.DefOf(ins)
+			if d != r {
+				continue
+			}
+			c, isCmp := ins.(*ir.Cmp)
+			if !isCmp {
+				idx = -2 // some other instruction defines it
+				break
+			}
+			idx, cmp = i, c
+		}
+		if idx < 0 || cmp == nil {
+			continue
+		}
+		newCond := cmp.Cond
+		if cond == ir.Zero {
+			newCond = newCond.Invert()
+		}
+		br.Cond, br.A, br.B = newCond, cmp.A, cmp.B
+		b.Instrs = append(b.Instrs[:idx], b.Instrs[idx+1:]...)
+		uses[r]--
+		changed = true
+	}
+	return changed
+}
+
+// eliminatePushPop removes a push/pop pair within a block when the stack is
+// private: the popped value is forwarded to the pop's destination and both
+// instructions are dropped. The block must have no relative stack access
+// (peek or a dynamic get/put/poke) that could observe the pushed slot, and no
+// read/write of sp that a dropped push/pop would unbalance.
+func eliminatePushPop(fn *ir.Function) bool {
+	if !fn.PrivateStack {
+		return false
+	}
+	changed := false
+	for _, b := range fn.Blocks {
+		if blockHasRelativeStackAccess(b) {
+			continue
+		}
+		type pushed struct {
+			val ir.Value
+			idx int
+		}
+		var stack []pushed
+		remove := map[int]bool{}
+		replace := map[int]ir.Value{}
+		for i, ins := range b.Instrs {
+			bi, ok := ins.(*ir.Builtin)
+			if !ok {
+				continue
+			}
+			switch bi.Name {
+			case "push":
+				stack = append(stack, pushed{val: bi.Args[0], idx: i})
+			case "pop":
+				if len(stack) == 0 {
+					continue
+				}
+				top := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				remove[top.idx] = true
+				replace[i] = top.val
+			}
+		}
+		if len(remove) == 0 {
+			continue
+		}
+		out := b.Instrs[:0]
+		for i, ins := range b.Instrs {
+			if remove[i] {
+				changed = true
+				continue
+			}
+			if val, ok := replace[i]; ok {
+				changed = true
+				pop := ins.(*ir.Builtin)
+				if pop.Dst != nil && pop.Dst != val {
+					out = append(out, &ir.Assign{Dst: pop.Dst, Src: val})
+				}
+				continue
+			}
+			out = append(out, ins)
+		}
+		b.Instrs = out
+	}
+	return changed
+}
+
+// blockHasRelativeStackAccess reports whether a block reads the stack through
+// sp (peek, sp load/store) or a dynamic get/put/poke, which a push/pop
+// elimination could change.
+func blockHasRelativeStackAccess(b *ir.Block) bool {
+	for _, ins := range b.Instrs {
+		switch v := ins.(type) {
+		case *ir.LoadSpecial:
+			if v.Name == "sp" {
+				return true
+			}
+		case *ir.StoreSpecial:
+			if v.Name == "sp" {
+				return true
+			}
+		case *ir.Builtin:
+			switch v.Name {
+			case "peek":
+				return true
+			case "poke":
+				if len(v.Args) == 2 {
+					if _, ok := v.Args[0].(*ir.Const); !ok {
+						return true
+					}
+				}
+			case "get", "put":
+				if len(v.Args) >= 2 {
+					if d, ok := v.Args[0].(*ir.Device); ok && d.Name == "db" {
+						if _, ok := v.Args[1].(*ir.Const); !ok {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// redundantDeviceStores removes a constant device write that repeats the
+// previous write to the same device+logic within a block, with no read or
+// barrier in between. The device's final value is unchanged, but the write
+// sequence is not, so this is opt-in (fn.RedundantDeviceWrites) and off by
+// default; the differential tests require the exact write sequence.
+func redundantDeviceStores(fn *ir.Function) bool {
+	if !fn.RedundantDeviceWrites {
+		return false
+	}
+	changed := false
+	for _, b := range fn.Blocks {
+		last := map[string]*ir.Const{}
+		out := b.Instrs[:0]
+		for _, ins := range b.Instrs {
+			if key, c, ok := constDeviceStore(ins); ok {
+				if prev, seen := last[key]; seen && sameConst(prev, c) {
+					changed = true
+					continue
+				}
+				last[key] = c
+				out = append(out, ins)
+				continue
+			}
+			if mayChangeDeviceState(ins) {
+				clear(last)
+			}
+			out = append(out, ins)
+		}
+		b.Instrs = out
+	}
+	return changed
+}
+
+// constDeviceStore keys a device write with a constant value (and, for a slot,
+// a constant index) so an identical repeat can be recognised.
+func constDeviceStore(ins ir.Instr) (string, *ir.Const, bool) {
+	switch v := ins.(type) {
+	case *ir.Store:
+		c, ok := v.Src.(*ir.Const)
+		if !ok {
+			return "", nil, false
+		}
+		return v.Dev + "|" + v.Logic, c, true
+	case *ir.StoreSlot:
+		if v.DevPtr != nil {
+			return "", nil, false
+		}
+		c, ok := v.Src.(*ir.Const)
+		if !ok {
+			return "", nil, false
+		}
+		idx, ok := v.Index.(*ir.Const)
+		if !ok {
+			return "", nil, false
+		}
+		return v.Dev + "|" + v.Logic + "|" + idx.String(), c, true
+	}
+	return "", nil, false
+}
+
+func sameConst(a, b *ir.Const) bool {
+	return a.V == b.V && a.Raw == b.Raw && a.Special == b.Special
+}
+
+// mayChangeDeviceState reports whether an instruction could read or change a
+// device, invalidating the tracked constant writes. Pure computations do not.
+func mayChangeDeviceState(ins ir.Instr) bool {
+	switch ins.(type) {
+	case *ir.Assign, *ir.Bin, *ir.Un, *ir.Cmp, *ir.Select:
+		return false
+	}
+	return true
 }
 
 // constCond evaluates a branch condition when both operands are constants.
@@ -1783,7 +2199,7 @@ func ic10Mod(x, y float64) float64 {
 func deadStores(fn *ir.Function) bool {
 	fn.BuildCFG()
 	all := allStackSlots(fn)
-	liveIn, liveOut := stackLive(fn, all)
+	liveIn, liveOut := stackLive(fn, all, fn.PrivateStack)
 	changed := false
 	for _, b := range fn.Blocks {
 		live := map[string]bool{}
@@ -1806,13 +2222,7 @@ func deadStores(fn *ir.Function) bool {
 				live[key] = true
 				continue
 			}
-			if hasSideEffect(ins) {
-				// yield/sleep/push/pop/clr/putd may expose the stack; keep
-				// every slot written before the barrier.
-				for k := range all {
-					live[k] = true
-				}
-			}
+			markStackBarrier(live, all, ins, fn.PrivateStack)
 		}
 		if len(dead) == 0 {
 			continue
@@ -1849,7 +2259,7 @@ func allStackSlots(fn *ir.Function) map[string]bool {
 
 // stackLive computes stack-slot liveness (backward dataflow). in[b] holds the
 // slots live at block entry; out[b] at block exit.
-func stackLive(fn *ir.Function, all map[string]bool) (in, out map[*ir.Block]map[string]bool) {
+func stackLive(fn *ir.Function, all map[string]bool, private bool) (in, out map[*ir.Block]map[string]bool) {
 	in = map[*ir.Block]map[string]bool{}
 	out = map[*ir.Block]map[string]bool{}
 	for _, b := range fn.Blocks {
@@ -1861,10 +2271,13 @@ func stackLive(fn *ir.Function, all map[string]bool) (in, out map[*ir.Block]map[
 		for _, b := range fn.Blocks {
 			no := map[string]bool{}
 			if len(b.Succs) == 0 {
-				// The stack is persistent: at program exit every slot may still
-				// be read by later code, so nothing is dead there.
+				// Device stacks live in shared devices and stay observable
+				// across ticks; the chip's own stack is observable only when it
+				// is shared (a successor program may read it).
 				for k := range all {
-					no[k] = true
+					if keyDevice(k) != "db" || !private {
+						no[k] = true
+					}
 				}
 			} else {
 				for _, s := range b.Succs {
@@ -1873,7 +2286,7 @@ func stackLive(fn *ir.Function, all map[string]bool) (in, out map[*ir.Block]map[
 					}
 				}
 			}
-			ni := transferStack(b, no, all)
+			ni := transferStack(b, no, all, private)
 			if !sameStrSet(ni, in[b]) || !sameStrSet(no, out[b]) {
 				changed = true
 			}
@@ -1883,7 +2296,7 @@ func stackLive(fn *ir.Function, all map[string]bool) (in, out map[*ir.Block]map[
 	return in, out
 }
 
-func transferStack(b *ir.Block, liveOut, all map[string]bool) map[string]bool {
+func transferStack(b *ir.Block, liveOut, all map[string]bool, private bool) map[string]bool {
 	live := map[string]bool{}
 	for k := range liveOut {
 		live[k] = true
@@ -1898,13 +2311,70 @@ func transferStack(b *ir.Block, liveOut, all map[string]bool) map[string]bool {
 			live[key] = true
 			continue
 		}
-		if hasSideEffect(ins) {
-			for k := range all {
-				live[k] = true
-			}
-		}
+		markStackBarrier(live, all, ins, private)
 	}
 	return live
+}
+
+// markStackBarrier marks the slots an instruction may read. Device stacks are
+// shared and observable, so any side effect (yield/sleep/device write) keeps
+// them live. The chip's own stack is only kept live by a relative or dynamic
+// access, unless it is shared (private=false), when every side effect counts.
+func markStackBarrier(live, all map[string]bool, ins ir.Instr, private bool) {
+	if !hasSideEffect(ins) {
+		return
+	}
+	chipAccess := marksChipStack(ins)
+	for k := range all {
+		isDB := keyDevice(k) == "db"
+		switch {
+		case !isDB:
+			live[k] = true // a device stack is always observable
+		case !private || chipAccess:
+			live[k] = true
+		}
+	}
+}
+
+// marksChipStack reports whether an instruction may read any chip-stack slot
+// through sp: peek, push/pop, or a dynamic get/put/poke on db.
+func marksChipStack(ins ir.Instr) bool {
+	v, ok := ins.(*ir.Builtin)
+	if !ok {
+		return false
+	}
+	switch v.Name {
+	case "peek", "push", "pop":
+		return true
+	case "poke":
+		if len(v.Args) != 2 {
+			return false
+		}
+		_, isConst := v.Args[0].(*ir.Const)
+		return !isConst
+	case "get", "put":
+		if len(v.Args) < 2 {
+			return false
+		}
+		d, ok := v.Args[0].(*ir.Device)
+		if !ok || d.Name != "db" {
+			return false
+		}
+		_, isConst := v.Args[1].(*ir.Const)
+		return !isConst
+	}
+	return false
+}
+
+// keyDevice extracts the device from a stack-slot key ("put|<dev>|<addr>").
+func keyDevice(key string) string {
+	if i := strings.IndexByte(key, '|'); i >= 0 {
+		rest := key[i+1:]
+		if j := strings.IndexByte(rest, '|'); j >= 0 {
+			return rest[:j]
+		}
+	}
+	return ""
 }
 
 func sameStrSet(a, b map[string]bool) bool {

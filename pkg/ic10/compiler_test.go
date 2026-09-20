@@ -403,7 +403,8 @@ func TestModeEnumConstants(t *testing.T) {
 }
 
 func TestDeviceAndTableParams(t *testing.T) {
-	src := []byte("const sensor = d0\n" +
+	src := []byte("// icg: shared-stack\n" +
+		"const sensor = d0\n" +
 		"data T = [ 10, 20, 30 ]\n\n" +
 		"func sumSlots(dev, first, last) num {\n" +
 		"    n := 0\n" +
@@ -412,21 +413,21 @@ func TestDeviceAndTableParams(t *testing.T) {
 		"    }\n" +
 		"    return n\n" +
 		"}\n\n" +
-		"func load(tbl) {\n" +
-		"    for i := 0; i < 3; i++ {\n" +
-		"        put(db, i, tbl[i])\n" +
-		"    }\n" +
+		"func load(tbl, at) {\n" +
+		"    put(db, 0, tbl[at])\n" +
 		"}\n\n" +
 		"func main() {\n" +
 		"    if sumSlots(sensor, 2, 4) > 0 {\n" +
-		"        load(T)\n" +
+		"        load(T, d0.Setting)\n" +
 		"    }\n" +
 		"}\n")
 	code, diags, err := ic10.Compile("test.icg", src)
 	if diags.HasErrors() || err != nil {
 		t.Fatalf("compile: diags=%v err=%v", diags.Diags, err)
 	}
-	for _, want := range []string{"ls r0 d0 r1 Occupied", "put db 0 r0", "get r0 db 509"} {
+	// The table index is runtime-variant, so the read stays a get at the table
+	// base (509); a constant index would be folded to its literal.
+	for _, want := range []string{"ls r0 d0 r1 Occupied", "put db 0 r0", "add r0 509 r0", "get r0 db r0"} {
 		if !strings.Contains(code, want) {
 			t.Errorf("missing %q in:\n%s", want, code)
 		}
@@ -434,7 +435,7 @@ func TestDeviceAndTableParams(t *testing.T) {
 }
 
 func TestDeviceAlias(t *testing.T) {
-	src := []byte("const sensor = d0\nconst pump = sensor\nconst host = db\nfunc main() {\n    d1.Setting = sensor.Temperature\n    pump.On = 1\n    d2.Setting = sensor.slot[0].Occupied\n    put(host, 0, 1)\n    d0.On = isSet(sensor)\n}\n")
+	src := []byte("// icg: shared-stack\nconst sensor = d0\nconst pump = sensor\nconst host = db\nfunc main() {\n    d1.Setting = sensor.Temperature\n    pump.On = 1\n    d2.Setting = sensor.slot[0].Occupied\n    put(host, 0, 1)\n    d0.On = isSet(sensor)\n}\n")
 	code, diags, err := ic10.Compile("test.icg", src)
 	if diags.HasErrors() || err != nil {
 		t.Fatalf("compile: diags=%v err=%v", diags.Diags, err)
@@ -1155,5 +1156,67 @@ func TestSizeReportsPressure(t *testing.T) {
 	}
 	if rep.PeakLive < 3 {
 		t.Errorf("PeakLive = %d, want >= 3", rep.PeakLive)
+	}
+}
+
+func TestPrivateStackDefaultAndPragma(t *testing.T) {
+	src := "func main() { push(5)\n x := pop()\n d0.Setting = x }\n"
+	// Single chip defaults to a private stack, so push/pop are eliminated.
+	code, diags, err := ic10.Compile("t.icg", []byte(src))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if strings.Contains(code, "push") || strings.Contains(code, "pop") {
+		t.Errorf("private stack should eliminate push/pop:\n%s", code)
+	}
+	// The pragma keeps the stack shared.
+	code, diags, err = ic10.Compile("t.icg", []byte("// icg: shared-stack\n"+src))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(code, "push") {
+		t.Errorf("shared stack should keep push/pop:\n%s", code)
+	}
+}
+
+func TestPrivateStackPromotesLoopState(t *testing.T) {
+	src := []byte("func main() {\n  db.stack[0] = 0\n  for {\n    yield()\n    db.stack[0] = db.stack[0] + 1\n    d0.Setting = db.stack[0]\n  }\n}\n")
+	priv, diags, err := ic10.Compile("t.icg", src)
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	shared, diags, err := ic10.Compile("t.icg", append([]byte("// icg: shared-stack\n"), src...))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if strings.Contains(priv, "db 0") {
+		t.Errorf("private stack should promote slot 0 to a register:\n%s", priv)
+	}
+	if !strings.Contains(shared, "db 0") {
+		t.Errorf("shared stack should keep slot 0 on the stack:\n%s", shared)
+	}
+	if n, m := strings.Count(priv, "\n"), strings.Count(shared, "\n"); n >= m {
+		t.Errorf("promotion should not add lines: private=%d shared=%d", n, m)
+	}
+}
+
+func TestRedundantDeviceWritesOption(t *testing.T) {
+	src := []byte("func main() {\n  d0.On = 0\n  d1.On = 0\n  d0.On = 0\n}\n")
+	off, diags, err := ic10.Compile("t.icg", src)
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if n := strings.Count(off, "s d0 On 0"); n != 2 {
+		t.Errorf("default should keep both writes, got %d:\n%s", n, off)
+	}
+	on, diags, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{RedundantDeviceWrites: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if n := strings.Count(on, "s d0 On 0"); n != 1 {
+		t.Errorf("option should drop the repeat, got %d:\n%s", n, on)
+	}
+	if strings.Count(on, "\n") >= strings.Count(off, "\n") {
+		t.Errorf("option should not add lines:\n%s", on)
 	}
 }

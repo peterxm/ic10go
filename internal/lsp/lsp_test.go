@@ -552,7 +552,8 @@ func TestStatsNotification(t *testing.T) {
 func TestStatsNotificationStackDepth(t *testing.T) {
 	out := runServer(t,
 		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
-		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"sd.icg","text":"func main() { for { yield()\n push(1); pop() } }"}}}`),
+		// A shared stack keeps the explicit push/pop in the report.
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"sd.icg","text":"// icg: shared-stack\nfunc main() { for { yield()\n push(1); pop() } }"}}}`),
 		frame(`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`),
 	)
 	if !strings.Contains(out, `"stackUser":1`) || !strings.Contains(out, `"stackPush":1`) {

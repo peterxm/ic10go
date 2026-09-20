@@ -202,8 +202,13 @@ VS Code `icg.dynamicStack`，默认关）改为动态：`userLimit = 512 - size 
 
 - `ic10c build --split-data`（兼容保留；现在需要 loader 时会自动输出）
 - `ic10c build --data-only`（只生成 / 更新 loader）
+- **Loader 拆分**：loader 超过 128 行时自动切成多块（每块 ≤128 行），
+  必须按顺序运行。单块写 `<file>.data.ic`；多块写 `<file>.data.1.ic`、
+  `<file>.data.2.ic`…；JSON 里是 `data.loaders[]`。这样数据段可以超过
+  128 槽（上限是编译器区大小）。
 - VSCode：“IC10 Go: 编译为 IC10” → 一个命令完成：把安装代码复制到
-  剪贴板、在旁边预览运行代码，并提示“先跑安装代码、再用运行代码覆盖”。
+  剪贴板、在旁边预览运行代码，并提示“先跑安装代码、再用运行代码覆盖”；
+  多块时逐块复制并提示继续。
 - 文档：安装步骤、版本升级、失败行为。
 
 ### 5.7 一次性设置外提（复用 loader）
@@ -227,7 +232,8 @@ VS Code `icg.dynamicStack`，默认关）改为动态：`userLimit = 512 - size 
 
 产物：runtime（≤128 行，去掉外提的写）+ loader（数据段写入 + 外提的设置写入）。
 CLI 自动写出 loader（`<file>.data.ic`），`--data-only` 也会带上设置写入；
-JSON 接口给出 `data.setup = true`。合并后的 loader 同样受 128 行限制（超了报错）。
+JSON 接口给出 `data.setup = true`。合并后的 loader 超过 128 行时自动拆成多块
+（见 §5.6）。
 
 实现：`internal/opt/setup.go` 的 `SplitSetup`；`pkg/ic10.CompileResult` 在
 `generate` 失败时、或 `info.DataSize > 0` 时调用它并重试。

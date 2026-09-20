@@ -1,6 +1,7 @@
 package ic10_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -191,7 +192,8 @@ func TestDataStatsWarning(t *testing.T) {
 }
 
 func TestMaxStackDepth(t *testing.T) {
-	src := []byte("func main() { for { yield()\n push(1); push(2); pop(); pop() } }\n")
+	// A shared stack keeps the explicit push/pop for the depth analysis.
+	src := []byte("// icg: shared-stack\nfunc main() { for { yield()\n push(1); push(2); pop(); pop() } }\n")
 	d, unbounded, err := ic10.MaxStackDepth("x.icg", src, ic10.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +202,7 @@ func TestMaxStackDepth(t *testing.T) {
 		t.Errorf("bounded push: depth=%d unbounded=%v, want 2/false", d, unbounded)
 	}
 
-	src = []byte("func main() { for { yield()\n push(1) } }\n")
+	src = []byte("// icg: shared-stack\nfunc main() { for { yield()\n push(1) } }\n")
 	if _, unbounded, _ := ic10.MaxStackDepth("x.icg", src, ic10.Options{}); !unbounded {
 		t.Error("push inside a loop should be unbounded")
 	}
@@ -303,5 +305,71 @@ func TestDataTableEnumLiteral(t *testing.T) {
 	}
 	if !strings.Contains(code, "get ") {
 		t.Errorf("runtime should read the data table:\n%s", code)
+	}
+}
+
+func TestSplitLoader(t *testing.T) {
+	if got := ic10.SplitLoader(""); got != nil {
+		t.Errorf("empty loader = %v, want nil", got)
+	}
+	one := "put db 0 1\nput db 1 2\n"
+	if got := ic10.SplitLoader(one); len(got) != 1 || got[0] != one {
+		t.Errorf("small loader = %q, want one chunk", got)
+	}
+	var b strings.Builder
+	for i := 0; i < 300; i++ {
+		fmt.Fprintf(&b, "put db %d %d\n", i, i)
+	}
+	chunks := ic10.SplitLoader(b.String())
+	if len(chunks) != 3 {
+		t.Fatalf("chunks = %d, want 3", len(chunks))
+	}
+	var joined strings.Builder
+	for i, c := range chunks {
+		if n := strings.Count(c, "\n"); n > 128 {
+			t.Errorf("chunk %d has %d lines, want <= 128", i, n)
+		}
+		joined.WriteString(c)
+	}
+	if joined.String() != b.String() {
+		t.Errorf("chunks do not rejoin to the original loader")
+	}
+}
+
+func TestConstantDataReadFolds(t *testing.T) {
+	src := []byte("data T = [11, 22, 33]\nfunc main() {\n  for { yield()\n    d0.Setting = T[0]\n  }\n}\n")
+	code, diags, err := ic10.Compile("t.icg", src)
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(code, "s d0 Setting 11") {
+		t.Errorf("constant data read should fold to the literal:\n%s", code)
+	}
+	if strings.Contains(code, "509") {
+		t.Errorf("folded read should not address the table:\n%s", code)
+	}
+}
+
+func TestLargeDataLoaderSplits(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("data T = [")
+	for i := 0; i < 200; i++ {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%d", i)
+	}
+	b.WriteString("]\nfunc main() { d0.Setting = T[d1.Setting] }\n")
+	res, diags, err := ic10.CompileResult("t.icg", []byte(b.String()), ic10.Options{})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if len(res.Loaders) < 2 {
+		t.Fatalf("loaders = %d, want >= 2", len(res.Loaders))
+	}
+	for i, c := range res.Loaders {
+		if n := strings.Count(c, "\n"); n > 128 {
+			t.Errorf("loader chunk %d has %d lines, want <= 128", i, n)
+		}
 	}
 }

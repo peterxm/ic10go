@@ -30,8 +30,9 @@
 | 文档链接 | 函数调用与 `data` 表引用可点击跳到声明行；`hash("…")` / `HASH("…")` / 数字预制体 hash 可点击打开社区 Wiki |
 | 预算常驻 | **状态栏**实时显示当前 `.icg` 的 `行/字节/行长/寄存器/栈` 预算（含数据段 `data a..b`、用户栈 `stack 个数/上限`；悬停显示用户/编译器分区、最高槽位与 `push`/手动 `db.stack[]`/数据段/溢出槽；点击即编译）；文件末尾另有 inlay hint |
 | 栈边界 | 用户栈上限默认固定为 `icg.userStack`（默认 128），用户槽位越界编译报错；开启 `icg.dynamicStack` 后按编译器实际数据段/溢出占用动态确定上限 |
+| 栈私有 | 单芯片默认 `// icg: private-stack`：允许把常量用户栈槽提升为寄存器、消除成对 `push`/`pop`，让 runtime 更短；多芯片默认 `// icg: shared-stack`（保守）。文件里写 pragma 可覆盖 |
 | 格式化 | `Shift+Alt+F`；`[icg]` 默认**保存时格式化**（可在设置中关闭）；`.ic`/`.ic10` 重排空白并对齐指令列 |
-| 数据段 | 命令 **“IC10 Go: 编译为 IC10”** 会自动识别 `data` 表：把一次性「安装代码」复制到剪贴板、并在旁边打开运行代码；`data` 表 / `switch ... table` 有语法高亮与补全。编译器还会把序言里的一次性设置写入（`Mode`/`On`/常量 `Setting`）自动外提到同一份安装代码：**超 128 行时**用来塞进预算，**本来就有 `data` 表时**顺带复用、让 runtime 更小 |
+| 数据段 | 命令 **“IC10 Go: 编译为 IC10”** 会自动识别 `data` 表：把一次性「安装代码」复制到剪贴板、并在旁边打开运行代码；`data` 表 / `switch ... table` 有语法高亮与补全。编译器还会把序言里的一次性设置写入（`Mode`/`On`/常量 `Setting`）自动外提到同一份安装代码：**超 128 行时**用来塞进预算，**本来就有 `data` 表时**顺带复用、让 runtime 更小。安装代码超过 128 行时自动拆成多块，扩展会逐块复制并提示继续 |
 | 多芯片 | 一个 `.icg` 用 `chip 名字 { ... }` 声明多块芯片（各自 128 行预算 / loader），用 `bus 名字 { 槽位 }` + `use 名字 on dev:conn`（默认访问点）或 `Bus.槽位[dev][conn]`（内联覆盖）声明通道；`chip`/`bus`/`use` 有语法高亮、语义高亮与片段；`Bus.` 补全槽位、悬停显示通道号。「编译为 IC10」多芯片时弹出芯片选择，再预览/复制该芯片的运行代码与安装代码；状态栏显示芯片数与各芯片预算的较大值 |
 | 片段 | `main`、`hyst`、`pid`（软件 PID）、`piddev`（硬件 PID 控制器配置）、`batchread`、`batchwrite`、`readlt`、`writelt`、`readdev`、`writedev`、`readbyid`、`writebyid`、`readdevslot`、`stackread`、`stackwrite`、`sorterfilter`、`printerexec`、`data`、`switchtable`、`chip`（多芯片）、`bus`（命名通道）、`func`、`const`、`slotread` 等 |
 
@@ -137,6 +138,9 @@ func main() {
 | `icg.unsafe` | `false` | 编译时加 `--unsafe`：跳过数据段运行时校验以进一步压缩代码 |
 | `icg.dataLayout` | `top` | 数据段位置 `--data-layout`：`top`（默认）或 `middle` |
 | `icg.dataAccess` | `get` | 数据段安装代码访问芯片栈的方式：`get`（标准 IC host）/ `stack`（设备 host，如空调） |
+| `icg.dynamicStack` | `false` | 用户栈上限按编译器实际数据段/溢出占用动态计算，而非 `icg.userStack` 固定值 |
+| `icg.userStack` | `128` | 固定的用户栈大小；用户使用达到或超过它的槽位会在编译时报错 |
+| `icg.redundantDeviceWrites` | `false` | 删除重复的同值常量设备写（省行，但改变可观测写序列） |
 | `icg.runSteps` | `0` | VM 运行步数上限（`--steps`）；`0` 用编译器默认 1000 |
 | `icg.runTrace` | `false` | VM 运行时打印每条执行的指令（`--trace`） |
 | `icg.runSet` | `[]` | VM 运行前设置设备值，每项一条，如 `d0.Temperature=350`（可重复 `--set`） |

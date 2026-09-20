@@ -220,6 +220,70 @@ func TestGlobalCSELoadInvalidatedByYield(t *testing.T) {
 	}
 }
 
+func TestStackGetSurvivesOtherSlotPut(t *testing.T) {
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	b.Emit(&ir.Builtin{Name: "get", Dst: a, Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}}})
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 6}, &ir.Const{V: 9}}})
+	c := b.NewReg("c")
+	b.Emit(&ir.Builtin{Name: "get", Dst: c, Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}}})
+	b.Emit(&ir.Builtin{Name: "sleep", Args: []ir.Value{a, c}})
+	b.SetTerm(&ir.Ret{})
+	if !redundantLoads(b.Fn()) {
+		t.Fatal("a write to another slot must not invalidate the get")
+	}
+	if _, ok := b.Fn().Blocks[0].Instrs[2].(*ir.Assign); !ok {
+		t.Fatalf("second get = %T, want *ir.Assign", b.Fn().Blocks[0].Instrs[2])
+	}
+}
+
+func TestStackGetInvalidatedBySameSlotPut(t *testing.T) {
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	b.Emit(&ir.Builtin{Name: "get", Dst: a, Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}}})
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 9}}})
+	c := b.NewReg("c")
+	b.Emit(&ir.Builtin{Name: "get", Dst: c, Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}}})
+	b.Emit(&ir.Builtin{Name: "sleep", Args: []ir.Value{a, c}})
+	b.SetTerm(&ir.Ret{})
+	if !redundantLoads(b.Fn()) {
+		t.Fatal("expected store-to-load forwarding of the same slot")
+	}
+	as, ok := b.Fn().Blocks[0].Instrs[2].(*ir.Assign)
+	if !ok {
+		t.Fatalf("second get = %T, want *ir.Assign", b.Fn().Blocks[0].Instrs[2])
+	}
+	if _, isConst := as.Src.(*ir.Const); !isConst {
+		t.Fatalf("forwarded value = %T, want the stored constant", as.Src)
+	}
+}
+
+func TestGlobalCSEStackLoadSurvivesYield(t *testing.T) {
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	b.Emit(&ir.Builtin{Name: "get", Dst: a, Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}}})
+	b.Emit(&ir.Builtin{Name: "yield"})
+	thenB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: a, Then: thenB, Else: endB})
+
+	b.SetBlock(thenB)
+	a2 := b.NewReg("a2")
+	b.Emit(&ir.Builtin{Name: "get", Dst: a2, Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}}})
+	b.Emit(&ir.Builtin{Name: "sleep", Args: []ir.Value{a2}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+
+	if !globalCSE(b.Fn()) {
+		t.Fatal("a stack load only this program writes survives a yield")
+	}
+	if _, ok := b.Fn().Blocks[1].Instrs[0].(*ir.Assign); !ok {
+		t.Fatalf("load after yield = %T, want *ir.Assign", b.Fn().Blocks[1].Instrs[0])
+	}
+}
+
 func TestDeadStackStore(t *testing.T) {
 	b := ir.NewBuilder("f")
 	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 1}}})
@@ -354,5 +418,123 @@ func TestDeadStackStoreCrossBlock(t *testing.T) {
 	}
 	if n := len(b.Fn().Blocks[3].Instrs); n != 1 {
 		t.Fatalf("join block instrs = %d, want 1", n)
+	}
+}
+
+func TestFuseBranches(t *testing.T) {
+	b := ir.NewBuilder("f")
+	cmp := b.NewReg("c")
+	b.Emit(&ir.Cmp{Cond: ir.Eq, Dst: cmp, A: &ir.Const{V: 1}, B: &ir.Const{V: 1}})
+	thenB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: cmp, Then: thenB, Else: endB})
+	b.SetBlock(thenB)
+	b.SetTerm(&ir.Jmp{Target: endB})
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+	fn := b.Fn()
+	if !fuseBranches(fn) {
+		t.Fatal("fuseBranches made no change")
+	}
+	br := fn.Blocks[0].Term.(*ir.Br)
+	if br.Cond != ir.Eq {
+		t.Errorf("branch cond = %v, want Eq", br.Cond)
+	}
+	if n := len(fn.Blocks[0].Instrs); n != 0 {
+		t.Errorf("cmp not removed: %d instrs left", n)
+	}
+}
+
+func TestEliminatePushPop(t *testing.T) {
+	b := ir.NewBuilder("f")
+	b.Emit(&ir.Builtin{Name: "push", Args: []ir.Value{&ir.Const{V: 5}}})
+	x := b.NewReg("x")
+	b.Emit(&ir.Builtin{Name: "pop", Dst: x})
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: x})
+	b.SetTerm(&ir.Ret{})
+	fn := b.Fn()
+	fn.PrivateStack = true
+	if !eliminatePushPop(fn) {
+		t.Fatal("eliminatePushPop made no change")
+	}
+	// The push is gone and the pop became an assignment of the pushed value.
+	for _, ins := range fn.Blocks[0].Instrs {
+		if bi, ok := ins.(*ir.Builtin); ok && (bi.Name == "push" || bi.Name == "pop") {
+			t.Fatalf("%s survived", bi.Name)
+		}
+	}
+	if as, ok := fn.Blocks[0].Instrs[0].(*ir.Assign); !ok {
+		t.Fatalf("first = %T, want *ir.Assign", fn.Blocks[0].Instrs[0])
+	} else if c, ok := as.Src.(*ir.Const); !ok || c.V != 5 {
+		t.Fatalf("forwarded value = %v, want 5", as.Src)
+	}
+}
+
+func TestPromoteUserStack(t *testing.T) {
+	b := ir.NewBuilder("f")
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 0}, &ir.Const{V: 5}}})
+	x := b.NewReg("x")
+	b.Emit(&ir.Builtin{Name: "get", Dst: x, Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 0}}})
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: x})
+	b.SetTerm(&ir.Ret{})
+	fn := b.Fn()
+	fn.PrivateStack = true
+	fn.UserLimit = 128
+	if !promoteUserStack(fn) {
+		t.Fatal("promoteUserStack made no change")
+	}
+	for _, ins := range fn.Blocks[0].Instrs {
+		if bi, ok := ins.(*ir.Builtin); ok && (bi.Name == "get" || bi.Name == "put") {
+			t.Fatalf("stack access survived: %v", bi.Name)
+		}
+	}
+}
+
+func TestPromoteUserStackShared(t *testing.T) {
+	b := ir.NewBuilder("f")
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 0}, &ir.Const{V: 5}}})
+	b.Emit(&ir.Builtin{Name: "get", Dst: b.NewReg("x"), Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 0}}})
+	b.SetTerm(&ir.Ret{})
+	fn := b.Fn()
+	fn.UserLimit = 128 // PrivateStack false
+	if promoteUserStack(fn) {
+		t.Fatal("shared stack must not be promoted")
+	}
+}
+
+func TestDeadStoreRelaxedOnPrivateStack(t *testing.T) {
+	b := ir.NewBuilder("f")
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 1}}})
+	b.Emit(&ir.Builtin{Name: "yield"})
+	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 2}}})
+	b.SetTerm(&ir.Ret{})
+	fn := b.Fn()
+	fn.PrivateStack = true
+	if !deadStores(fn) {
+		t.Fatal("a private stack store overwritten after a yield is dead")
+	}
+}
+
+func TestRedundantDeviceStores(t *testing.T) {
+	build := func() *ir.Function {
+		b := ir.NewBuilder("f")
+		b.Emit(&ir.Store{Dev: "d0", Logic: "On", Src: &ir.Const{V: 0}})
+		b.Emit(&ir.Store{Dev: "d1", Logic: "On", Src: &ir.Const{V: 0}})
+		b.Emit(&ir.Store{Dev: "d0", Logic: "On", Src: &ir.Const{V: 0}})
+		b.SetTerm(&ir.Ret{})
+		return b.Fn()
+	}
+	// Off by default.
+	fn := build()
+	if redundantDeviceStores(fn) {
+		t.Fatal("redundant device stores must be opt-in")
+	}
+	fn = build()
+	fn.RedundantDeviceWrites = true
+	if !redundantDeviceStores(fn) {
+		t.Fatal("expected the repeated write to be removed")
+	}
+	if n := len(fn.Blocks[0].Instrs); n != 2 {
+		t.Fatalf("instrs = %d, want 2", n)
 	}
 }

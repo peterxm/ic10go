@@ -67,7 +67,7 @@ func outlinable(info *sema.Info, fi *sema.FuncInfo) bool {
 			low = true
 		}
 	})
-	return leaf && !low && countStatements(fi.Decl.Body) >= 3
+	return leaf && !low && countStatements(fi.Decl.Body) >= 2
 }
 
 // countStatements counts the statements in a function body, depth first.

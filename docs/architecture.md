@@ -282,6 +282,48 @@ stack comp   9 @ [503..511] (data 9 + spills 0)
   （默认关）与 `icg.userStack`（默认 128）。固定模式下若数据段 + 溢出放不下
   编译器区，同样报错。
 
+### 6.7 分区带来的优化
+
+- **常量查表折叠**：`T[const]` 编译期已知，直接内联为字面量（`get r db base`
+  整行消失）；编译器同时尝试折叠/不折叠两种产物，取 runtime 行数更短者
+  （`--unsafe` / `--no-data-check` 下不折叠，以保留对栈的原始读取）。
+- **精确栈失效**：`put db N` / `poke N`（常量地址）只失效槽 N 的缓存读，
+  不再清空所有 `db` 读；`yield`/`sleep` 只失效设备读、保留栈读（栈只由本程序
+  写）。因此 `get db N` 的公共子表达式消除和 store-to-load 转发更有效。
+- **分支融合**：块终止 `Br` 的条件若由同块单次使用的 `Cmp` 定义，则把比较
+  折进分支并删除 `Cmp`（`seq`/`seqz`/`sne`/`snez` + 分支 → `beq`/`bne`/`beqz`/
+  `bnez`）。`switch` 的 case 比较和带括号的 `if` 都受益。
+
+### 6.8 栈私有标记
+
+持久栈跨 tick、跨换代码保留，默认可能被后继程序（loader→runtime 交接、手动
+换程序）读取，因此对栈的“删/并写入”类优化默认关闭。用**文件 pragma** 声明
+用户栈只属于本程序：
+
+```
+// icg: private-stack    // 用户栈私有：允许寄存器提升
+// icg: shared-stack     // 用户栈共享（保守，默认用于多芯片）
+```
+
+- 默认：**单芯片 → private**，多芯片 → shared（`chip` 块存在时）。pragma 覆盖。
+- `private-stack` 下启用：
+  - **mem2reg**：常量用户槽提升为虚拟寄存器，删除其 `get/put/poke`；寄存器与栈
+    一样跨 tick 保留，因此跨 tick 状态仍正确（首 tick 寄存器为 0，与栈初值一致，
+    不发初始 load）。
+  - **push/pop 消除**：同块内成对的 `push`/`pop` 删除并把被压值转发给 `pop` 的
+    目标（块内不得有 `peek`/动态栈访问）。
+  - **放宽 `deadStores`**：`yield`/`sleep` 不再把用户栈槽标 live（只对**芯片自己的
+    `db` 栈**生效；设备栈 `d0.stack` 仍共享可观测，保持保守）。
+- 这些优化都作为**候选**参与“取 runtime 行数更短者”的比较，保证不增行。
+
+### 6.9 可选：重复设备写消除
+
+`--redundant-device-writes`（环境变量 `IC10C_REDUNDANT_DEVICE_WRITES=1`，
+VS Code `icg.redundantDeviceWrites`）会删除同块内、中间无读/屏障的**同值常量
+设备写**。它省行（气闸 92→89），但会改变可观测的**写序列**，与差分测试
+`TestDifferentialRandom` 的“写序列完全一致”契约冲突，因此**默认关闭**。
+设备可能对重复写有边沿行为，启用前请确认对目标设备安全。
+
 ---
 
 ## 7. 指令选择要点

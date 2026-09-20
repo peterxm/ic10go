@@ -58,10 +58,28 @@ func dataLoaderFor(info *sema.Info, opts Options) (string, error) {
 			b.WriteString(write(t.Base+i, v))
 		}
 	}
-	if n := strings.Count(b.String(), "\n"); n > codegen.MaxLines {
-		return "", fmt.Errorf("data loader has %d lines, exceeding the %d line limit; split the table", n, codegen.MaxLines)
-	}
 	return b.String(), nil
+}
+
+// SplitLoader splits a one-time loader into chunks of at most codegen.MaxLines
+// lines so each fits the chip editor; the chunks must be run in order. A loader
+// that already fits is returned as a single chunk, and an empty loader yields
+// nil.
+func SplitLoader(loader string) []string {
+	if loader == "" {
+		return nil
+	}
+	lines := strings.Split(strings.TrimSuffix(loader, "\n"), "\n")
+	var chunks []string
+	for len(lines) > 0 {
+		n := codegen.MaxLines
+		if n > len(lines) {
+			n = len(lines)
+		}
+		chunks = append(chunks, strings.Join(lines[:n], "\n")+"\n")
+		lines = lines[n:]
+	}
+	return chunks
 }
 
 // HasData reports whether the source declares any `data` tables.

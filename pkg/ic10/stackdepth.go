@@ -14,13 +14,14 @@ import (
 // when depth <= base. unbounded reports a loop that grows the stack without a
 // matching pop.
 func MaxStackDepth(name string, src []byte, opts Options) (depth int, unbounded bool, err error) {
-	info, diags := parseAndCheck(name, src, opts)
+	info, diags, private := parseAndCheck(name, src, opts)
 	if info == nil {
 		if diags.HasErrors() {
 			return 0, false, fmt.Errorf("compile failed")
 		}
 		return 0, false, fmt.Errorf("no IR produced")
 	}
+	opts.PrivateStack = private
 	noCheck, noOutline, noOpt := envSwitches()
 	fn := lowerAndOptimize(info, opts, lower.PlanOutlines(info, noOutline), noCheck, noOpt, diags)
 	if fn == nil {

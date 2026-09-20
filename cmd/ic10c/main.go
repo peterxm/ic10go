@@ -169,6 +169,7 @@ func cmdBuild(args []string) int {
 	spillStack := false
 	dynamicStack := false
 	userStack := 0
+	redundantWrites := false
 	dataLayout := ""
 	dataOut := ""
 	chipName := ""
@@ -190,6 +191,8 @@ func cmdBuild(args []string) int {
 			autoTable = true
 		case "--dynamic-stack":
 			dynamicStack = true
+		case "--redundant-device-writes":
+			redundantWrites = true
 		case "--user-stack":
 			if i+1 < len(args) {
 				n, err := strconv.Atoi(args[i+1])
@@ -269,18 +272,19 @@ func cmdBuild(args []string) int {
 	}
 
 	opts := ic10.Options{
-		StableInsOrder:  stableIns,
-		NoDataCheck:     noDataCheck,
-		Unsafe:          unsafe,
-		AutoTable:       autoTable,
-		JumpTable:       jumpTable,
-		Fast:            fast,
-		RelJump:         relJump,
-		DataAccessStack: dataAccessStack,
-		SpillStack:      spillStack,
-		DataLayout:      dataLayout,
-		DynamicStack:    dynamicStack,
-		UserStackLimit:  userStack,
+		StableInsOrder:        stableIns,
+		NoDataCheck:           noDataCheck,
+		Unsafe:                unsafe,
+		AutoTable:             autoTable,
+		JumpTable:             jumpTable,
+		Fast:                  fast,
+		RelJump:               relJump,
+		DataAccessStack:       dataAccessStack,
+		SpillStack:            spillStack,
+		DataLayout:            dataLayout,
+		DynamicStack:          dynamicStack,
+		UserStackLimit:        userStack,
+		RedundantDeviceWrites: redundantWrites,
 	}
 
 	if jsonOut {
@@ -324,6 +328,10 @@ func cmdBuild(args []string) int {
 			return 1
 		}
 		fmt.Print(loader)
+		if n := strings.Count(loader, "\n"); n > codegen.MaxLines {
+			fmt.Fprintf(os.Stderr, "ic10c: loader is %d lines; split it into %d chunks (each <= %d lines) and run them in order\n",
+				n, (n+codegen.MaxLines-1)/codegen.MaxLines, codegen.MaxLines)
+		}
 		return 0
 	}
 
@@ -355,7 +363,7 @@ func cmdBuild(args []string) int {
 		if out == "" {
 			out = base + ".data.ic"
 		}
-		return writeLoader(out, compiled.Loader)
+		return writeLoaders(out, compiled.Loaders)
 	}
 
 	// Multi-chip with --chip NAME: that chip to stdout.
@@ -372,7 +380,7 @@ func cmdBuild(args []string) int {
 			if out == "" {
 				out = base + "." + ch.Name + ".data.ic"
 			}
-			return writeLoader(out, ch.Loader)
+			return writeLoaders(out, ch.Loaders)
 		}
 		fmt.Fprintf(os.Stderr, "ic10c: no chip named %q\n", chipName)
 		return 1
@@ -388,7 +396,7 @@ func cmdBuild(args []string) int {
 		msg := fmt.Sprintf("%s (%d lines)", out, strings.Count(ch.Code, "\n"))
 		if ch.Loader != "" {
 			lout := base + "." + ch.Name + ".data.ic"
-			if rc := writeLoader(lout, ch.Loader); rc != 0 {
+			if rc := writeLoaders(lout, ch.Loaders); rc != 0 {
 				return rc
 			}
 			msg += " + loader"
@@ -398,17 +406,31 @@ func cmdBuild(args []string) int {
 	return 0
 }
 
-// writeLoader writes a one-time loader after checking the line limit.
-func writeLoader(path, loader string) int {
-	if n := strings.Count(loader, "\n"); n > codegen.MaxLines {
-		fmt.Fprintf(os.Stderr, "ic10c: one-time loader has %d lines, exceeding the %d line limit\n", n, codegen.MaxLines)
-		return 1
+// writeLoaders writes a one-time loader. A loader that fits the chip editor is
+// written to path; a larger one is split into numbered chunks (path with ".N"
+// before ".ic") that must be run in order.
+func writeLoaders(path string, loaders []string) int {
+	if len(loaders) == 0 {
+		return 0
 	}
-	if err := os.WriteFile(path, []byte(loader), 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, "ic10c:", err)
-		return 1
+	if len(loaders) == 1 {
+		if err := os.WriteFile(path, []byte(loaders[0]), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "ic10c: one-time loader written to %s (run it once, then use the runtime)\n", path)
+		return 0
 	}
-	fmt.Fprintf(os.Stderr, "ic10c: one-time loader written to %s (run it once, then use the runtime)\n", path)
+	stem := strings.TrimSuffix(path, ".ic")
+	for i, chunk := range loaders {
+		p := fmt.Sprintf("%s.%d.ic", stem, i+1)
+		if err := os.WriteFile(p, []byte(chunk), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+	}
+	fmt.Fprintf(os.Stderr, "ic10c: one-time loader split into %d chunks (%s.1.ic..%s.%d.ic); run them in order, then use the runtime\n",
+		len(loaders), stem, stem, len(loaders))
 	return 0
 }
 
@@ -631,6 +653,7 @@ func cmdStats(args []string) int {
 	spillStack := false
 	dynamicStack := false
 	userStack := 0
+	redundantWrites := false
 	var files []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -645,6 +668,8 @@ func cmdStats(args []string) int {
 			autoTable = true
 		case "--dynamic-stack":
 			dynamicStack = true
+		case "--redundant-device-writes":
+			redundantWrites = true
 		case "--user-stack":
 			if i+1 < len(args) {
 				n, err := strconv.Atoi(args[i+1])
@@ -674,7 +699,7 @@ func cmdStats(args []string) int {
 		return 2
 	}
 	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack,
-		DynamicStack: dynamicStack, UserStackLimit: userStack}
+		DynamicStack: dynamicStack, UserStackLimit: userStack, RedundantDeviceWrites: redundantWrites}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
@@ -707,8 +732,13 @@ func cmdStats(args []string) int {
 			fmt.Printf("  registers  %3d / %d\n", s.RegsUsed, ic10.NumRegs)
 			if ch.Loader != "" {
 				ls := ic10.StatsOf(ch.Loader)
-				fmt.Printf("  loader     %3d / %d lines · %d / %d bytes (run once)\n",
-					ls.Lines, codegen.MaxLines, ls.Bytes, codegen.MaxBytes)
+				if n := len(ch.Loaders); n > 1 {
+					fmt.Printf("  loader     %3d lines · %d / %d bytes (run once, %d chunks)\n",
+						ls.Lines, ls.Bytes, codegen.MaxBytes, n)
+				} else {
+					fmt.Printf("  loader     %3d / %d lines · %d / %d bytes (run once)\n",
+						ls.Lines, codegen.MaxLines, ls.Bytes, codegen.MaxBytes)
+				}
 			}
 		}
 		return 0
@@ -752,8 +782,13 @@ func cmdStats(args []string) int {
 	}
 	if compiled.Loader != "" {
 		ls := ic10.StatsOf(compiled.Loader)
-		fmt.Printf("loader     %3d / %d lines · %d / %d bytes (run once)\n",
-			ls.Lines, codegen.MaxLines, ls.Bytes, codegen.MaxBytes)
+		if n := len(compiled.Loaders); n > 1 {
+			fmt.Printf("loader     %3d lines · %d / %d bytes (run once, %d chunks)\n",
+				ls.Lines, ls.Bytes, codegen.MaxBytes, n)
+		} else {
+			fmt.Printf("loader     %3d / %d lines · %d / %d bytes (run once)\n",
+				ls.Lines, codegen.MaxLines, ls.Bytes, codegen.MaxBytes)
+		}
 	}
 	if base >= 0 {
 		fmt.Printf("data       slots %d..%d (%d values)\n", base, base+size-1, size)

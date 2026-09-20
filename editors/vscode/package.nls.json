@@ -14,6 +14,7 @@
   "icg.dataAccess.desc": "How the data-segment loader accesses the chip stack: `get` for a standard IC host, `stack` for device hosts (e.g. air conditioners).",
   "icg.dynamicStack.desc": "Size the user stack region from the compiler's data/spill usage instead of the fixed `icg.userStack` limit. Off by default.",
   "icg.userStack.desc": "Fixed user stack size (default 128). User slots at or above it are rejected at compile time.",
+  "icg.redundantDeviceWrites.desc": "Drop constant device writes that repeat the previous value. Saves lines but changes the observable write sequence; off by default.",
   "icg.runSteps.desc": "Instruction budget for `IC10 Go: Run in VM` (`--steps`). 0 uses the compiler default (1000).",
   "icg.runTrace.desc": "Print every executed instruction when running in the VM (`--trace`).",
   "icg.runSet.desc": "Initial device values for `IC10 Go: Run in VM`, one per entry, e.g. `d0.Temperature=350` (repeatable `--set`).",

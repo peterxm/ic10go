@@ -38,6 +38,9 @@ type Options struct {
 	Fast bool
 	// NoCheck disables logic-type validation.
 	NoCheck bool
+	// FoldData folds constant-index data-table reads to their literal value
+	// instead of emitting a get from the data segment.
+	FoldData bool
 	// RecordBus, when set, is called for every `Bus.slot` read (write=false) or
 	// write (write=true) with the access point used, so the caller can check
 	// producer/consumer counts and wire a multi-chip VM.
@@ -1321,6 +1324,14 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 		return l.lowerDeviceRead(e)
 	case *ast.IndexExpr:
 		if t, ok := l.dataTable(e.X); ok {
+			if l.opts.FoldData {
+				if i, ok := sema.Eval(e.Index, l.constEnv()); ok && i == math.Trunc(i) &&
+					i >= 0 && i < float64(len(t.Values)) {
+					if v, ok := dataConst(t.Values[int(i)]); ok {
+						return v
+					}
+				}
+			}
 			idx := l.lowerExpr(e.Index)
 			addr := l.b.NewReg("dataaddr")
 			l.emitBin(ir.Add, addr, &ir.Const{V: float64(t.Base)}, idx)
@@ -2567,6 +2578,21 @@ func (l *lowerer) lookup(name string) (ir.Value, bool) {
 		}
 	}
 	return nil, false
+}
+
+// dataConst turns a data-table literal back into an IR constant. A numeric
+// literal folds further; anything else (enum member, raw text) is emitted
+// verbatim. Long literals are not folded, so folding cannot push a runtime line
+// over the 90-character limit; the compiler also compares the folded and
+// unfolded variants and keeps the shorter.
+func dataConst(s string) (ir.Value, bool) {
+	if len(s) > 40 {
+		return nil, false
+	}
+	if v, err := strconv.ParseFloat(s, 64); err == nil {
+		return &ir.Const{V: v}, true
+	}
+	return &ir.Const{Raw: s}, true
 }
 
 func (l *lowerer) constEnv() map[string]float64 {

@@ -1,15 +1,12 @@
 l r0 d0 Activate
 select r2 r0 1 2
-seq r0 r2 1
-beqz r0 6
+bne r2 1 5
 s d1 On 1
-j 13
-seq r0 r2 2
-bnez r0 10
-seq r0 r2 3
-beqz r0 12
+j 10
+beq r2 2 7
+bne r2 3 9
 s d1 On 0
-j 13
+j 10
 s d1 On -1
 abs r0 -16
 sqrt r1 r0
@@ -22,7 +19,7 @@ or r0 r0 1
 s d2 Mode r0
 sleep 0.5
 l r0 d0 Activate
-beqz r0 27
+beqz r0 24
 yield
-j 23
+j 20
 s d0 Open 1

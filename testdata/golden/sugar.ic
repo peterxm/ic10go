@@ -3,47 +3,39 @@ ble r0 10 4
 s d0 Setting 18
 j 5
 s d0 Setting 6
-l r0 d1 Setting
-move r1 r0
-seqz r0 r0
-beqz r0 11
+l r1 d1 Setting
+move r0 r1
+bnez r1 10
 move r0 0
-j 24
-slt r0 r1 1
-bnez r0 15
-sgt r0 r1 9
-beqz r0 23
-slt r0 r1 10
-bnez r0 19
-sgt r0 r1 99
-beqz r0 21
+j 19
+blt r0 1 12
+ble r0 9 18
+blt r0 10 14
+ble r0 99 16
 move r0 3
-j 24
+j 19
 move r0 2
-j 24
+j 19
 move r0 1
 move r1 r0
-seqz r0 r0
-beqz r0 29
+bnez r0 23
 s d1 Mode 0
-j 36
-slt r0 r1 1
-bnez r0 33
-sgt r0 r1 2
-beqz r0 35
+j 28
+blt r1 1 25
+ble r1 2 27
 s d1 Mode 2
-j 36
+j 28
 s d1 Mode 1
 move r2 0
 move r1 0
-bge r1 5 48
+bge r1 5 40
 move r0 0
-bge r0 5 46
-beq r0 2 46
+bge r0 5 38
+beq r0 2 38
 add r2 r2 1
-beq r1 3 48
+beq r1 3 40
 add r0 r0 1
-j 40
+j 32
 add r1 r1 1
-j 38
+j 30
 s d2 Setting r2

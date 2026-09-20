@@ -91,7 +91,8 @@ class LspClient {
                 if (
                     e.affectsConfiguration('icg.noCheck') ||
                     e.affectsConfiguration('icg.dynamicStack') ||
-                    e.affectsConfiguration('icg.userStack')
+                    e.affectsConfiguration('icg.userStack') ||
+                    e.affectsConfiguration('icg.redundantDeviceWrites')
                 ) {
                     this.restart();
                 }
@@ -334,6 +335,7 @@ class LspClient {
             noCheck: c.get('noCheck'),
             dynamicStack: c.get('dynamicStack'),
             userStack: c.get('userStack'),
+            redundantDeviceWrites: c.get('redundantDeviceWrites'),
             autoTable: c.get('autoTable'),
             jumpTable: c.get('jumpTable'),
             relJump: c.get('relJump'),
@@ -353,6 +355,7 @@ class LspClient {
         const cfg = this.config();
         if (cfg.dynamicStack === true) env.IC10C_DYNAMIC_STACK = '1';
         if (cfg.userStack && cfg.userStack > 0) env.IC10C_USER_STACK = String(cfg.userStack);
+        if (cfg.redundantDeviceWrites === true) env.IC10C_REDUNDANT_DEVICE_WRITES = '1';
     }
 
     // buildFlags returns the shared ic10c build/run options from the settings.
@@ -488,17 +491,35 @@ class LspClient {
             this.output.appendLine(`=== ${path.basename(doc.fileName)} ===\n${budget}`);
 
             const data = chosen.data || {};
-            const loader = data.loader || '';
-            if (data.needed && loader.trim()) {
-                await vscode.env.clipboard.writeText(loader);
-                const copyRuntime = t('Copy runtime code', '复制运行代码');
+            const loaders =
+                data.loaders && data.loaders.length
+                    ? data.loaders
+                    : data.loader && data.loader.trim()
+                      ? [data.loader]
+                      : [];
+            const copyRuntime = t('Copy runtime code', '复制运行代码');
+            const copyRuntimeNow = async () => {
+                await vscode.env.clipboard.writeText(chosen.code);
+                vscode.window.setStatusBarMessage(t('IC10 Go: runtime code copied', 'IC10 Go: 运行代码已复制'), 5000);
+            };
+            if (data.needed && loaders.length === 1) {
+                await vscode.env.clipboard.writeText(loaders[0]);
                 const pick = await vscode.window.showInformationMessage(
                     t('IC10 Go: this program needs a one-time install loader (data table and/or hoisted setup writes). It is on your clipboard — paste it into the IC chip and run it once, then paste the runtime code from the preview on the right.',
                         'IC10 Go: 该程序需要一次性「安装代码」（数据表和/或外提的设置写入）。已复制到剪贴板：先粘贴到 IC 芯片并运行一次，再用右侧预览中的「运行代码」覆盖它。'),
                     copyRuntime);
-                if (pick === copyRuntime) {
-                    await vscode.env.clipboard.writeText(chosen.code);
-                    vscode.window.setStatusBarMessage(t('IC10 Go: runtime code copied', 'IC10 Go: 运行代码已复制'), 5000);
+                if (pick === copyRuntime) await copyRuntimeNow();
+            } else if (data.needed && loaders.length > 1) {
+                const next = t('Next chunk', '下一块');
+                for (let i = 0; i < loaders.length; i++) {
+                    await vscode.env.clipboard.writeText(loaders[i]);
+                    const last = i + 1 === loaders.length;
+                    const pick = await vscode.window.showInformationMessage(
+                        t(`IC10 Go: install loader chunk ${i + 1}/${loaders.length} is on your clipboard — paste it into the IC chip and run it, then continue.`,
+                            `IC10 Go: 安装代码第 ${i + 1}/${loaders.length} 块已复制——粘贴到 IC 芯片运行后继续。`),
+                        last ? copyRuntime : next);
+                    if (!last && pick !== next) return;
+                    if (last && pick === copyRuntime) await copyRuntimeNow();
                 }
             } else {
                 vscode.window.setStatusBarMessage(`IC10 Go: ${st.lines || 0}/${lim.lines || 0} lines`, 5000);

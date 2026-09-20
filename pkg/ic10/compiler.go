@@ -73,10 +73,60 @@ type Options struct {
 	// UserStackLimit is the fixed user stack size. 0 means DefaultUserStack.
 	// IC10C_USER_STACK overrides it.
 	UserStackLimit int
+	// NoFoldDataReads disables folding constant-index data-table reads to
+	// literals. Off by default; the compiler still compares both variants and
+	// keeps the shorter runtime.
+	NoFoldDataReads bool
+	// PrivateStack marks the user stack slots as private to this program, so
+	// the optimizer may keep them in registers. Set automatically: single-chip
+	// programs default to private, multi-chip to shared, and the
+	// `// icg: private-stack` / `// icg: shared-stack` pragma overrides.
+	PrivateStack bool
+	// NoMem2Reg disables user-stack promotion. Off by default; the compiler
+	// compares both variants when the source has constant user slots and keeps
+	// the shorter runtime.
+	NoMem2Reg bool
+	// RedundantDeviceWrites removes a constant device write that repeats the
+	// previous write to the same device+logic, saving lines but changing the
+	// observable write sequence. Off by default.
+	// IC10C_REDUNDANT_DEVICE_WRITES=1 also turns it on.
+	RedundantDeviceWrites bool
 
 	// recordBus, when set, records every `Bus.slot` read/write (with its access
 	// point) while compiling, so CompileResult can check writers and wire a VM.
 	recordBus func(bus, slot, devConn string, write bool)
+}
+
+// resolvePrivateStack decides whether the program's user stack slots are
+// private. Single-chip programs default to private; multi-chip to shared. The
+// `// icg: private-stack` / `// icg: shared-stack` pragma overrides.
+func resolvePrivateStack(src []byte, multiChip bool) bool {
+	if v, ok := stackPragma(src); ok {
+		return v
+	}
+	return !multiChip
+}
+
+// stackPragma reads a `// icg: private-stack` / `// icg: shared-stack` file
+// pragma and reports (value, present).
+func stackPragma(src []byte) (bool, bool) {
+	for _, line := range strings.Split(string(src), "\n") {
+		t := strings.TrimSpace(line)
+		if !strings.HasPrefix(t, "//") {
+			continue
+		}
+		t = strings.TrimSpace(strings.TrimPrefix(t, "//"))
+		if !strings.HasPrefix(t, "icg:") {
+			continue
+		}
+		switch strings.TrimSpace(strings.TrimPrefix(t, "icg:")) {
+		case "private-stack":
+			return true, true
+		case "shared-stack":
+			return false, true
+		}
+	}
+	return false, false
 }
 
 // DefaultUserStack is the default fixed user stack size. It leaves the
@@ -96,6 +146,9 @@ func stackEnv(opts Options) Options {
 				opts.UserStackLimit = n
 			}
 		}
+	}
+	if !opts.RedundantDeviceWrites && os.Getenv("IC10C_REDUNDANT_DEVICE_WRITES") != "" {
+		opts.RedundantDeviceWrites = true
 	}
 	return opts
 }
@@ -118,6 +171,9 @@ type ChipResult struct {
 	// Loader is the chip's one-time loader (data segment and/or hoisted setup),
 	// or "" when the chip needs none.
 	Loader string
+	// Loaders splits Loader into chunks that each fit the chip editor; run them
+	// in order. Empty when Loader is empty, and a single chunk when it fits.
+	Loaders []string
 	// Setup reports whether Loader includes hoisted one-time device writes
 	// (modes / switches / constant settings) rather than only data-segment writes.
 	Setup bool
@@ -137,6 +193,9 @@ type Result struct {
 	// settings that the compiler hoisted out of the runtime to fit the line
 	// budget (see CompileResult).
 	Loader string
+	// Loaders splits Loader into chunks that each fit the chip editor; run them
+	// in order. Empty when Loader is empty, and a single chunk when it fits.
+	Loaders []string
 	// Chips holds every chip when the source declares `chip` blocks. For a
 	// single-chip program it holds one entry mirroring Code/Loader, so callers
 	// can always iterate Chips.
@@ -184,6 +243,7 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 	}
 
 	common, chips := splitChips(tree)
+	opts.PrivateStack = resolvePrivateStack(src, len(chips) > 0)
 
 	// Track which chip reads/writes each bus slot (producer/consumer check) and
 	// which access points each chip uses (for VM wiring).
@@ -232,7 +292,8 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			return Result{}, diags, derr
 		}
 		res.Loader = dl + res.Loader
-		res.Chips = []ChipResult{{Code: res.Code, Loader: res.Loader, Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, "")}}
+		res.Loaders = SplitLoader(res.Loader)
+		res.Chips = []ChipResult{{Code: res.Code, Loader: res.Loader, Loaders: res.Loaders, Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, "")}}
 		return res, diags, nil
 	}
 
@@ -273,13 +334,14 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			}
 			continue
 		}
-		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, Loader: dl + res.Loader, Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, ch.Name.Name)})
+		loader := dl + res.Loader
+		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, Loader: loader, Loaders: SplitLoader(loader), Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, ch.Name.Name)})
 	}
 	checkBusUse(common, busUses, diags)
 	if len(results) == 0 {
 		return Result{}, diags, firstErr
 	}
-	return Result{Code: results[0].Code, Loader: results[0].Loader, Chips: results, Setup: results[0].Setup}, diags, firstErr
+	return Result{Code: results[0].Code, Loader: results[0].Loader, Loaders: results[0].Loaders, Chips: results, Setup: results[0].Setup}, diags, firstErr
 }
 
 // busUse records which chips read and write one bus slot.
@@ -324,14 +386,17 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			best, haveBest = r, true
 		}
 	}
-	run := func(outline map[string]bool) {
-		fn := lowerAndOptimize(info, opts, outline, noCheck, noOpt, diags)
+	run := func(outline map[string]bool, noFold, noMem2Reg bool) {
+		o := opts
+		o.NoFoldDataReads = noFold
+		o.NoMem2Reg = noMem2Reg
+		fn := lowerAndOptimize(info, o, outline, noCheck, noOpt, diags)
 		if fn == nil || diags.HasErrors() {
 			return
 		}
-		code, spills, err := generate(fn, info, opts)
+		code, spills, err := generate(fn, info, o)
 		if err == nil {
-			checkStackRegion(fn, info, spills, opts, diags)
+			checkStackRegion(fn, info, spills, o, diags)
 		}
 		// Split out one-time setup writes when the runtime is over a limit, or
 		// when the program already needs a one-time loader (data segment): in
@@ -357,7 +422,7 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			}
 			return
 		}
-		runtime, _, rerr := generate(fn, info, opts)
+		runtime, _, rerr := generate(fn, info, o)
 		if rerr != nil {
 			if err == nil {
 				consider(Result{Code: code})
@@ -366,7 +431,7 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			}
 			return
 		}
-		loader, _, lerr := generate(setup, info, opts)
+		loader, _, lerr := generate(setup, info, o)
 		if lerr != nil {
 			if err == nil {
 				consider(Result{Code: code})
@@ -377,14 +442,53 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 		}
 		consider(Result{Code: runtime, Loader: loader, Setup: true})
 	}
-	run(nil)
+	// Try each outline plan with and without constant data-read folding; the
+	// shortest runtime wins (folding is usually shorter, but not always).
+	outlines := []map[string]bool{nil}
 	if len(plan) > 0 {
-		run(plan)
+		outlines = append(outlines, plan)
 	}
+	// Data-read folding only matters when there is a data segment; without one
+	// the two variants are identical, so skip the extra compile.
+	folds := []bool{false}
+	if info.DataSize > 0 {
+		folds = append(folds, true)
+	}
+	// User-stack promotion only applies to private, constant user slots; probe
+	// with a cheap lowering (no optimisation) to avoid extra compiles.
+	mem2regs := []bool{false}
+	if probe := lowerAndOptimize(info, opts, nil, noCheck, true, &diag.Bag{}); probe != nil &&
+		probe.PrivateStack && probe.UserStackManual > 0 && !probe.UserStackDynamic {
+		mem2regs = append(mem2regs, true)
+	}
+	for _, outline := range outlines {
+		for _, noFold := range folds {
+			for _, noMem2Reg := range mem2regs {
+				run(outline, noFold, noMem2Reg)
+			}
+		}
+	}
+	// Each candidate re-runs lowering, so warnings can repeat; keep one copy.
+	dedupeDiags(diags)
 	if !haveBest {
 		return Result{}, bestErr
 	}
 	return best, nil
+}
+
+// dedupeDiags removes duplicate diagnostics in place, preserving order.
+func dedupeDiags(b *diag.Bag) {
+	seen := map[string]bool{}
+	kept := b.Diags[:0]
+	for _, d := range b.Diags {
+		k := diagKey(d)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		kept = append(kept, d)
+	}
+	b.Diags = kept
 }
 
 // splitChips separates top-level chip blocks from the shared declarations.
@@ -560,15 +664,16 @@ func checkStackRegion(fn *ir.Function, info *sema.Info, spillCount int, opts Opt
 
 // parseAndCheck lexes, parses and type-checks the source. For multi-chip files
 // it returns the first chip's info; the graph/size/stack tools use it.
-func parseAndCheck(name string, src []byte, opts Options) (*sema.Info, *diag.Bag) {
+func parseAndCheck(name string, src []byte, opts Options) (*sema.Info, *diag.Bag, bool) {
 	file := source.NewFile(name, src)
 	diags := &diag.Bag{}
 	toks := lexer.Tokenize(file, diags)
 	tree := parser.Parse(file, toks, diags)
 	if diags.HasErrors() {
-		return nil, diags
+		return nil, diags, false
 	}
 	common, chips := splitChips(tree)
+	private := resolvePrivateStack(src, len(chips) > 0)
 	target := tree
 	if len(chips) > 0 {
 		target = &ast.File{Decls: mergeDecls(common, chips[0].Decls)}
@@ -578,9 +683,9 @@ func parseAndCheck(name string, src []byte, opts Options) (*sema.Info, *diag.Bag
 		diags.ErrorfCode("no-main", source.Pos{File: name, Line: 1, Col: 1}, "no main function found")
 	}
 	if diags.HasErrors() {
-		return nil, diags
+		return nil, diags, private
 	}
-	return info, diags
+	return info, diags, private
 }
 
 // checkInfo type-checks one already-parsed program (a single-chip file, or a
@@ -616,11 +721,20 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, no
 		JumpTable:       opts.JumpTable,
 		Fast:            opts.Fast,
 		NoCheck:         noCheck,
-		RecordBus:       opts.recordBus,
+		// Folding a data read removes the stack load, so it would also bypass
+		// --unsafe/--no-data-check (which the tests use to observe the raw
+		// stack). Keep the load in that mode.
+		FoldData:  !opts.NoFoldDataReads && !opts.NoDataCheck && !opts.Unsafe,
+		RecordBus: opts.recordBus,
 	})
 	if diags.HasErrors() {
 		return nil
 	}
+	fn.UserLimit = userLimit(info, 0, opts)
+	fn.DataBase = compilerBase(info, 0, opts)
+	fn.PrivateStack = opts.PrivateStack
+	fn.NoMem2Reg = opts.NoMem2Reg
+	fn.RedundantDeviceWrites = opts.RedundantDeviceWrites
 	if !noOpt {
 		if err := opt.Optimize(fn); err != nil {
 			diags.Errorf(info.Main.Pos(), "internal error: %v", err)

@@ -23,10 +23,11 @@ type GraphResult struct {
 // Graph compiles src and returns the control-flow graph of the same lowering
 // CompileWithOptions would choose (inlined vs outlined, whichever is shorter).
 func Graph(name string, src []byte, opts Options) (*GraphResult, *diag.Bag, error) {
-	info, diags := parseAndCheck(name, src, opts)
+	info, diags, private := parseAndCheck(name, src, opts)
 	if info == nil || diags.HasErrors() {
 		return nil, diags, nil
 	}
+	opts.PrivateStack = private
 	noCheck, noOutline, noOpt := envSwitches()
 	plan := lower.PlanOutlines(info, noOutline)
 

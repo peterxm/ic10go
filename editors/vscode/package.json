@@ -123,6 +123,11 @@
           "default": 128,
           "markdownDescription": "%icg.userStack.desc%"
         },
+        "icg.redundantDeviceWrites": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%icg.redundantDeviceWrites.desc%"
+        },
         "icg.runSteps": {
           "type": "number",
           "default": 0,

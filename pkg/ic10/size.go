@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"ic10go/internal/codegen"
+	"ic10go/internal/diag"
 	"ic10go/internal/ir"
 	"ic10go/internal/lower"
 	"ic10go/internal/opt"
@@ -51,26 +52,30 @@ type StackReport struct {
 // the same inlined/outlined selection as Compile.
 func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 	opts = stackEnv(opts)
-	info, diags := parseAndCheck(name, src, opts)
+	info, diags, private := parseAndCheck(name, src, opts)
 	if info == nil || diags.HasErrors() {
 		return nil, fmt.Errorf("compile failed")
 	}
+	opts.PrivateStack = private
 
 	noCheck, noOutline, noOpt := envSwitches()
 	plan := lower.PlanOutlines(info, noOutline)
 	bestTotal := -1
 	var best *SizeReport
-	try := func(outline map[string]bool) {
-		fn := lowerAndOptimize(info, opts, outline, noCheck, noOpt, diags)
+	try := func(outline map[string]bool, noFold, noMem2Reg bool) {
+		o := opts
+		o.NoFoldDataReads = noFold
+		o.NoMem2Reg = noMem2Reg
+		fn := lowerAndOptimize(info, o, outline, noCheck, noOpt, diags)
 		if fn == nil {
 			return
 		}
 		reserved := info.DataSize
-		if fixedDataBase(opts) > 0 {
+		if fixedDataBase(o) > 0 {
 			reserved = 0
 		}
 		spillMode := regalloc.SpillDB
-		if opts.SpillStack {
+		if o.SpillStack {
 			spillMode = regalloc.SpillStack
 		}
 		colors, spillCount, err := regalloc.AllocateReservedSpillsMode(fn, NumRegs, reserved, spillMode)
@@ -80,7 +85,7 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 		if opt.MergeTailsColored(fn, colors) {
 			fn.BuildCFG()
 		}
-		_, rep, _ := codegen.GenerateReportWithOptions(fn, colors, codegen.Options{SpillDB: !opts.SpillStack})
+		_, rep, _ := codegen.GenerateReportWithOptions(fn, colors, codegen.Options{SpillDB: !o.SpillStack})
 		if rep == nil {
 			return
 		}
@@ -92,7 +97,7 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 				ByFunc:   rep.ByFunc,
 				PeakLive: maxPressure(fn),
 				Spills:   spillCount,
-				Stack:    stackReport(fn, info, spillCount, opts),
+				Stack:    stackReport(fn, info, spillCount, o),
 			}
 			if outline != nil {
 				for n := range outline {
@@ -102,9 +107,25 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 			}
 		}
 	}
-	try(nil)
+	outlines := []map[string]bool{nil}
 	if len(plan) > 0 {
-		try(plan)
+		outlines = append(outlines, plan)
+	}
+	folds := []bool{false}
+	if info.DataSize > 0 {
+		folds = append(folds, true)
+	}
+	mem2regs := []bool{false}
+	if probe := lowerAndOptimize(info, opts, nil, noCheck, true, &diag.Bag{}); probe != nil &&
+		probe.PrivateStack && probe.UserStackManual > 0 && !probe.UserStackDynamic {
+		mem2regs = append(mem2regs, true)
+	}
+	for _, outline := range outlines {
+		for _, noFold := range folds {
+			for _, noMem2Reg := range mem2regs {
+				try(outline, noFold, noMem2Reg)
+			}
+		}
 	}
 	if best == nil {
 		return nil, fmt.Errorf("compile failed")

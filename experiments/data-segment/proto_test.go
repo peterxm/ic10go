@@ -17,7 +17,10 @@ func compileAndLoad(t *testing.T, name string) *vm.Machine {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The prototype manages its own stack layout beyond the fixed user region.
+	// The prototype manages its own stack layout beyond the fixed user region
+	// and hands state from the loader to the runtime through the stack, so it
+	// must keep the stack shared (no register promotion).
+	src = append([]byte("// icg: shared-stack\n"), src...)
 	code, diags, err := ic10.CompileWithOptions(name, src, ic10.Options{DynamicStack: true})
 	if err != nil || diags.HasErrors() {
 		t.Fatalf("compile %s: %v %v", name, diags.Diags, err)

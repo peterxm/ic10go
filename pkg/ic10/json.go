@@ -55,14 +55,17 @@ type Diagnostic struct {
 // carries hoisted one-time device writes (modes / switches / settings) rather
 // than only data-segment writes.
 type DataSegment struct {
-	Needed   bool   `json:"needed"`
-	Setup    bool   `json:"setup,omitempty"`
-	Loader   string `json:"loader,omitempty"`
-	Start    int    `json:"start"`
-	End      int    `json:"end"`
-	Sentinel int    `json:"sentinel"`
-	Access   string `json:"access"`
-	Layout   string `json:"layout"`
+	Needed bool   `json:"needed"`
+	Setup  bool   `json:"setup,omitempty"`
+	Loader string `json:"loader,omitempty"`
+	// Loaders splits Loader into chunks that each fit the chip editor; run them
+	// in order. Omitted for a single chunk (Loader holds it).
+	Loaders  []string `json:"loaders,omitempty"`
+	Start    int      `json:"start"`
+	End      int      `json:"end"`
+	Sentinel int      `json:"sentinel"`
+	Access   string   `json:"access"`
+	Layout   string   `json:"layout"`
 }
 
 // ChipJSON is one chip's output in a multi-chip build.
@@ -73,6 +76,8 @@ type ChipJSON struct {
 	Lines  []string `json:"lines"`
 	Stats  Stats    `json:"stats"`
 	Loader string   `json:"loader,omitempty"`
+	// Loaders splits Loader into chip-sized chunks; run them in order.
+	Loaders []string `json:"loaders,omitempty"`
 	// Setup reports whether Loader carries hoisted one-time device writes.
 	Setup bool `json:"setup,omitempty"`
 }
@@ -123,17 +128,19 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 			multi = true
 		}
 		res.Chips = append(res.Chips, ChipJSON{
-			Name:   ch.Name,
-			Code:   ch.Code,
-			Lines:  splitLines(ch.Code),
-			Stats:  StatsOf(ch.Code),
-			Loader: ch.Loader,
-			Setup:  ch.Setup,
+			Name:    ch.Name,
+			Code:    ch.Code,
+			Lines:   splitLines(ch.Code),
+			Stats:   StatsOf(ch.Code),
+			Loader:  ch.Loader,
+			Loaders: ch.Loaders,
+			Setup:   ch.Setup,
 		})
 	}
 	if compiled.Loader != "" {
 		res.Data.Needed = true
 		res.Data.Loader = compiled.Loader
+		res.Data.Loaders = compiled.Loaders
 		res.Data.Setup = compiled.Setup
 	}
 	// The data segment range can be inspected independently of code generation,

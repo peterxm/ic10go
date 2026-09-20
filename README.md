@@ -12,7 +12,9 @@
 - **寄存器复用**：活跃性分析 + 图着色（Chaitin-Briggs）+ 拷贝合并；寄存器不足时自动溢出到宿主栈（`get/put db`，每次加载 1 行；`--spill stack` 回退为 `peek/poke`）。
 - **面向 128 行 / 4 KiB 约束**：不生成 `alias` / `define` / 注释 / 空行 / 标签，跳转默认用绝对行号（`--rel-jump` 可改相对跳转）。
 - **现代语法**：`:=`、`if/for/switch`、`for range`（含遍历 `data` 表）、`case lo..hi` 区间、`if/switch` 初始化语句、带标签的 `break/continue`、函数（编译期内联 / 外提，按体积决策）、设备属性 `d0.On`、槽位 `d0.slot[i].X`、设备栈 `d0.stack[i]`、批量 IO、通道、`sorter.*` / `printer.*` 栈指令构建器、`raw("...")` 逃生口。
-- **持久栈数据段**：`data` 表把大块常量 / 查表放进芯片持久栈，`switch ... table` 自动表化，突破 128 行预算。编译器还会把序言里的一次性设备写入（`Mode` / `On` / 常量 `Setting`，操作数全为常量）自动外提到一次性 loader：**超 128 行时**用来塞进预算，**程序本来就需要 loader（有 `data` 表）时**顺带复用、让 runtime 更小。
+- **持久栈数据段**：`data` 表把大块常量 / 查表放进芯片持久栈，`switch ... table` 自动表化，突破 128 行预算。编译器还会把序言里的一次性设备写入（`Mode` / `On` / 常量 `Setting`，操作数全为常量）自动外提到一次性 loader：**超 128 行时**用来塞进预算，**程序本来就需要 loader（有 `data` 表）时**顺带复用、让 runtime 更小。loader 超 128 行会自动拆成多块（按序运行）。
+- **省行优化**：分支融合（`Cmp`+分支 → `beq`/`bne`）、常量查表内联（`T[const]` → 字面量）、精确栈失效；**单芯片默认栈私有**（`// icg: private-stack`）时还可把常量用户栈槽提升为寄存器、消除成对 `push`/`pop`。多芯片或 `// icg: shared-stack` 保持保守。这些优化只在 runtime 行数不增时才采用。
+- **可选 `--redundant-device-writes`**：删除重复的同值常量设备写（更短，但改变可观测写序列，默认关闭）。
 - **多芯片**：一个 `.icg` 用 `chip 名字 { ... }` 声明多块芯片，各编译成独立程序（各自 128 行 / 4 KiB 预算与 loader）；顶层 `const` / `data` / `func` 是所有 chip 共享的公共区。芯片间用 `bus 名字 { 槽位 num ... }` 声明命名网络通道（最多 8 槽，槽位下标即通道号），每个 chip 用 `use 名字 on dev:conn` 给默认访问点、每次访问也可用 `Bus.槽位[dev][conn]` 内联覆盖（唯一写者校验，`run` 按槽位自动接线）。CLI `build` 按芯片写文件，`--chip NAME` 选一个，`--json` 的 `chips[]` 列出全部；`run` 在内置 VM 里多芯片锁步运行。
 - **编译期求值**：常量折叠、`hash()` 的 CRC-32、单位字面量（温度 `20c`/`68f`→K、压力 `20.1MPa`/`101.3kPa`→kPa）、逻辑类型校验。
 - **快速开发工具链**：`build` / `run` / `fmt` / `disasm` / `decompile` / `stats` / `lsp`，以及内置最小解释器。
@@ -63,6 +65,7 @@ j 1
 
 ```
 ic10c build  <file.icg>       # 编译为 IC10 并输出到 stdout；需要 loader 时自动写出 <file>.data.ic
+                              # loader >128 行时自动拆成 <file>.data.1.ic、.2.ic…（按序运行）
                               # 多芯片：每块芯片各写 <file>.<chip>.ic（+ 各自 .data.ic）
 ic10c build --json <file.icg> # 输出机器可读的 JSON（chips[] 代码/loader/统计/诊断）
 ic10c build --chip NAME <file.icg>  # 多芯片：只输出指定芯片到 stdout
