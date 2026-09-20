@@ -81,14 +81,16 @@ IC10 的程序上限是 **128 行 / 4 KiB**，这是 `.icg` 编译器设计的�
    - spill：编译器溢出从数据段下方 **向下**（`internal/regalloc/regalloc.go:34`）；
    - data 段：默认放栈顶 `512-size`，用 `get(db, addr)` **直接寻址**（不经过 `sp`）。
 
-   `ic10c stats` 会静态求 `push` 最大深度并对 `poke` 告警。
+   `ic10c stats` 把栈分为用户区/编译器区并分别报告用量（见 §5.5）；用户绝对
+   地址越界或 `push` 深度超限会编译报错。
 
 4. **收益只在大表**
    IC10 常量本来就能作为立即数内联，小常量不占行。只有**动态索引的表**
    （`get(db, base+idx)`）或大块数据才真正省行数。需要明确的适用边界。
 
-5. **loader 自身也受 128 行限制**
-   当前 loader 超过 128 行直接报错，需手动拆表（尚未做分块 / 循环编码）。
+5. **loader 自身也受 128 行限制**（已解决）
+   loader 超过 128 行时自动拆成多块（每块 ≤128 行），按序运行（见 §5.6）；
+   数据段上限随之提升到编译器区大小。
 
 6. **编译器复杂度**
    需要：数据段 IR、地址分配、loader 代码生成、runtime 读取代码生成，
@@ -105,10 +107,11 @@ IC10 的程序上限是 **128 行 / 4 KiB**，这是 `.icg` 编译器设计的�
 9. **每张芯片各自安装**
    数据不随代码复制到其它芯片。
 
-10. **优化器安全性**
-    读数据走 `get`/`peek`，目前不在 `redundantLoads` 的 CSE 范围内；
-    写栈指令（`put`/`putd`/`clr`）已在 `hasSideEffect` 中标注
-    （`internal/opt/opt.go`），避免被误删/重排。
+10. **优化器安全性**（已增强）
+    常量索引的数据读 `T[const]` 直接内联为字面量；其余数据读走 `get`/`peek`，
+    已纳入 `redundantLoads`/`globalCSE` 的 CSE，并按地址范围精确失效（写别的
+    槽不会清掉缓存，`yield`/`sleep` 保留栈读）。写栈指令（`put`/`putd`/`clr`）
+    在 `hasSideEffect` 中标注，避免被误删/重排（`internal/opt/opt.go`）。
 
 ---
 
@@ -138,6 +141,7 @@ case 1: db.Setting = -1301215609; heat = 0.0095
 ic10c build main.icg
   -> main.ic          # runtime 到 stdout（≤128 行）
   -> main.data.ic     # loader 自动写到文件（≤128 行，装一次）
+  # loader 超过 128 行时自动拆成 main.data.1.ic、main.data.2.ic…（按序运行）
 ```
 
 实现采用 `--data-out`（runtime 到 stdout、loader 到文件），需要 loader 时**自动
@@ -236,7 +240,18 @@ JSON 接口给出 `data.setup = true`。合并后的 loader 超过 128 行时自
 （见 §5.6）。
 
 实现：`internal/opt/setup.go` 的 `SplitSetup`；`pkg/ic10.CompileResult` 在
-`generate` 失败时、或 `info.DataSize > 0` 时调用它并重试。
+`generate` 失败（超行/字节/行宽）时、或 `info.DataSize > 0` 时调用它；随后把
+「拆分」与「不拆分」两种 runtime 都生成，由候选比较取**行数更短者**，所以拆分
+只会减小 runtime。
+
+**开关**：目前**没有**开关，外提是全自动、不可关闭的（现有开关只有 `--unsafe`、
+`--auto-table`、`--spill`、`--data-layout`、`--data-access`、`--dynamic-stack`、
+`--user-stack`、`--redundant-device-writes`、`--rel-jump`，环境变量
+`IC10C_NO_CHECK`/`IC10C_NO_OUTLINE`/`IC10C_NO_OPT`，均与 setup 外提无关）。
+
+> 语义前提：这些常量写被当作**一次性初始化**（设备状态持久）。若循环会改该
+> 设备、而序言想每 tick 复位它，外提后就不再每 tick 复位；这种情况目前只能靠
+> 改代码避免。
 
 > 没有 `data` 表且 runtime 放得下时**不拆分**：避免无谓的两步安装流程。
 
@@ -273,7 +288,9 @@ JSON 接口给出 `data.setup = true`。合并后的 loader 超过 128 行时自
    因此数据段方案**要求标准 IC host**；若要兼容设备 host，需改用本地栈
    （`poke`/`peek`，见 §11 的 `--data-access stack`）。
 4. `get(db, addr)` 的越界 / 未初始化行为（未在真机单独验证；loader 未跑时读到 0）。
-5. 数据段大小的上限与 loader 分块策略（当前 loader 超过 128 行即报错，需手动拆表）。
+5. 数据段大小的上限与 loader 分块策略：**已实现自动分块**（loader 超 128 行
+   拆成多块按序运行，见 §5.6），数据段上限为编译器区大小
+   （`512 - userLimit - 溢出槽`；默认 `userLimit=128` → 384）。
 6. ~~哪些常量应自动进入数据段（启发式）~~ **已实现**：`--auto-table`
    （密集整数、≥5 case、纯常量赋值、表 ≤64）。
 7. ~~CLI / VSCode 的具体交互~~ **已完成**：`--split-data`/`--data-only`/
@@ -446,7 +463,9 @@ ic10c build [flags] <file.icg>
   --auto-table           自动把符合条件的普通 switch 表化（默认关闭；每处会警告）
 ```
 
-`ic10c stats` 也接受 `--data-layout`，并输出数据段范围与冲突警告。
+`ic10c stats` 也接受 `--data-layout`、`--dynamic-stack`、`--user-stack`、
+`--redundant-device-writes`，并输出数据段范围、用户/编译器栈用量（`stack user`/
+`stack comp`）与冲突警告。
 
 示例：
 

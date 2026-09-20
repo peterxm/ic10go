@@ -221,13 +221,15 @@ data RecipeHeat    = [ 0.009501, 0.009502, 0.009503 ]
 - 编译器把数据段放在栈顶、寄存器溢出区（511 向下）之上，并写一个版本哨兵；
   runtime 启动时校验，缺失/过期则停机。
 - 数据本身由一次性的 **loader** 写入（`ic10c build` 自动写出 `<file>.data.ic`；
-  `--data-only` 只生成 loader）。
+  `--data-only` 只生成 loader）；loader 超 128 行时自动拆成 `<file>.data.1.ic`、
+  `.2.ic`…（按序运行）。
   默认用 `get/put db`，要求芯片插在**标准 IC host** 上；设备 host 用
   `--data-access stack`（本地 `poke`/`peek`）编译。
-- 数据段占用栈顶槽位；`push`/`poke` 必须留在其下方。`ic10c stats` 会静态分析
-  `push` 最大深度（无界或达到数据段时报错/警告），并在源码用了 `poke` 时提醒。
-  默认 `--data-layout top`；`--data-layout middle` 把数据段放到固定槽 `256`、
-  高地址留给寄存器溢出。
+- 512 槽持久栈分为**用户区** `[0, userLimit)` 与**编译器区** `[userLimit, 511]`
+  （数据段 + 寄存器溢出）。用户上限默认固定 `--user-stack N`（默认 128）；
+  `--dynamic-stack` 改为按数据段/溢出动态计算。用户绝对地址越界、`push` 超深
+  会编译报错。默认 `--data-layout top`；`--data-layout middle` 把数据段放到
+  固定槽 `256`、高地址留给寄存器溢出。
 - 默认 runtime 会校验数据段版本（缺失/过期则停机）；`--no-data-check` 或
   `--unsafe` 可跳过校验以缩短代码（`--unsafe` 会在 CLI 打印警告）。
 
@@ -785,7 +787,8 @@ j 1
 | 字节数 | ≤ 4096 | 报错 |
 | 单行长度 | ≤ 90 | 报错 |
 
-`stats` 子命令可在编译前输出行/字节预算报告。
+`stats` 子命令可在编译前输出行/字节/寄存器/栈预算报告（栈分为用户区与
+编译器区，见 §4.6 与 [`data-segment.md`](data-segment.md) §5.5）。
 
 ---
 

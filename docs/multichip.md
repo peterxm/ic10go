@@ -300,7 +300,9 @@ type World struct {
   `<file>.<chip>.ic`（+ 各自的 `.data.ic`），并把概览打到 stderr。
 - `ic10c build --chip control x.icg`：只输出 `control` 的 runtime 到 stdout。
 - `ic10c stats/size`：按芯片分组显示行/字节/寄存器预算；**各芯片分别 ≤128 /
-  4 KiB**（不做合计）。
+  4 KiB**（不做合计）。栈预算（`stack user`/`stack comp`）目前只在单芯片时报告。
+- 多芯片默认 **`shared-stack`**（用户栈保守，不做寄存器提升）；文件里写
+  `// icg: private-stack` 可对每个 chip 启用栈私有优化（各 chip 栈独立）。
 - LSP：文档内多个 chip，按光标位置选 chip 做诊断/补全；`bus` 槽位有补全。
 - VSCode："编译为 IC10" 弹出芯片选择，或逐芯片预览/复制安装代码。
 

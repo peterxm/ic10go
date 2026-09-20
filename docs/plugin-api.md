@@ -22,7 +22,9 @@ ic10c build --json <file.icg>
   "lines": ["yield", "move r2 0", "..."],
   "data": {
     "needed": true,
+    "setup": true,
     "loader": "put db 499 -843351598\n...",
+    "loaders": ["put db 499 ...\n", "put db 600 ...\n"],
     "start": 499,
     "end": 511,
     "sentinel": 499,
@@ -56,7 +58,8 @@ ic10c build --json <file.icg>
 | `lines` | 产物按行拆分。**直接写芯片请用这个**，避免尾换行 / CRLF 歧义。 |
 | `data.needed` | 是否需要先运行一次性 loader（数据段和/或外提的设置写入）。 |
 | `data.setup` | loader 里是否包含**外提的一次性设置写入**（`Mode`/`On`/常量 `Setting` 等，见下文）。 |
-| `data.loader` | 一次性 loader 的 IC10 代码；`needed=false` 时省略。桥可自动先跑它。 |
+| `data.loader` | 一次性 loader 的完整 IC10 代码；`needed=false` 时省略。 |
+| `data.loaders` | loader 拆成的**分块**（每块 ≤128 行，按序运行）；仅当 loader 超过 128 行时给出，单块时省略（用 `loader`）。 |
 | `data.start` / `end` | 数据段占用的栈槽范围。 |
 | `data.sentinel` | 版本哨兵槽（= `start`）。 |
 | `data.access` | `get`（`put/get db`）或 `stack`（`poke/peek`）。 |
@@ -73,7 +76,11 @@ ic10c build --json <file.icg>
 
 此时 `data.needed = true`、`data.setup = true`，`data.loader` 同时包含数据段写入
 （若有）与外提的设置写入；桥接程序应先跑 loader 再写 runtime。runtime 自身仍
-≤128 行。
+≤128 行。loader 超过 128 行时改用 `data.loaders[]` 分块，按序全部运行。
+
+外提是**全自动、不可关闭**的（无对应开关），并会与「不拆分」的产物比较、取
+runtime 更短者，所以拆分只会减小 runtime。语义前提：这些常量写被视为一次性
+初始化；若循环会改该设备、序言想每 tick 复位，则外提会改变行为。
 
 ### 诊断
 
@@ -94,6 +101,9 @@ ic10c build --json <file.icg>
 | `unknown-enum` | warning | 未知 `Enum.Member`，原样输出（可用 `raw("...")` 显式原样输出） |
 | `no-main` | error | 找不到 `main` 函数 |
 | `data-too-large` | error | 数据段超出芯片栈 |
+| `stack-overlap` | error | 用户栈地址落在编译器区（数据段/溢出）或 `push` 深度超过用户上限 |
+| `stack-compiler-overflow` | error | 固定用户区下，数据段 + 溢出放不下编译器区 |
+| `stack-addr-range` | error | 栈地址超出 `[0, 511]` |
 | `codegen-error` | error | 代码生成失败（例如超出 128 行 / 4096 字节 / 90 字符） |
 | `io-error` | error | 读文件失败（`--json` 下也会输出 JSON） |
 

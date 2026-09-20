@@ -53,9 +53,9 @@ j 0
 ## 4. 常用命令
 
 ```bash
-ic10c build  <file.icg>        # 编译并输出 IC10 到 stdout
+ic10c build  <file.icg>        # 编译并输出 IC10 到 stdout（需要 loader 时自动写 <file>.data.ic）
 ic10c run    <file.icg>        # 编译并在内置 VM 中运行（无需进游戏）
-ic10c stats  <file.icg>        # 行/字节/寄存器预算报告
+ic10c stats  <file.icg>        # 行/字节/寄存器 + 用户/编译器栈预算报告
 ic10c graph  <file.icg>        # 源码级控制流图（Mermaid，可粘贴/预览）
 ic10c fmt    [-w] <file.icg>   # 格式化源码（-w 原地写回）
 ic10c disasm <file.ic>         # 反汇编注释旧 IC10
@@ -338,7 +338,11 @@ sh editors/vscode/install.sh      # 2. 安装扩展
 ## 10. 注意事项
 
 - **128 行 / 4 KiB / 90 字符** 是硬限制，`ic10c build` 会在超限时报错，`stats` 可提前查看。
-- 输出**不可读**：不生成 `alias`/`define`/注释/空行/标签，跳转默认使用绝对行号（`--rel-jump` 改相对）。
+- 输出**不可读**：不生成 `alias`/`define`/注释/空行/标签，跳转默认使用绝对行号（`--rel-jump` 在相对形式更短时才用）。
+- **持久栈分区**：用户栈 `[0, 128)`（`--user-stack N` 调整，`--dynamic-stack` 动态）；用户绝对槽位越界编译报错。`stats` 报告 `stack user`/`stack comp`。
+- **栈私有**：单芯片默认 `// icg: private-stack`（寄存器提升、`push/pop` 消除）；多芯片或 `// icg: shared-stack` 保持保守。
+- **一次性 loader**：`data` 表 / 外提的设置写入写进 loader；超 128 行自动分块（`.data.1.ic`…），按序运行。
+- 可选 `--redundant-device-writes`：删除重复的同值常量设备写（省行，但改变写序列）。
 - IC10 常见的**尾调用状态机**（如 `gasHeaters` 循环后 `j greenhouseGasCheck`）请改写为结构化循环，因为函数不支持递归（编译期展开 / 外提）。
 - 寄存器 `r0..r15` 由编译器按活跃区间自动复用，尽量不落栈。
 

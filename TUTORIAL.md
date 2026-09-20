@@ -246,7 +246,7 @@ if d3.Ratio < HALF { d4.On = 1 }
 
 ### 5.4 输出不可读是故意的
 
-编译器不生成 `alias`/`define`/注释/空行/标签，跳转默认用绝对行号（`--rel-jump` 改相对），寄存器按需复用。
+编译器不生成 `alias`/`define`/注释/空行/标签，跳转默认用绝对行号（`--rel-jump` 只在相对形式更短时改用 `jr`/`br*`），寄存器按需复用。
 这是为了省下宝贵的行数——**不要试图手改编译产物**，要改就改 `.icg`。
 
 ---
@@ -557,14 +557,18 @@ func main() {
   `LogicType.Open`）。
 - 数据由一次性 **loader** 写入：`ic10c build` 会自动写出 `<file>.data.ic`
   （`--data-only` 只生成 loader）；先在芯片里跑 loader，再用编译出的 runtime
-  覆盖它。VSCode 里右键「编译为 IC10」会自动把安装代码放进剪贴板、在旁边打开
-  运行代码。
+  覆盖它。loader 超过 128 行会自动拆成 `<file>.data.1.ic`、`.2.ic`…（按序运行）。
+  VSCode 里右键「编译为 IC10」会自动把安装代码放进剪贴板（多块时逐块提示）、
+  在旁边打开运行代码。
 - runtime 启动时校验版本哨兵，缺失 / 过期则停机；`--unsafe` 可跳过以省几行。
 - `switch x table { ... }` 把「常量 → 常量」的多路分支自动表化；
   `--auto-table` 可对符合条件的普通 `switch` 自动做（默认关闭）。
 - 默认用 `get/put db`，要求**标准 IC host**；设备 host 用 `--data-access stack`
   （本地 `poke`/`peek`）。
-- `ic10c stats` 会显示 `data slots a..b` 与 `push`/`poke` 冲突警告。
+- `ic10c stats` 会显示 `data slots a..b`，以及 `stack user`/`stack comp`（用户区与
+  编译器区用量）；用户绝对地址越界或 `push` 超深会编译报错。
+- 序言里的一次性常量设备写（`Mode`/`On`/常量 `Setting`）会自动外提到 loader
+  （无开关），让 runtime 更短。
 
 完整细节见 [`docs/data-segment.md`](docs/data-segment.md)；本地 `ic10code/` 语料里有一个用数据段存逻辑类型的 airlock 端口示例（第三方，未随仓库分发）。
 
