@@ -1,7 +1,9 @@
-# 尾块合并与寄存器颜色：气闸控制案例（待决）
+# 尾块合并与寄存器颜色：气闸控制案例
 
-> 状态：**暂不改编译器**，记录案例与取舍，待以后决定。
-> 相关代码：`internal/opt/opt.go` 的 `MergeTailsColored` / `mergeOneTail`。
+> 状态：**已实现为默认关闭的开关**（`--merge-renamed-tails` /
+> `IC10C_MERGE_RENAMED_TAILS` / VS Code `icg.mergeRenamedTails`），见 §7。
+> 相关代码：`internal/opt/opt.go` 的 `MergeTailsColored` / `mergeOneTail` /
+> `MergeTailsRenamed` / `mergeOneTailRenamed` / `renamingSafe`。
 
 ## 1. 现象
 
@@ -66,7 +68,7 @@ b51 · finish   l r0 d1 Open; ...   ← 同色
 
 > 补充：结构化的 `mergeTails`（用虚拟寄存器 ID，`:2471`）只在 `opt_test.go` 里用，**没进 pipeline**；它也不能合并上面两块（虚拟寄存器 ID 本就不同），其作用只是**忽略物理颜色差异**。真正需要的是「颜色不同但结构相同、且活跃性安全」时也能合并。
 
-## 4. 拟改进方案（未实施）
+## 4. 改进方案
 
 在 `mergeOneTail` 里，除「颜色完全相同」外，再做一次「**结构相同、忽略寄存器身份**」的匹配；仅当满足安全条件时才合并：
 
@@ -96,24 +98,63 @@ b2: r1 = load d0 Setting; store d3 Setting r1; jmp end     // r1 死后缀，但
 - **调试可解释性**：现在「为什么合并」= 颜色一致；改后需要 dump IR + 活跃性 + regalloc 才能解释。
 - **长期守护**：属于「一次性实现 + 长期随指令类型/活跃性/regalloc 同步维护」，漏判即静默错编译。
 
-## 7. 决策（暂定）
+## 7. 实现与开关
 
-- **不改编译器**。把「让尾段可合并」交给**源码结构**（公共尾段写在一起，如单函数写法），编译器零新增复杂度。
-- 单函数写法已 78 行（≤ 反编译产物 82），可读性不受影响。
-- 若以后确有必要做成通用能力，按 §4 的安全判据实施，并补齐 §6 的测试矩阵与文档，可先做成默认关闭的开关验证。
+按 §4 的判据实现，**默认关闭**：
+
+- 新增 `opt.MergeTailsRenamed(fn, colors)`：按**结构 key**（`blankRegKey` 把所有
+  寄存器渲染成同一 token）分组，组内逐个尝试用某块当共享体，保留满足
+  `renamingSafe` 的最大安全子集。它**包含**同色合并（同色必然安全），所以开启时
+  直接替代 `MergeTailsColored`，而不是在其之后再跑。
+- `renamingSafe(first, b, n, col, out)` 实现 §4 的两条约束：
+  1. **live-in 读**：后缀内「先读后写」的寄存器必须物理同色（否则共享体读到别的值）；
+  2. **活跃色的定义位置**：对每个在 `b` 之后仍活跃的色（`out[b]` 或被 `b` 终止符
+     读取），两个后缀**定义该色的位置集合必须完全一致**。不一致的色必然在 `b`
+     之后死亡，因此共享体既不会冲掉活跃值，也不会漏写；一致的色在同一位置产生，
+     值相同。该判据用 `ir.Liveness`（`internal/ir/analysis.go`）与 `ir.TermUses`。
+
+  > 第 2 条比「差异寄存器死后缀」更强：若 `first` 在位置 p 定义活跃色 c、`b` 在
+  > 位置 p′ 才定义 c，只比较“色是否相同”会漏判（两处值不同）。比较位置集合可
+  > 覆盖这种重排。
+- 每轮合并后 `BuildCFG` 再重算活跃性（`mergeOneTailRenamed` 开头调用
+  `ir.Liveness`）；合并严格减少指令数，保证收敛。
+
+开关（默认关）：
+
+| 入口 | 打开方式 |
+|------|----------|
+| CLI `build` / `stats` | `--merge-renamed-tails` |
+| 环境变量（`run` / `size` / LSP 等） | `IC10C_MERGE_RENAMED_TAILS=1` |
+| Go API | `ic10.Options{MergeRenamedTails: true}` |
+| VS Code | `icg.mergeRenamedTails` |
+
+测试：
+
+- `internal/opt/opt_test.go`：`TestMergeTailsRenamed`（差异寄存器死后缀→合并）、
+  `TestMergeTailsRenamedKeepsLiveOut`（live-out 被写→不合并）、
+  `TestMergeTailsRenamedKeepsLiveThrough`（live-through 被冲→不合并）、
+  `TestMergeTailsRenamedKeepsLiveIn`（live-in 读不同色→不合并）。
+- `pkg/ic10/renamed_tails_test.go`：`TestMergeRenamedTailsOption`（编译、不变大、
+  VM 行为一致）、`TestMergeRenamedTailsEnv`（环境变量与显式选项一致）。
+
+> 经验：在本仓库的示例上，该 pass 大多**不改变最终行数**——因为 codegen 的布局
+> 已经通过 fall-through 复用了相同的尾块；它改变的是 IR。也就是说 §1 的 88→78
+> 差异主要来自重复的常量存储，而不是 `syncButtons` 尾段。因此默认关闭，按需开启。
 
 ## 8. 代码索引
 
 | 位置 | 作用 |
 |------|------|
-| `internal/opt/opt.go:2471` | `mergeTails`（虚拟寄存器 key，仅测试用） |
-| `internal/opt/opt.go:2479` | `MergeTailsColored`（物理颜色 key，pipeline 用） |
-| `internal/opt/opt.go:2492` | `mergeTailsWith`（定点迭代） |
-| `internal/opt/opt.go:2515` | `mergeOneTail`（候选分组与选择） |
-| `internal/opt/opt.go:2570` | `trimBlock`（裁剪 + 跳转共享块） |
-| `internal/opt/opt.go:2576` | `suffixKey` / `instrKey`（`:2587`）/ `termKey`（`:2643`） |
-| `pkg/ic10/compiler.go:628`、`pkg/ic10/size.go:85` | `MergeTailsColored` 调用点 |
-| `internal/ir/analysis.go:112` | `Liveness` |
+| `internal/opt/opt.go` | `mergeTails`（虚拟寄存器 key，仅测试用） |
+| `internal/opt/opt.go` | `MergeTailsColored`（物理颜色 key，默认 pipeline） |
+| `internal/opt/opt.go` | `MergeTailsRenamed`（结构 key + 安全判据，开关开启时使用） |
+| `internal/opt/opt.go` | `coloredRegKey` / `blankRegKey`（两套 key） |
+| `internal/opt/opt.go` | `mergeOneTail` / `mergeOneTailRenamed`（分组与选择） |
+| `internal/opt/opt.go` | `renamingSafe`（§4 的两条约束）、`defReg` |
+| `internal/opt/opt.go` | `factorTail` / `trimBlock`（裁剪 + 跳转共享块） |
+| `internal/opt/opt.go` | `suffixKey` / `instrKey` / `termKey` |
+| `pkg/ic10/compiler.go`、`pkg/ic10/size.go` | 调用点（按开关二选一） |
+| `internal/ir/analysis.go` | `DefUse` / `Liveness` / `TermUses` |
 
 ---
 

@@ -82,7 +82,11 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 		if err != nil {
 			return
 		}
-		if opt.MergeTailsColored(fn, colors) {
+		if o.MergeRenamedTails {
+			if opt.MergeTailsRenamed(fn, colors) {
+				fn.BuildCFG()
+			}
+		} else if opt.MergeTailsColored(fn, colors) {
 			fn.BuildCFG()
 		}
 		_, rep, _ := codegen.GenerateReportWithOptions(fn, colors, codegen.Options{SpillDB: !o.SpillStack})

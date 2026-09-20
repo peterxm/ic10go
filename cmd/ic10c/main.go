@@ -170,6 +170,7 @@ func cmdBuild(args []string) int {
 	dynamicStack := false
 	userStack := 0
 	redundantWrites := false
+	mergeRenamedTails := false
 	dataLayout := ""
 	dataOut := ""
 	chipName := ""
@@ -193,6 +194,8 @@ func cmdBuild(args []string) int {
 			dynamicStack = true
 		case "--redundant-device-writes":
 			redundantWrites = true
+		case "--merge-renamed-tails":
+			mergeRenamedTails = true
 		case "--user-stack":
 			if i+1 < len(args) {
 				n, err := strconv.Atoi(args[i+1])
@@ -285,6 +288,7 @@ func cmdBuild(args []string) int {
 		DynamicStack:          dynamicStack,
 		UserStackLimit:        userStack,
 		RedundantDeviceWrites: redundantWrites,
+		MergeRenamedTails:     mergeRenamedTails,
 	}
 
 	if jsonOut {
@@ -666,6 +670,7 @@ func cmdStats(args []string) int {
 	dynamicStack := false
 	userStack := 0
 	redundantWrites := false
+	mergeRenamedTails := false
 	var files []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -682,6 +687,8 @@ func cmdStats(args []string) int {
 			dynamicStack = true
 		case "--redundant-device-writes":
 			redundantWrites = true
+		case "--merge-renamed-tails":
+			mergeRenamedTails = true
 		case "--user-stack":
 			if i+1 < len(args) {
 				n, err := strconv.Atoi(args[i+1])
@@ -711,7 +718,8 @@ func cmdStats(args []string) int {
 		return 2
 	}
 	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack,
-		DynamicStack: dynamicStack, UserStackLimit: userStack, RedundantDeviceWrites: redundantWrites}
+		DynamicStack: dynamicStack, UserStackLimit: userStack, RedundantDeviceWrites: redundantWrites,
+		MergeRenamedTails: mergeRenamedTails}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)

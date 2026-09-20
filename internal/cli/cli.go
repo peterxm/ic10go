@@ -140,6 +140,11 @@ var redundantDeviceWritesFlag = Flag{Long: "--redundant-device-writes", Desc: te
 	ZH: "删除重复的常量设备写（更短，但会改变写序列）",
 }}
 
+var mergeRenamedTailsFlag = Flag{Long: "--merge-renamed-tails", Desc: text{
+	EN: "also merge structurally-identical tails whose registers differ, when safe (experimental)",
+	ZH: "在安全时额外合并寄存器不同但结构相同的尾块（实验性）",
+}}
+
 var dynamicStackFlag = Flag{Long: "--dynamic-stack", Desc: text{
 	EN: "size the user stack from the compiler's data/spill usage instead of the fixed --user-stack limit",
 	ZH: "用户栈上限按编译器实际数据段/溢出占用动态计算，而非 --user-stack 固定值",
@@ -208,6 +213,7 @@ var Commands = []Command{
 			dynamicStackFlag,
 			userStackFlag,
 			redundantDeviceWritesFlag,
+			mergeRenamedTailsFlag,
 			{Long: "--data-access", Arg: "get|stack", Desc: text{
 				EN: "read the data segment via get/put db (default, IC host) or poke/peek (device host)",
 				ZH: "数据段读写方式：get（默认，IC host）或 stack（poke/peek，兼容设备 host）",
@@ -305,7 +311,7 @@ var Commands = []Command{
 				"引用到的 CPU 寄存器数量，以及栈预算——分为用户区（push/pop 与\n" +
 				"db.stack[]）和编译器区（数据段与寄存器溢出）。",
 		},
-		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, dynamicStackFlag, userStackFlag, redundantDeviceWritesFlag, commonHelp},
+		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, dynamicStackFlag, userStackFlag, redundantDeviceWritesFlag, mergeRenamedTailsFlag, commonHelp},
 		Examples: []string{"ic10c stats blink.icg", "ic10c stats --user-stack 128 blink.icg"},
 	},
 	{

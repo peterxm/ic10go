@@ -141,6 +141,7 @@ func main() {
 | `icg.dynamicStack` | `false` | 用户栈上限按编译器实际数据段/溢出占用动态计算，而非 `icg.userStack` 固定值 |
 | `icg.userStack` | `128` | 固定的用户栈大小；用户使用达到或超过它的槽位会在编译时报错 |
 | `icg.redundantDeviceWrites` | `false` | 删除重复的同值常量设备写（省行，但改变可观测写序列） |
+| `icg.mergeRenamedTails` | `false` | 在可证明安全时额外合并寄存器分配不同但结构相同的尾块（实验性） |
 | `icg.runSteps` | `0` | VM 运行步数上限（`--steps`）；`0` 用编译器默认 1000 |
 | `icg.runTrace` | `false` | VM 运行时打印每条执行的指令（`--trace`） |
 | `icg.runSet` | `[]` | VM 运行前设置设备值，每项一条，如 `d0.Temperature=350`（可重复 `--set`） |

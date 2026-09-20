@@ -15,6 +15,7 @@
 - **持久栈数据段**：`data` 表把大块常量 / 查表放进芯片持久栈，`switch ... table` 自动表化，突破 128 行预算。编译器还会把序言里的一次性设备写入（`Mode` / `On` / 常量 `Setting`，操作数全为常量）自动外提到一次性 loader：**超 128 行时**用来塞进预算，**程序本来就需要 loader（有 `data` 表）时**顺带复用、让 runtime 更小。loader 超 128 行会自动拆成多块（按序运行）。
 - **省行优化**：分支融合（`Cmp`+分支 → `beq`/`bne`）、常量查表内联（`T[const]` → 字面量）、精确栈失效；**单芯片默认栈私有**（`// icg: private-stack`）时还可把常量用户栈槽提升为寄存器、消除成对 `push`/`pop`。多芯片或 `// icg: shared-stack` 保持保守。这些优化只在 runtime 行数不增时才采用。
 - **可选 `--redundant-device-writes`**：删除重复的同值常量设备写（更短，但改变可观测写序列，默认关闭）。
+- **可选 `--merge-renamed-tails`**：按结构合并「寄存器分配不同但结构相同」的尾块，仅当重命名的寄存器在后缀后死亡且 live-in 读同色时（实验性，默认关闭；见 [`docs/tail-merge.md`](docs/tail-merge.md)）。
 - **多芯片**：一个 `.icg` 用 `chip 名字 { ... }` 声明多块芯片，各编译成独立程序（各自 128 行 / 4 KiB 预算与 loader）；顶层 `const` / `data` / `func` 是所有 chip 共享的公共区。芯片间用 `bus 名字 { 槽位 num ... }` 声明命名网络通道（最多 8 槽，槽位下标即通道号），每个 chip 用 `use 名字 on dev:conn` 给默认访问点、每次访问也可用 `Bus.槽位[dev][conn]` 内联覆盖（唯一写者校验，`run` 按槽位自动接线）。CLI `build` 按芯片写文件，`--chip NAME` 选一个，`--json` 的 `chips[]` 列出全部；`run` 在内置 VM 里多芯片锁步运行。
 - **编译期求值**：常量折叠、`hash()` 的 CRC-32、单位字面量（温度 `20c`/`68f`→K、压力 `20.1MPa`/`101.3kPa`→kPa）、逻辑类型校验。
 - **快速开发工具链**：`build` / `run` / `fmt` / `disasm` / `decompile` / `stats` / `lsp`，以及内置最小解释器。
@@ -72,11 +73,11 @@ ic10c build --chip NAME <file.icg>  # 多芯片：只输出指定芯片到 stdou
 ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
             [--data-layout top|middle] [--unsafe] [--auto-table] [--jump-table] \
             [--fast] [--rel-jump] [--spill db|stack] [--dynamic-stack] [--user-stack N] \
-            [--redundant-device-writes] <file.icg>
+            [--redundant-device-writes] [--merge-renamed-tails] <file.icg>
                               # 兼容保留；loader 现在会自动输出（默认 <file>.data.ic）
 ic10c build --data-only [--chip NAME] <file.icg>  # 只输出一次性 loader（数据段 + 外提设置）
 ic10c run    <file.icg>       # 编译并在内置 VM 中运行（自动先跑一次性 loader；多芯片锁步；--steps/--set/--trace）
-ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] [--spill db|stack] [--dynamic-stack] [--user-stack N] [--redundant-device-writes] <file.icg>
+ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] [--spill db|stack] [--dynamic-stack] [--user-stack N] [--redundant-device-writes] [--merge-renamed-tails] <file.icg>
                               # 行 / 字节 / 寄存器预算 + 峰值活跃 / 溢出槽（多芯片按芯片分组；含 loader 预算）+ 栈预算（stack user 个数/上限，默认固定 128；--dynamic-stack 动态边界，越界报错；--redundant-device-writes 删除重复设备写）
 ic10c size   <file.icg>       # 按函数拆分行预算（找最占行数的函数）
 ic10c graph  [--level source|ir] [--func NAME] [--no-lines] [-o FILE] <file.icg>

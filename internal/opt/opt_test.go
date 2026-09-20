@@ -376,6 +376,117 @@ func TestMergeTailsColored(t *testing.T) {
 	}
 }
 
+// renamedBranches builds a function with two branches whose tails are
+// structurally identical but define t1 and t2 (coloured differently). When
+// liveOutT1 is set, t1 is read after the branch, making it live-out.
+func renamedBranches(liveOutT1 bool) (*ir.Function, map[*ir.Reg]int) {
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	b.Emit(&ir.Load{Dst: a, Dev: "d0", Logic: "Setting"})
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: a, Then: thenB, Else: elseB})
+
+	t1 := b.NewReg("t1")
+	b.SetBlock(thenB)
+	b.Emit(&ir.Bin{Op: ir.Add, Dst: t1, A: a, B: &ir.Const{V: 1}})
+	b.Emit(&ir.Store{Dev: "d3", Logic: "Setting", Src: t1})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	t2 := b.NewReg("t2")
+	b.SetBlock(elseB)
+	b.Emit(&ir.Bin{Op: ir.Add, Dst: t2, A: a, B: &ir.Const{V: 1}})
+	b.Emit(&ir.Store{Dev: "d3", Logic: "Setting", Src: t2})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	if liveOutT1 {
+		b.Emit(&ir.Store{Dev: "d4", Logic: "Setting", Src: t1})
+	}
+	b.SetTerm(&ir.Ret{})
+	return b.Fn(), map[*ir.Reg]int{a: 0, t1: 1, t2: 2}
+}
+
+func TestMergeTailsRenamed(t *testing.T) {
+	// The tails differ only in t1/t2, which are dead after the branch, so the
+	// renaming-aware merge may factor them.
+	fn, colors := renamedBranches(false)
+	if !MergeTailsRenamed(fn, colors) {
+		t.Fatal("renamed tail merge did not factor the shared suffix")
+	}
+}
+
+func TestMergeTailsRenamedKeepsLiveOut(t *testing.T) {
+	// t1 is read after the branch: the shared body (which writes t1) would
+	// clobber it on the else path, so the merge must be rejected.
+	fn, colors := renamedBranches(true)
+	if MergeTailsRenamed(fn, colors) {
+		t.Fatal("renamed tail merge clobbered a live-out register")
+	}
+}
+
+func TestMergeTailsRenamedKeepsLiveThrough(t *testing.T) {
+	// a is live-in and live-out on the else path, where the suffix does not
+	// write it. The shared body (then) writes a register of the same colour,
+	// which would clobber a. A real allocator would not give t1 a's colour here
+	// (their ranges overlap), but the guard must reject the renaming anyway.
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	b.Emit(&ir.Load{Dst: a, Dev: "d5", Logic: "Setting"})
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: a, Then: thenB, Else: elseB})
+
+	t1 := b.NewReg("t1")
+	b.SetBlock(thenB)
+	b.Emit(&ir.Load{Dst: t1, Dev: "d0", Logic: "Setting"})
+	b.Emit(&ir.Store{Dev: "d3", Logic: "Setting", Src: t1})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	t2 := b.NewReg("t2")
+	b.SetBlock(elseB)
+	b.Emit(&ir.Load{Dst: t2, Dev: "d0", Logic: "Setting"})
+	b.Emit(&ir.Store{Dev: "d3", Logic: "Setting", Src: t2})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.Emit(&ir.Store{Dev: "d4", Logic: "Setting", Src: a})
+	b.SetTerm(&ir.Ret{})
+	if MergeTailsRenamed(b.Fn(), map[*ir.Reg]int{a: 0, t1: 0, t2: 1}) {
+		t.Fatal("renamed tail merge clobbered a live-through register")
+	}
+}
+
+func TestMergeTailsRenamedKeepsLiveIn(t *testing.T) {
+	// The two tails read different registers (a vs c) before defining
+	// anything, so the shared body would read the wrong value.
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	c := b.NewReg("c")
+	b.Emit(&ir.Load{Dst: a, Dev: "d0", Logic: "Setting"})
+	b.Emit(&ir.Load{Dst: c, Dev: "d1", Logic: "Setting"})
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: a, Then: thenB, Else: elseB})
+
+	b.SetBlock(thenB)
+	b.Emit(&ir.Store{Dev: "d3", Logic: "Setting", Src: a})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(elseB)
+	b.Emit(&ir.Store{Dev: "d3", Logic: "Setting", Src: c})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+	if MergeTailsRenamed(b.Fn(), map[*ir.Reg]int{a: 0, c: 1}) {
+		t.Fatal("renamed tail merge merged different live-in registers")
+	}
+}
+
 func TestCommutativeCSE(t *testing.T) {
 	b := ir.NewBuilder("f")
 	a := b.NewReg("a")

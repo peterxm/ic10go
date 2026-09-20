@@ -91,6 +91,11 @@ type Options struct {
 	// observable write sequence. Off by default.
 	// IC10C_REDUNDANT_DEVICE_WRITES=1 also turns it on.
 	RedundantDeviceWrites bool
+	// MergeRenamedTails additionally merges structurally-identical tails whose
+	// registers were allocated differently, when the renaming is safe. Off by
+	// default: it is experimental and can change register usage. See
+	// docs/tail-merge.md. IC10C_MERGE_RENAMED_TAILS=1 also turns it on.
+	MergeRenamedTails bool
 
 	// recordBus, when set, records every `Bus.slot` read/write (with its access
 	// point) while compiling, so CompileResult can check writers and wire a VM.
@@ -149,6 +154,9 @@ func stackEnv(opts Options) Options {
 	}
 	if !opts.RedundantDeviceWrites && os.Getenv("IC10C_REDUNDANT_DEVICE_WRITES") != "" {
 		opts.RedundantDeviceWrites = true
+	}
+	if !opts.MergeRenamedTails && os.Getenv("IC10C_MERGE_RENAMED_TAILS") != "" {
+		opts.MergeRenamedTails = true
 	}
 	return opts
 }
@@ -625,7 +633,11 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 				spillCount, bottom, info.Sentinel, dataEnd)
 		}
 	}
-	if opt.MergeTailsColored(fn, colors) {
+	if opts.MergeRenamedTails {
+		if opt.MergeTailsRenamed(fn, colors) {
+			fn.BuildCFG()
+		}
+	} else if opt.MergeTailsColored(fn, colors) {
 		fn.BuildCFG()
 	}
 	code, err := codegen.GenerateWithOptions(fn, colors, codegen.Options{RelJump: opts.RelJump, SpillDB: !opts.SpillStack})

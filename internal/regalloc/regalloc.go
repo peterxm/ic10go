@@ -378,7 +378,14 @@ func (s *spiller) slotOf(r *ir.Reg) int {
 // spill rewrites the function so that the given registers live in stack slots.
 func (s *spiller) spill(spilled map[*ir.Reg]bool) {
 	s.slots = map[*ir.Reg]int{}
+	// Assign slots in register-ID order: iterating the map directly would make
+	// the spill slot numbers (and thus the output) depend on Go's map order.
+	regs := make([]*ir.Reg, 0, len(spilled))
 	for r := range spilled {
+		regs = append(regs, r)
+	}
+	sort.Slice(regs, func(i, j int) bool { return regs[i].ID < regs[j].ID })
+	for _, r := range regs {
 		s.slotOf(r)
 	}
 	for _, b := range s.fn.Blocks {

@@ -2477,7 +2477,30 @@ func mergeTails(fn *ir.Function) bool {
 // to the same physical registers are merged. It must run after register
 // allocation; the colours stay valid because no registers are created.
 func MergeTailsColored(fn *ir.Function, colors map[*ir.Reg]int) bool {
-	ch := mergeTailsWith(fn, func(r *ir.Reg) string {
+	return mergeTailsWith(fn, coloredRegKey(colors))
+}
+
+// MergeTailsRenamed is a structural tail merge that also factors suffixes which
+// are identical up to a register renaming, when that renaming is provably safe
+// (see renamingSafe). It subsumes MergeTailsColored, so callers use it instead
+// of that pass. It must run after register allocation and reads block liveness,
+// so it is opt-in (Options.MergeRenamedTails / IC10C_MERGE_RENAMED_TAILS) and
+// off by default; see docs/tail-merge.md.
+func MergeTailsRenamed(fn *ir.Function, colors map[*ir.Reg]int) bool {
+	// mergeOneTailRenamed reads block liveness, so the CFG must be current.
+	fn.BuildCFG()
+	changed := false
+	for mergeOneTailRenamed(fn, colors) {
+		changed = true
+		fn.BuildCFG()
+	}
+	return changed
+}
+
+// coloredRegKey renders a register by its physical colour, so virtual registers
+// that the allocator mapped to the same physical register compare equal.
+func coloredRegKey(colors map[*ir.Reg]int) func(*ir.Reg) string {
+	return func(r *ir.Reg) string {
 		if r == nil {
 			return "-"
 		}
@@ -2485,8 +2508,17 @@ func MergeTailsColored(fn *ir.Function, colors map[*ir.Reg]int) bool {
 			return strconv.Itoa(c)
 		}
 		return "?" + strconv.Itoa(r.ID)
-	})
-	return ch
+	}
+}
+
+// blankRegKey renders every register as the same token, so suffixKey groups
+// suffixes that are structurally equal regardless of which registers they use.
+// A nil register stays distinct so optional destinations keep their shape.
+func blankRegKey(r *ir.Reg) string {
+	if r == nil {
+		return "-"
+	}
+	return "R"
 }
 
 func mergeTailsWith(fn *ir.Function, reg func(*ir.Reg) string) bool {
@@ -2555,15 +2587,177 @@ func mergeOneTail(fn *ir.Function, reg func(*ir.Reg) string) bool {
 		return false
 	}
 
-	first := best.blocks[0]
+	factorTail(fn, best.blocks[0], best.blocks, best.n, best.term, best.funcName)
+	return true
+}
+
+// factorTail moves the last n instructions of first into a new shared block and
+// rewrites each of blocks to jump to it.
+func factorTail(fn *ir.Function, first *ir.Block, blocks []*ir.Block, n int, term ir.Term, funcName string) {
 	shared := fn.NewBlock()
-	shared.Instrs = append(shared.Instrs, first.Instrs[len(first.Instrs)-best.n:]...)
-	shared.Term = best.term
-	shared.Func = best.funcName
-	for _, b := range best.blocks {
-		trimBlock(b, best.n, shared)
+	shared.Instrs = append(shared.Instrs, first.Instrs[len(first.Instrs)-n:]...)
+	shared.Term = term
+	shared.Func = funcName
+	for _, b := range blocks {
+		trimBlock(b, n, shared)
+	}
+}
+
+// mergeOneTailRenamed is mergeOneTail with a structure-only suffix key: it can
+// factor a shared suffix even when the blocks use different registers, as long
+// as the renaming relative to the chosen shared block is safe (see
+// renamingSafe). It picks, for each structural group, the shared block and the
+// safe subset that saves the most lines.
+func mergeOneTailRenamed(fn *ir.Function, colors map[*ir.Reg]int) bool {
+	_, out := ir.Liveness(fn)
+	col := coloredRegKey(colors)
+	type group struct {
+		n        int
+		term     ir.Term
+		funcName string
+		blocks   []*ir.Block
+	}
+	groups := map[string]*group{}
+	for _, b := range fn.Blocks {
+		if len(b.Instrs) == 0 || b == fn.Entry {
+			continue
+		}
+		tk := termKey(b.Term)
+		for n := 1; n <= len(b.Instrs); n++ {
+			key := tk + "\x00" + suffixKey(b.Instrs, n, blankRegKey)
+			g := groups[key]
+			if g == nil {
+				g = &group{n: n, term: b.Term, funcName: b.Func}
+				groups[key] = g
+			}
+			g.blocks = append(g.blocks, b)
+		}
+	}
+
+	bestSaving := 0
+	bestWeight := 0
+	var bestFirst *ir.Block
+	var bestBlocks []*ir.Block
+	bestN := 0
+	for _, g := range groups {
+		if len(g.blocks) < 2 {
+			continue
+		}
+		// Any block may provide the shared body; try each and keep the safe
+		// subset with the largest line saving.
+		for i, first := range g.blocks {
+			subset := []*ir.Block{first}
+			for j, b := range g.blocks {
+				if j == i {
+					continue
+				}
+				if renamingSafe(first, b, g.n, col, out[b]) {
+					subset = append(subset, b)
+				}
+			}
+			if len(subset) < 2 {
+				continue
+			}
+			saving := g.n*(len(subset)-1) - len(subset)
+			weight := g.n * (len(subset) - 1)
+			if bestFirst == nil || saving > bestSaving || (saving == bestSaving && weight > bestWeight) {
+				bestFirst, bestBlocks, bestN = first, subset, g.n
+				bestSaving, bestWeight = saving, weight
+			}
+		}
+	}
+	if bestFirst == nil {
+		return false
+	}
+	factorTail(fn, bestFirst, bestBlocks, bestN, bestFirst.Term, bestFirst.Func)
+	return true
+}
+
+// renamingSafe reports whether block b's last n instructions can be replaced by
+// first's structurally-identical suffix (the shared body) after a register
+// renaming. first and b share a terminator (and thus a live-out set), so it
+// checks two register-identity constraints:
+//
+//   - A register read before it is defined inside the suffix is live-in, so it
+//     must keep the same physical colour: otherwise the shared body would read a
+//     different value than b's own suffix.
+//   - For every colour live after the block (live-out or read by the
+//     terminator), the positions where the two suffixes define that colour must
+//     match exactly. A differing colour is then dead after b, so the shared body
+//     neither clobbers a live value nor leaves one unwritten, and a live colour
+//     is produced at the same point (hence with the same value).
+//
+// out is b's live-out set on the current CFG (ir.Liveness).
+func renamingSafe(first, b *ir.Block, n int, col func(*ir.Reg) string, out map[*ir.Reg]bool) bool {
+	fs := first.Instrs[len(first.Instrs)-n:]
+	bs := b.Instrs[len(b.Instrs)-n:]
+	after := map[string]bool{}
+	for r := range out {
+		after[col(r)] = true
+	}
+	for _, r := range ir.TermUses(b.Term) {
+		after[col(r)] = true
+	}
+	defFirst := map[string][]int{}
+	defB := map[string][]int{}
+	definedFirst := map[*ir.Reg]bool{}
+	definedB := map[*ir.Reg]bool{}
+	for p := 0; p < n; p++ {
+		fu, fd := ir.DefUse(fs[p])
+		bu, bd := ir.DefUse(bs[p])
+		if len(fu) != len(bu) || len(fd) != len(bd) {
+			return false
+		}
+		for j := range fu {
+			// A register defined earlier inside the suffix is produced by the
+			// shared body itself, so only live-in reads constrain the colours.
+			if definedFirst[fu[j]] != definedB[bu[j]] {
+				return false
+			}
+			if !definedFirst[fu[j]] && col(fu[j]) != col(bu[j]) {
+				return false
+			}
+		}
+		if r := defReg(fd); r != nil {
+			defFirst[col(r)] = append(defFirst[col(r)], p)
+		}
+		if r := defReg(bd); r != nil {
+			defB[col(r)] = append(defB[col(r)], p)
+		}
+		for _, r := range fd {
+			definedFirst[r] = true
+		}
+		for _, r := range bd {
+			definedB[r] = true
+		}
+	}
+	for r := range after {
+		if !samePositions(defFirst[r], defB[r]) {
+			return false
+		}
 	}
 	return true
+}
+
+// samePositions reports whether two ascending position lists are equal.
+func samePositions(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// defReg returns the single destination register of a def list, or nil.
+func defReg(defs []*ir.Reg) *ir.Reg {
+	if len(defs) == 1 {
+		return defs[0]
+	}
+	return nil
 }
 
 // trimBlock removes the last n instructions of b and makes it jump to shared.

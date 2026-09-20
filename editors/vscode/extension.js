@@ -92,7 +92,8 @@ class LspClient {
                     e.affectsConfiguration('icg.noCheck') ||
                     e.affectsConfiguration('icg.dynamicStack') ||
                     e.affectsConfiguration('icg.userStack') ||
-                    e.affectsConfiguration('icg.redundantDeviceWrites')
+                    e.affectsConfiguration('icg.redundantDeviceWrites') ||
+                    e.affectsConfiguration('icg.mergeRenamedTails')
                 ) {
                     this.restart();
                 }
@@ -336,6 +337,7 @@ class LspClient {
             dynamicStack: c.get('dynamicStack'),
             userStack: c.get('userStack'),
             redundantDeviceWrites: c.get('redundantDeviceWrites'),
+            mergeRenamedTails: c.get('mergeRenamedTails'),
             autoTable: c.get('autoTable'),
             jumpTable: c.get('jumpTable'),
             relJump: c.get('relJump'),
@@ -356,6 +358,7 @@ class LspClient {
         if (cfg.dynamicStack === true) env.IC10C_DYNAMIC_STACK = '1';
         if (cfg.userStack && cfg.userStack > 0) env.IC10C_USER_STACK = String(cfg.userStack);
         if (cfg.redundantDeviceWrites === true) env.IC10C_REDUNDANT_DEVICE_WRITES = '1';
+        if (cfg.mergeRenamedTails === true) env.IC10C_MERGE_RENAMED_TAILS = '1';
     }
 
     // buildFlags returns the shared ic10c build/run options from the settings.
