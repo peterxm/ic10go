@@ -126,8 +126,8 @@ var fastFlag = Flag{Long: "--fast", Desc: text{
 }}
 
 var relJumpFlag = Flag{Long: "--rel-jump", Desc: text{
-	EN: "emit relative jumps (jr / br*) instead of absolute ones (smaller; verify in game)",
-	ZH: "生成相对跳转（jr / br*）而非绝对跳转（更小，需真机验证）",
+	EN: "use relative jumps (jr / br*) when shorter than the absolute form (verify the base in game)",
+	ZH: "在相对跳转（jr / br*）更短时使用（需真机验证基准行）",
 }}
 
 var spillFlag = Flag{Long: "--spill", Arg: "db|stack", Desc: text{

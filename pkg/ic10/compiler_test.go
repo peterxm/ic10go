@@ -1220,3 +1220,35 @@ func TestRedundantDeviceWritesOption(t *testing.T) {
 		t.Errorf("option should not add lines:\n%s", on)
 	}
 }
+
+func TestRelJumpPicksShorterForm(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("func main() {\n")
+	for i := 0; i < 55; i++ {
+		fmt.Fprintf(&b, "  d0.Setting = %d\n  d1.Setting = %d\n", i, i)
+	}
+	b.WriteString("  if d0.On { d1.On = 1 }\n  d2.On = 1\n}\n")
+	src := []byte(b.String())
+	abs, _, err := ic10.Compile("t.icg", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, _, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{RelJump: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rel) > len(abs) {
+		t.Errorf("rel-jump grew the program: abs=%d rel=%d", len(abs), len(rel))
+	}
+	if !strings.Contains(rel, "breqz") && !strings.Contains(rel, "brne") {
+		t.Errorf("expected a relative jump to be chosen when it is shorter:\n%s", rel)
+	}
+
+	// A small program: every relative jump is longer, so it must stay absolute.
+	small := []byte("func main() { for { yield()\n if d0.On { d1.On = 1 } } }\n")
+	sa, _, _ := ic10.Compile("t.icg", small)
+	sr, _, _ := ic10.CompileWithOptions("t.icg", small, ic10.Options{RelJump: true})
+	if len(sr) > len(sa) {
+		t.Errorf("rel-jump grew the small program: abs=%d rel=%d", len(sa), len(sr))
+	}
+}

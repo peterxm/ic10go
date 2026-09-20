@@ -339,14 +339,20 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 		if ln.imm != "" {
 			target = ln.imm
 		} else if ln.target != nil {
+			abs := strconv.Itoa(start[ln.target])
+			// A relative jump is only used when it is strictly shorter than the
+			// absolute form: `br*`/`jr` add an 'r' and a negative offset adds a
+			// '-', so for a small program the absolute line number is often
+			// shorter. Picking per jump keeps --rel-jump from growing the code.
 			if opts.RelJump {
-				if rt, off, ok := relativeJump(ln.text, start[ln.target]-i); ok {
+				if rt, off, ok := relativeJump(ln.text, start[ln.target]-i); ok &&
+					len(rt)+len(off) < len(ln.text)+len(abs) {
 					text, target = rt, off
 				} else {
-					target = strconv.Itoa(start[ln.target])
+					target = abs
 				}
 			} else {
-				target = strconv.Itoa(start[ln.target])
+				target = abs
 			}
 		}
 		sb.WriteString(text)
