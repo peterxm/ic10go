@@ -17,7 +17,8 @@ func compileAndLoad(t *testing.T, name string) *vm.Machine {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, diags, err := ic10.Compile(name, src)
+	// The prototype manages its own stack layout beyond the fixed user region.
+	code, diags, err := ic10.CompileWithOptions(name, src, ic10.Options{DynamicStack: true})
 	if err != nil || diags.HasErrors() {
 		t.Fatalf("compile %s: %v %v", name, diags.Diags, err)
 	}

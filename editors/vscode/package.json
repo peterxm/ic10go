@@ -113,6 +113,16 @@
           "default": "get",
           "markdownDescription": "%icg.dataAccess.desc%"
         },
+        "icg.dynamicStack": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%icg.dynamicStack.desc%"
+        },
+        "icg.userStack": {
+          "type": "number",
+          "default": 128,
+          "markdownDescription": "%icg.userStack.desc%"
+        },
         "icg.runSteps": {
           "type": "number",
           "default": 0,

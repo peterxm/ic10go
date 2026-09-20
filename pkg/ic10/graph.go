@@ -37,7 +37,7 @@ func Graph(name string, src []byte, opts Options) (*GraphResult, *diag.Bag, erro
 		if fn == nil || diags.HasErrors() {
 			return
 		}
-		code, colors, err := generateColored(fn, info, opts)
+		code, colors, _, err := generateColored(fn, info, opts)
 		if err != nil {
 			return
 		}

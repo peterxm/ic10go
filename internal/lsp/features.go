@@ -1222,6 +1222,14 @@ func (s *Server) inlayHint(w *bufio.Writer, id json.RawMessage, params json.RawM
 		if base, size, _, _ := ic10.DataStats(p.TextDocument.URI, []byte(text), ic10.Options{}); base >= 0 {
 			label += fmt.Sprintf(" · data %d..%d", base, base+size-1)
 		}
+		if depth, unbounded, derr := ic10.MaxStackDepth(p.TextDocument.URI, []byte(text), ic10.Options{}); derr == nil {
+			switch {
+			case unbounded:
+				label += " · 栈 无界"
+			case depth > 0:
+				label += fmt.Sprintf(" · 栈 %d", depth)
+			}
+		}
 		lastLine := strings.Count(text, "\n")
 		lastStart := strings.LastIndexByte(text, '\n') + 1
 		hints = append(hints, map[string]any{
@@ -1375,6 +1383,20 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 		payload["chips"] = len(compiled.Chips)
 	}
 	if !multi {
+		if rep, err := ic10.Size(uri, []byte(text), ic10.Options{}); err == nil {
+			stack := rep.Stack
+			payload["stackUser"] = stack.UserUsed
+			payload["stackUserLimit"] = stack.UserLimit
+			payload["stackUserMax"] = stack.UserMax
+			payload["stackDynamic"] = stack.Dynamic
+			payload["stackPush"] = stack.UserPush
+			payload["stackManual"] = stack.UserManual
+			payload["stackUnbounded"] = stack.UserUnbounded
+			payload["stackCompiler"] = stack.CompilerUsed
+			payload["stackCompilerBase"] = stack.CompilerBase
+			payload["stackData"] = stack.DataSlots
+			payload["stackSpills"] = stack.SpillSlots
+		}
 		if base, size, autoTabled, warn := ic10.DataStats(uri, []byte(text), ic10.Options{}); base >= 0 {
 			payload["dataBase"] = base
 			payload["dataSize"] = size
@@ -1382,10 +1404,6 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 			payload["autoTabled"] = autoTabled
 			if warn != "" {
 				payload["dataWarn"] = warn
-			}
-			if depth, unbounded, err := ic10.MaxStackDepth(uri, []byte(text), ic10.Options{}); err == nil {
-				payload["stackDepth"] = depth
-				payload["stackUnbounded"] = unbounded
 			}
 		}
 	}

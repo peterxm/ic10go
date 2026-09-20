@@ -12,6 +12,8 @@
   "icg.unsafe.desc": "用 `--unsafe` 编译：跳过数据段运行时校验以进一步压缩代码。",
   "icg.dataLayout.desc": "数据段位置（`--data-layout`）：`top`（默认）或 `middle`。",
   "icg.dataAccess.desc": "数据段安装代码访问芯片栈的方式：`get` 用于标准 IC host，`stack` 用于设备 host（如空调）。",
+  "icg.dynamicStack.desc": "用户栈上限按编译器实际数据段/溢出占用动态计算，而非 `icg.userStack` 固定值（默认关闭）。",
+  "icg.userStack.desc": "固定的用户栈大小（默认 128）；用户使用达到或超过它的槽位会在编译时报错。",
   "icg.runSteps.desc": "`IC10 Go: 在内置 VM 中运行` 的步数上限（`--steps`）。0 使用编译器默认值（1000）。",
   "icg.runTrace.desc": "在内置 VM 运行时打印每条执行的指令（`--trace`）。",
   "icg.runSet.desc": "`IC10 Go: 在内置 VM 中运行` 的初始设备值，每项一条，如 `d0.Temperature=350`（可重复 `--set`）。",

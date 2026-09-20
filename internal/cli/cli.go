@@ -135,6 +135,16 @@ var spillFlag = Flag{Long: "--spill", Arg: "db|stack", Desc: text{
 	ZH: "寄存器溢出存放：get/put db（默认，每次加载 1 行）或 peek/poke 栈（5 行，回退）",
 }}
 
+var dynamicStackFlag = Flag{Long: "--dynamic-stack", Desc: text{
+	EN: "size the user stack from the compiler's data/spill usage instead of the fixed --user-stack limit",
+	ZH: "用户栈上限按编译器实际数据段/溢出占用动态计算，而非 --user-stack 固定值",
+}}
+
+var userStackFlag = Flag{Long: "--user-stack", Arg: "N", Desc: text{
+	EN: "fixed user stack slots (default 128); user slots above it are compile errors",
+	ZH: "固定的用户栈槽数（默认 128）；超过它的用户槽位会编译报错",
+}}
+
 // Commands is the ordered command table.
 var Commands = []Command{
 	{
@@ -190,6 +200,8 @@ var Commands = []Command{
 			fastFlag,
 			relJumpFlag,
 			spillFlag,
+			dynamicStackFlag,
+			userStackFlag,
 			{Long: "--data-access", Arg: "get|stack", Desc: text{
 				EN: "read the data segment via get/put db (default, IC host) or poke/peek (device host)",
 				ZH: "数据段读写方式：get（默认，IC host）或 stack（poke/peek，兼容设备 host）",
@@ -276,16 +288,19 @@ var Commands = []Command{
 	},
 	{
 		Name: "stats", Args: "<file.icg>",
-		Summary: text{EN: "report the line/byte/register budget", ZH: "报告行/字节/寄存器预算"},
+		Summary: text{EN: "report the line/byte/register/stack budget", ZH: "报告行/字节/寄存器/栈预算"},
 		Long: text{
 			EN: "Compile the file and print how much of the IC10 editor budget it\n" +
-				"uses: line count, byte size, longest line and the number of CPU\n" +
-				"registers referenced.",
-			ZH: "编译文件并打印它占用的 IC10 编辑器预算：行数、字节数、最长行\n" +
-				"以及引用到的 CPU 寄存器数量。",
+				"uses: line count, byte size, longest line, the number of CPU\n" +
+				"registers referenced and the stack budget split into the user\n" +
+				"region (push/pop and db.stack[]) and the compiler region (data\n" +
+				"segment and register spills).",
+			ZH: "编译文件并打印它占用的 IC10 编辑器预算：行数、字节数、最长行、\n" +
+				"引用到的 CPU 寄存器数量，以及栈预算——分为用户区（push/pop 与\n" +
+				"db.stack[]）和编译器区（数据段与寄存器溢出）。",
 		},
-		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, commonHelp},
-		Examples: []string{"ic10c stats blink.icg"},
+		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, dynamicStackFlag, userStackFlag, commonHelp},
+		Examples: []string{"ic10c stats blink.icg", "ic10c stats --user-stack 128 blink.icg"},
 	},
 	{
 		Name: "size", Args: "<file.icg>",

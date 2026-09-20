@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+
+	"ic10go/internal/source"
 )
 
 // ---------------------------------------------------------------------------
@@ -484,6 +486,24 @@ type Function struct {
 	// (IC10 rrN via ireg/setIreg, declared with reserveRegs). The allocator
 	// never colours a virtual register there, so indirect access is safe.
 	ReservedRegs [16]bool
+	// UserStackManual is the highest user stack slot touched by an explicit
+	// absolute access (db.stack[addr], poke, get/put db), stored as slot+1.
+	// UserStackDynamic is set when such an address is not a compile-time
+	// constant. push/pop depth is computed separately from the CFG.
+	UserStackManual  int
+	UserStackDynamic bool
+	// UserStackUses records every explicit user access to the persistent stack
+	// so a later pass can check it against the compiler's region.
+	UserStackUses []UserStackUse
+}
+
+// UserStackUse is one explicit user access to the persistent stack
+// (db.stack[addr], poke, get/put db). Slot is the constant address; Dynamic is
+// set when the address is not a compile-time constant.
+type UserStackUse struct {
+	Slot    int
+	Dynamic bool
+	Pos     source.Pos
 }
 
 // BuildCFG recomputes predecessor and successor lists from terminators.

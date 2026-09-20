@@ -251,9 +251,36 @@ Ret
 - `reserveRegs(lo, hi)` 声明的物理寄存器不参与分配，供 `ireg`/`setIreg`
   （`rrN`）间接访问——这是安全使用间接寄存器的前提。
 
-### 6.6 寄存器压力报告
+### 6.6 寄存器压力与栈预算报告
 
 `stats` 输出峰值活跃寄存器数（`peak live`）与溢出槽数（`spills`），便于定位溢出。
+
+`stats` 还把 512 槽持久栈分成两个区：
+
+| 区 | 槽位 | 归属 |
+|----|------|------|
+| 用户栈 | `[0, userLimit-1]` | 用户 `push/pop`、`peek/poke`、`db.stack[addr]`、`get/put(db, addr)` |
+| 编译器栈 | `[userLimit, 511]` | 数据段（栈顶）+ 寄存器溢出槽（数据段下方） |
+
+默认**固定**用户上限 `--user-stack N`（默认 128，`icg.userStack`）；`--dynamic-stack`
+则改为动态边界 `compilerBase = 512 - DataSize - Spills`（`middle` 布局为
+`FixedDataBase = 256`）。报告分两行输出：
+
+```
+stack user   1 / 128 (fixed, max slot 0)
+stack comp   9 @ [503..511] (data 9 + spills 0)
+```
+
+- `stack user`：**用户实际用到的槽位个数** `/` 用户上限。括号里是边界模式
+  （`fixed`/`dynamic`）与最高槽位（位置约束看最高槽，个数只是用量）。
+  无界（循环中 `push` 无配对 `pop`）时显示 `unbounded`。
+- `stack comp`：编译器占用（数据段 + 溢出槽）及其实际槽位区间。
+- 用户绝对地址落在用户上限及以上时**编译报错**；动态地址无法静态验证，
+  只在报告中标记，不作为错误。
+- 动态开关：CLI `--dynamic-stack`（默认关）、`--user-stack N`，环境变量
+  `IC10C_DYNAMIC_STACK` / `IC10C_USER_STACK`，VS Code `icg.dynamicStack`
+  （默认关）与 `icg.userStack`（默认 128）。固定模式下若数据段 + 溢出放不下
+  编译器区，同样报错。
 
 ---
 

@@ -132,6 +132,9 @@ func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 	}
 
 	fn := l.b.Fn()
+	fn.UserStackManual = l.userStackMax
+	fn.UserStackDynamic = l.userStackDyn
+	fn.UserStackUses = l.userStackUses
 	for _, blk := range fn.Blocks {
 		if blk.Term == nil {
 			blk.Term = &ir.Ret{}
@@ -140,6 +143,30 @@ func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 	fn.BuildCFG()
 	simplify(fn)
 	return fn
+}
+
+// noteUserStack records an explicit user access to the persistent stack at addr
+// (an already-lowered value). The partition between the user region and the
+// compiler's data/spill region is only known after register allocation, so the
+// access is recorded here and checked by the caller. Addresses outside the
+// 512-slot stack are always rejected.
+func (l *lowerer) noteUserStack(pos source.Pos, addr ir.Value) {
+	c, ok := addr.(*ir.Const)
+	if !ok || c.Raw != "" || c.Special != "" {
+		l.userStackDyn = true
+		l.userStackUses = append(l.userStackUses, ir.UserStackUse{Dynamic: true, Pos: pos})
+		return
+	}
+	slot := int(c.V)
+	if float64(slot) != c.V || slot < 0 || slot >= sema.StackSize {
+		l.diags.ErrorfCode("stack-addr-range", pos,
+			"stack slot %v is out of range [0, %d]", c.V, sema.StackSize-1)
+		return
+	}
+	l.userStackUses = append(l.userStackUses, ir.UserStackUse{Slot: slot, Pos: pos})
+	if slot+1 > l.userStackMax {
+		l.userStackMax = slot + 1
+	}
 }
 
 // simplify redirects jumps through empty blocks so that later stages can avoid
@@ -229,6 +256,13 @@ type lowerer struct {
 	labelNames map[string]bool
 	noCheck    bool
 	opts       Options
+	// userStackMax is the highest user stack slot touched by an explicit
+	// absolute access (db.stack[addr], poke, get/put db), stored as slot+1.
+	userStackMax int
+	// userStackDyn is set when such an address is not a compile-time constant.
+	userStackDyn bool
+	// userStackUses records every explicit access for the partition check.
+	userStackUses []ir.UserStackUse
 }
 
 // funcName is the source function currently being lowered ("" for main).
@@ -649,8 +683,12 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 			return
 		}
 		if dev, addr, ok := l.stackOf(t); ok {
-			l.b.Emit(&ir.Builtin{Name: "put",
-				Args: []ir.Value{l.deviceOperand(dev), l.lowerExpr(addr), val}})
+			dv := l.deviceOperand(dev)
+			av := l.lowerExpr(addr)
+			if d, ok := dv.(*ir.Device); ok && d.Name == "db" {
+				l.noteUserStack(t.Pos(), av)
+			}
+			l.b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{dv, av, val}})
 			return
 		}
 		if bus, slot, dev, ch, ok := l.busSlotAccess(t); ok {
@@ -1295,8 +1333,12 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 		}
 		if dev, addr, ok := l.stackOf(e); ok {
 			r := l.b.NewReg("stack")
-			l.b.Emit(&ir.Builtin{Name: "get", Dst: r,
-				Args: []ir.Value{l.deviceOperand(dev), l.lowerExpr(addr)}})
+			dv := l.deviceOperand(dev)
+			av := l.lowerExpr(addr)
+			if d, ok := dv.(*ir.Device); ok && d.Name == "db" {
+				l.noteUserStack(e.Pos(), av)
+			}
+			l.b.Emit(&ir.Builtin{Name: "get", Dst: r, Args: []ir.Value{dv, av}})
 			return r
 		}
 		if bus, slot, dev, ch, ok := l.busSlotAccess(e); ok {
@@ -1954,6 +1996,14 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		// The stable game branch emits "ins" as offset-length-field.
 		if id.Name == "ins" && l.opts.StableInsOrder && len(args) == 3 {
 			args = []ir.Value{args[1], args[2], args[0]}
+		}
+		switch id.Name {
+		case "poke":
+			l.noteUserStack(call.Pos(), args[0])
+		case "get", "put":
+			if d, ok := args[0].(*ir.Device); ok && d.Name == "db" {
+				l.noteUserStack(call.Pos(), args[1])
+			}
 		}
 		b := &ir.Builtin{Name: id.Name, Args: args}
 		if f.Result {

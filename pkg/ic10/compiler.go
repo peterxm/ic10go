@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"ic10go/internal/ast"
@@ -64,9 +65,39 @@ type Options struct {
 	// default is false: spills use get/put db (1 line per load, no scratch).
 	SpillStack bool
 
+	// DynamicStack sizes the user stack region from the compiler's actual
+	// data/spill usage instead of the fixed UserStackLimit. Off by default: the
+	// user region is the low UserStackLimit slots. IC10C_DYNAMIC_STACK=1 turns
+	// it on.
+	DynamicStack bool
+	// UserStackLimit is the fixed user stack size. 0 means DefaultUserStack.
+	// IC10C_USER_STACK overrides it.
+	UserStackLimit int
+
 	// recordBus, when set, records every `Bus.slot` read/write (with its access
 	// point) while compiling, so CompileResult can check writers and wire a VM.
 	recordBus func(bus, slot, devConn string, write bool)
+}
+
+// DefaultUserStack is the default fixed user stack size. It leaves the
+// compiler 384 slots for the data segment (loader-capped at 128 lines) and
+// register spills.
+const DefaultUserStack = 128
+
+// stackEnv merges the stack-related environment switches into opts, so the LSP
+// (spawned with the editor's settings in its environment) behaves like the CLI.
+func stackEnv(opts Options) Options {
+	if !opts.DynamicStack && os.Getenv("IC10C_DYNAMIC_STACK") != "" {
+		opts.DynamicStack = true
+	}
+	if opts.UserStackLimit == 0 {
+		if v := os.Getenv("IC10C_USER_STACK"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				opts.UserStackLimit = n
+			}
+		}
+	}
+	return opts
 }
 
 // fixedDataBase returns the fixed data base for the selected layout, or 0 for
@@ -143,6 +174,7 @@ func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Ba
 // constant settings) into Result.Loader. Device state persists, so the loader
 // only has to run once; the chip is then overwritten with the runtime.
 func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, error) {
+	opts = stackEnv(opts)
 	file := source.NewFile(name, src)
 	diags := &diag.Bag{}
 	toks := lexer.Tokenize(file, diags)
@@ -297,7 +329,10 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 		if fn == nil || diags.HasErrors() {
 			return
 		}
-		code, err := generate(fn, info, opts)
+		code, spills, err := generate(fn, info, opts)
+		if err == nil {
+			checkStackRegion(fn, info, spills, opts, diags)
+		}
 		// Split out one-time setup writes when the runtime is over a limit, or
 		// when the program already needs a one-time loader (data segment): in
 		// that case moving setup writes into the existing loader is free.
@@ -322,7 +357,7 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			}
 			return
 		}
-		runtime, rerr := generate(fn, info, opts)
+		runtime, _, rerr := generate(fn, info, opts)
 		if rerr != nil {
 			if err == nil {
 				consider(Result{Code: code})
@@ -331,7 +366,7 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			}
 			return
 		}
-		loader, lerr := generate(setup, info, opts)
+		loader, _, lerr := generate(setup, info, opts)
 		if lerr != nil {
 			if err == nil {
 				consider(Result{Code: code})
@@ -457,14 +492,15 @@ func better(a, b string) bool {
 }
 
 // generate runs register allocation and code generation for a lowered function.
-func generate(fn *ir.Function, info *sema.Info, opts Options) (string, error) {
-	code, _, err := generateColored(fn, info, opts)
-	return code, err
+// It returns the number of register spill slots used.
+func generate(fn *ir.Function, info *sema.Info, opts Options) (string, int, error) {
+	code, _, spills, err := generateColored(fn, info, opts)
+	return code, spills, err
 }
 
 // generateColored is generate plus the register colouring, which the
 // control-flow graph needs to render instruction text.
-func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, map[*ir.Reg]int, error) {
+func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, map[*ir.Reg]int, int, error) {
 	reserved := info.DataSize
 	if fixedDataBase(opts) > 0 {
 		reserved = 0
@@ -475,12 +511,13 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 	}
 	colors, spillCount, err := regalloc.AllocateReservedSpillsMode(fn, NumRegs, reserved, spillMode)
 	if err != nil {
-		return "", nil, err
+		return "", nil, 0, err
 	}
-	if fixedDataBase(opts) > 0 && spillCount > 0 {
+	if spillCount > 0 && fixedDataBase(opts) > 0 {
+		bottom := 511 - reserved - spillCount + 1
 		dataEnd := info.Sentinel + info.DataSize - 1
-		if bottom := sema.StackSize - spillCount; bottom <= dataEnd {
-			return "", nil, fmt.Errorf("register spills (%d slots, down to %d) overlap the data segment [%d..%d]",
+		if bottom <= dataEnd {
+			return "", nil, 0, fmt.Errorf("register spills (%d slots, down to %d) overlap the data segment [%d..%d]",
 				spillCount, bottom, info.Sentinel, dataEnd)
 		}
 	}
@@ -488,7 +525,37 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 		fn.BuildCFG()
 	}
 	code, err := codegen.GenerateWithOptions(fn, colors, codegen.Options{RelJump: opts.RelJump, SpillDB: !opts.SpillStack})
-	return code, colors, err
+	return code, colors, spillCount, err
+}
+
+// checkStackRegion rejects user stack accesses that reach into the compiler's
+// data/spill region. Dynamic addresses and unbounded push are reported by the
+// stack report instead: IC10 programs use them, so they are not compile errors.
+func checkStackRegion(fn *ir.Function, info *sema.Info, spillCount int, opts Options, diags *diag.Bag) {
+	base := userLimit(info, spillCount, opts)
+	// Dynamic mode puts the boundary just below the compiler's data/spills, so
+	// they always fit; the fixed mode must check that they still do.
+	if !opts.DynamicStack {
+		if need := info.DataSize + spillCount; need > sema.StackSize-base {
+			diags.ErrorfCode("stack-compiler-overflow", info.Main.Pos(),
+				"the compiler needs %d stack slots but only %d are above the %d-slot user stack",
+				need, sema.StackSize-base, base)
+			return
+		}
+	}
+	for _, u := range fn.UserStackUses {
+		if u.Dynamic || u.Slot < base {
+			continue
+		}
+		diags.ErrorfCode("stack-overlap", u.Pos,
+			"stack slot %d is above the %d-slot user stack [0..%d]; raise --user-stack or use --dynamic-stack",
+			u.Slot, base, base-1)
+	}
+	if d, unbounded := analyzeDepth(fn); !unbounded && d > base {
+		diags.ErrorfCode("stack-overlap", info.Main.Pos(),
+			"push depth %d exceeds the %d-slot user stack; raise --user-stack or use --dynamic-stack",
+			d, base)
+	}
 }
 
 // parseAndCheck lexes, parses and type-checks the source. For multi-chip files

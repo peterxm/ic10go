@@ -490,6 +490,102 @@ func main() {
 	}
 }
 
+func TestSizeStackReport(t *testing.T) {
+	// A data segment pushes the compiler region down; the user may address
+	// slots below it, including a manual db.stack[] slot.
+	src := []byte(`data T = [1, 2, 3, 4, 5]
+func main() {
+    db.stack[9] = 7
+    d0.Setting = T[0] + db.stack[9]
+}`)
+	// Default is a fixed 30-slot user region.
+	rep, err := ic10.Size("t.icg", src, ic10.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := rep.Stack
+	if st.DataSlots != 6 {
+		t.Errorf("data slots = %d, want 6 (sentinel + 5)", st.DataSlots)
+	}
+	if st.CompilerBase != 512-6 {
+		t.Errorf("compiler base = %d, want %d", st.CompilerBase, 512-6)
+	}
+	if st.Dynamic || st.UserLimit != 128 {
+		t.Errorf("default limit = %d (dynamic=%v), want 128/false", st.UserLimit, st.Dynamic)
+	}
+	if st.UserManual != 10 || st.UserMax != 10 {
+		t.Errorf("user max = %d (manual %d), want 10", st.UserMax, st.UserManual)
+	}
+	if st.UserUsed != 1 {
+		t.Errorf("user slot count = %d, want 1 (only db.stack[9])", st.UserUsed)
+	}
+}
+
+func TestSizeStackDynamic(t *testing.T) {
+	src := []byte(`data T = [1, 2, 3, 4, 5]
+func main() {
+    db.stack[9] = 7
+    d0.Setting = T[0] + db.stack[9]
+}`)
+	rep, err := ic10.Size("t.icg", src, ic10.Options{DynamicStack: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := rep.Stack
+	if !st.Dynamic || st.UserLimit != st.CompilerBase {
+		t.Errorf("dynamic limit = %d, compiler base = %d, dynamic=%v", st.UserLimit, st.CompilerBase, st.Dynamic)
+	}
+}
+
+func TestSizeStackCustomLimit(t *testing.T) {
+	src := []byte(`func main() { d0.Setting = 1 }`)
+	rep, err := ic10.Size("t.icg", src, ic10.Options{UserStackLimit: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := rep.Stack; st.Dynamic || st.UserLimit != 64 {
+		t.Errorf("fixed limit = %d (dynamic=%v), want 64/false", st.UserLimit, st.Dynamic)
+	}
+}
+
+func TestStackOverlapRejected(t *testing.T) {
+	// Slot 510 is inside the compiler region once the data segment is laid out.
+	src := []byte(`data T = [1, 2, 3, 4, 5]
+func main() {
+    db.stack[510] = 7
+    d0.Setting = T[0]
+}`)
+	_, diags, err := ic10.Compile("t.icg", src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !diags.HasErrors() {
+		t.Fatal("expected a stack-overlap error")
+	}
+	if !strings.Contains(diags.Diags[0].Msg, "user stack") {
+		t.Errorf("unexpected diagnostic: %v", diags.Diags)
+	}
+}
+
+func TestStackFixedLimitRejected(t *testing.T) {
+	src := []byte("func main() { db.stack[99] = 1\n d0.Setting = db.stack[99] }")
+	// A fixed 30-slot user region rejects slot 99.
+	_, diags, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{UserStackLimit: 30})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !diags.HasErrors() {
+		t.Fatal("expected a fixed-limit stack error")
+	}
+	if !strings.Contains(diags.Diags[0].Msg, "30-slot") {
+		t.Errorf("unexpected diagnostic: %v", diags.Diags)
+	}
+	// Dynamic allows any slot the compiler is not using.
+	if _, diags, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{DynamicStack: true}); err != nil || diags.HasErrors() {
+		t.Fatalf("dynamic stack should accept slot 99: err=%v diags=%v", err, diags.Diags)
+	}
+}
+
 func TestPureFuncShortCircuitUsesMax(t *testing.T) {
 	src := `func open(d num) num { return batch.read(d, "Open", "Maximum") }
 func main() {
@@ -986,7 +1082,8 @@ func TestSpillConvergence(t *testing.T) {
     tz = (c*get(db, 103) - (get(db, 100)*get(db, 109)-get(db, 101)*get(db, 108))*get(db, 107) + (get(db, 100)*get(db, 105)-get(db, 101)*get(db, 104))*get(db, 111)) / d
     d0.Setting = tx + ty + tz
 }`
-	if _, diags, err := ic10.Compile("t.icg", []byte(src)); diags.HasErrors() || err != nil {
+	// The reads use high stack slots, so use the dynamic boundary.
+	if _, diags, err := ic10.CompileWithOptions("t.icg", []byte(src), ic10.Options{DynamicStack: true}); diags.HasErrors() || err != nil {
 		t.Fatalf("compile failed (allocator did not converge?): %v %v", diags.Diags, err)
 	}
 }

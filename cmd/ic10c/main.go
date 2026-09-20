@@ -167,6 +167,8 @@ func cmdBuild(args []string) int {
 	relJump := false
 	dataAccessStack := false
 	spillStack := false
+	dynamicStack := false
+	userStack := 0
 	dataLayout := ""
 	dataOut := ""
 	chipName := ""
@@ -186,6 +188,18 @@ func cmdBuild(args []string) int {
 			unsafe = true
 		case "--auto-table":
 			autoTable = true
+		case "--dynamic-stack":
+			dynamicStack = true
+		case "--user-stack":
+			if i+1 < len(args) {
+				n, err := strconv.Atoi(args[i+1])
+				if err != nil || n <= 0 {
+					fmt.Fprintln(os.Stderr, "ic10c: --user-stack must be a positive integer")
+					return 2
+				}
+				userStack = n
+				i++
+			}
 		case "--chip":
 			if i+1 < len(args) {
 				chipName = args[i+1]
@@ -265,6 +279,8 @@ func cmdBuild(args []string) int {
 		DataAccessStack: dataAccessStack,
 		SpillStack:      spillStack,
 		DataLayout:      dataLayout,
+		DynamicStack:    dynamicStack,
+		UserStackLimit:  userStack,
 	}
 
 	if jsonOut {
@@ -613,6 +629,8 @@ func cmdStats(args []string) int {
 	unsafe := false
 	autoTable := false
 	spillStack := false
+	dynamicStack := false
+	userStack := 0
 	var files []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -625,6 +643,18 @@ func cmdStats(args []string) int {
 			unsafe = true
 		case "--auto-table":
 			autoTable = true
+		case "--dynamic-stack":
+			dynamicStack = true
+		case "--user-stack":
+			if i+1 < len(args) {
+				n, err := strconv.Atoi(args[i+1])
+				if err != nil || n <= 0 {
+					fmt.Fprintln(os.Stderr, "ic10c: --user-stack must be a positive integer")
+					return 2
+				}
+				userStack = n
+				i++
+			}
 		case "--spill":
 			if i+1 < len(args) {
 				if args[i+1] == "stack" {
@@ -643,7 +673,8 @@ func cmdStats(args []string) int {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "stats"))
 		return 2
 	}
-	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack}
+	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack,
+		DynamicStack: dynamicStack, UserStackLimit: userStack}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
@@ -688,10 +719,35 @@ func cmdStats(args []string) int {
 	fmt.Printf("bytes      %3d / %d\n", s.Bytes, codegen.MaxBytes)
 	fmt.Printf("max line   %3d / %d\n", s.MaxLineLen, codegen.MaxLineLen)
 	fmt.Printf("registers  %3d / %d\n", s.RegsUsed, ic10.NumRegs)
+	var stack ic10.StackReport
+	haveStack := false
 	if rep, serr := ic10.Size(files[0], data, opts); serr == nil {
+		stack, haveStack = rep.Stack, true
 		fmt.Printf("peak live  %3d / %d\n", rep.PeakLive, ic10.NumRegs)
 		if rep.Spills > 0 {
 			fmt.Printf("spills     %3d slots\n", rep.Spills)
+		}
+	}
+	base, size, autoTabled, warn := ic10.DataStats(files[0], data, opts)
+	if haveStack {
+		user := fmt.Sprintf("%d", stack.UserUsed)
+		if stack.UserUnbounded {
+			user = "unbounded"
+		}
+		mode := "dynamic"
+		if !stack.Dynamic {
+			mode = "fixed"
+		}
+		fmt.Printf("stack user %3s / %d (%s", user, stack.UserLimit, mode)
+		if stack.UserMax > 0 {
+			fmt.Printf(", max slot %d", stack.UserMax-1)
+		}
+		fmt.Printf(")\n")
+		if stack.CompilerBase >= ic10.StackSize {
+			fmt.Printf("stack comp   0 (unused)\n")
+		} else {
+			fmt.Printf("stack comp %3d @ [%d..%d] (data %d + spills %d)\n",
+				stack.CompilerUsed, stack.CompilerBase, ic10.StackSize-1, stack.DataSlots, stack.SpillSlots)
 		}
 	}
 	if compiled.Loader != "" {
@@ -699,7 +755,7 @@ func cmdStats(args []string) int {
 		fmt.Printf("loader     %3d / %d lines · %d / %d bytes (run once)\n",
 			ls.Lines, codegen.MaxLines, ls.Bytes, codegen.MaxBytes)
 	}
-	if base, size, autoTabled, warn := ic10.DataStats(files[0], data, opts); base >= 0 {
+	if base >= 0 {
 		fmt.Printf("data       slots %d..%d (%d values)\n", base, base+size-1, size)
 		if warn != "" {
 			fmt.Printf("warning    %s\n", warn)
@@ -707,14 +763,9 @@ func cmdStats(args []string) int {
 		if autoTabled > 0 {
 			fmt.Printf("warning    auto-tabled %d switch(es) into the data segment; reinstall the loader\n", autoTabled)
 		}
-		if depth, unbounded, err := ic10.MaxStackDepth(files[0], data, opts); err == nil {
-			switch {
-			case unbounded:
-				fmt.Printf("warning    push depth is unbounded (a loop grows the stack); keep the data segment clear\n")
-			case depth > base:
-				fmt.Printf("warning    max push depth %d reaches the data segment (base %d)\n", depth, base)
-			}
-		}
+	}
+	if haveStack && stack.UserUnbounded {
+		fmt.Printf("warning    push depth is unbounded (a loop grows the stack); keep the data segment clear\n")
 	}
 	return 0
 }

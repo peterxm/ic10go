@@ -549,6 +549,28 @@ func TestStatsNotification(t *testing.T) {
 	}
 }
 
+func TestStatsNotificationStackDepth(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"sd.icg","text":"func main() { for { yield()\n push(1); pop() } }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"stackUser":1`) || !strings.Contains(out, `"stackPush":1`) {
+		t.Errorf("expected user stack usage in the icg/stats notification:\n%s", out)
+	}
+}
+
+func TestStatsNotificationManualStackSlot(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"sm.icg","text":"func main() { db.stack[9] = 1\nd0.Setting = db.stack[9] }"}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"stackUser":1`) || !strings.Contains(out, `"stackManual":10`) {
+		t.Errorf("expected manual stack slot usage in the icg/stats notification:\n%s", out)
+	}
+}
+
 func TestHoverDeviceAlias(t *testing.T) {
 	out := runServer(t,
 		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),

@@ -9,6 +9,7 @@ import (
 	"ic10go/internal/lower"
 	"ic10go/internal/opt"
 	"ic10go/internal/regalloc"
+	"ic10go/internal/sema"
 )
 
 // SizeReport is the compiled program's IC10 line budget broken down by source
@@ -22,11 +23,34 @@ type SizeReport struct {
 	Outlined []string       // functions emitted once as subroutines
 	PeakLive int            // max virtual registers live at any program point
 	Spills   int            // stack slots used for register spilling
+	Stack    StackReport    // user vs compiler stack usage
+}
+
+// StackReport splits the persistent stack into the region user code may address
+// and the region the compiler owns. push/pop and explicit absolute accesses
+// (db.stack[addr], poke, get/put db) live in the user region
+// [0, UserLimit-1]; the data segment and register spills live in the compiler
+// region [UserLimit, Total-1].
+type StackReport struct {
+	Total         int  // stack slots (512)
+	Dynamic       bool // the user limit is the dynamic compiler boundary
+	UserLimit     int  // size of the user region
+	UserUsed      int  // number of distinct user slots used
+	UserMax       int  // highest user slot touched + 1
+	UserPush      int  // push/pop depth
+	UserManual    int  // highest explicit db.stack[]/poke address + 1
+	CompilerBase  int  // first slot of the compiler region (dynamic mode)
+	CompilerUsed  int  // data segment + register spills
+	DataSlots     int
+	SpillSlots    int
+	UserUnbounded bool
+	UserDynamic   bool // a user stack address is not a compile-time constant
 }
 
 // Size compiles the source and returns a per-function line breakdown. It uses
 // the same inlined/outlined selection as Compile.
 func Size(name string, src []byte, opts Options) (*SizeReport, error) {
+	opts = stackEnv(opts)
 	info, diags := parseAndCheck(name, src, opts)
 	if info == nil || diags.HasErrors() {
 		return nil, fmt.Errorf("compile failed")
@@ -68,6 +92,7 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 				ByFunc:   rep.ByFunc,
 				PeakLive: maxPressure(fn),
 				Spills:   spillCount,
+				Stack:    stackReport(fn, info, spillCount, opts),
 			}
 			if outline != nil {
 				for n := range outline {
@@ -85,6 +110,80 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 		return nil, fmt.Errorf("compile failed")
 	}
 	return best, nil
+}
+
+// compilerBase returns the first stack slot the compiler owns: the data segment
+// and register spills sit at the top, so the base is the lowest slot either
+// occupies. User code may address [0, base-1].
+func compilerBase(info *sema.Info, spillSlots int, opts Options) int {
+	if fixedDataBase(opts) > 0 {
+		// "middle" layout: data starts at FixedDataBase and spills grow down
+		// from the top; the region between is compiler-owned too.
+		return sema.FixedDataBase
+	}
+	base := sema.StackSize - info.DataSize - spillSlots
+	if base < 0 {
+		base = 0
+	}
+	return base
+}
+
+// userLimit is the size of the user stack region. By default it is the fixed
+// UserStackLimit (DefaultUserStack when unset); with DynamicStack it is the
+// boundary below the compiler's data/spill region.
+func userLimit(info *sema.Info, spillSlots int, opts Options) int {
+	if opts.DynamicStack {
+		return compilerBase(info, spillSlots, opts)
+	}
+	n := opts.UserStackLimit
+	if n <= 0 {
+		n = DefaultUserStack
+	}
+	if n > sema.StackSize {
+		n = sema.StackSize
+	}
+	return n
+}
+
+// stackReport combines the CFG push depth with explicit absolute accesses and
+// the compiler's data/spill usage into one report.
+func stackReport(fn *ir.Function, info *sema.Info, spillSlots int, opts Options) StackReport {
+	push, unbounded := analyzeDepth(fn)
+	// UserUsed counts the distinct slots the user touches: the push/pop range
+	// [0, push-1] plus each explicit db.stack[]/poke slot.
+	used := map[int]bool{}
+	if !unbounded {
+		for i := 0; i < push; i++ {
+			used[i] = true
+		}
+	}
+	for _, u := range fn.UserStackUses {
+		if !u.Dynamic {
+			used[u.Slot] = true
+		}
+	}
+	max := 0
+	for slot := range used {
+		if slot+1 > max {
+			max = slot + 1
+		}
+	}
+	base := compilerBase(info, spillSlots, opts)
+	return StackReport{
+		Total:         sema.StackSize,
+		Dynamic:       opts.DynamicStack,
+		UserLimit:     userLimit(info, spillSlots, opts),
+		UserUsed:      len(used),
+		UserMax:       max,
+		UserPush:      push,
+		UserManual:    fn.UserStackManual,
+		CompilerBase:  base,
+		CompilerUsed:  info.DataSize + spillSlots,
+		DataSlots:     info.DataSize,
+		SpillSlots:    spillSlots,
+		UserUnbounded: unbounded,
+		UserDynamic:   fn.UserStackDynamic,
+	}
 }
 
 // maxPressure returns the maximum number of virtual registers live at any

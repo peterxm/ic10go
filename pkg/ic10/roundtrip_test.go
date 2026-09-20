@@ -35,7 +35,9 @@ func TestIc10CodeRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decompile: %v", err)
 			}
-			code, diags, err := ic10.Compile(name, []byte(icg))
+			// Legacy scripts use the whole stack, so compile with the dynamic
+			// boundary (the fixed 30-slot default would reject them).
+			code, diags, err := ic10.CompileWithOptions(name, []byte(icg), ic10.Options{DynamicStack: true})
 			if diags.HasErrors() || err != nil {
 				t.Fatalf("recompile: diags=%v err=%v\n%s", diags.Diags, err, icg)
 			}
@@ -90,7 +92,7 @@ func TestIc10CodeRoundTripStructured(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decompile: %v", err)
 			}
-			code, diags, err := ic10.Compile(name, []byte(icg))
+			code, diags, err := ic10.CompileWithOptions(name, []byte(icg), ic10.Options{DynamicStack: true})
 			if diags.HasErrors() || err != nil {
 				t.Skipf("structured output does not compile (falls back to flat): %v", err)
 			}

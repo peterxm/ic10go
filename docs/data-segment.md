@@ -169,16 +169,33 @@ ic10c build main.icg
 ### 5.5 地址分区（已实现）
 
 真机已确认本地栈与 `db` 栈是**同一块内存**，所以数据段与 `sp` 增长区、寄存器
-溢出区共享同一个 512 槽空间。实际布局：
+溢出区共享同一个 512 槽空间。编译器把它显式分成两个区：
 
-| 布局 | data 段 | 寄存器溢出 | 说明 |
-|------|---------|------------|------|
-| `top`（默认） | `[512-size, 511]` | 从 `base-1` 向下 | 数据段与溢出不相交 |
-| `middle` | `[256, 256+size-1]` | 从 `511` 向下 | 溢出碰到数据段则编译报错 |
+- **用户栈** `[0, userLimit-1]`：用户代码可用 `push/pop`、`peek/poke`、
+  `db.stack[addr]`、`get/put(db, addr)` 访问。
+- **编译器栈** `[userLimit, 511]`：数据段（栈顶）与寄存器溢出槽（数据段下方）。
+
+用户上限默认**固定**为 `--user-stack N`（默认 128，环境变量 `IC10C_USER_STACK`，
+VS Code `icg.userStack`）。加 `--dynamic-stack`（环境变量 `IC10C_DYNAMIC_STACK`，
+VS Code `icg.dynamicStack`，默认关）改为动态：`userLimit = 512 - size - spills`
+（`middle` 布局为 `256`）。
+
+| 布局 | data 段 | 寄存器溢出 | 动态边界 |
+|------|---------|------------|----------|
+| `top`（默认） | `[512-size, 511]` | 从 `512-size-1` 向下 | `512 - size - spills` |
+| `middle` | `[256, 256+size-1]` | 从 `511` 向下 | `256` |
 
 - 数据段首槽是版本哨兵，其后各表依次排布。
-- 用户 `push`/`poke` 增长区须留在数据段下方：`stats` 静态求 `push` 最大深度
-  并对 `poke` 告警（见 §8「已知问题」）。
+- 用户绝对地址（`db.stack[N]`、`poke(N)`、`get/put(db, N)`）落在用户上限及以上
+  时**编译报错**；`push` 深度超过上限同样报错；固定模式下数据段 + 溢出放不下
+  编译器区也报错。动态栈地址（如 `get(db, r0)`）无法静态验证，只在 `stats`
+  报告中标出，不报错。
+- `ic10c stats` 分两行输出用户/编译器用量（`stack user` 分子是用户用到的
+  槽位**个数**）：
+  ```
+  stack user   1 / 128 (fixed, max slot 0)
+  stack comp  13 @ [499..511] (data 13 + spills 0)
+  ```
 - 布局细节见 `docs/target-ic10.md` §5.7。
 
 ### 5.6 工具链
@@ -315,19 +332,21 @@ JSON 接口给出 `data.setup = true`。合并后的 loader 同样受 128 行限
 在**标准 IC host 与设备 host（空调）**上分别验证：loader（`poke`）→
 runtime（`peek` + `sp` 保存/恢复）都正常循环 `111/222/333`，宿主兼容问题闭环。
 
-### 已知问题 / 待办
+### 栈分区（已实现）
 
-- **数据段与用户 `sp`/`poke` 的冲突**：数据段放在栈顶（`512 - DataSize` 起），
-  与用户 `push` 增长区、寄存器溢出区共享同一 512 槽空间。寄存器溢出已由
-  编译器避让（`AllocateReserved` 从 `base-1` 向下）；用户 `push`/`poke` 需要
-  约定：
-  - ✅ **已做（方案 c）**：`ic10c stats` 在含数据段且源码用了 `poke` 时打印警告；
-  - ✅ **已做（方案 a）**：`ic10.MaxStackDepth` 在 CFG 上静态求 `push`/`pop` 的
-    最大深度，`stats` 会警告「最大深度达到数据段」或「深度无界（循环内 push）」；
-    溢出（`AllocateReserved`）已自动避让。
-  - ✅ **已做（方案 b）**：`--data-layout middle` 把数据段放在固定槽
-    `256`（`sema.FixedDataBase`），高地址 `384..511` 留给寄存器溢出；溢出若
-    会碰到数据段则编译报错。默认仍是 `top`（数据段在栈顶、溢出在其下方）。
+栈分为用户区与编译器区（见 §5.5）：编译器区放数据段与溢出槽，用户区放
+`push/pop`、`peek/poke`、`db.stack[N]`、`get/put(db, N)`。
+
+- ✅ **绝对地址检查**：用户常量栈地址达到用户上限（`>= userLimit`，默认 128）时
+  编译报错；`push` 深度超过上限同样报错。`--dynamic-stack` 时上限为
+  `compilerBase = 512 - size - spills`。
+- ✅ **报告**：`ic10c stats` / VSCode 状态栏分两行显示 `stack user` 与
+  `stack comp`（数据段 + 溢出槽）。
+- ⚠️ **动态地址与无界 push**：IC10 程序常用 `get(db, r0)` 与循环内 `push`，
+  无法静态验证，只在报告中标记（`stack user unbounded`），不作为编译错误。
+- ✅ **溢出避让**：`AllocateReserved` 从数据段下方向下分配；`--data-layout
+  middle` 把数据段放在固定槽 `256`（`sema.FixedDataBase`），溢出若会碰到数据段
+  则编译报错。默认仍是 `top`（数据段在栈顶、溢出在其下方）。
 
 
 ---

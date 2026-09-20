@@ -7,11 +7,12 @@ import (
 	"ic10go/internal/lower"
 )
 
-// MaxStackDepth compiles the source and returns the maximum sp depth reached by
-// push/pop, and whether it is unbounded (a loop grows the stack without a
-// matching pop). Each push writes slot sp then increments it, so the deepest
-// slot written is depth-1: a data segment starting at base is safe when
-// depth <= base.
+// MaxStackDepth compiles the source and returns the highest user stack slot
+// touched, as slot+1: the push/pop depth, or the highest explicit
+// db.stack[addr]/poke address. Each push writes slot sp then increments it, so
+// the deepest slot written is depth-1: a data segment starting at base is safe
+// when depth <= base. unbounded reports a loop that grows the stack without a
+// matching pop.
 func MaxStackDepth(name string, src []byte, opts Options) (depth int, unbounded bool, err error) {
 	info, diags := parseAndCheck(name, src, opts)
 	if info == nil {
@@ -25,22 +26,16 @@ func MaxStackDepth(name string, src []byte, opts Options) (depth int, unbounded 
 	if fn == nil {
 		return 0, false, fmt.Errorf("compile failed")
 	}
-	return stackDepth(fn), stackDepthUnbounded(fn), nil
+	d, unb := analyzeDepth(fn)
+	if fn.UserStackManual > d {
+		d = fn.UserStackManual
+	}
+	return d, unb, nil
 }
 
-// stackDepth returns the maximum push depth over the CFG. Positive cycles make
-// the result a large but finite number; use stackDepthUnbounded to detect them.
-func stackDepth(fn *ir.Function) int {
-	depth, _ := analyzeDepth(fn)
-	return depth
-}
-
-// stackDepthUnbounded reports whether a positive push cycle exists.
-func stackDepthUnbounded(fn *ir.Function) bool {
-	_, unbounded := analyzeDepth(fn)
-	return unbounded
-}
-
+// analyzeDepth returns the maximum push depth over the CFG and whether a
+// positive push cycle makes it unbounded. Positive cycles yield a large but
+// finite depth; the bool is the authoritative signal.
 func analyzeDepth(fn *ir.Function) (int, bool) {
 	fn.BuildCFG()
 	net := map[*ir.Block]int{}

@@ -280,7 +280,11 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 - loader 用 `put db addr value`（`--data-access stack` 用 `poke addr value`）写入；
   value 可为数字或游戏枚举名。
 - 数据段要求**标准 IC host**；设备 host 需 `--data-access stack`。
-- 用户 `push` 增长区与 `poke` 地址必须留在数据段下方；`ic10c stats` 会警告。
+- 栈分为用户区 `[0, userLimit-1]` 与编译器区 `[userLimit, 511]`，后者放数据段与
+  溢出槽。`userLimit` 默认固定 `--user-stack N`（默认 128）；`--dynamic-stack`
+  改为动态 `512 - size - spills`（`middle` 为 `256`）。
+- 用户 `push` 增长区与 `poke`/`db.stack[N]` 地址必须留在用户区，否则编译报错；
+  动态地址只在 `ic10c stats` 中标记。
 
 详见 [`data-segment.md`](data-segment.md)。
 

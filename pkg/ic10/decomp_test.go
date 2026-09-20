@@ -120,7 +120,7 @@ func TestDecompileSmoke(t *testing.T) {
 			if len(warns) > 0 {
 				t.Errorf("unsupported instructions: %v", warns)
 			}
-			compiled, diags, err := ic10.Compile(f, []byte(code))
+			compiled, diags, err := ic10.CompileWithOptions(f, []byte(code), ic10.Options{DynamicStack: true})
 			if diags.HasErrors() || err != nil {
 				t.Fatalf("decompiled source failed to compile: diags=%v err=%v\n%s", diags.Diags, err, code)
 			}
@@ -150,7 +150,7 @@ func TestDecompileStructuredSmoke(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			compiled, diags, err := ic10.Compile(f, []byte(code))
+			compiled, diags, err := ic10.CompileWithOptions(f, []byte(code), ic10.Options{DynamicStack: true})
 			if diags.HasErrors() || err != nil {
 				t.Fatalf("structured source failed to compile: diags=%v err=%v\n%s", diags.Diags, err, code)
 			}
@@ -186,7 +186,7 @@ func roundTripWith(t *testing.T, path string, setup func(*vm.Machine), dec func(
 	if len(warns) > 0 {
 		t.Fatalf("unsupported instructions: %v", warns)
 	}
-	compiled, diags, err := ic10.Compile(path, []byte(code))
+	compiled, diags, err := ic10.CompileWithOptions(path, []byte(code), ic10.Options{DynamicStack: true})
 	if diags.HasErrors() || err != nil {
 		t.Fatalf("decompiled source failed to compile: diags=%v err=%v\n%s", diags.Diags, err, code)
 	}
@@ -234,14 +234,14 @@ func TestDecompileStructuredFallback(t *testing.T) {
 			t.Fatal(err)
 		}
 		st, _, _ := decomp.DecompileStructured(string(src))
-		if _, diags, cerr := ic10.Compile(path, []byte(st)); !diags.HasErrors() && cerr == nil {
+		if _, diags, cerr := ic10.CompileWithOptions(path, []byte(st), ic10.Options{DynamicStack: true}); !diags.HasErrors() && cerr == nil {
 			continue // structured compiles; not a fallback case
 		}
 		code, _, err := ic10.Decompile(path, src, true)
 		if err != nil {
 			t.Fatalf("%s: fallback decompile: %v", base, err)
 		}
-		if _, diags, cerr := ic10.Compile(path, []byte(code)); diags.HasErrors() || cerr != nil {
+		if _, diags, cerr := ic10.CompileWithOptions(path, []byte(code), ic10.Options{DynamicStack: true}); diags.HasErrors() || cerr != nil {
 			t.Errorf("%s: fallback output does not compile: %v", base, cerr)
 		}
 		tested++

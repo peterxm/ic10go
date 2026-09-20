@@ -307,7 +307,7 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 			g.simple(sb, ind)
 		}
 	case 10:
-		fmt.Fprintf(sb, "%spoke(%d, %s)\n", ind, g.rng.Intn(32), g.expr(2))
+		fmt.Fprintf(sb, "%spoke(%d, %s)\n", ind, g.rng.Intn(30), g.expr(2))
 	case 11:
 		if g.stack > 0 {
 			fmt.Fprintf(sb, "%s%s = peek()\n", ind, g.varName())

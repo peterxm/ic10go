@@ -1,0 +1,119 @@
+//每扇门上面都有开关，ide可读代表1代表空闲，Open可读写1代表开门，0代表关门，Lock可读写1代表开关锁定，不允许手动开启
+//气体传感器读Pressure
+//主动通风口On可读写1代表开启，0代表关闭,Mode可读写1向管道排气，在这个案例Mode0向气闸室送气
+const (
+    dExitDoor = d0
+    dEntranceDoor = d1
+    dExitActiveVent = d2
+    dEntranceActiveVent = d3
+    dAirSensor = d4
+    dLEDDisplay = d5
+)
+
+//出门，双门关闭，EntranceVent把气闸室所有气抽到室内，开ExitDoor前，ExitActiveVent向气闸室充气气压
+const TargetPresureOut = 50kPa
+//进门，双门关闭，ExitVent把气闸室所有气抽到室内,开EntranceDoor前，EntranceActiveVent向气闸室充气气压
+const TargetPresureIn = 50kPa
+
+const EMTTarget = 0.1Pa
+
+//进出逻辑每个门上都有按钮，按下按钮
+func main() {
+    dExitDoor.Mode = 1
+    dEntranceDoor.Mode = 1
+    ButtonRest()
+    db.stack[0]
+    init()
+    for {
+        yield()
+        //有按钮被按下按钮
+        if (dEntranceDoor.Open != dEntranceDoor.Setting || dExitDoor.Open != dExitDoor.Setting) {
+            switch db.stack[0] {
+                case 1:
+                    {
+                        Locker()
+                        dEntranceDoor.Open = 0
+                        for {
+                            yield()
+                            if dEntranceDoor.Idle {
+                                dEntranceActiveVent.On = 1
+                                if dAirSensor.Pressure < EMTTarget {
+                                    sleep(0.5)
+                                    dEntranceActiveVent.On = 0
+                                    dExitDoor.Open = 1
+                                    Idle()
+                                    db.stack[0] = 2
+                                    ButtonRest()
+                                    break
+                                }
+                            }
+                        }
+                    }
+                case 2:
+                    {
+                        Locker()
+                        dExitDoor.Open = 0
+                        for {
+                            yield()
+                            if dExitDoor.Idle {
+                                dExitActiveVent.On = 1
+                                if dAirSensor.Pressure < EMTTarget {
+                                    sleep(0.5)
+                                    dExitActiveVent.On = 0
+                                    dEntranceDoor.Open = 1
+                                    Idle()
+                                    db.stack[0] = 1
+                                    ButtonRest()
+                                    break
+                                }
+                            }
+                        }
+                    }
+            }
+        }
+    }
+}
+
+func init() {
+    if (db.stack[0] == 0) {
+        Locker()
+        dExitDoor.Open = 0
+        dEntranceDoor.Open = 0
+        for {
+            yield()
+            if (dExitDoor.Idle && dEntranceDoor.Idle) {
+                dExitActiveVent.On = 1
+                if dAirSensor.Pressure < EMTTarget {
+                    sleep(0.5)
+                    dExitActiveVent.On = 0
+                    dEntranceDoor.Open = 1
+                    Idle()
+                    db.stack[0] = 1
+                    return
+                }
+            }
+        }
+    }
+    return
+}
+
+func Idle() {
+    dExitActiveVent.On = 0
+    dExitDoor.Lock = 0
+    dEntranceActiveVent.On = 0
+    dEntranceDoor.Lock = 0
+    dExitActiveVent.Lock = 0
+    dEntranceActiveVent.Lock = 0
+}
+
+func Locker() {
+    dExitDoor.Lock = 1
+    dEntranceDoor.Lock = 1
+    dExitActiveVent.Lock = 1
+    dEntranceActiveVent.Lock = 1
+}
+
+func ButtonRest() {
+    dEntranceDoor.Setting = dEntranceDoor.Open
+    dExitDoor.Setting = dExitDoor.Open
+}

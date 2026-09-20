@@ -66,7 +66,9 @@ func TestIc10CodePorts(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			compiled, diags, err := ic10.Compile(port, newSrc)
+			// The ported scripts are real-world IC10 that predate the user
+			// stack partition, so compile them with the dynamic boundary.
+			compiled, diags, err := ic10.CompileWithOptions(port, newSrc, ic10.Options{DynamicStack: true})
 			if diags.HasErrors() || err != nil {
 				t.Fatalf("port failed to compile: diags=%v err=%v", diags.Diags, err)
 			}

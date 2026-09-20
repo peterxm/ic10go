@@ -87,7 +87,12 @@ class LspClient {
         // so a change to it needs a restart. The build/run flags are read live.
         this.disposables.push(
             vscode.workspace.onDidChangeConfiguration((e) => {
-                if (e.affectsConfiguration && e.affectsConfiguration('icg.noCheck')) {
+                if (!e.affectsConfiguration) return;
+                if (
+                    e.affectsConfiguration('icg.noCheck') ||
+                    e.affectsConfiguration('icg.dynamicStack') ||
+                    e.affectsConfiguration('icg.userStack')
+                ) {
                     this.restart();
                 }
             })
@@ -197,6 +202,7 @@ class LspClient {
         try {
             const env = Object.assign({}, process.env);
             if (this.config().noCheck) env.IC10C_NO_CHECK = '1';
+            this.applyStackEnv(env);
             this.proc = cp.spawn(serverPath, ['lsp'], { stdio: ['pipe', 'pipe', 'pipe'], env });
         } catch (err) {
             this.reportMissingServer(err);
@@ -326,6 +332,8 @@ class LspClient {
         return {
             stableIns: c.get('stableIns'),
             noCheck: c.get('noCheck'),
+            dynamicStack: c.get('dynamicStack'),
+            userStack: c.get('userStack'),
             autoTable: c.get('autoTable'),
             jumpTable: c.get('jumpTable'),
             relJump: c.get('relJump'),
@@ -337,6 +345,14 @@ class LspClient {
             runTrace: c.get('runTrace'),
             runSet: c.get('runSet'),
         };
+    }
+
+    // applyStackEnv passes the stack settings to ic10c through the environment,
+    // so the LSP and every CLI invocation use the same user-stack boundary.
+    applyStackEnv(env) {
+        const cfg = this.config();
+        if (cfg.dynamicStack === true) env.IC10C_DYNAMIC_STACK = '1';
+        if (cfg.userStack && cfg.userStack > 0) env.IC10C_USER_STACK = String(cfg.userStack);
     }
 
     // buildFlags returns the shared ic10c build/run options from the settings.
@@ -358,6 +374,7 @@ class LspClient {
         const serverPath = this.resolveServer();
         const env = Object.assign({}, process.env);
         if (this.config().noCheck) env.IC10C_NO_CHECK = '1';
+        this.applyStackEnv(env);
         return new Promise((resolve) => {
             cp.execFile(serverPath, args, { env, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
                 resolve({ code: err ? err.code || 1 : 0, stdout: stdout || '', stderr: stderr || '' });
@@ -1293,6 +1310,12 @@ class LspClient {
         if (p.dataBase !== undefined) {
             text += ` · data ${p.dataBase}..${p.dataEnd}`;
         }
+        if (p.stackUser !== undefined) {
+            const stack = p.stackUnbounded
+                ? t('unbounded', '无界')
+                : `${p.stackUser}/${p.stackUserLimit}`;
+            text += t(` · stack ${stack}`, ` · 栈 ${stack}`);
+        }
         if (p.chips) {
             text += t(` · ${p.chips} chips`, ` · ${p.chips} 块芯片`);
         }
@@ -1304,6 +1327,14 @@ class LspClient {
         }
         if (p.dataWarn) tips.push(p.dataWarn);
         if (p.stackUnbounded) tips.push(t('push depth is unbounded', 'push 深度无界'));
+        if (p.stackUser !== undefined) {
+            const mode = p.stackDynamic ? t('dynamic', '动态') : t('fixed', '固定');
+            const max = p.stackUserMax ? t(` · highest slot ${p.stackUserMax - 1}`, ` · 最高槽位 ${p.stackUserMax - 1}`) : '';
+            tips.push(t(
+                `stack user ${p.stackUser}/${p.stackUserLimit} (${mode}${max}; push ${p.stackPush}, manual ${p.stackManual}) · compiler ${p.stackCompiler} at [${p.stackCompilerBase}..511] (data ${p.stackData}, spills ${p.stackSpills})`,
+                `栈 用户 ${p.stackUser}/${p.stackUserLimit}（${mode}${max}；push ${p.stackPush}，手动 ${p.stackManual}）· 编译器 ${p.stackCompiler} @ [${p.stackCompilerBase}..511]（data ${p.stackData}，溢出 ${p.stackSpills}）`
+            ));
+        }
         this.status.tooltip = tips.join('\n');
         this.status.show();
     }
