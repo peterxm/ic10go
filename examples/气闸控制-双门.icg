@@ -1,0 +1,126 @@
+// 气闸控制（单腔室双门，改进版；端口接线与原版 examples/气闸控制.icg 相同）
+//
+// d0 出口门 / d1 入口门 / d2 出口通风口 / d3 入口通风口 / d4 气压传感器
+//
+// 行为与原版一致：首次运行（db.stack[0] == 0）才初始化并抽真空；之后按任意门
+// 的开关，关当前门 → 抽真空 → 开另一扇门。状态存 db.stack[0]，跨 tick、跨换代码
+// 保留，所以拔插/重刷芯片不会重新初始化（不会白抽一对气体）。
+//
+// 换门流程（两个方向）直接写在 main 里，共用末尾的 idleAll()/syncButtons()，
+// 这样编译器能合并相同的尾块，产物更短；重复的设备操作收进下面几个小函数。
+// 四门版（同一腔室、门数可扩展）见 examples/气闸控制-四门.icg。
+
+const (
+    dExitDoor     = d0
+    dEntranceDoor = d1
+    dExitVent     = d2
+    dEntranceVent = d3
+    dAirSensor    = d4
+
+    STATE = 0 // 0 = 未初始化；非 0 = 已初始化
+
+    VACUUM = 0.1Pa // 抽真空目标（Pa）
+)
+
+func main() {
+    dExitDoor.Mode = 1
+    dEntranceDoor.Mode = 1
+
+    // 首次运行：关两门、用出口通风口抽真空，再开入口门。
+    if db.stack[STATE] == 0 {
+        lockAll()
+        dExitDoor.Open = 0
+        dEntranceDoor.Open = 0
+        for {
+            yield()
+            if !(dExitDoor.Idle && dEntranceDoor.Idle) {
+                continue
+            }
+            dExitVent.Mode = 1
+            dExitVent.On = 1
+            if dAirSensor.Pressure >= VACUUM {
+                continue
+            }
+            break
+        }
+        dExitVent.On = 0
+        dEntranceDoor.Open = 1
+        idleAll()
+        syncButtons()
+        db.stack[STATE] = 1
+    }
+
+    for {
+        yield()
+        if !buttonPressed() {
+            continue
+        }
+        if dEntranceDoor.Open != 0 {
+            // 入口开着 → 关入口、抽真空、开出口
+            lockAll()
+            dEntranceDoor.Open = 0
+            for {
+                yield()
+                if !dEntranceDoor.Idle {
+                    continue
+                }
+                dEntranceVent.Mode = 1
+                dEntranceVent.On = 1
+                if dAirSensor.Pressure >= VACUUM {
+                    continue
+                }
+                break
+            }
+            dEntranceVent.On = 0
+            dExitDoor.Open = 1
+        } else {
+            // 出口开着 → 关出口、抽真空、开入口
+            lockAll()
+            dExitDoor.Open = 0
+            for {
+                yield()
+                if !dExitDoor.Idle {
+                    continue
+                }
+                dExitVent.Mode = 1
+                dExitVent.On = 1
+                if dAirSensor.Pressure >= VACUUM {
+                    continue
+                }
+                break
+            }
+            dExitVent.On = 0
+            dEntranceDoor.Open = 1
+        }
+        idleAll()
+        syncButtons()
+    }
+}
+
+// buttonPressed 任一门的开关被按下：实际 Open 与 Setting 不一致。
+func buttonPressed() bool {
+    return dEntranceDoor.Open != dEntranceDoor.Setting ||
+        dExitDoor.Open != dExitDoor.Setting
+}
+
+// syncButtons 把 Setting 同步为 Open，表示按钮请求已处理。
+func syncButtons() {
+    dEntranceDoor.Setting = dEntranceDoor.Open
+    dExitDoor.Setting = dExitDoor.Open
+}
+
+func lockAll() {
+    dExitDoor.Lock = 1
+    dEntranceDoor.Lock = 1
+    dExitVent.Lock = 1
+    dEntranceVent.Lock = 1
+}
+
+func idleAll() {
+    dExitVent.On = 0
+    dEntranceVent.On = 0
+    dExitDoor.Lock = 0
+    dEntranceDoor.Lock = 0
+    dExitVent.Lock = 0
+    dEntranceVent.Lock = 0
+}

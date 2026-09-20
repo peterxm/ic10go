@@ -75,7 +75,7 @@ ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
             [--redundant-device-writes] <file.icg>
                               # 兼容保留；loader 现在会自动输出（默认 <file>.data.ic）
 ic10c build --data-only [--chip NAME] <file.icg>  # 只输出一次性 loader（数据段 + 外提设置）
-ic10c run    <file.icg>       # 编译并在内置 VM 中运行（多芯片锁步；--steps/--set/--trace）
+ic10c run    <file.icg>       # 编译并在内置 VM 中运行（自动先跑一次性 loader；多芯片锁步；--steps/--set/--trace）
 ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] [--spill db|stack] [--dynamic-stack] [--user-stack N] [--redundant-device-writes] <file.icg>
                               # 行 / 字节 / 寄存器预算 + 峰值活跃 / 溢出槽（多芯片按芯片分组；含 loader 预算）+ 栈预算（stack user 个数/上限，默认固定 128；--dynamic-stack 动态边界，越界报错；--redundant-device-writes 删除重复设备写）
 ic10c size   <file.icg>       # 按函数拆分行预算（找最占行数的函数）
@@ -136,6 +136,7 @@ go test ./...
 | [`docs/plugin-api.md`](docs/plugin-api.md) | `build --json` 机器接口：字段、诊断 code、桥接流程 |
 | [`docs/ingame-test-plan.md`](docs/ingame-test-plan.md) | 真机测试方案（新内建 / 优化 / `--rel-jump` 验证） |
 | [`docs/vm-improvements.md`](docs/vm-improvements.md) | 测试用 IC10 虚拟机（`internal/vm`）改进计划（P1–P5） |
+| [`docs/tail-merge.md`](docs/tail-merge.md) | 尾块合并与寄存器颜色：气闸控制案例（待决） |
 
 > IC10 指令完整参考（`Stationeers_IC10_参考文档.md`）为第三方资料，仅本地保留、未随仓库分发。
 

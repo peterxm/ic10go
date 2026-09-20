@@ -488,6 +488,18 @@ func cmdRun(args []string) int {
 
 	if !multi {
 		m := vm.New()
+		// Run the one-time loader first (data segment and/or hoisted setup), so
+		// a program that needs it runs like it would on the chip.
+		for _, chunk := range compiled.Loaders {
+			if err := m.Load(chunk); err != nil {
+				fmt.Fprintln(os.Stderr, "ic10c:", err)
+				return 1
+			}
+			if err := m.Run(strings.Count(chunk, "\n") + 1); err != nil && err != vm.ErrStepLimit {
+				fmt.Fprintln(os.Stderr, "ic10c: loader:", err)
+				return 1
+			}
+		}
 		for _, s := range sets {
 			name, logic, value, ok := parseSet(s)
 			if !ok {

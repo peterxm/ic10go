@@ -1,0 +1,183 @@
+// 气闸控制（单腔室四门，四门版）
+//
+// 与 examples/气闸控制-双门.icg 逻辑相同：同一腔室同时只开一扇门；换门流程：
+// 关当前门 → 抽真空 → 开目标门。四门版只改了 DOORS 与三张名字表。
+//
+// 注意：四门共 4 门 + 4 通风口 + 4 灯 = 12 个设备，超过 IC 的 6 个端口，
+// 所以这里用 batch 按名字寻址——所有设备必须接在 IC 的**数据网络**上，且
+// 名字要与下面的 hash("...") 一致（DoorNorth… / VentNorth… / LightNorth…、
+// 传感器 AirSensor）。名字不匹配就完全没反应。
+// 双门版用端口 d0..d5，不需要网络，见 examples/气闸控制-双门.icg。
+//
+// 状态存在持久栈 db.stack[0..2]（跨 tick、跨换代码保留）：
+//   STATE        当前状态：INIT / IDLE / EVACUATE
+//   OPEN_DOOR    当前打开的门号（NONE = 没有门打开）
+//   TARGET_DOOR  换门目标门号
+
+const (
+    DOORS = 4
+    NONE  = DOORS // 没有门打开
+
+    INIT     = 0
+    IDLE     = 1
+    EVACUATE = 2
+
+    // 状态槽位
+    STATE       = 0
+    OPEN_DOOR   = 1
+    TARGET_DOOR = 2
+
+    VACUUM = 0.1Pa // 抽真空目标（Pa）
+
+    // 预制体 hash（按名字寻址）
+    Door   = hash("StructureCompositeDoor")
+    Vent   = hash("StructureActiveVent")
+    Light  = hash("StructureLightLong")
+    Sensor = hash("StructureGasSensor")
+
+    SensorName = hash("AirSensor")
+)
+
+// 每扇门的名字哈希：加门只需在这里加一行，并把 DOORS 改大。
+data DoorName = [
+    hash("DoorNorth"),
+    hash("DoorEast"),
+    hash("DoorSouth"),
+    hash("DoorWest"),
+]
+data VentName = [
+    hash("VentNorth"),
+    hash("VentEast"),
+    hash("VentSouth"),
+    hash("VentWest"),
+]
+data LightName = [
+    hash("LightNorth"),
+    hash("LightEast"),
+    hash("LightSouth"),
+    hash("LightWest"),
+]
+
+func main() {
+    for {
+        yield()
+        step()
+    }
+}
+
+// step 每 tick 推进一步状态机。
+func step() {
+    switch db.stack[STATE] {
+    case INIT:
+        initAirlock()
+    case IDLE:
+        idleStep()
+    default:
+        evacuateStep()
+    }
+}
+
+// initAirlock 首次运行：关所有门、同步按钮，然后抽真空以打开 0 号门。
+func initAirlock() {
+    for i := 0; i < DOORS; i++ {
+        batch.writeName(Door, DoorName[i], "Mode", 1)
+        setDoor(i, 0)
+        syncButton(i)
+    }
+    db.stack[OPEN_DOOR] = NONE
+    db.stack[TARGET_DOOR] = 0
+    db.stack[STATE] = EVACUATE
+}
+
+// idleStep 等待某扇（非当前打开的）门被按下，然后开始换门。
+func idleStep() {
+    cur := db.stack[OPEN_DOOR]
+    for i := 0; i < DOORS; i++ {
+        if i != cur && buttonPressed(i) {
+            db.stack[TARGET_DOOR] = i
+            db.stack[STATE] = EVACUATE
+            lockAll()
+            return
+        }
+    }
+}
+
+// evacuateStep 关当前门、抽真空，再开目标门。
+func evacuateStep() {
+    cur := db.stack[OPEN_DOOR]
+    target := db.stack[TARGET_DOOR]
+    // 用正在关闭的那扇门的通风口抽真空；初始没有门打开时用目标门的。
+    evac := cur != NONE ? cur : target
+
+    if cur != NONE {
+        setDoor(cur, 0)
+        if !isIdle(cur) {
+            return
+        }
+    }
+    setVent(evac, 1)
+    setLight(evac, 1)
+    if pressure() >= VACUUM {
+        return
+    }
+    setVent(evac, 0)
+    setLight(evac, 0)
+    if target != NONE {
+        setDoor(target, 1)
+    }
+    db.stack[OPEN_DOOR] = target
+    db.stack[STATE] = IDLE
+    unlockAll()
+    for i := 0; i < DOORS; i++ {
+        syncButton(i)
+    }
+}
+
+// ---- 设备访问助手（集中在这里，便于换寻址方式） ----
+
+// buttonPressed 门按钮被按下：实际 Open 与 Setting 不一致。
+func buttonPressed(i num) bool {
+    return batch.readName(Door, DoorName[i], "Open", "Maximum") !=
+        batch.readName(Door, DoorName[i], "Setting", "Maximum")
+}
+
+// syncButton 把 Setting 同步为 Open，表示这次按钮请求已处理。
+func syncButton(i num) {
+    batch.writeName(Door, DoorName[i], "Setting",
+        batch.readName(Door, DoorName[i], "Open", "Maximum"))
+}
+
+func isIdle(i num) bool {
+    return batch.readName(Door, DoorName[i], "Idle", "Maximum") != 0
+}
+
+func setDoor(i num, open num) {
+    batch.writeName(Door, DoorName[i], "Open", open)
+}
+
+func setVent(i num, on num) {
+    batch.writeName(Vent, VentName[i], "Mode", 1)
+    batch.writeName(Vent, VentName[i], "On", on)
+}
+
+func setLight(i num, on num) {
+    batch.writeName(Light, LightName[i], "On", on)
+}
+
+func pressure() num {
+    return batch.readName(Sensor, SensorName, "Pressure", "Maximum")
+}
+
+func lockAll() {
+    for i := 0; i < DOORS; i++ {
+        batch.writeName(Door, DoorName[i], "Lock", 1)
+        batch.writeName(Vent, VentName[i], "Lock", 1)
+    }
+}
+
+func unlockAll() {
+    for i := 0; i < DOORS; i++ {
+        batch.writeName(Door, DoorName[i], "Lock", 0)
+        batch.writeName(Vent, VentName[i], "Lock", 0)
+    }
+}

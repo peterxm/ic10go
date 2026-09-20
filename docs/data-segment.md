@@ -206,6 +206,8 @@ VS Code `icg.dynamicStack`，默认关）改为动态：`userLimit = 512 - size 
 
 - `ic10c build --split-data`（兼容保留；现在需要 loader 时会自动输出）
 - `ic10c build --data-only`（只生成 / 更新 loader）
+- `ic10c run`：在 VM 里**自动先跑一次性 loader**（数据段 + 外提设置）再跑
+  runtime，所以数据段程序也能直接 `run`（真机仍需先手动装一次 loader）。
 - **Loader 拆分**：loader 超过 128 行时自动切成多块（每块 ≤128 行），
   必须按顺序运行。单块写 `<file>.data.ic`；多块写 `<file>.data.1.ic`、
   `<file>.data.2.ic`…；JSON 里是 `data.loaders[]`。这样数据段可以超过
