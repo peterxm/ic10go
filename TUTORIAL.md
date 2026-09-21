@@ -569,6 +569,17 @@ func main() {
   编译器区用量）；用户绝对地址越界或 `push` 超深会编译报错。
 - 序言里的一次性常量设备写（`Mode`/`On`/常量 `Setting`）会自动外提到 loader
   （无开关），让 runtime 更短。
+- **栈私有 / 共享标记**：用户区的“删/并写入”类优化（常量用户槽提升为寄存器、
+  消除成对 `push/pop`、放宽死存储消除）默认只在**单芯片**启用（用户栈私有）；
+  多芯片默认保守（用户栈可能与其它程序共享）。可在文件里写 pragma 覆盖：
+
+  ```go
+  // icg: private-stack   // 用户栈只属于本程序：允许寄存器提升、push/pop 消除
+  // icg: shared-stack    // 用户栈可能与后继程序共享：保持保守
+  ```
+
+  只影响芯片自己的持久栈；设备栈 `d0.stack[...]` 始终按共享设备处理，不受影响。
+  详见 [`docs/spec.md` §4.6](docs/spec.md#46-栈私有-pragma)。
 
 完整细节见 [`docs/data-segment.md`](docs/data-segment.md)；本地 `ic10code/` 语料里有一个用数据段存逻辑类型的 airlock 端口示例（第三方，未随仓库分发）。
 

@@ -82,6 +82,17 @@ ic10c build --json <file.icg>
 runtime 更短者，所以拆分只会减小 runtime。语义前提：这些常量写被视为一次性
 初始化；若循环会改该设备、序言想每 tick 复位，则外提会改变行为。
 
+### 栈私有 / 共享 pragma
+
+`// icg: private-stack` / `// icg: shared-stack`（文件 pragma，见
+[`spec.md` §4.6](spec.md#46-栈私有-pragma)）决定用户栈能否做“删/并写入”类优化
+（常量用户槽提升为寄存器、消除成对 `push/pop`、放宽死存储消除）。**单芯片默认
+`private-stack`**，含 `chip` 块的多芯片默认 `shared-stack`；pragma 优先于默认。
+
+对桥接程序是透明的：它只改变优化强度与 `stats` 的栈用量，不新增诊断 `code`，
+也不改变 `data.*` 字段的语义。用户栈地址落在编译器区的 `stack-overlap` 判定与它
+无关（始终按分区检查）。
+
 ### 诊断
 
 | 字段 | 说明 |

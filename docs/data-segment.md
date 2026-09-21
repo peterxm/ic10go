@@ -202,6 +202,24 @@ VS Code `icg.dynamicStack`，默认关）改为动态：`userLimit = 512 - size 
   ```
 - 布局细节见 `docs/target-ic10.md` §5.7。
 
+**栈私有 pragma**：用户区的“删/并写入”类优化（常量用户槽提升为寄存器、
+成对 `push/pop` 消除、放宽死存储消除）默认在**用户栈可能被后继程序读取**时
+关闭。用文件 pragma 声明用户栈只属于本程序：
+
+```go
+// icg: private-stack   // 用户栈私有：允许常量用户槽提升为寄存器、消除成对 push/pop
+// icg: shared-stack    // 用户栈可能与后继程序共享，保持保守
+```
+
+- 默认：**单芯片 → `private-stack`**，含 `chip` 块的多芯片 → `shared-stack`；
+  pragma 优先于默认。
+- 是**文件级**声明（编译器扫描整份源码取第一个匹配），多芯片时对所有 chip 生效。
+- 只影响**芯片自己的持久栈**（`db` / 本地栈）上的“删/并写入”类优化；设备栈
+  `d0.stack[...]` 属于共享设备，始终按可观测处理，不受本 pragma 影响。
+- 这些优化只在 runtime 行数不增时才采用（编译器比较两种产物）。
+- 详见 [`spec.md` §4.6](spec.md#46-栈私有-pragma) 与
+  [`architecture.md` §6.8](architecture.md#68-栈私有标记)。
+
 ### 5.6 工具链
 
 - `ic10c build --split-data`（兼容保留；现在需要 loader 时会自动输出）

@@ -287,8 +287,13 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
   改为动态 `512 - size - spills`（`middle` 为 `256`）。
 - 用户 `push` 增长区与 `poke`/`db.stack[N]` 地址必须留在用户区，否则编译报错；
   动态地址只在 `ic10c stats` 中标记。
+- 用户区能否做“删/并写入”类优化由**栈私有 pragma** 决定：
+  `// icg: private-stack`（单芯片默认）允许把常量用户槽提升为寄存器、消除成对
+  `push/pop`、放宽死存储消除；`// icg: shared-stack`（多芯片默认）保持保守。
+  只影响芯片自己的持久栈，设备栈 `d0.stack[...]` 不受影响。
 
-详见 [`data-segment.md`](data-segment.md)。
+详见 [`data-segment.md`](data-segment.md)、
+[`spec.md` §4.6](spec.md#46-栈私有-pragma)。
 
 ---
 

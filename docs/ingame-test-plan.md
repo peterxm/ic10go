@@ -237,6 +237,38 @@ func main() {
 | 1 ~ 10 | 1 |
 | > 10 | 2 |
 
+### 3.3 栈私有 / 共享标记（`// icg: private-stack` / `// icg: shared-stack`）
+
+单芯片默认 `private-stack`：常量用户槽会被提升为寄存器（mem2reg）、成对
+`push/pop` 被消除。寄存器与栈一样跨 tick 保留，所以跨 tick 状态必须一致。
+下面这个程序用 `db.stack[0]` 做计数器，分别按 private / shared 编译，逐 tick
+行为应完全相同：
+
+```go
+// 单芯片默认 private-stack；复制一份在开头加 // icg: shared-stack 对比
+func main() {
+    for {
+        yield()
+        db.stack[0] = db.stack[0] + 1
+        d0.Setting = db.stack[0]
+    }
+}
+```
+
+| tick | 期望 LED |
+|---|---|
+| 1 | 1 |
+| 2 | 2 |
+| 3 | 3 |
+
+- private 版会把槽位放进寄存器（本例 4 行 vs shared 6 行）；两版逐 tick 读数
+  一致即通过。
+- 注意：`ic10c run --steps N` 按**指令数**而非 tick 计，两版每 tick 的指令数
+  不同，固定步数下读数会不同；真机按 tick 观察，或只在同一步数下比较“是否在
+  递增”。
+- 设备栈 `d2.stack[...]` 不受 pragma 影响（属于共享设备），可另接 Logic Sorter
+  复核。详见 [`spec.md` §4.6](spec.md#46-栈私有-pragma)。
+
 ---
 
 ## 4. 相对跳转 `--rel-jump`（重点验证）
