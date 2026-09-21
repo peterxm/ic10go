@@ -2579,7 +2579,7 @@ func mergeOneTail(fn *ir.Function, reg func(*ir.Reg) string) bool {
 		}
 		saving := g.n*(len(g.blocks)-1) - len(g.blocks)
 		weight := g.n * (len(g.blocks) - 1)
-		if best == nil || saving > bestSaving || (saving == bestSaving && weight > bestWeight) {
+		if best == nil || tailBetter(saving, weight, g.blocks[0].ID, bestSaving, bestWeight, best.blocks[0].ID) {
 			best, bestSaving, bestWeight = g, saving, weight
 		}
 	}
@@ -2589,6 +2589,19 @@ func mergeOneTail(fn *ir.Function, reg func(*ir.Reg) string) bool {
 
 	factorTail(fn, best.blocks[0], best.blocks, best.n, best.term, best.funcName)
 	return true
+}
+
+// tailBetter reports whether a candidate merge (saving, weight) is preferable
+// to the current best. The first-block ID breaks ties so the choice does not
+// depend on Go's map iteration order, keeping the output reproducible.
+func tailBetter(saving, weight, firstID, bestSaving, bestWeight, bestID int) bool {
+	if saving != bestSaving {
+		return saving > bestSaving
+	}
+	if weight != bestWeight {
+		return weight > bestWeight
+	}
+	return firstID < bestID
 }
 
 // factorTail moves the last n instructions of first into a new shared block and
@@ -2660,7 +2673,7 @@ func mergeOneTailRenamed(fn *ir.Function, colors map[*ir.Reg]int) bool {
 			}
 			saving := g.n*(len(subset)-1) - len(subset)
 			weight := g.n * (len(subset) - 1)
-			if bestFirst == nil || saving > bestSaving || (saving == bestSaving && weight > bestWeight) {
+			if bestFirst == nil || tailBetter(saving, weight, first.ID, bestSaving, bestWeight, bestFirst.ID) {
 				bestFirst, bestBlocks, bestN = first, subset, g.n
 				bestSaving, bestWeight = saving, weight
 			}

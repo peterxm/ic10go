@@ -37,6 +37,38 @@ func TestDifferentialRandom(t *testing.T) {
 	}
 }
 
+// TestDifferentialRenamedTails compiles each random program with and without
+// the opt-in structural tail merge and checks that the device write sequences
+// are identical, so the register-renaming rewrite cannot change behaviour.
+func TestDifferentialRenamedTails(t *testing.T) {
+	for seed := int64(0); seed < 800; seed++ {
+		src := genProgram(seed)
+		plain, diags, err := ic10.CompileResult("t.icg", []byte(src), ic10.Options{})
+		if err != nil && (strings.Contains(err.Error(), "exceeding") ||
+			strings.Contains(err.Error(), "did not converge")) {
+			continue
+		}
+		if diags.HasErrors() || err != nil {
+			t.Fatalf("seed %d: plain compile failed: %v %v\n%s", seed, diags.Diags, err, src)
+		}
+		renamed, diags, err := ic10.CompileResult("t.icg", []byte(src), ic10.Options{MergeRenamedTails: true})
+		if err != nil && (strings.Contains(err.Error(), "exceeding") ||
+			strings.Contains(err.Error(), "did not converge")) {
+			continue
+		}
+		if diags.HasErrors() || err != nil {
+			t.Fatalf("seed %d: renamed compile failed: %v %v\n%s", seed, diags.Diags, err, src)
+		}
+		init := deviceInit(seed)
+		want, wantErr := runWrites(plain.Code, init)
+		got, gotErr := runWrites(renamed.Code, init)
+		if strings.Join(got, "|") != strings.Join(want, "|") || gotErr != wantErr {
+			t.Fatalf("seed %d: renamed tail merge changed behaviour (err %v vs %v)\n%s\n--- renamed ---\n%v\n--- plain ---\n%v\n--- renamed code ---\n%s",
+				seed, gotErr, wantErr, src, got, want, renamed.Code)
+		}
+	}
+}
+
 // TestDifferentialData runs the same comparison on programs that use a `data`
 // table: the loader is installed once, then each runtime reads the table.
 func TestDifferentialData(t *testing.T) {

@@ -137,7 +137,7 @@ go test ./...
 | [`docs/plugin-api.md`](docs/plugin-api.md) | `build --json` 机器接口：字段、诊断 code、桥接流程 |
 | [`docs/ingame-test-plan.md`](docs/ingame-test-plan.md) | 真机测试方案（新内建 / 优化 / `--rel-jump` 验证） |
 | [`docs/vm-improvements.md`](docs/vm-improvements.md) | 测试用 IC10 虚拟机（`internal/vm`）改进计划（P1–P5） |
-| [`docs/tail-merge.md`](docs/tail-merge.md) | 尾块合并与寄存器颜色：气闸控制案例（待决） |
+| [`docs/tail-merge.md`](docs/tail-merge.md) | 尾块合并与寄存器颜色：气闸控制案例（`--merge-renamed-tails`，默认关闭） |
 
 > IC10 指令完整参考（`Stationeers_IC10_参考文档.md`）为第三方资料，仅本地保留、未随仓库分发。
 

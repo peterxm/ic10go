@@ -8,6 +8,11 @@
 *.out
 coverage.txt
 
+# Generated one-time loaders: `ic10c build` writes <file>.data.ic next to the
+# source (split into <file>.data.1.ic, .2.ic, ... when >128 lines).
+*.data.ic
+*.data.[0-9]*.ic
+
 # Editor / OS
 .DS_Store
 .idea/
