@@ -1,6 +1,10 @@
 package sema
 
-import "testing"
+import (
+	"testing"
+
+	"ic10go/internal/builtin"
+)
 
 func TestConstCallsPureFunction(t *testing.T) {
 	info, diags := check(t, `
@@ -145,4 +149,23 @@ func checkValues(t *testing.T, info *Info, name string, want []string) {
 			t.Errorf("%s[%d] = %q, want %q", name, i, tbl.Values[i], w)
 		}
 	}
+}
+
+func TestCompileTimeStrings(t *testing.T) {
+	info, diags := check(t, `
+const H = hash("Structure" + "GasSensor")
+const M = str("Re" + "ady!")
+data T = [hash("Prefab" + "One")]
+`)
+	if diags.HasErrors() {
+		t.Fatalf("unexpected errors: %+v", diags.Diags)
+	}
+	want := float64(int32(builtin.Hash("StructureGasSensor")))
+	if got := info.Consts["H"]; got != want {
+		t.Errorf("H = %v, want %v", got, want)
+	}
+	if got := info.RawConsts["M"]; got != `STR("Ready!")` {
+		t.Errorf(`M = %q, want STR("Ready!")`, got)
+	}
+	checkValues(t, info, "T", []string{formatDataValue(float64(int32(builtin.Hash("PrefabOne"))))})
 }

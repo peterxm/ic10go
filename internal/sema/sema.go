@@ -737,8 +737,8 @@ func (ev *evalState) call(e *ast.CallExpr) (float64, bool) {
 	// hash("...") is a compile-time CRC-32; handle before evaluating args.
 	if id.Name == "hash" {
 		if len(e.Args) == 1 {
-			if s, ok := e.Args[0].(*ast.StringLit); ok {
-				return float64(int32(builtin.Hash(s.Value))), true
+			if s, ok := evalString(e.Args[0]); ok {
+				return float64(int32(builtin.Hash(s))), true
 			}
 		}
 		return 0, false
@@ -1495,15 +1495,41 @@ func EvalRaw(e ast.Expr) (string, bool) {
 	if !ok || len(call.Args) != 1 {
 		return "", false
 	}
-	s, ok := call.Args[0].(*ast.StringLit)
+	s, ok := evalString(call.Args[0])
 	if !ok {
 		return "", false
 	}
 	switch id.Name {
 	case "str":
-		return "STR(" + strconv.Quote(s.Value) + ")", true
+		return "STR(" + strconv.Quote(s) + ")", true
 	case "raw":
-		return s.Value, true
+		return s, true
+	}
+	return "", false
+}
+
+// evalString folds a compile-time string expression: a literal, or a `+`
+// concatenation of them. It is what lets `hash("a" + "b")` and `str("a" + "b")`
+// fold without a runtime string type.
+func evalString(e ast.Expr) (string, bool) {
+	switch x := e.(type) {
+	case *ast.StringLit:
+		return x.Value, true
+	case *ast.ParenExpr:
+		return evalString(x.X)
+	case *ast.BinaryExpr:
+		if x.Op != token.Plus {
+			return "", false
+		}
+		a, ok := evalString(x.X)
+		if !ok {
+			return "", false
+		}
+		b, ok := evalString(x.Y)
+		if !ok {
+			return "", false
+		}
+		return a + b, true
 	}
 	return "", false
 }
