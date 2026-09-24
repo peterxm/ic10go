@@ -36,8 +36,10 @@
 | 多芯片 | 一个 `.icg` 用 `chip 名字 { ... }` 声明多块芯片（各自 128 行预算 / loader），用 `bus 名字 { 槽位 }` + `use 名字 on dev:conn`（默认访问点）或 `Bus.槽位[dev][conn]`（内联覆盖）声明通道；`chip`/`bus`/`use` 有语法高亮、语义高亮与片段；`Bus.` 补全槽位、悬停显示通道号。「编译为 IC10」多芯片时弹出芯片选择，再预览/复制该芯片的运行代码与安装代码；状态栏显示芯片数与各芯片预算的较大值 |
 | 片段 | `main`、`hyst`、`pid`（软件 PID）、`piddev`（硬件 PID 控制器配置）、`batchread`、`batchwrite`、`readlt`、`writelt`、`readdev`、`writedev`、`readbyid`、`writebyid`、`readdevslot`、`stackread`、`stackwrite`、`sorterfilter`、`printerexec`、`data`、`datagen`（编译期表推导）、`import`、`func2`（多返回值）、`multi`（多重赋值）、`constfn`（编译期常量函数）、`switchtable`、`chip`（多芯片）、`bus`（命名通道）、`func`、`const`、`slotread` 等 |
 | 新语法 | `import "路径"` **跟随导入**：被导入文件的函数/常量在诊断、补全、跳转里解析；多返回值 `func f() (num, num)` + `x, y := f()`；`data T = [expr for i in lo..hi]` 编译期表推导；`const K = helper(3)` 纯函数折叠、`hash("a" + "b")` 编译期字符串——均有高亮、语义高亮、诊断与片段 |
+| 导入补全 | 在 `import "` 后补全当前目录与子目录的 `.icg` 文件；改动磁盘上任意 `.icg` 会重新分析打开的文档，因此编辑被导入文件会刷新导入它的文件 |
 
 **上下文感知补全**：
+- `import "` → 当前目录与子目录里的 `.icg` 文件
 - `d0.` → 该端口的 logic type；`d0.slot[0].` → 槽位属性
 - `batch.` → `read` / `readName` / `readSlot` / `write` …
 - `sorter.` / `printer.` → 设备栈指令构建器（`filterSortingClass`、`executeRecipe` …）

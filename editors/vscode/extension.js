@@ -41,6 +41,16 @@ function activate(context) {
     context.subscriptions.push(
         vscode.commands.registerCommand('icg.graph', () => client.showCfg())
     );
+    // Re-analyse open .icg files when any .icg file changes on disk, so editing
+    // an imported file refreshes the documents that import it.
+    const watcher = vscode.workspace.createFileSystemWatcher('**/*.icg');
+    const refresh = () => client.refreshDependents();
+    context.subscriptions.push(
+        watcher,
+        watcher.onDidChange(refresh),
+        watcher.onDidCreate(refresh),
+        watcher.onDidDelete(refresh)
+    );
     client.start();
 }
 
@@ -749,6 +759,17 @@ class LspClient {
             });
         }
         this.pendingChanges.clear();
+    }
+
+    // Re-analyse every open .icg file when an .icg file changes on disk, so an
+    // edit to an imported file refreshes the documents that import it.
+    refreshDependents() {
+        if (!this.initialized) return;
+        for (const doc of vscode.workspace.textDocuments) {
+            if (doc.languageId !== 'icg') continue;
+            this.pendingChanges.set(doc.uri.toString(), doc.getText());
+        }
+        this.flushChanges();
     }
 
     onClose(doc) {

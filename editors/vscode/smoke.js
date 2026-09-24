@@ -50,6 +50,12 @@ const mock = {
         onDidCloseTextDocument: disposable,
         onDidChangeConfiguration: disposable,
         getConfiguration: () => ({ get: () => undefined }),
+        createFileSystemWatcher: () => ({
+            onDidChange: disposable,
+            onDidCreate: disposable,
+            onDidDelete: disposable,
+            dispose: noop,
+        }),
         workspaceFolders: [],
         textDocuments: [],
         openTextDocument: () => Promise.resolve({}),
