@@ -271,5 +271,34 @@
       "}"
     ],
     "description": "multi-chip: a named network bus (channel contract)"
+  },
+  "Import": {
+    "prefix": "import",
+    "body": ["import \"${1:lib.icg}\""],
+    "description": "import another file's const/data/func"
+  },
+  "Function (multiple return)": {
+    "prefix": "func2",
+    "body": [
+      "func ${1:name}(${2:a num}, ${3:b num}) (num, num) {",
+      "    return ${2:a}, ${3:b}",
+      "}"
+    ],
+    "description": "function returning several values (always inlined)"
+  },
+  "Multiple assignment": {
+    "prefix": "multi",
+    "body": ["${1:x}, ${2:y} := ${3:pair}()"],
+    "description": "destructure a multiple-return call"
+  },
+  "Data comprehension": {
+    "prefix": "datagen",
+    "body": ["data ${1:Table} = [ ${2:i * i} for ${3:i} in ${4:0}..${5:255} ]"],
+    "description": "generate a data table at compile time"
+  },
+  "Const from function": {
+    "prefix": "constfn",
+    "body": ["const ${1:K} = ${2:helper}(${3:3})"],
+    "description": "compile-time constant from a pure function"
   }
 }

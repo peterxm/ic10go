@@ -23,7 +23,7 @@
 | 智能扩选 | `Shift+Alt+→` 从标识符扩到行、代码块、整个文件 |
 | 跨文件符号 | `Ctrl+T` 搜索**工作区内所有 `.icg`**（含未打开）的函数 / 常量 / 变量 |
 | 参数提示 | 函数调用时显示签名，高亮当前参数 |
-| 快速修复 | 未知 logic/slot type 的"你是不是想写…"（标为 preferred）；缺 `main` 一键补上 |
+| 快速修复 | 未知 logic/slot type 与枚举成员的"你是不是想写…"（标为 preferred）；缺 `main` 一键补上 |
 | 类型提示 | 变量声明后显示 inlay hint 类型（`: num` / `: bool` / `: device` / `: data`） |
 | 颜色 | `Color.Red` 等枚举成员显示颜色色块，点选可换色 |
 | 代码透镜 | 每个函数上方显示 **Compile to IC10** |
@@ -34,7 +34,8 @@
 | 格式化 | `Shift+Alt+F`；`[icg]` 默认**保存时格式化**（可在设置中关闭）；`.ic`/`.ic10` 重排空白并对齐指令列 |
 | 数据段 | 命令 **“IC10 Go: 编译为 IC10”** 会自动识别 `data` 表：把一次性「安装代码」复制到剪贴板、并在旁边打开运行代码；`data` 表 / `switch ... table` 有语法高亮与补全。编译器还会把序言里的一次性设置写入（`Mode`/`On`/常量 `Setting`）自动外提到同一份安装代码：**超 128 行时**用来塞进预算，**本来就有 `data` 表时**顺带复用、让 runtime 更小。安装代码超过 128 行时自动拆成多块，扩展会逐块复制并提示继续 |
 | 多芯片 | 一个 `.icg` 用 `chip 名字 { ... }` 声明多块芯片（各自 128 行预算 / loader），用 `bus 名字 { 槽位 }` + `use 名字 on dev:conn`（默认访问点）或 `Bus.槽位[dev][conn]`（内联覆盖）声明通道；`chip`/`bus`/`use` 有语法高亮、语义高亮与片段；`Bus.` 补全槽位、悬停显示通道号。「编译为 IC10」多芯片时弹出芯片选择，再预览/复制该芯片的运行代码与安装代码；状态栏显示芯片数与各芯片预算的较大值 |
-| 片段 | `main`、`hyst`、`pid`（软件 PID）、`piddev`（硬件 PID 控制器配置）、`batchread`、`batchwrite`、`readlt`、`writelt`、`readdev`、`writedev`、`readbyid`、`writebyid`、`readdevslot`、`stackread`、`stackwrite`、`sorterfilter`、`printerexec`、`data`、`switchtable`、`chip`（多芯片）、`bus`（命名通道）、`func`、`const`、`slotread` 等 |
+| 片段 | `main`、`hyst`、`pid`（软件 PID）、`piddev`（硬件 PID 控制器配置）、`batchread`、`batchwrite`、`readlt`、`writelt`、`readdev`、`writedev`、`readbyid`、`writebyid`、`readdevslot`、`stackread`、`stackwrite`、`sorterfilter`、`printerexec`、`data`、`datagen`（编译期表推导）、`import`、`func2`（多返回值）、`multi`（多重赋值）、`constfn`（编译期常量函数）、`switchtable`、`chip`（多芯片）、`bus`（命名通道）、`func`、`const`、`slotread` 等 |
+| 新语法 | `import "路径"` **跟随导入**：被导入文件的函数/常量在诊断、补全、跳转里解析；多返回值 `func f() (num, num)` + `x, y := f()`；`data T = [expr for i in lo..hi]` 编译期表推导；`const K = helper(3)` 纯函数折叠、`hash("a" + "b")` 编译期字符串——均有高亮、语义高亮、诊断与片段 |
 
 **上下文感知补全**：
 - `d0.` → 该端口的 logic type；`d0.slot[0].` → 槽位属性

@@ -115,11 +115,56 @@ func run() error {
 	if err := writeGo(out, byType); err != nil {
 		return err
 	}
+	if err := updateGrammar("editors/vscode/syntaxes/icg.tmLanguage.json", byType); err != nil {
+		return err
+	}
 	total := 0
 	for _, m := range byType {
 		total += len(m)
 	}
 	fmt.Printf("wrote %s: %d groups, %d values\n", out, len(byType), total)
+	return nil
+}
+
+// grammarExtras are the non-LogicType names the icg grammar highlights in the
+// same alternation: the batch modes, the slot/channel/stack qualifiers and the
+// numeric constants.
+const grammarExtras = "Average|Sum|Minimum|Maximum|Count|slot|channel|stack|Equals|Greater|Less|NotEquals|pi|deg2rad|rad2deg|epsilon"
+
+// updateGrammar rewrites the `logictypes` alternation of the VSCode TextMate
+// grammar from GameEnums, so the editor follows the game exactly like the
+// compiler's LogicTypes does. It edits the file in place, preserving the rest.
+func updateGrammar(path string, byType map[string]map[string]int64) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	const marker = `"constant.other.logictype.icg", "match": "\\b(`
+	s := string(data)
+	i := strings.Index(s, marker)
+	if i < 0 {
+		return fmt.Errorf("logictypes pattern not found in %s", path)
+	}
+	start := i + len(marker)
+	rest := s[start:]
+	j := strings.Index(rest, `)\\b"`)
+	if j < 0 {
+		return fmt.Errorf("logictypes pattern end not found in %s", path)
+	}
+
+	names := make([]string, 0, len(byType["LogicType"]))
+	for n := range byType["LogicType"] {
+		if n != "None" {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	alt := strings.Join(names, "|") + "|" + grammarExtras
+
+	if err := os.WriteFile(path, []byte(s[:start]+alt+rest[j:]), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("updated %s: %d logic types\n", path, len(names))
 	return nil
 }
 
