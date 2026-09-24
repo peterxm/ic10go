@@ -155,6 +155,11 @@ var userStackFlag = Flag{Long: "--user-stack", Arg: "N", Desc: text{
 	ZH: "固定的用户栈槽数（默认 128）；超过它的用户槽位会编译报错",
 }}
 
+var libDirsFlag = Flag{Long: "--lib", Arg: "DIR", Desc: text{
+	EN: "extra directory to search for imports, after the importing file's directory (repeatable)",
+	ZH: "在导入文件所在目录之后，额外搜索导入的目录（可重复）",
+}}
+
 // Commands is the ordered command table.
 var Commands = []Command{
 	{
@@ -219,6 +224,7 @@ var Commands = []Command{
 				ZH: "数据段读写方式：get（默认，IC host）或 stack（poke/peek，兼容设备 host）",
 			}},
 			dataLayoutFlag,
+			libDirsFlag,
 			commonHelp,
 		},
 		Examples: []string{
@@ -255,6 +261,7 @@ var Commands = []Command{
 				EN: "compile with the stable branch's ins argument order",
 				ZH: "用稳定版的 ins 参数顺序编译",
 			}},
+			libDirsFlag,
 			commonHelp,
 		},
 		Examples: []string{
@@ -311,7 +318,7 @@ var Commands = []Command{
 				"引用到的 CPU 寄存器数量，以及栈预算——分为用户区（push/pop 与\n" +
 				"db.stack[]）和编译器区（数据段与寄存器溢出）。",
 		},
-		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, dynamicStackFlag, userStackFlag, redundantDeviceWritesFlag, mergeRenamedTailsFlag, commonHelp},
+		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, dynamicStackFlag, userStackFlag, redundantDeviceWritesFlag, mergeRenamedTailsFlag, libDirsFlag, commonHelp},
 		Examples: []string{"ic10c stats blink.icg", "ic10c stats --user-stack 128 blink.icg"},
 	},
 	{
@@ -327,7 +334,7 @@ var Commands = []Command{
 				"累计，因此占比最大的函数最值得简化或外提。\n" +
 				"含控制流的函数能精确归属；纯顺序的内联代码会归到调用者。",
 		},
-		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, commonHelp},
+		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, libDirsFlag, commonHelp},
 		Examples: []string{"ic10c size blink.icg"},
 	},
 	{
@@ -350,7 +357,7 @@ var Commands = []Command{
 			{Long: "--no-lines", Desc: text{EN: "hide the source line annotation", ZH: "隐藏源码行号标注"}},
 			{Long: "--full", Desc: text{EN: "source: one node per statement; ir: show every instruction", ZH: "源码：每句一个节点；ir：显示全部指令"}},
 			{Short: "-o", Long: "--out", Arg: "FILE", Desc: text{EN: "write to FILE instead of stdout", ZH: "写入 FILE 而非标准输出"}},
-			dataLayoutFlag, unsafeFlag, autoTableFlag, commonHelp,
+			dataLayoutFlag, unsafeFlag, autoTableFlag, libDirsFlag, commonHelp,
 		},
 		Examples: []string{"ic10c graph blink.icg", "ic10c graph --func main blink.icg", "ic10c graph --level ir blink.icg", "ic10c graph -o blink.mmd blink.icg"},
 	},

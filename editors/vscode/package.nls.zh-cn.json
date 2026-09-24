@@ -16,6 +16,8 @@
   "icg.userStack.desc": "固定的用户栈大小（默认 128）；用户使用达到或超过它的槽位会在编译时报错。",
   "icg.redundantDeviceWrites.desc": "删除与上一处相同的常量设备写。省行，但会改变可观测的写序列；默认关闭。",
   "icg.mergeRenamedTails.desc": "在可证明安全时，额外合并寄存器分配不同但结构相同的尾块。实验性；默认关闭。",
+  "icg.libDirs.desc": "在导入文件所在目录之后，额外搜索 `import` 的目录。相对路径以第一个工作区目录为基准。",
+  "icg.trace.server.desc": "在 IC10 Go 输出通道中记录与语言服务器之间的消息。",
   "icg.runSteps.desc": "`IC10 Go: 在内置 VM 中运行` 的步数上限（`--steps`）。0 使用编译器默认值（1000）。",
   "icg.runTrace.desc": "在内置 VM 运行时打印每条执行的指令（`--trace`）。",
   "icg.runSet.desc": "`IC10 Go: 在内置 VM 中运行` 的初始设备值，每项一条，如 `d0.Temperature=350`（可重复 `--set`）。",

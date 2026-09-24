@@ -23,6 +23,7 @@
     "onCommand:icg.decompile",
     "onCommand:icg.minify",
     "onCommand:icg.disasm",
+    "onCommand:icg.graph",
     "onCommand:icg.restartServer"
   ],
   "contributes": {
@@ -133,6 +134,18 @@
           "default": false,
           "markdownDescription": "%icg.mergeRenamedTails.desc%"
         },
+        "icg.libDirs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "%icg.libDirs.desc%"
+        },
+        "icg.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages"],
+          "default": "off",
+          "markdownDescription": "%icg.trace.server.desc%"
+        },
         "icg.runSteps": {
           "type": "number",
           "default": 0,
@@ -196,6 +209,11 @@
           "group": "navigation"
         },
         {
+          "command": "icg.graph",
+          "when": "editorLangId == icg",
+          "group": "navigation"
+        },
+        {
           "command": "icg.decompile",
           "when": "editorLangId == ic10",
           "group": "navigation"
@@ -211,6 +229,20 @@
           "group": "navigation"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "icg.compile",
+        "key": "ctrl+alt+b",
+        "mac": "cmd+alt+b",
+        "when": "editorLangId == icg"
+      },
+      {
+        "command": "icg.run",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r",
+        "when": "editorLangId == icg"
+      }
+    ]
   }
 }

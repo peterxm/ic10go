@@ -300,5 +300,25 @@
     "prefix": "constfn",
     "body": ["const ${1:K} = ${2:helper}(${3:3})"],
     "description": "compile-time constant from a pure function"
+  },
+  "Ternary": {
+    "prefix": ["ternary", "?:"],
+    "body": ["${1:cond} ? ${2:a} : ${3:b}"],
+    "description": "conditional (ternary) expression"
+  },
+  "String literal": {
+    "prefix": "str",
+    "body": ["str(\"${1:text}\")"],
+    "description": "display string literal, lowered to STR(\"...\")"
+  },
+  "Concatenated string": {
+    "prefix": ["strcat", "concat"],
+    "body": ["str(\"${1:Re}\" + \"${2:ady!}\")"],
+    "description": "compile-time concatenated display string"
+  },
+  "Prefab hash": {
+    "prefix": "hash",
+    "body": ["hash(\"${1:ItemIronOre}\")"],
+    "description": "prefab/item hash (links to the community wiki)"
   }
 }

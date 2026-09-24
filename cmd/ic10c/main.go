@@ -156,7 +156,29 @@ func missingLang() string {
 	return "ic10c: --lang requires an argument (en or zh)"
 }
 
+// splitLibArgs extracts repeatable `--lib DIR` / `--lib=DIR` import search
+// directories, leaving the remaining arguments for the command's own parser.
+func splitLibArgs(args []string) ([]string, []string) {
+	rest := make([]string, 0, len(args))
+	var dirs []string
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--lib":
+			if i+1 < len(args) {
+				dirs = append(dirs, args[i+1])
+				i++
+			}
+		case strings.HasPrefix(a, "--lib="):
+			dirs = append(dirs, strings.TrimPrefix(a, "--lib="))
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return rest, dirs
+}
+
 func cmdBuild(args []string) int {
+	args, libDirs := splitLibArgs(args)
 	stableIns := false
 	dataOnly := false
 	noDataCheck := false
@@ -290,6 +312,7 @@ func cmdBuild(args []string) int {
 		RedundantDeviceWrites: redundantWrites,
 		MergeRenamedTails:     mergeRenamedTails,
 		Imports:               true,
+		LibDirs:               libDirs,
 	}
 
 	if jsonOut {
@@ -440,6 +463,7 @@ func writeLoaders(path string, loaders []string) int {
 }
 
 func cmdRun(args []string) int {
+	args, libDirs := splitLibArgs(args)
 	steps := 1000
 	trace := false
 	stableIns := false
@@ -475,7 +499,7 @@ func cmdRun(args []string) int {
 		return 1
 	}
 	ic10Hint(file)
-	compiled, diags, err := ic10.CompileResult(file, data, ic10.Options{StableInsOrder: stableIns, Imports: true})
+	compiled, diags, err := ic10.CompileResult(file, data, ic10.Options{StableInsOrder: stableIns, Imports: true, LibDirs: libDirs})
 	if rc := report(source.NewFile(file, data), diags); rc != 0 {
 		return rc
 	}
@@ -664,6 +688,7 @@ func cmdMinify(args []string) int {
 }
 
 func cmdStats(args []string) int {
+	args, libDirs := splitLibArgs(args)
 	dataLayout := ""
 	unsafe := false
 	autoTable := false
@@ -720,7 +745,7 @@ func cmdStats(args []string) int {
 	}
 	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack,
 		DynamicStack: dynamicStack, UserStackLimit: userStack, RedundantDeviceWrites: redundantWrites,
-		MergeRenamedTails: mergeRenamedTails, Imports: true}
+		MergeRenamedTails: mergeRenamedTails, Imports: true, LibDirs: libDirs}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
@@ -827,6 +852,7 @@ func cmdStats(args []string) int {
 }
 
 func cmdSize(args []string) int {
+	args, libDirs := splitLibArgs(args)
 	dataLayout := ""
 	unsafe := false
 	autoTable := false
@@ -861,7 +887,7 @@ func cmdSize(args []string) int {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "size"))
 		return 2
 	}
-	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack, Imports: true}
+	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack, Imports: true, LibDirs: libDirs}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
@@ -958,6 +984,7 @@ func isNativeIC10(path string) bool {
 }
 
 func cmdGraph(args []string) int {
+	args, libDirs := splitLibArgs(args)
 	level := "source"
 	funcName := ""
 	showLines := true
@@ -1005,7 +1032,7 @@ func cmdGraph(args []string) int {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "graph"))
 		return 2
 	}
-	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, Imports: true}
+	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, Imports: true, LibDirs: libDirs}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)

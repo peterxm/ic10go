@@ -174,7 +174,84 @@ func (s *Server) documentLink(w *bufio.Writer, id json.RawMessage, params json.R
 	}
 	links := documentLinksFor(p.TextDocument.URI, s.docs[p.TextDocument.URI])
 	links = append(links, prefabLinksFor(s.docs[p.TextDocument.URI])...)
+	links = append(links, s.importLinksFor(p.TextDocument.URI, s.docs[p.TextDocument.URI])...)
 	reply(w, id, links)
+}
+
+// importLinksFor links each `import "path"` to the file it resolves to, so the
+// editor can open it.
+func (s *Server) importLinksFor(uri, text string) []any {
+	dir := "."
+	if name := fileURIToPath(uri); name != "" {
+		dir = filepath.Dir(name)
+	}
+	var out []any
+	idx := 0
+	for {
+		i := strings.Index(text[idx:], "import")
+		if i < 0 {
+			break
+		}
+		p := idx + i
+		idx = p + len("import")
+		// Only a top-level `import` (only whitespace before it on the line).
+		lineStart := strings.LastIndexByte(text[:p], '\n') + 1
+		if strings.TrimSpace(text[lineStart:p]) != "" {
+			continue
+		}
+		q := idx
+		for q < len(text) && (text[q] == ' ' || text[q] == '\t') {
+			q++
+		}
+		if q >= len(text) || text[q] != '"' {
+			continue
+		}
+		contentStart := q + 1
+		end := strings.IndexByte(text[contentStart:], '"')
+		if end < 0 {
+			break
+		}
+		idx = contentStart + end
+		rel := text[contentStart : contentStart+end]
+		resolved := s.resolveImport(rel, dir)
+		if resolved == "" {
+			continue
+		}
+		out = append(out, map[string]any{
+			"range":  lspRange{Start: offsetToLSP(text, contentStart), End: offsetToLSP(text, contentStart+end)},
+			"target": fileURI(resolved),
+		})
+	}
+	return out
+}
+
+// importPathAt returns the import path when pos is inside the quotes of an
+// `import "..."` declaration.
+func importPathAt(text string, pos lspPosition) (string, bool) {
+	off := posToOffset(text, pos)
+	lineStart := strings.LastIndexByte(text[:off], '\n') + 1
+	lineEnd := len(text)
+	if i := strings.IndexByte(text[off:], '\n'); i >= 0 {
+		lineEnd = off + i
+	}
+	line := text[lineStart:lineEnd]
+	if !strings.HasPrefix(strings.TrimSpace(line), "import") {
+		return "", false
+	}
+	q := strings.IndexByte(line, '"')
+	if q < 0 {
+		return "", false
+	}
+	e := strings.IndexByte(line[q+1:], '"')
+	if e < 0 {
+		return "", false
+	}
+	inner, innerEnd := q+1, q+1+e
+	col := off - lineStart
+	if col < inner || col > innerEnd {
+		return "", false
+	}
+	return line[inner:innerEnd], true
 }
 
 // wikiURL links a prefab display title to a community-wiki search.
@@ -1194,7 +1271,7 @@ func semanticTokensFor(text string) []semanticToken {
 			default:
 				typ = semanticTokenIndex["variable"]
 			}
-		case t.Kind >= token.Const && t.Kind <= token.Use:
+		case t.Kind >= token.Const && t.Kind <= token.Import:
 			typ = semanticTokenIndex["keyword"]
 		default:
 			typ = semanticTokenIndex["operator"]
@@ -1240,6 +1317,7 @@ func (s *Server) inlayHint(w *bufio.Writer, id json.RawMessage, params json.RawM
 	if fp := fileURIToPath(p.TextDocument.URI); fp != "" {
 		name = fp
 		opts.Imports = true
+		opts.LibDirs = s.libDirs
 	}
 	code, diags, err := ic10.CompileWithOptions(name, []byte(text), opts)
 	if err == nil && !diags.HasErrors() {
@@ -1409,7 +1487,15 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 		payload["chips"] = len(compiled.Chips)
 	}
 	if !multi {
-		if rep, err := ic10.Size(uri, []byte(text), ic10.Options{}); err == nil {
+		// Follow imports and library dirs so the budget reflects the real build.
+		statsName := uri
+		statsOpts := ic10.Options{}
+		if fp := fileURIToPath(uri); fp != "" {
+			statsName = fp
+			statsOpts.Imports = true
+			statsOpts.LibDirs = s.libDirs
+		}
+		if rep, err := ic10.Size(statsName, []byte(text), statsOpts); err == nil {
 			stack := rep.Stack
 			payload["stackUser"] = stack.UserUsed
 			payload["stackUserLimit"] = stack.UserLimit
@@ -1423,7 +1509,7 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 			payload["stackData"] = stack.DataSlots
 			payload["stackSpills"] = stack.SpillSlots
 		}
-		if base, size, autoTabled, warn := ic10.DataStats(uri, []byte(text), ic10.Options{}); base >= 0 {
+		if base, size, autoTabled, warn := ic10.DataStats(statsName, []byte(text), statsOpts); base >= 0 {
 			payload["dataBase"] = base
 			payload["dataSize"] = size
 			payload["dataEnd"] = base + size - 1
@@ -1433,7 +1519,24 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 			}
 		}
 	}
+	// A one-time loader (data segment and/or hoisted setup) must be installed on
+	// the IC and run once before the main code; surface its size in the status.
+	if loaderLines := loaderLineCount(compiled.Loaders); loaderLines > 0 {
+		payload["loaderLines"] = loaderLines
+	}
 	notify(w, "icg/stats", payload)
+}
+
+// loaderLineCount reports the total line count of the one-time loader chunks.
+func loaderLineCount(loaders []string) int {
+	n := 0
+	for _, chunk := range loaders {
+		if chunk == "" {
+			continue
+		}
+		n += strings.Count(chunk, "\n") + 1
+	}
+	return n
 }
 
 // deviceAliasOf returns the device port a name aliases via `const NAME = dN`.

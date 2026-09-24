@@ -57,11 +57,16 @@ type Server struct {
 	docs map[string]string
 	zh   bool   // documentation language
 	root string // workspace root (filesystem path), for workspace symbols
+	// libDirs are extra search roots for imports, from initializationOptions.
+	libDirs []string
+	// importDiags maps a document URI to the imported-file URIs it last
+	// published diagnostics for, so removed imports can be cleared.
+	importDiags map[string]map[string]bool
 }
 
 // New returns a Server.
 func New() *Server {
-	return &Server{docs: map[string]string{}}
+	return &Server{docs: map[string]string{}, importDiags: map[string]map[string]bool{}}
 }
 
 // Run serves the connection until EOF or an exit notification.
@@ -89,9 +94,13 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 				Workspaces []struct {
 					URI string `json:"uri"`
 				} `json:"workspaceFolders"`
+				InitializationOptions struct {
+					LibDirs []string `json:"libDirs"`
+				} `json:"initializationOptions"`
 			}
 			_ = json.Unmarshal(msg.Params, &init)
 			s.zh = strings.HasPrefix(strings.ToLower(init.Locale), "zh")
+			s.libDirs = init.InitializationOptions.LibDirs
 			switch {
 			case len(init.Workspaces) > 0:
 				s.root = fileURIToPath(init.Workspaces[0].URI)
@@ -267,6 +276,18 @@ func (s *Server) didClose(w *bufio.Writer, params json.RawMessage) {
 		"uri":         p.TextDocument.URI,
 		"diagnostics": []any{},
 	})
+	// Also drop diagnostics this document published for its imports, unless the
+	// imported file is open and maintains its own.
+	for u := range s.importDiags[p.TextDocument.URI] {
+		if _, open := s.docs[u]; open {
+			continue
+		}
+		notify(w, "textDocument/publishDiagnostics", map[string]any{
+			"uri":         u,
+			"diagnostics": []lspDiagnostic{},
+		})
+	}
+	delete(s.importDiags, p.TextDocument.URI)
 }
 
 // applyChange applies one LSP content change (incremental or full).
@@ -378,39 +399,19 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 	if p := fileURIToPath(uri); p != "" {
 		name = p
 		opts.Imports = true
+		opts.LibDirs = s.libDirs
 	}
 	compiled, diags, err := ic10.CompileResult(name, []byte(text), opts)
 	items := []lspDiagnostic{}
+	// Diagnostics from an imported file carry their own Pos.File; publish each
+	// group against its own URI, so an error in lib.icg is not drawn on main.icg.
+	byFile := map[string][]lspDiagnostic{}
 	for _, d := range diags.Diags {
-		line := d.Pos.Line - 1
-		if line < 0 {
-			line = 0
-		}
-		ch := d.Pos.Col - 1
-		if ch < 0 {
-			ch = 0
-		}
-		end := lspPosition{line, ch}
-		if d.End.IsValid() {
-			el := d.End.Line - 1
-			if el < 0 {
-				el = 0
-			}
-			ec := d.End.Col - 1
-			if ec < 0 {
-				ec = 0
-			}
-			end = lspPosition{el, ec}
-		}
-		item := lspDiagnostic{
-			Range:    lspRange{Start: lspPosition{line, ch}, End: end},
-			Severity: severity(int(d.Severity)),
-			Source:   "ic10c",
-			Code:     d.Code,
-			Message:  d.Msg,
-		}
-		if url := codeDocURL(d.Code); url != "" {
-			item.CodeDescription = &codeDesc{Href: url}
+		item := diagToLSP(d)
+		if d.Pos.File != "" && d.Pos.File != name {
+			u := fileURI(d.Pos.File)
+			byFile[u] = append(byFile[u], item)
+			continue
 		}
 		items = append(items, item)
 	}
@@ -426,6 +427,31 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 		"uri":         uri,
 		"diagnostics": items,
 	})
+	for _, u := range sortedDiagKeys(byFile) {
+		notify(w, "textDocument/publishDiagnostics", map[string]any{
+			"uri":         u,
+			"diagnostics": byFile[u],
+		})
+	}
+	// Clear diagnostics for imports that were present before but are gone now.
+	// An imported file that is itself open owns its diagnostics, so leave it be.
+	current := make(map[string]bool, len(byFile))
+	for u := range byFile {
+		current[u] = true
+	}
+	for u := range s.importDiags[uri] {
+		if current[u] {
+			continue
+		}
+		if _, open := s.docs[u]; open {
+			continue
+		}
+		notify(w, "textDocument/publishDiagnostics", map[string]any{
+			"uri":         u,
+			"diagnostics": []lspDiagnostic{},
+		})
+	}
+	s.importDiags[uri] = current
 	s.publishStats(w, uri, text, compiled, err, diags)
 }
 
@@ -1510,6 +1536,28 @@ func (s *Server) hover(w *bufio.Writer, id json.RawMessage, params json.RawMessa
 		reply(w, id, nil)
 		return
 	}
+	if rel, ok := importPathAt(text, p.Position); ok {
+		dir := ""
+		if name := fileURIToPath(p.TextDocument.URI); name != "" {
+			dir = filepath.Dir(name)
+		}
+		var content string
+		if resolved := s.resolveImport(rel, dir); resolved != "" {
+			if s.zh {
+				content = "导入：`" + filepath.ToSlash(resolved) + "`"
+			} else {
+				content = "Imports `" + filepath.ToSlash(resolved) + "`"
+			}
+		} else if s.zh {
+			content = "找不到导入文件：`" + rel + "`"
+		} else {
+			content = "Cannot find import `" + rel + "`"
+		}
+		reply(w, id, map[string]any{
+			"contents": map[string]any{"kind": "markdown", "value": content},
+		})
+		return
+	}
 	if recv, member := enumMemberAt(text, p.Position); recv != "" {
 		if content := s.enumMemberHover(recv, member); content != "" {
 			reply(w, id, map[string]any{
@@ -1576,8 +1624,107 @@ func (s *Server) definition(w *bufio.Writer, id json.RawMessage, params json.Raw
 		reply(w, id, nil)
 		return
 	}
-	text := s.docs[p.TextDocument.URI]
-	reply(w, id, findDefinition(p.TextDocument.URI, text, wordAt(text, p.Position)))
+	uri := p.TextDocument.URI
+	text := s.docs[uri]
+	word := wordAt(text, p.Position)
+	if word == "" {
+		reply(w, id, nil)
+		return
+	}
+	if loc := findDefinition(uri, text, word); loc != nil {
+		reply(w, id, loc)
+		return
+	}
+	// Not declared here: look in the files this one imports.
+	if name := fileURIToPath(uri); name != "" {
+		for _, f := range s.collectImports(name, text, map[string]bool{}) {
+			data, err := os.ReadFile(f)
+			if err != nil {
+				continue
+			}
+			if loc := findDefinition(fileURI(f), string(data), word); loc != nil {
+				reply(w, id, loc)
+				return
+			}
+		}
+	}
+	reply(w, id, nil)
+}
+
+// collectImports returns the files a document imports, following chains and
+// skipping cycles. Paths are resolved like the compiler's imports: relative to
+// the importing file, with an implied .icg, then in the configured library dirs.
+func (s *Server) collectImports(name, text string, seen map[string]bool) []string {
+	if abs, err := filepath.Abs(name); err == nil {
+		seen[abs] = true
+	}
+	dir := filepath.Dir(name)
+	var out []string
+	for _, rel := range importPathsIn(text) {
+		p := s.resolveImport(rel, dir)
+		if p == "" {
+			continue
+		}
+		abs, _ := filepath.Abs(p)
+		if seen[abs] {
+			continue
+		}
+		seen[abs] = true
+		out = append(out, p)
+		if data, err := os.ReadFile(p); err == nil {
+			out = append(out, s.collectImports(p, string(data), seen)...)
+		}
+	}
+	return out
+}
+
+// importPathsIn returns the paths of the top-level `import "..."` declarations.
+func importPathsIn(text string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(line)
+		if !strings.HasPrefix(t, "import") {
+			continue
+		}
+		t = strings.TrimSpace(strings.TrimPrefix(t, "import"))
+		if len(t) < 2 || t[0] != '"' {
+			continue
+		}
+		if i := strings.IndexByte(t[1:], '"'); i >= 0 {
+			out = append(out, t[1:1+i])
+		}
+	}
+	return out
+}
+
+// resolveImport finds an import's file: absolute as given, then relative to the
+// importing file (with an implied .icg), then in the library dirs.
+func (s *Server) resolveImport(name, dir string) string {
+	candidates := []string{name}
+	if filepath.Ext(name) == "" {
+		candidates = append(candidates, name+".icg")
+	}
+	var roots []string
+	switch {
+	case filepath.IsAbs(name):
+		roots = append(roots, "")
+	case dir != "":
+		roots = append(roots, dir)
+	}
+	roots = append(roots, s.libDirs...)
+
+	for _, root := range roots {
+		for _, c := range candidates {
+			p := c
+			if root != "" {
+				p = filepath.Join(root, c)
+			}
+			if info, err := os.Stat(p); err == nil && !info.IsDir() {
+				return p
+			}
+		}
+	}
+	return ""
 }
 
 func endPosition(text string) lspPosition {
@@ -1810,6 +1957,59 @@ func fileURIToPath(uri string) string {
 		p = decoded
 	}
 	return p
+}
+
+// fileURI is the inverse of fileURIToPath: a filesystem path as a file:// URI.
+func fileURI(path string) string {
+	if path == "" {
+		return ""
+	}
+	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+}
+
+// diagToLSP converts a compiler diagnostic to its LSP form.
+func diagToLSP(d diag.Diagnostic) lspDiagnostic {
+	line := d.Pos.Line - 1
+	if line < 0 {
+		line = 0
+	}
+	ch := d.Pos.Col - 1
+	if ch < 0 {
+		ch = 0
+	}
+	end := lspPosition{line, ch}
+	if d.End.IsValid() {
+		el := d.End.Line - 1
+		if el < 0 {
+			el = 0
+		}
+		ec := d.End.Col - 1
+		if ec < 0 {
+			ec = 0
+		}
+		end = lspPosition{el, ec}
+	}
+	item := lspDiagnostic{
+		Range:    lspRange{Start: lspPosition{line, ch}, End: end},
+		Severity: severity(int(d.Severity)),
+		Source:   "ic10c",
+		Code:     d.Code,
+		Message:  d.Msg,
+	}
+	if u := codeDocURL(d.Code); u != "" {
+		item.CodeDescription = &codeDesc{Href: u}
+	}
+	return item
+}
+
+// sortedDiagKeys returns a map's keys in sorted order, for deterministic output.
+func sortedDiagKeys(m map[string][]lspDiagnostic) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func readMessage(r *bufio.Reader) ([]byte, error) {

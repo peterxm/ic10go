@@ -833,3 +833,163 @@ func TestAllPrefabCompletionUsesCatalog(t *testing.T) {
 		t.Errorf("should not offer the whole vocabulary:\n%s", out)
 	}
 }
+
+// writeImportPair writes main.icg plus a sibling lib.icg and returns their URIs.
+func writeImportPair(t *testing.T, libSrc, mainSrc string) (dir, libPath, mainPath, uri, libURI string) {
+	t.Helper()
+	dir = t.TempDir()
+	libPath = filepath.Join(dir, "lib.icg")
+	if err := os.WriteFile(libPath, []byte(libSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainPath = filepath.Join(dir, "main.icg")
+	if err := os.WriteFile(mainPath, []byte(mainSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri = "file://" + filepath.ToSlash(mainPath)
+	libURI = "file://" + filepath.ToSlash(libPath)
+	return
+}
+
+// TestImportDefinition jumps into an imported file for a symbol it declares.
+func TestImportDefinition(t *testing.T) {
+	_, _, _, uri, libURI := writeImportPair(t,
+		"func helper(x num) num { return x + 1 }\n",
+		"import \"lib.icg\"\nfunc main() { d0.Setting = helper(1) }\n")
+	pos := `"position":{"line":1,"character":27}`
+	out := openAndRequest(t, uri, "import \"lib.icg\"\nfunc main() { d0.Setting = helper(1) }\n", "textDocument/definition", ","+pos)
+	if !strings.Contains(out, libURI) {
+		t.Errorf("definition should point into %s:\n%s", libURI, out)
+	}
+}
+
+// TestImportDiagnosticsRouteToFile publishes an imported file's errors against
+// that file's own URI, not against the importing document.
+func TestImportDiagnosticsRouteToFile(t *testing.T) {
+	_, _, _, uri, libURI := writeImportPair(t,
+		"func helper() num { return nope }\n",
+		"import \"lib.icg\"\nfunc main() { d0.Setting = helper() }\n")
+	out := openAndRequest(t, uri, "import \"lib.icg\"\nfunc main() { d0.Setting = helper() }\n", "textDocument/documentSymbol", "")
+	if !strings.Contains(out, `"uri":"`+libURI+`"`) {
+		t.Errorf("imported diagnostics should be published against %s:\n%s", libURI, out)
+	}
+}
+
+// TestImportDocumentLink links the import path to the file it resolves to.
+func TestImportDocumentLink(t *testing.T) {
+	_, _, _, uri, libURI := writeImportPair(t,
+		"const A = 1\n",
+		"import \"lib.icg\"\nfunc main() { d0.Setting = A }\n")
+	out := openAndRequest(t, uri, "import \"lib.icg\"\nfunc main() { d0.Setting = A }\n", "textDocument/documentLink", "")
+	if !strings.Contains(out, libURI) {
+		t.Errorf("import document link missing %s:\n%s", libURI, out)
+	}
+}
+
+// TestImportHover describes the path an `import` resolves to.
+func TestImportHover(t *testing.T) {
+	_, _, _, uri, _ := writeImportPair(t,
+		"const A = 1\n",
+		"import \"lib.icg\"\nfunc main() { d0.Setting = A }\n")
+	pos := `"position":{"line":0,"character":10}`
+	out := openAndRequest(t, uri, "import \"lib.icg\"\nfunc main() { d0.Setting = A }\n", "textDocument/hover", ","+pos)
+	if !strings.Contains(out, "lib.icg") {
+		t.Errorf("import hover should mention the resolved file:\n%s", out)
+	}
+}
+
+// TestImportLibDirs finds an import in a directory passed through
+// initializationOptions.libDirs rather than next to the document.
+func TestImportLibDirs(t *testing.T) {
+	dir := t.TempDir()
+	libDir := filepath.Join(dir, "libs")
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(libDir, "shared.icg"),
+		[]byte("func helper(x num) num { return x + 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	text := "import \"shared.icg\"\nfunc main() { d0.Setting = helper(1) }\n"
+	mainPath := filepath.Join(dir, "main.icg")
+	if err := os.WriteFile(mainPath, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := "file://" + filepath.ToSlash(mainPath)
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"initializationOptions":{"libDirs":[`+jsonString(libDir)+`]}}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"`+uri+`","text":`+jsonString(text)+`}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/definition","params":{"textDocument":{"uri":"`+uri+`"},"position":{"line":1,"character":27}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	want := "file://" + filepath.ToSlash(filepath.Join(libDir, "shared.icg"))
+	if !strings.Contains(out, want) {
+		t.Errorf("libDirs import should resolve to %s:\n%s", want, out)
+	}
+}
+
+// TestLoaderLinesInStats reports the one-time loader's line count when a program
+// needs one.
+func TestLoaderLinesInStats(t *testing.T) {
+	text := "data T = [1, 2, 3]\nfunc main() { d0.Setting = T[0] }\n"
+	out := openAndRequest(t, "loader.icg", text, "textDocument/documentSymbol", "")
+	if !strings.Contains(out, `"loaderLines"`) {
+		t.Errorf("stats should report loaderLines for a data segment:\n%s", out)
+	}
+}
+
+// TestImportDiagnosticsCleared removes the import and expects the imported
+// file's earlier diagnostics to be cleared.
+func TestImportDiagnosticsCleared(t *testing.T) {
+	dir := t.TempDir()
+	libPath := filepath.Join(dir, "lib.icg")
+	if err := os.WriteFile(libPath, []byte("func helper() num { return nope }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withImport := "import \"lib.icg\"\nfunc main() { d0.Setting = helper() }\n"
+	mainPath := filepath.Join(dir, "main.icg")
+	if err := os.WriteFile(mainPath, []byte(withImport), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := "file://" + filepath.ToSlash(mainPath)
+	libURI := "file://" + filepath.ToSlash(libPath)
+	without := "func main() { d0.On = 1 }\n"
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"`+uri+`","text":`+jsonString(withImport)+`}}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"`+uri+`"},"contentChanges":[{"text":`+jsonString(without)+`}]}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"diagnostics":[],"uri":"`+libURI+`"`) {
+		t.Errorf("import diagnostics should be cleared after removing the import:\n%s", out)
+	}
+}
+
+// TestImportDiagnosticsKeepOpenImported does not clear an imported file's
+// diagnostics while that file is itself open (it owns them).
+func TestImportDiagnosticsKeepOpenImported(t *testing.T) {
+	dir := t.TempDir()
+	libPath := filepath.Join(dir, "lib.icg")
+	libSrc := "func helper() num { return nope }\n"
+	if err := os.WriteFile(libPath, []byte(libSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withImport := "import \"lib.icg\"\nfunc main() { d0.Setting = helper() }\n"
+	mainPath := filepath.Join(dir, "main.icg")
+	if err := os.WriteFile(mainPath, []byte(withImport), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := "file://" + filepath.ToSlash(mainPath)
+	libURI := "file://" + filepath.ToSlash(libPath)
+	without := "func main() { d0.On = 1 }\n"
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"`+libURI+`","text":`+jsonString(libSrc)+`}}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"`+uri+`","text":`+jsonString(withImport)+`}}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"`+uri+`"},"contentChanges":[{"text":`+jsonString(without)+`}]}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`),
+	)
+	if strings.Contains(out, `"diagnostics":[],"uri":"`+libURI+`"`) {
+		t.Errorf("open imported file diagnostics must not be cleared:\n%s", out)
+	}
+}

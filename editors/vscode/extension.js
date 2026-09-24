@@ -103,7 +103,8 @@ class LspClient {
                     e.affectsConfiguration('icg.dynamicStack') ||
                     e.affectsConfiguration('icg.userStack') ||
                     e.affectsConfiguration('icg.redundantDeviceWrites') ||
-                    e.affectsConfiguration('icg.mergeRenamedTails')
+                    e.affectsConfiguration('icg.mergeRenamedTails') ||
+                    e.affectsConfiguration('icg.libDirs')
                 ) {
                     this.restart();
                 }
@@ -239,6 +240,9 @@ class LspClient {
             rootUri: folder ? folder.uri.toString() : null,
             workspaceFolders: folder ? [{ uri: folder.uri.toString(), name: folder.name }] : null,
             locale: vscode.env.language,
+            initializationOptions: {
+                libDirs: this.resolvedLibDirs(),
+            },
             capabilities: {
                 textDocument: {
                     completion: {
@@ -382,7 +386,25 @@ class LspClient {
         if (cfg.unsafe) flags.push('--unsafe');
         if (cfg.dataLayout && cfg.dataLayout !== 'top') flags.push('--data-layout', cfg.dataLayout);
         if (cfg.dataAccess && cfg.dataAccess !== 'get') flags.push('--data-access', cfg.dataAccess);
+        flags.push(...this.libArgs());
         return flags;
+    }
+
+    // libArgs returns the `--lib DIR` flags for the configured import dirs.
+    libArgs() {
+        const args = [];
+        for (const dir of this.resolvedLibDirs()) args.push('--lib', dir);
+        return args;
+    }
+
+    // resolvedLibDirs returns icg.libDirs with relative entries resolved against
+    // the first workspace folder, for the language server and CLI invocations.
+    resolvedLibDirs() {
+        const dirs = vscode.workspace.getConfiguration('icg').get('libDirs') || [];
+        const folder = (vscode.workspace.workspaceFolders || [])[0];
+        return dirs
+            .filter((d) => typeof d === 'string' && d.length > 0)
+            .map((d) => (folder && !path.isAbsolute(d) ? path.join(folder.uri.fsPath, d) : d));
     }
 
     // execCli runs the ic10c binary with the given arguments.
@@ -409,9 +431,24 @@ class LspClient {
     }
 
     // withTempFile writes the document to a temp .icg file and calls fn(path).
+    // It prefers the document's own directory so relative `import`s resolve the
+    // same way they do in the editor, falling back to the OS temp dir for
+    // untitled or read-only documents.
     async withTempFile(doc, fn) {
-        const tmp = path.join(os.tmpdir(), `icg-${process.pid}-${Date.now()}.icg`);
-        fs.writeFileSync(tmp, doc.getText(), 'utf8');
+        const name = `icg-${process.pid}-${Date.now()}.icg`;
+        let tmp = path.join(os.tmpdir(), name);
+        const onDisk = doc.uri && doc.uri.scheme === 'file' && doc.fileName;
+        if (onDisk) {
+            const beside = path.join(path.dirname(doc.fileName), `.${name}`);
+            try {
+                fs.writeFileSync(beside, doc.getText(), 'utf8');
+                tmp = beside;
+            } catch (err) {
+                fs.writeFileSync(tmp, doc.getText(), 'utf8');
+            }
+        } else {
+            fs.writeFileSync(tmp, doc.getText(), 'utf8');
+        }
         try {
             return await fn(tmp);
         } finally {
@@ -553,6 +590,7 @@ class LspClient {
             for (const s of this.config().runSet || []) {
                 if (s) args.push('--set', s);
             }
+            args.push(...this.libArgs());
             args.push(tmp);
             const res = await this.execCli(args);
             this.output.appendLine(`=== run: ${path.basename(doc.fileName)} ===\n${res.stdout}${res.stderr}`);
@@ -612,7 +650,7 @@ class LspClient {
         const doc = this.activeICG();
         if (!doc) return;
         await this.withTempFile(doc, async (tmp) => {
-            const res = await this.execCli(['graph', tmp]);
+            const res = await this.execCli(['graph', ...this.libArgs(), tmp]);
             if (res.code !== 0) {
                 this.output.appendLine(`=== graph failed ===\n${res.stderr}`);
                 this.output.show(true);
@@ -1233,8 +1271,21 @@ class LspClient {
         this.send({ jsonrpc: '2.0', method, params });
     }
 
+    // tracing reports the icg.trace.server setting.
+    tracing() {
+        return vscode.workspace.getConfiguration('icg').get('trace.server') || 'off';
+    }
+
+    // traceMessage appends an LSP message to the output channel when tracing is on.
+    traceMessage(dir, obj) {
+        if (this.tracing() === 'off') return;
+        const stamp = new Date().toISOString().substr(11, 12);
+        this.output.appendLine(`[Trace - ${stamp}] ${dir} ${JSON.stringify(obj)}`);
+    }
+
     send(obj) {
         if (!this.proc || !this.proc.stdin.writable) return;
+        this.traceMessage('-->', obj);
         const data = Buffer.from(JSON.stringify(obj), 'utf8');
         this.proc.stdin.write(`Content-Length: ${data.length}\r\n\r\n`);
         this.proc.stdin.write(data);
@@ -1262,6 +1313,7 @@ class LspClient {
             } catch (err) {
                 continue;
             }
+            this.traceMessage('<--', msg);
             this.handle(msg);
         }
     }
@@ -1364,11 +1416,18 @@ class LspClient {
         if (p.chips) {
             text += t(` · ${p.chips} chips`, ` · ${p.chips} 块芯片`);
         }
+        if (p.loaderLines) {
+            text += t(` · loader ${p.loaderLines}`, ` · 装载器 ${p.loaderLines}`);
+        }
         this.status.text = text;
         const tips = [t('IC10 budget — click to compile', 'IC10 预算 — 点击编译')];
         if (p.autoTabled) {
             tips.push(t(`${p.autoTabled} switch(es) auto-tabled; reinstall the data loader`,
                 `已自动表化 ${p.autoTabled} 处 switch；请重装数据段`));
+        }
+        if (p.loaderLines) {
+            tips.push(t('needs a one-time loader: install it on the IC and run it once before the main code',
+                '需要一次性装载器：先装到 IC 上运行一次，再装主代码'));
         }
         if (p.dataWarn) tips.push(p.dataWarn);
         if (p.stackUnbounded) tips.push(t('push depth is unbounded', 'push 深度无界'));
