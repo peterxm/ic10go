@@ -694,12 +694,18 @@ func completionItemsFor(text string, pos lspPosition) []completionItem {
 		if i >= 2 && text[i-2] == ']' {
 			return slotTypeItems()
 		}
+		if items, ok := trailingSelectorItems(text[:i-1]); ok {
+			return items
+		}
 		j := i - 1
 		for j > 0 && isWordByte(text[j-1]) {
 			j--
 		}
 		recv := text[j : i-1]
 		if items, ok := busSlotItems(text, recv); ok {
+			return items
+		}
+		if items, ok := devicePropertyItems(recv); ok {
 			return items
 		}
 		switch {
@@ -789,6 +795,74 @@ func logicTypeItems() []completionItem {
 	}
 	sortItems(items)
 	return items
+}
+
+// devicePropertyItems completes a logic-capable prefab's own properties when the
+// scan knows it, so `all(StructureVolumePump).` offers what that pump accepts
+// instead of the whole vocabulary.
+func devicePropertyItems(prefab string) ([]completionItem, bool) {
+	d, ok := builtin.DeviceCatalog[prefab]
+	if !ok || len(d.Properties) == 0 {
+		return nil, false
+	}
+	items := make([]completionItem, 0, len(d.Properties))
+	for _, p := range d.Properties {
+		switch {
+		case p.Read && p.Write:
+			items = append(items, ci(p.Name, 21, "logic type · rw"))
+		case p.Read:
+			items = append(items, ci(p.Name, 21, "logic type · r"))
+		case p.Write:
+			items = append(items, ci(p.Name, 21, "logic type · w"))
+		}
+	}
+	sortItems(items)
+	return items, true
+}
+
+// trailingSelectorItems completes after a selector written as `all(Name).`. The
+// text before the dot is scanned for the call; a bare word receiver is left to
+// the ordinary path.
+func trailingSelectorItems(before string) ([]completionItem, bool) {
+	name, ok := trailingAllSelector(before)
+	if !ok {
+		return nil, false
+	}
+	return devicePropertyItems(name)
+}
+
+// trailingAllSelector reports whether s ends with `all(Name)` and returns Name.
+func trailingAllSelector(s string) (string, bool) {
+	s = strings.TrimRight(s, " \t")
+	if !strings.HasSuffix(s, ")") {
+		return "", false
+	}
+	depth := 0
+	for i := len(s) - 1; i >= 0; i-- {
+		switch s[i] {
+		case ')':
+			depth++
+		case '(':
+			depth--
+			if depth != 0 {
+				continue
+			}
+			head := strings.TrimRight(s[:i], " \t")
+			if !strings.HasSuffix(head, "all") {
+				return "", false
+			}
+			// `all` must be a word of its own, not the tail of a longer name.
+			if len(head) > 3 && isWordByte(head[len(head)-4]) {
+				return "", false
+			}
+			name := strings.TrimSpace(s[i+1 : len(s)-1])
+			if name == "" || strings.ContainsAny(name, "(),\"") {
+				return "", false
+			}
+			return name, true
+		}
+	}
+	return "", false
 }
 
 func slotTypeItems() []completionItem {

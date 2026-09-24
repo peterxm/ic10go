@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"ic10go/internal/builtin"
 )
 
 func frame(body string) string {
@@ -806,5 +808,28 @@ func TestCreateImportCodeAction(t *testing.T) {
 	out := openAndRequest(t, uri, text, "textDocument/codeAction", ","+diag)
 	if !strings.Contains(out, `"kind":"create"`) || !strings.Contains(out, "nope.icg") {
 		t.Errorf("expected a create-file quickfix:\n%s", out)
+	}
+}
+
+// TestAllPrefabCompletionUsesCatalog checks that, once the in-game export has
+// been imported, `all(Prefab).` offers that prefab's own properties.
+func TestAllPrefabCompletionUsesCatalog(t *testing.T) {
+	builtin.DeviceCatalog["StructureTestGadget"] = builtin.Device{
+		Name: "StructureTestGadget",
+		Properties: []builtin.DeviceProperty{
+			{Name: "Pressure", Type: 5, Read: true},
+			{Name: "On", Type: 28, Read: true, Write: true},
+		},
+	}
+	defer delete(builtin.DeviceCatalog, "StructureTestGadget")
+
+	text := "func main() { x := all(StructureTestGadget)."
+	extra := fmt.Sprintf(`,"position":{"line":0,"character":%d}`, len(text))
+	out := openAndRequest(t, "cat.icg", text, "textDocument/completion", extra)
+	if !strings.Contains(out, "Pressure") || !strings.Contains(out, "logic type · rw") {
+		t.Errorf("expected the catalog's properties:\n%s", out)
+	}
+	if strings.Contains(out, `"label":"Temperature"`) {
+		t.Errorf("should not offer the whole vocabulary:\n%s", out)
 	}
 }

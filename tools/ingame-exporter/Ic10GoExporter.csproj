@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Stationeers runs Mono on the .NET Framework 4.x profile. -->
+    <TargetFramework>net472</TargetFramework>
+    <RootNamespace>Ic10Go.Exporter</RootNamespace>
+    <AssemblyName>ic10go-exporter</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Path to the game installation. Override with -p:StationeersDir=... -->
+    <StationeersDir Condition="'$(StationeersDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Stationeers</StationeersDir>
+    <StationeersManaged>$(StationeersDir)\rocketstation_Data\Managed</StationeersManaged>
+  </PropertyGroup>
+
+  <!-- Game assemblies only. No BepInEx/Harmony reference: StationeersLaunchPad
+       finds OnLoaded on the MonoBehaviour, and the scan uses the game's own
+       types. That keeps the mod a single DLL with no runtime dependency beyond
+       the loader. -->
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(StationeersManaged)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(StationeersManaged)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(StationeersManaged)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="CheckStationeersInstall" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(StationeersManaged)\Assembly-CSharp.dll')"
+           Text="Could not find Stationeers at '$(StationeersDir)'. Pass the right path: dotnet build -p:StationeersDir=&quot;D:\Steam\steamapps\common\Stationeers&quot;" />
+  </Target>
+
+</Project>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>ic10go exporter</Name>
+  <Author>ic10go</Author>
+  <Version>0.1.0</Version>
+  <ModID>ic10go-exporter</ModID>
+  <Description>[h1]ic10go exporter[/h1]
+
+Dumps the data the external ic10go compiler cannot read offline: every prefab's name, hash and title, and which logic types each device accepts for reading and writing.
+
+It scans once on load, writes two JSON files under Documents\My Games\Stationeers\ic10go\, and does nothing else. There are no patches and no runtime behaviour, so it is safe to leave installed.
+
+Run it once after each Stationeers update, then feed the files to `go run ./tools/import-devices` in the ic10go repository.
+</Description>
+  <Tags>
+    <Tag>Tool</Tag>
+  </Tags>
+</ModMetadata>
