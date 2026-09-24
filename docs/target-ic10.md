@@ -317,6 +317,8 @@ go run ./tools/genenums [Assembly-CSharp.dll] [输出文件]
   生成数据缺失或派生结果不一致时失败。
 - 组名 → 游戏类型名的映射在 `tools/genenums/main.go` 顶部的 `groups`；某个类型被
   改名会让生成器直接报错，而不是静默清空。
+- 同一个生成器还会把 `editors/vscode/syntaxes/icg.tmLanguage.json` 里 `logictypes`
+  的成员列表重写成同一份，编辑器高亮因此与游戏保持一致（不需要手工维护）。
 
 ---
 
