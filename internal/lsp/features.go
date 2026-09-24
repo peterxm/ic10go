@@ -933,6 +933,12 @@ func (s *Server) codeAction(w *bufio.Writer, id json.RawMessage, params json.Raw
 					actions = append(actions, replaceAction(uri, "Change enum member to "+fix, actionRange(text, d.Range, member), member))
 				}
 			}
+		case strings.Contains(d.Message, "cannot find import"):
+			if rel := quoted(d.Message); rel != "" {
+				if action := createImportAction(uri, rel); action != nil {
+					actions = append(actions, action)
+				}
+			}
 		case strings.Contains(d.Message, "no main function"):
 			actions = append(actions, map[string]any{
 				"title": "Add a main function",
@@ -956,6 +962,45 @@ func replaceAction(uri, title string, r lspRange, text string) any {
 		"isPreferred": true,
 		"edit": map[string]any{
 			"changes": map[string]any{uri: []any{map[string]any{"range": r, "newText": text}}},
+		},
+	}
+}
+
+// createImportAction offers to create a missing imported file next to the
+// document, as a CreateFile resource operation followed by a short edit.
+func createImportAction(docURI, rel string) any {
+	base := fileURIToPath(docURI)
+	if base == "" {
+		return nil
+	}
+	name := rel
+	if filepath.Ext(name) == "" {
+		name += ".icg"
+	}
+	target := name
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(base), filepath.FromSlash(name))
+	}
+	targetURI := (&url.URL{Scheme: "file", Path: filepath.ToSlash(target)}).String()
+	return map[string]any{
+		"title":       "Create " + name,
+		"kind":        "quickfix",
+		"isPreferred": true,
+		"edit": map[string]any{
+			"documentChanges": []any{
+				map[string]any{
+					"kind":    "create",
+					"uri":     targetURI,
+					"options": map[string]any{"overwrite": false},
+				},
+				map[string]any{
+					"textDocument": map[string]any{"uri": targetURI, "version": nil},
+					"edits": []any{map[string]any{
+						"range":   lspRange{Start: lspPosition{0, 0}, End: lspPosition{0, 0}},
+						"newText": "// " + name + "\n",
+					}},
+				},
+			},
 		},
 	}
 }

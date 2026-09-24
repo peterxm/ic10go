@@ -792,3 +792,19 @@ func TestImportPathCompletion(t *testing.T) {
 		t.Errorf("import completion should list sibling .icg files:\n%s", out)
 	}
 }
+
+// TestCreateImportCodeAction checks a missing import offers to create the file.
+func TestCreateImportCodeAction(t *testing.T) {
+	dir := t.TempDir()
+	mainPath := filepath.Join(dir, "main.icg")
+	text := "import \"nope.icg\"\nfunc main() { d0.On = 1 }\n"
+	if err := os.WriteFile(mainPath, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := "file://" + filepath.ToSlash(mainPath)
+	diag := `"context":{"diagnostics":[{"range":{"start":{"line":0,"character":8},"end":{"line":0,"character":17}},"message":"cannot find import \"nope.icg\"","severity":1,"source":"ic10c"}]}`
+	out := openAndRequest(t, uri, text, "textDocument/codeAction", ","+diag)
+	if !strings.Contains(out, `"kind":"create"`) || !strings.Contains(out, "nope.icg") {
+		t.Errorf("expected a create-file quickfix:\n%s", out)
+	}
+}
