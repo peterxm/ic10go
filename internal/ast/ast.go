@@ -110,6 +110,13 @@ type UseDecl struct {
 	Bindings []*ConnRef
 }
 
+// ImportDecl is `import "path"`: another file's const/data/func declarations
+// merged into this compilation unit, resolved before checking.
+type ImportDecl struct {
+	NodeBase
+	Path *StringLit
+}
+
 // ConnRef is a `dev:conn` access point: a device port or alias and a connection.
 type ConnRef struct {
 	NodeBase
@@ -117,13 +124,14 @@ type ConnRef struct {
 	Conn   int
 }
 
-func (*ConstDecl) declNode() {}
-func (*DataDecl) declNode()  {}
-func (*VarDecl) declNode()   {}
-func (*FuncDecl) declNode()  {}
-func (*ChipDecl) declNode()  {}
-func (*BusDecl) declNode()   {}
-func (*UseDecl) declNode()   {}
+func (*ConstDecl) declNode()  {}
+func (*DataDecl) declNode()   {}
+func (*VarDecl) declNode()    {}
+func (*FuncDecl) declNode()   {}
+func (*ChipDecl) declNode()   {}
+func (*BusDecl) declNode()    {}
+func (*UseDecl) declNode()    {}
+func (*ImportDecl) declNode() {}
 
 // ---------------------------------------------------------------------------
 // Statements

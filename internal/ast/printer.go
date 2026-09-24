@@ -307,6 +307,9 @@ func (p *printer) declIn(d Decl, inGroup bool) {
 			p.write(":")
 			p.write(strconv.Itoa(b.Conn))
 		}
+	case *ImportDecl:
+		p.write("import ")
+		p.write(strconv.Quote(d.Path.Value))
 	}
 }
 

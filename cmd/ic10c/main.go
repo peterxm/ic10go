@@ -289,6 +289,7 @@ func cmdBuild(args []string) int {
 		UserStackLimit:        userStack,
 		RedundantDeviceWrites: redundantWrites,
 		MergeRenamedTails:     mergeRenamedTails,
+		Imports:               true,
 	}
 
 	if jsonOut {
@@ -474,7 +475,7 @@ func cmdRun(args []string) int {
 		return 1
 	}
 	ic10Hint(file)
-	compiled, diags, err := ic10.CompileResult(file, data, ic10.Options{StableInsOrder: stableIns})
+	compiled, diags, err := ic10.CompileResult(file, data, ic10.Options{StableInsOrder: stableIns, Imports: true})
 	if rc := report(source.NewFile(file, data), diags); rc != 0 {
 		return rc
 	}
@@ -719,7 +720,7 @@ func cmdStats(args []string) int {
 	}
 	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack,
 		DynamicStack: dynamicStack, UserStackLimit: userStack, RedundantDeviceWrites: redundantWrites,
-		MergeRenamedTails: mergeRenamedTails}
+		MergeRenamedTails: mergeRenamedTails, Imports: true}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
@@ -860,7 +861,7 @@ func cmdSize(args []string) int {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "size"))
 		return 2
 	}
-	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack}
+	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack, Imports: true}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
@@ -1004,7 +1005,7 @@ func cmdGraph(args []string) int {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "graph"))
 		return 2
 	}
-	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable}
+	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, Imports: true}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)

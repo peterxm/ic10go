@@ -97,6 +97,14 @@ type Options struct {
 	// docs/tail-merge.md. IC10C_MERGE_RENAMED_TAILS=1 also turns it on.
 	MergeRenamedTails bool
 
+	// Imports resolves `import "path"` declarations by reading the referenced
+	// files and merging their const/data/func declarations. The editor leaves
+	// it off (it checks a single buffer); the CLI turns it on.
+	Imports bool
+	// LibDirs are extra directories searched for imports, after the importing
+	// file's own directory.
+	LibDirs []string
+
 	// recordBus, when set, records every `Bus.slot` read/write (with its access
 	// point) while compiling, so CompileResult can check writers and wire a VM.
 	recordBus func(bus, slot, devConn string, write bool)
@@ -248,6 +256,12 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 	tree := parser.Parse(file, toks, diags)
 	if diags.HasErrors() {
 		return Result{}, diags, nil
+	}
+	if opts.Imports {
+		expandImports(tree, name, opts.LibDirs, diags)
+		if diags.HasErrors() {
+			return Result{}, diags, nil
+		}
 	}
 
 	common, chips := splitChips(tree)

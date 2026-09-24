@@ -111,6 +111,8 @@ func (p *parser) parseTopDecl() []ast.Decl {
 		return []ast.Decl{p.parseChipDecl()}
 	case token.Bus:
 		return []ast.Decl{p.parseBusDecl()}
+	case token.Import:
+		return p.parseImportDecl()
 	default:
 		p.errorf(p.cur().Pos, "expected declaration, found %s", describe(p.cur()))
 		return nil
@@ -321,6 +323,21 @@ func (p *parser) parseUseDecl() *ast.UseDecl {
 		break
 	}
 	return &ast.UseDecl{NodeBase: base(kw.Pos), Bus: bus, Bindings: binds}
+}
+
+// parseImportDecl parses `import "path"`: the declarations of another file,
+// merged in before checking.
+func (p *parser) parseImportDecl() []ast.Decl {
+	kw := p.expect(token.Import)
+	if !p.at(token.String) {
+		p.errorf(p.cur().Pos, "import expects a quoted path, found %s", describe(p.cur()))
+		return nil
+	}
+	str := p.advance()
+	return []ast.Decl{&ast.ImportDecl{
+		NodeBase: base(kw.Pos),
+		Path:     &ast.StringLit{NodeBase: base(str.Pos), Value: str.Text},
+	}}
 }
 
 // parseOptLabel parses an optional label after break/continue.
@@ -839,7 +856,7 @@ func (p *parser) syncTop() {
 			if depth > 0 {
 				depth--
 			}
-		case token.Func, token.Var, token.Const, token.Data, token.Chip:
+		case token.Func, token.Var, token.Const, token.Data, token.Chip, token.Import:
 			if depth == 0 {
 				return
 			}

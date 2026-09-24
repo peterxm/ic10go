@@ -270,3 +270,20 @@ func TestParseUnits(t *testing.T) {
 		}
 	}
 }
+
+func TestParseImport(t *testing.T) {
+	tree, diags := parse(t, "import \"lib.icg\"\n")
+	if diags.HasErrors() {
+		t.Fatalf("unexpected errors: %+v", diags.Diags)
+	}
+	if len(tree.Decls) != 1 {
+		t.Fatalf("decls = %d, want 1", len(tree.Decls))
+	}
+	imp, ok := tree.Decls[0].(*ast.ImportDecl)
+	if !ok {
+		t.Fatalf("decl = %T, want *ast.ImportDecl", tree.Decls[0])
+	}
+	if imp.Path.Value != "lib.icg" {
+		t.Errorf("path = %q, want lib.icg", imp.Path.Value)
+	}
+}
