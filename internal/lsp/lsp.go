@@ -368,7 +368,16 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 		})
 		return
 	}
-	compiled, diags, err := ic10.CompileResult(uri, []byte(text), ic10.Options{})
+	// Follow imports relative to the document's directory so names from an
+	// imported file resolve in the editor. A non-file URI (tests, buffers)
+	// keeps the single-buffer behaviour.
+	name := uri
+	opts := ic10.Options{}
+	if p := fileURIToPath(uri); p != "" {
+		name = p
+		opts.Imports = true
+	}
+	compiled, diags, err := ic10.CompileResult(name, []byte(text), opts)
 	items := []lspDiagnostic{}
 	for _, d := range diags.Diags {
 		line := d.Pos.Line - 1

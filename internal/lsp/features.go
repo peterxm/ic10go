@@ -1190,14 +1190,20 @@ func (s *Server) inlayHint(w *bufio.Writer, id json.RawMessage, params json.RawM
 	}
 
 	// Budget hint at the end of the file.
-	code, diags, err := ic10.Compile(p.TextDocument.URI, []byte(text))
+	name := p.TextDocument.URI
+	opts := ic10.Options{}
+	if fp := fileURIToPath(p.TextDocument.URI); fp != "" {
+		name = fp
+		opts.Imports = true
+	}
+	code, diags, err := ic10.CompileWithOptions(name, []byte(text), opts)
 	if err == nil && !diags.HasErrors() {
 		st := ic10.StatsOf(code)
 		label := fmt.Sprintf("  IC10: %d/%d 行 · %d/%d 字节 · %d/%d 寄存器", st.Lines, codegen.MaxLines, st.Bytes, codegen.MaxBytes, st.RegsUsed, 16)
-		if base, size, _, _ := ic10.DataStats(p.TextDocument.URI, []byte(text), ic10.Options{}); base >= 0 {
+		if base, size, _, _ := ic10.DataStats(name, []byte(text), opts); base >= 0 {
 			label += fmt.Sprintf(" · data %d..%d", base, base+size-1)
 		}
-		if depth, unbounded, derr := ic10.MaxStackDepth(p.TextDocument.URI, []byte(text), ic10.Options{}); derr == nil {
+		if depth, unbounded, derr := ic10.MaxStackDepth(name, []byte(text), opts); derr == nil {
 			switch {
 			case unbounded:
 				label += " · 栈 无界"

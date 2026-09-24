@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -746,5 +748,25 @@ func TestBusEditorSupport(t *testing.T) {
 	out := openAndRequest(t, "b.icg", hoverSrc, "textDocument/hover", `,"position":{"line":4,"character":20}`)
 	if !strings.Contains(out, "Channel0") {
 		t.Errorf("hover on a bus slot missing the channel:\n%s", out)
+	}
+}
+
+// TestImportsResolveInLSP checks the editor follows an import relative to the
+// document, so names from an imported file are not reported as undefined.
+func TestImportsResolveInLSP(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "lib.icg"),
+		[]byte("func helper(x num) num { return x + 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	text := "import \"lib.icg\"\nfunc main() { d0.Setting = helper(1) }\n"
+	mainPath := filepath.Join(dir, "main.icg")
+	if err := os.WriteFile(mainPath, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := "file://" + filepath.ToSlash(mainPath)
+	out := openAndRequest(t, uri, text, "textDocument/documentSymbol", "")
+	if strings.Contains(out, `"severity":1`) {
+		t.Errorf("imported symbol should resolve without errors:\n%s", out)
 	}
 }
