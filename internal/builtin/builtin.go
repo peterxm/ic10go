@@ -1,10 +1,10 @@
 // Package builtin holds compile-time tables: IC10 logic types, slot types and
 // built-in function signatures.
 //
-// The LogicType / LogicSlotType tables were verified against Stationeers Hotfix
-// v0.2.6428.27798 (2026-08-13); EnumConstants against the Stationeers Community
-// Wiki (Logic Sorter, 2026-09-05). Game updates can add, rename or remove enum
-// members, so re-check these tables after each game update.
+// The logic type, slot type and game enum tables are not hand-kept: they are
+// derived from GameEnums, which tools/genenums generates from the game's
+// Assembly-CSharp.dll. After a Stationeers update run `go run ./tools/genenums`
+// and commit the regenerated gameenums_gen.go; tests fail when the two drift.
 package builtin
 
 import (
@@ -15,376 +15,17 @@ import (
 // Hash returns the CRC-32 checksum used by IC10's HASH() function.
 func Hash(s string) uint32 { return crc32.ChecksumIEEE([]byte(s)) }
 
-// EnumConstants are game enum constants that IC10 source may reference by name.
-// Dotted names (e.g. SorterInstruction.FilterPrefabHashEquals) are resolved as
-// selectors; the CONDOP names are also accepted bare (Equals/Greater/Less/
-// NotEquals), matching the game assembler. Values are emitted as numbers, so
-// they do not depend on the game resolving the symbolic name. Verified against
-// the Stationeers Community Wiki (Logic Sorter, 2026-09-05) and the generated
-// game type dump at github.com/Stationeers-ic/ic10 (src/Defines/consts.ts);
-// re-check after game updates.
-var EnumConstants = map[string]float64{
-	// SorterInstruction OP codes (bits 0..7 of a Logic Sorter stack entry).
-	"SorterInstruction.None":                      0,
-	"SorterInstruction.NOP":                       0, // legacy alias for None
-	"SorterInstruction.FilterPrefabHashEquals":    1,
-	"SorterInstruction.FilterPrefabHashNotEquals": 2,
-	"SorterInstruction.FilterSortingClassCompare": 3,
-	"SorterInstruction.FilterSlotTypeCompare":     4,
-	"SorterInstruction.FilterQuantityCompare":     5,
-	"SorterInstruction.LimitNextExecutionByCount": 6,
-	// Condition operation (bits 8..15 of the Filter*Compare instructions).
-	// The game exposes both a bare and a ConditionOperation.-prefixed name.
-	"ConditionOperation.Equals":    0,
-	"ConditionOperation.Greater":   1,
-	"ConditionOperation.Less":      2,
-	"ConditionOperation.NotEquals": 3,
-	"Equals":                       0,
-	"Greater":                      1,
-	"Less":                         2,
-	"NotEquals":                    3,
-	// SlotClass (slot type operand, bits 16..31 of FilterSlotTypeCompare).
-	"SlotClass.None":                 0,
-	"SlotClass.Helmet":               1,
-	"SlotClass.Suit":                 2,
-	"SlotClass.Back":                 3,
-	"SlotClass.GasFilter":            4,
-	"SlotClass.GasCanister":          5,
-	"SlotClass.Motherboard":          6,
-	"SlotClass.Circuitboard":         7,
-	"SlotClass.DataDisk":             8,
-	"SlotClass.Organ":                9,
-	"SlotClass.Ore":                  10,
-	"SlotClass.Plant":                11,
-	"SlotClass.Uniform":              12,
-	"SlotClass.Entity":               13,
-	"SlotClass.Battery":              14,
-	"SlotClass.Egg":                  15,
-	"SlotClass.Belt":                 16,
-	"SlotClass.Tool":                 17,
-	"SlotClass.Appliance":            18,
-	"SlotClass.Ingot":                19,
-	"SlotClass.Torpedo":              20,
-	"SlotClass.Cartridge":            21,
-	"SlotClass.AccessCard":           22,
-	"SlotClass.Magazine":             23,
-	"SlotClass.Circuit":              24,
-	"SlotClass.Bottle":               25,
-	"SlotClass.ProgrammableChip":     26,
-	"SlotClass.Glasses":              27,
-	"SlotClass.CreditCard":           28,
-	"SlotClass.DirtCanister":         29,
-	"SlotClass.SensorProcessingUnit": 30,
-	"SlotClass.LiquidCanister":       31,
-	"SlotClass.LiquidBottle":         32,
-	"SlotClass.Wreckage":             33,
-	"SlotClass.SoundCartridge":       34,
-	"SlotClass.DrillHead":            35,
-	"SlotClass.ScanningHead":         36,
-	"SlotClass.Flare":                37,
-	"SlotClass.Blocked":              38,
-	"SlotClass.SuitMod":              39,
-	"SlotClass.Crate":                40,
-	"SlotClass.Portables":            41,
-	"SlotClass.RocketPayload":        42,
-	"SlotClass.AutoInjector":         43,
-	// SortingClass (sorting class operand, bits 16..31 of FilterSortingClassCompare).
-	"SortingClass.Default":      0,
-	"SortingClass.Kits":         1,
-	"SortingClass.Tools":        2,
-	"SortingClass.Resources":    3,
-	"SortingClass.Food":         4,
-	"SortingClass.Clothing":     5,
-	"SortingClass.Appliances":   6,
-	"SortingClass.Atmospherics": 7,
-	"SortingClass.Storage":      8,
-	"SortingClass.Ores":         9,
-	"SortingClass.Ices":         10,
-	// LogicReagentMode: Contents / Required / Recipe / TotalContents = 0 / 1 / 2 / 3.
-	"LogicReagentMode.Contents":      0,
-	"LogicReagentMode.Required":      1,
-	"LogicReagentMode.Recipe":        2,
-	"LogicReagentMode.TotalContents": 3,
-	// ReagentMode is the legacy prefix kept for existing scripts.
-	"ReagentMode.Contents":      0,
-	"ReagentMode.Required":      1,
-	"ReagentMode.Recipe":        2,
-	"ReagentMode.TotalContents": 3,
-	// PrinterInstruction: 8-bit OP codes for printer/autolathe stack entries.
-	// StackPointer (addr 63) and MissingRecipeReagent (addr 54..62) are entries
-	// the device itself maintains.
-	"PrinterInstruction.None":                 0,
-	"PrinterInstruction.StackPointer":         1,
-	"PrinterInstruction.ExecuteRecipe":        2,
-	"PrinterInstruction.WaitUntilNextValid":   3,
-	"PrinterInstruction.JumpIfNextInvalid":    4,
-	"PrinterInstruction.JumpToAddress":        5,
-	"PrinterInstruction.DeviceSetLock":        6,
-	"PrinterInstruction.EjectReagent":         7,
-	"PrinterInstruction.EjectAllReagents":     8,
-	"PrinterInstruction.MissingRecipeReagent": 9,
-	// TraderInstruction: Medium Satellite Dish stack entries.
-	"TraderInstruction.None":                       0,
-	"TraderInstruction.WriteTraderData":            1,
-	"TraderInstruction.StrongestContactIdHash":     2,
-	"TraderInstruction.StrongestContactMetaData":   3,
-	"TraderInstruction.StrongestContactSignalData": 4,
-	"TraderInstruction.WriteTraderBuyData":         5,
-	"TraderInstruction.WriteTraderSellData":        6,
-	"TraderInstruction.TraderBuyThingData":         7,
-	"TraderInstruction.TraderBuyThingChildData":    8,
-	"TraderInstruction.TraderBuyGasData":           9,
-	"TraderInstruction.TraderSellThingData":        10,
-	"TraderInstruction.TraderSellGasData":          11,
-	"TraderInstruction.TraderSellThingChildData":   12,
-	"TraderInstruction.FilterPrefabHashEquals":     13,
-	"TraderInstruction.FilterPrefabHashNotEquals":  14,
-	"TraderInstruction.FilterSortingClassCompare":  15,
-	"TraderInstruction.FilterQuantityCompare":      16,
-	"TraderInstruction.FilterGasContains":          17,
-	"TraderInstruction.FilterGasNotContains":       18,
-	// Color: LogicType.Color device color (game enum ColorType). Values above 11
-	// clamp to Purple and values below 0 clamp to Blue.
-	"Color.Blue":   0,
-	"Color.Gray":   1,
-	"Color.Green":  2,
-	"Color.Orange": 3,
-	"Color.Red":    4,
-	"Color.Yellow": 5,
-	"Color.White":  6,
-	"Color.Black":  7,
-	"Color.Brown":  8,
-	"Color.Khaki":  9,
-	"Color.Pink":   10,
-	"Color.Purple": 11,
-	// PowerMode: Area Power Controller charge state.
-	"PowerMode.Idle":        0,
-	"PowerMode.Discharged":  1,
-	"PowerMode.Discharging": 2,
-	"PowerMode.Charging":    3,
-	"PowerMode.Charged":     4,
-	// DisplayMode: LED display readout mode (LogicDisplay.DisplayMode).
-	"DisplayMode.Default":    0,
-	"DisplayMode.Percent":    1,
-	"DisplayMode.Power":      2,
-	"DisplayMode.Kelvin":     3,
-	"DisplayMode.Celsius":    4,
-	"DisplayMode.Meters":     5,
-	"DisplayMode.Credits":    6,
-	"DisplayMode.Seconds":    7,
-	"DisplayMode.Minutes":    8,
-	"DisplayMode.Days":       9,
-	"DisplayMode.String":     10,
-	"DisplayMode.Fahrenheit": 11,
-	"DisplayMode.Litres":     12,
-	"DisplayMode.Mol":        13,
-	"DisplayMode.Pa":         14,
-	"DisplayMode.Newtons":    15,
-	"DisplayMode.Degrees":    16,
-	// Sound: speaker / klaxon alert (game enum SoundAlert, IC10 prefix Sound).
-	"Sound.None":                0,
-	"Sound.Alarm2":              1,
-	"Sound.Alarm3":              2,
-	"Sound.Alarm4":              3,
-	"Sound.Alarm5":              4,
-	"Sound.Alarm6":              5,
-	"Sound.Alarm7":              6,
-	"Sound.Music1":              7,
-	"Sound.Music2":              8,
-	"Sound.Music3":              9,
-	"Sound.Alarm8":              10,
-	"Sound.Alarm9":              11,
-	"Sound.Alarm10":             12,
-	"Sound.Alarm11":             13,
-	"Sound.Alarm12":             14,
-	"Sound.Danger":              15,
-	"Sound.Warning":             16,
-	"Sound.Alert":               17,
-	"Sound.StormIncoming":       18,
-	"Sound.IntruderAlert":       19,
-	"Sound.Depressurising":      20,
-	"Sound.Pressurising":        21,
-	"Sound.AirlockCycling":      22,
-	"Sound.PowerLow":            23,
-	"Sound.SystemFailure":       24,
-	"Sound.Welcome":             25,
-	"Sound.MalfunctionDetected": 26,
-	"Sound.HaltWhoGoesThere":    27,
-	"Sound.FireFireFire":        28,
-	"Sound.One":                 29,
-	"Sound.Two":                 30,
-	"Sound.Three":               31,
-	"Sound.Four":                32,
-	"Sound.Five":                33,
-	"Sound.Floor":               34,
-	"Sound.RocketLaunching":     35,
-	"Sound.LiftOff":             36,
-	"Sound.TraderIncoming":      37,
-	"Sound.TraderLanded":        38,
-	"Sound.PressureHigh":        39,
-	"Sound.PressureLow":         40,
-	"Sound.TemperatureHigh":     41,
-	"Sound.TemperatureLow":      42,
-	"Sound.PollutantsDetected":  43,
-	"Sound.HighCarbonDioxide":   44,
-	"Sound.Alarm1":              45,
-	// AirCon (game enum, 2 members).
-	"AirCon.Cold": 0,
-	"AirCon.Hot":  1,
-	// AirControl (game enum, 4 members).
-	"AirControl.Draught":  4,
-	"AirControl.None":     0,
-	"AirControl.Offline":  1,
-	"AirControl.Pressure": 2,
-	// DaylightSensorMode (game enum, 3 members).
-	"DaylightSensorMode.Default":    0,
-	"DaylightSensorMode.Horizontal": 1,
-	"DaylightSensorMode.Vertical":   2,
-	// ElevatorMode (game enum, 3 members).
-	"ElevatorMode.Downward":   2,
-	"ElevatorMode.Stationary": 0,
-	"ElevatorMode.Upward":     1,
-	// EntityState (game enum, 4 members).
-	"EntityState.Alive":       0,
-	"EntityState.Dead":        1,
-	"EntityState.Decay":       3,
-	"EntityState.Unconscious": 2,
-	// FiltrationMode (game enum, 2 members).
-	"FiltrationMode.Active": 1,
-	"FiltrationMode.Idle":   0,
-	// GasType (game enum, 31 members).
-	"GasType.Air":                    3,
-	"GasType.CarbonDioxide":          4,
-	"GasType.Fuel":                   9,
-	"GasType.Helium":                 1048576,
-	"GasType.Hydrazine":              131072,
-	"GasType.HydrochloricAcid":       16777216,
-	"GasType.Hydrogen":               16384,
-	"GasType.LiquidAlcohol":          524288,
-	"GasType.LiquidCarbonDioxide":    2048,
-	"GasType.LiquidHydrazine":        262144,
-	"GasType.LiquidHydrochloricAcid": 33554432,
-	"GasType.LiquidHydrogen":         32768,
-	"GasType.LiquidMethane":          512,
-	"GasType.LiquidNitrogen":         128,
-	"GasType.LiquidNitrousOxide":     8192,
-	"GasType.LiquidOxygen":           256,
-	"GasType.LiquidOzone":            134217728,
-	"GasType.LiquidPollutant":        4096,
-	"GasType.LiquidSilanol":          8388608,
-	"GasType.LiquidSodiumChloride":   2097152,
-	"GasType.Methane":                8,
-	"GasType.Nitrogen":               2,
-	"GasType.NitrousOxide":           64,
-	"GasType.Oxygen":                 1,
-	"GasType.Ozone":                  67108864,
-	"GasType.Pollutant":              16,
-	"GasType.PollutedWater":          65536,
-	"GasType.Silanol":                4194304,
-	"GasType.Steam":                  1024,
-	"GasType.Undefined":              0,
-	"GasType.Water":                  32,
-	// HashType (game enum, 2 members).
-	"HashType.GasLiquid": 1,
-	"HashType.Prefab":    0,
-	// LogicBatchMethod (game enum, 5 members).
-	"LogicBatchMethod.Average": 0,
-	"LogicBatchMethod.Count":   4,
-	"LogicBatchMethod.Maximum": 3,
-	"LogicBatchMethod.Minimum": 2,
-	"LogicBatchMethod.Sum":     1,
-	// LogicSlotType (game enum, 33 members).
-	"LogicSlotType.Charge":        10,
-	"LogicSlotType.ChargeRatio":   11,
-	"LogicSlotType.Class":         12,
-	"LogicSlotType.Damage":        4,
-	"LogicSlotType.Efficiency":    5,
-	"LogicSlotType.FilterType":    25,
-	"LogicSlotType.FreeSlots":     31,
-	"LogicSlotType.Growth":        7,
-	"LogicSlotType.HarvestedHash": 27,
-	"LogicSlotType.Health":        6,
-	"LogicSlotType.LineNumber":    19,
-	"LogicSlotType.Lock":          23,
-	"LogicSlotType.Mature":        16,
-	"LogicSlotType.MaturityRatio": 29,
-	"LogicSlotType.MaxQuantity":   15,
-	"LogicSlotType.Mode":          28,
-	"LogicSlotType.None":          0,
-	"LogicSlotType.OccupantHash":  2,
-	"LogicSlotType.Occupied":      1,
-	"LogicSlotType.On":            22,
-	"LogicSlotType.Open":          21,
-	"LogicSlotType.PrefabHash":    17,
-	"LogicSlotType.Pressure":      8,
-	"LogicSlotType.PressureAir":   14,
-	"LogicSlotType.PressureWaste": 13,
-	"LogicSlotType.Quantity":      3,
-	"LogicSlotType.ReferenceId":   26,
-	"LogicSlotType.Seeding":       18,
-	"LogicSlotType.SeedingRatio":  30,
-	"LogicSlotType.SortingClass":  24,
-	"LogicSlotType.Temperature":   9,
-	"LogicSlotType.TotalSlots":    32,
-	"LogicSlotType.Volume":        20,
-	// NodeType (game enum, 7 members).
-	"NodeType.Entry":             1,
-	"NodeType.Generated":         3,
-	"NodeType.LaunchPad":         4,
-	"NodeType.LowOrbitHub":       5,
-	"NodeType.LowOrbitLaunchPad": 6,
-	"NodeType.None":              0,
-	"NodeType.Static":            2,
-	// ReEntryProfile (game enum, 5 members).
-	"ReEntryProfile.High":   3,
-	"ReEntryProfile.Low":    1,
-	"ReEntryProfile.Max":    4,
-	"ReEntryProfile.Medium": 2,
-	"ReEntryProfile.None":   0,
-	// RobotMode (game enum, 7 members).
-	"RobotMode.Follow":       1,
-	"RobotMode.MoveToTarget": 2,
-	"RobotMode.None":         0,
-	"RobotMode.PathToTarget": 5,
-	"RobotMode.Roam":         3,
-	"RobotMode.StorageFull":  6,
-	"RobotMode.Unload":       4,
-	// RocketMode (game enum, 9 members).
-	"RocketMode.Chart":       5,
-	"RocketMode.Deploy":      6,
-	"RocketMode.Discover":    4,
-	"RocketMode.Invalid":     0,
-	"RocketMode.Mine":        2,
-	"RocketMode.None":        1,
-	"RocketMode.SurfaceScan": 7,
-	"RocketMode.Survey":      3,
-	"RocketMode.Transfer":    8,
-	// SettingDisplayMode (game enum, 2 members).
-	"SettingDisplayMode.Number": 0,
-	"SettingDisplayMode.String": 1,
-	// ShuttleType (game enum, 9 members).
-	"ShuttleType.Large":       5,
-	"ShuttleType.LargeGas":    6,
-	"ShuttleType.LargePlane":  8,
-	"ShuttleType.Medium":      3,
-	"ShuttleType.MediumGas":   4,
-	"ShuttleType.MediumPlane": 7,
-	"ShuttleType.None":        0,
-	"ShuttleType.Small":       1,
-	"ShuttleType.SmallGas":    2,
-	// TransmitterMode (game enum, 2 members).
-	"TransmitterMode.Active":  1,
-	"TransmitterMode.Passive": 0,
-	// Vent (game enum, 2 members).
-	"Vent.Inward":  1,
-	"Vent.Outward": 0,
-	// Stack sizes / fixed addresses (compiler conveniences, not game enums).
-	"Stack.Size":                        512, // IC chip persistent stack
-	"SorterStack.Size":                  32,  // Logic Sorter: 32 x 8-byte entries
-	"PrinterStack.Size":                 64,  // Printer stack entries
-	"PrinterStack.StackPointer":         63,  // PrinterInstruction.StackPointer address
-	"PrinterStack.MissingRecipeReagent": 54,  // first MissingRecipeReagent address
-}
+// EnumConstants are the game enum constants that IC10 source may reference by
+// name. Dotted names (e.g. SorterInstruction.FilterPrefabHashEquals) are
+// resolved as selectors; the CONDOP names are also accepted bare
+// (Equals/Greater/Less/NotEquals), matching the game assembler. Values are
+// emitted as numbers, so they do not depend on the game resolving the symbolic
+// name.
+//
+// It is filled at init from GameEnums (generated from the game; see
+// gameenums_gen.go) plus enumExtras, so the values follow the game rather than a
+// hand-kept list.
+var EnumConstants = map[string]float64{}
 
 // RawConstants are IC10 numeric constants (the game's
 // ProgrammableChip.AllConstants). The compiler emits the *name* verbatim so the
@@ -408,87 +49,15 @@ var BatchModes = map[string]float64{
 	"Count":   4,
 }
 
-// LogicTypes is the set of device logic type names understood by IC10. It
-// mirrors the game's LogicType enum (minus None); update it as the game adds
-// members.
-var LogicTypes = map[string]bool{
-	"Acceleration": true, "Activate": true, "AirRelease": true, "AlignmentError": true,
-	"Altitude": true, "Apex": true, "AutoLand": true, "AutoShutOff": true,
-	"BestContactFilter": true, "Bpm": true, "BurnTimeRemaining": true, "CelestialHash": true,
-	"CelestialParentHash": true, "Channel0": true, "Channel1": true, "Channel2": true,
-	"Channel3": true, "Channel4": true, "Channel5": true, "Channel6": true,
-	"Channel7": true, "Charge": true, "Chart": true, "ChartedNavPoints": true,
-	"ClearMemory": true, "CollectableGoods": true, "Color": true, "Combustion": true,
-	"CombustionInput": true, "CombustionInput2": true, "CombustionLimiter": true, "CombustionOutput": true,
-	"CombustionOutput2": true, "CompletionRatio": true, "ContactTypeId": true, "CurrentCode": true,
-	"CurrentResearchPodType": true, "Density": true, "DerivativeGain": true, "DestinationCode": true,
-	"Discover": true, "DistanceAu": true, "DistanceKm": true, "DrillCondition": true,
-	"DryMass": true, "Eccentricity": true, "ElevatorLevel": true, "ElevatorSpeed": true,
-	"EntityState": true, "EnvironmentEfficiency": true, "Error": true, "ExhaustVelocity": true,
-	"ExportCount": true, "ExportQuantity": true, "ExportSlotHash": true, "ExportSlotOccupant": true,
-	"Extended": true, "Filtration": true, "FlightControlRule": true, "Flush": true,
-	"ForceWrite": true, "ForwardX": true, "ForwardY": true, "ForwardZ": true,
-	"Fuel": true, "Harvest": true, "Horizontal": true, "HorizontalRatio": true,
-	"Idle": true, "ImportCount": true, "ImportQuantity": true, "ImportSlotHash": true,
-	"ImportSlotOccupant": true, "Inclination": true, "Index": true, "IntegralGain": true,
-	"InterrogationProgress": true, "LineNumber": true, "Lock": true, "ManualResearchRequiredPod": true,
-	"Mass": true, "Maximum": true, "MineablesInQueue": true, "MineablesInVicinity": true,
-	"MinedQuantity": true, "Minimum": true, "MinimumWattsToContact": true, "Mode": true,
-	"NameHash": true, "NavPoints": true, "NetworkFault": true, "NextWeatherEventTime": true,
-	"NextWeatherHash": true, "On": true, "Open": true, "OperationalTemperatureEfficiency": true,
-	"OrbitPeriod": true, "Orientation": true, "Output": true, "PassedMoles": true,
-	"Plant": true, "PlantEfficiency1": true, "PlantEfficiency2": true, "PlantEfficiency3": true,
-	"PlantEfficiency4": true, "PlantGrowth1": true, "PlantGrowth2": true, "PlantGrowth3": true,
-	"PlantGrowth4": true, "PlantHash1": true, "PlantHash2": true, "PlantHash3": true,
-	"PlantHash4": true, "PlantHealth1": true, "PlantHealth2": true, "PlantHealth3": true,
-	"PlantHealth4": true, "PositionX": true, "PositionY": true, "PositionZ": true,
-	"Power": true, "PowerActual": true, "PowerGeneration": true, "PowerPotential": true,
-	"PowerRequired": true, "PrefabHash": true, "Pressure": true, "PressureEfficiency": true,
-	"PressureExternal": true, "PressureInput": true, "PressureInput2": true, "PressureInternal": true,
-	"PressureOutput": true, "PressureOutput2": true, "PressureSetting": true, "Progress": true,
-	"ProportionalGain": true, "Quantity": true, "Ratio": true, "RatioCarbonDioxide": true,
-	"RatioCarbonDioxideInput": true, "RatioCarbonDioxideInput2": true, "RatioCarbonDioxideOutput": true, "RatioCarbonDioxideOutput2": true,
-	// Newer gases (methane / hydrazine / helium / silanol / hydrochloric acid /
-	// ozone / alcohol / sodium chloride) and their liquid forms.
-	"RatioHelium": true, "RatioHydrazine": true, "RatioHydrochloricAcid": true, "RatioMethane": true,
-	"RatioOzone": true, "RatioSilanol": true, "RatioLiquidAlcohol": true, "RatioLiquidHydrazine": true,
-	"RatioLiquidHydrochloricAcid": true, "RatioLiquidMethane": true, "RatioLiquidOzone": true,
-	"RatioLiquidSilanol": true, "RatioLiquidSodiumChloride": true,
-	"RatioHydrogen": true, "RatioLiquidCarbonDioxide": true, "RatioLiquidCarbonDioxideInput": true, "RatioLiquidCarbonDioxideInput2": true,
-	"RatioLiquidCarbonDioxideOutput": true, "RatioLiquidCarbonDioxideOutput2": true, "RatioLiquidHydrogen": true, "RatioLiquidNitrogen": true,
-	"RatioLiquidNitrogenInput": true, "RatioLiquidNitrogenInput2": true, "RatioLiquidNitrogenOutput": true, "RatioLiquidNitrogenOutput2": true,
-	"RatioLiquidNitrousOxide": true, "RatioLiquidNitrousOxideInput": true, "RatioLiquidNitrousOxideInput2": true, "RatioLiquidNitrousOxideOutput": true,
-	"RatioLiquidNitrousOxideOutput2": true, "RatioLiquidOxygen": true, "RatioLiquidOxygenInput": true, "RatioLiquidOxygenInput2": true,
-	"RatioLiquidOxygenOutput": true, "RatioLiquidOxygenOutput2": true, "RatioLiquidPollutant": true, "RatioLiquidPollutantInput": true,
-	"RatioLiquidPollutantInput2": true, "RatioLiquidPollutantOutput": true, "RatioLiquidPollutantOutput2": true, "RatioLiquidVolatiles": true,
-	"RatioLiquidVolatilesInput": true, "RatioLiquidVolatilesInput2": true, "RatioLiquidVolatilesOutput": true, "RatioLiquidVolatilesOutput2": true,
-	"RatioNitrogen": true, "RatioNitrogenInput": true, "RatioNitrogenInput2": true, "RatioNitrogenOutput": true,
-	"RatioNitrogenOutput2": true, "RatioNitrousOxide": true, "RatioNitrousOxideInput": true, "RatioNitrousOxideInput2": true,
-	"RatioNitrousOxideOutput": true, "RatioNitrousOxideOutput2": true, "RatioOxygen": true, "RatioOxygenInput": true,
-	"RatioOxygenInput2": true, "RatioOxygenOutput": true, "RatioOxygenOutput2": true, "RatioPollutant": true,
-	"RatioPollutantInput": true, "RatioPollutantInput2": true, "RatioPollutantOutput": true, "RatioPollutantOutput2": true,
-	"RatioPollutedWater": true, "RatioSteam": true, "RatioSteamInput": true, "RatioSteamInput2": true,
-	"RatioSteamOutput": true, "RatioSteamOutput2": true, "RatioVolatiles": true, "RatioVolatilesInput": true,
-	"RatioVolatilesInput2": true, "RatioVolatilesOutput": true, "RatioVolatilesOutput2": true, "RatioWater": true,
-	"RatioWaterInput": true, "RatioWaterInput2": true, "RatioWaterOutput": true, "RatioWaterOutput2": true,
-	"Reagents": true, "RecipeHash": true, "ReEntryAltitude": true, "ReferenceId": true,
-	"RequestHash": true, "RequiredPower": true, "Reset": true, "ReturnFuelCost": true,
-	"Richness": true, "Rpm": true, "SemiMajorAxis": true, "Setpoint": true,
-	"Setting": true, "SettingInput": true, "SettingOutput": true, "SignalID": true,
-	"SignalStrength": true, "Sites": true, "Size": true, "SizeX": true,
-	"SizeY": true, "SizeZ": true, "SolarAngle": true, "SolarIrradiance": true,
-	"SoundAlert": true, "StackSize": true, "Stress": true, "Survey": true,
-	"TargetPadIndex": true, "TargetPrefabHash": true, "TargetSlotIndex": true, "TargetX": true,
-	"TargetY": true, "TargetZ": true, "Temperature": true, "TemperatureDifferentialEfficiency": true,
-	"TemperatureExternal": true, "TemperatureInput": true, "TemperatureInput2": true, "TemperatureOutput": true,
-	"TemperatureOutput2": true, "TemperatureSetting": true, "Throttle": true, "Thrust": true,
-	"ThrustToWeight": true, "Time": true, "TimeToDestination": true, "TotalMoles": true,
-	"TotalMolesInput": true, "TotalMolesInput2": true, "TotalMolesOutput": true, "TotalMolesOutput2": true,
-	"TotalQuantity": true, "TrueAnomaly": true, "VelocityMagnitude": true, "VelocityRelativeX": true,
-	"VelocityRelativeY": true, "VelocityRelativeZ": true, "VelocityX": true, "VelocityY": true,
-	"VelocityZ": true, "Vertical": true, "VerticalRatio": true, "Volume": true,
-	"VolumeOfLiquid": true, "WattsReachingContact": true, "Weight": true, "WorkingGasEfficiency": true,
-}
+// LogicTypes is the set of device logic type names understood by IC10. It is
+// derived at init from GameEnums (the game's LogicType enum, minus None), so it
+// follows the game instead of a hand-kept copy. Regenerate GameEnums with
+// `go run ./tools/genenums` after a Stationeers update.
+var LogicTypes = map[string]bool{}
+
+// SlotTypes is the set of slot logic type names, derived from the game's
+// LogicSlotType enum (minus None).
+var SlotTypes = map[string]bool{}
 
 // LogicTypeIDs maps "LogicType.X" member names to stable integer ids used by
 // the test VM to model dynamic logic reads and writes. The game assigns its own
@@ -499,7 +68,49 @@ var LogicTypeIDs = map[string]int{}
 // LogicTypeNames is the reverse of LogicTypeIDs.
 var LogicTypeNames = map[int]string{}
 
+// enumExtras are constants the compiler adds on top of the game's enums:
+// legacy aliases kept for existing scripts, and stack conveniences that are not
+// game enums. Everything else in EnumConstants comes from GameEnums.
+var enumExtras = map[string]float64{
+	// Logic Sorter NOP is a legacy alias for None.
+	"SorterInstruction.NOP": 0,
+	// ReagentMode is the legacy prefix for LogicReagentMode.
+	"ReagentMode.Contents":      0,
+	"ReagentMode.Required":      1,
+	"ReagentMode.Recipe":        2,
+	"ReagentMode.TotalContents": 3,
+	// The condition operations are also accepted bare, matching the game.
+	"Equals":    0,
+	"Greater":   1,
+	"Less":      2,
+	"NotEquals": 3,
+	// Stack sizes / fixed addresses (compiler conveniences, not game enums).
+	"Stack.Size":                        512, // IC chip persistent stack
+	"SorterStack.Size":                  32,  // Logic Sorter: 32 x 8-byte entries
+	"PrinterStack.Size":                 64,  // Printer stack entries
+	"PrinterStack.StackPointer":         63,  // PrinterInstruction.StackPointer address
+	"PrinterStack.MissingRecipeReagent": 54,  // first MissingRecipeReagent address
+}
+
 func init() {
+	deriveBoolSet(LogicTypes, GameEnums["LogicType"], "None")
+	deriveBoolSet(SlotTypes, GameEnums["LogicSlotType"], "None")
+
+	// Enum constants: every game group except LogicType (whose members are
+	// device properties, tracked by LogicTypes and emitted symbolically) plus
+	// the compiler's extras.
+	for group, members := range GameEnums {
+		if group == "LogicType" {
+			continue
+		}
+		for name, value := range members {
+			EnumConstants[group+"."+name] = float64(value)
+		}
+	}
+	for k, v := range enumExtras {
+		EnumConstants[k] = v
+	}
+
 	names := make([]string, 0, len(LogicTypes))
 	for n := range LogicTypes {
 		names = append(names, n)
@@ -512,17 +123,13 @@ func init() {
 	}
 }
 
-// SlotTypes is the set of slot logic type names. It mirrors the game's
-// LogicSlotType enum (minus None); update it as the game adds members.
-var SlotTypes = map[string]bool{
-	"Charge": true, "ChargeRatio": true, "Class": true, "Damage": true,
-	"Efficiency": true, "FilterType": true, "FreeSlots": true, "Growth": true,
-	"HarvestedHash": true, "Health": true, "LineNumber": true, "Lock": true,
-	"Mature": true, "MaturityRatio": true, "MaxQuantity": true, "Mode": true,
-	"OccupantHash": true, "Occupied": true, "On": true, "Open": true,
-	"PrefabHash": true, "Pressure": true, "PressureAir": true, "PressureWaste": true,
-	"Quantity": true, "ReferenceId": true, "Seeding": true, "SeedingRatio": true,
-	"SortingClass": true, "Temperature": true, "TotalSlots": true, "Volume": true,
+// deriveBoolSet fills dst with every key of src except skip.
+func deriveBoolSet(dst map[string]bool, src map[string]int64, skip string) {
+	for name := range src {
+		if name != skip {
+			dst[name] = true
+		}
+	}
 }
 
 // Func describes a built-in function.
