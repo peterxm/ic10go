@@ -264,6 +264,9 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
   用于 `hash("…")` / `HASH("…")` 补全、hash 型实参的预制体补全、数字 hash 反查与 Wiki 文档链接。
 - **`IC10Instructions`**：原生 IC10 指令的签名；说明文本由 `ScriptCommandHelp`
   在 init 时从游戏本地化覆盖。用于 `.ic`/`.ic10` 的补全、悬停与未知指令诊断。
+- **`DeviceCatalog`**：游戏内扫描得到的「预制体 → 可读写 logic type + 槽位属性」。
+  编辑器用它把 `all(Prefab).` 的候选收窄成**该预制体自己的属性**；为空时退回全部
+  logic type（默认仓库里为空，见下）。
 
 > 数据源：`tools/gengamedata` 读取游戏的
 > `rocketstation_Data/StreamingAssets/Language/english.xml`：`RecordThing` /
@@ -271,9 +274,10 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 > 程序化残骸/套件名），`ScriptCommand*` 生成指令说明。游戏更新后
 > `go run ./tools/gengamedata` 即可——需要游戏本体，但**不用启动游戏**。
 >
-> 仍**无法离线获取**的是「每个预制体支持哪些 logic type、读/写」——`CanLogicRead`
-> 读的 `HasOnOffState` 等状态在 Unity 资产里，只能靠游戏内扫描（见 §5.8 与
-> `docs/backlog.md`）。
+> 「每个预制体支持哪些 logic type、读/写」**必须游戏内扫描**：`CanLogicRead` 读的
+> `HasOnOffState` 等状态在 Unity 资产里。`tools/ingame-exporter` 是一个无 patch、
+> 只扫一次就写文件的极小 Mod，产出的 `devices.json` / `prefabs.json` 由
+> `go run ./tools/import-devices` 合并进上面的表（见该目录的 README）。
 
 ### 5.7 数据段布局
 
