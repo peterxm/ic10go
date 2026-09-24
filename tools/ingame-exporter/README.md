@@ -26,9 +26,13 @@ Needs the .NET SDK and a Stationeers install:
 
 ```bash
 cd tools/ingame-exporter
-dotnet build -c Release -p:StationeersDir="C:\Program Files (x86)\Steam\steamapps\common\Stationeers"
+dotnet build -c Release -p:StationeersDir="/path/to/Stationeers"
 # -> bin/Release/ic10go-exporter.dll
 ```
+
+On Linux the game path uses forward slashes, and the project pulls in
+`Microsoft.NETFramework.ReferenceAssemblies` so `net472` builds without a
+Windows SDK. A user-local SDK via the official `dotnet-install.sh` is enough.
 
 ## Install
 

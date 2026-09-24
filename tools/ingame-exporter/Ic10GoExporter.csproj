@@ -15,8 +15,13 @@
   <PropertyGroup>
     <!-- Path to the game installation. Override with -p:StationeersDir=... -->
     <StationeersDir Condition="'$(StationeersDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Stationeers</StationeersDir>
-    <StationeersManaged>$(StationeersDir)\rocketstation_Data\Managed</StationeersManaged>
+    <StationeersManaged>$(StationeersDir)/rocketstation_Data/Managed</StationeersManaged>
   </PropertyGroup>
+
+  <!-- net472 can be built on Linux once the reference assemblies are available. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
 
   <!-- Game assemblies only. No BepInEx/Harmony reference: StationeersLaunchPad
        finds OnLoaded on the MonoBehaviour, and the scan uses the game's own
@@ -24,15 +29,15 @@
        the loader. -->
   <ItemGroup>
     <Reference Include="Assembly-CSharp">
-      <HintPath>$(StationeersManaged)\Assembly-CSharp.dll</HintPath>
+      <HintPath>$(StationeersManaged)/Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine">
-      <HintPath>$(StationeersManaged)\UnityEngine.dll</HintPath>
+      <HintPath>$(StationeersManaged)/UnityEngine.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(StationeersManaged)\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(StationeersManaged)/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

@@ -14,8 +14,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using Assets.Scripts;
 using Assets.Scripts.Objects;
 using Assets.Scripts.Objects.Motherboards;
+using Assets.Scripts.Objects.Pipes;
 using UnityEngine;
 
 namespace Ic10Go.Exporter
