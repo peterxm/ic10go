@@ -260,13 +260,20 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 
 除枚举外，编译器/编辑器还带两张游戏数据表（`internal/builtin`，非编译输出）：
 
-- **`Prefabs` / `PrefabByHash`**：1900+ 预制体名 → 显示标题；hash 即 `Hash(name)`。
+- **`Prefabs` / `PrefabByHash`**：2000+ 预制体名 → 显示标题；hash 即 `Hash(name)`。
   用于 `hash("…")` / `HASH("…")` 补全、hash 型实参的预制体补全、数字 hash 反查与 Wiki 文档链接。
-- **`IC10Instructions`**：原生 IC10 指令的签名与游戏说明，用于 `.ic`/`.ic10`
-  的补全、悬停与未知指令诊断。
+- **`IC10Instructions`**：原生 IC10 指令的签名；说明文本由 `ScriptCommandHelp`
+  在 init 时从游戏本地化覆盖。用于 `.ic`/`.ic10` 的补全、悬停与未知指令诊断。
 
-> 数据源：游戏预制体列表与指令元数据（见 `Stationeers-ic` / `ic10emu`）；游戏
-> 更新后重新核对。
+> 数据源：`tools/gengamedata` 读取游戏的
+> `rocketstation_Data/StreamingAssets/Language/english.xml`：`RecordThing` /
+> `RecordReagent` 生成预制体名与显示标题（与上一次结果**合并**，保留本地化未收录的
+> 程序化残骸/套件名），`ScriptCommand*` 生成指令说明。游戏更新后
+> `go run ./tools/gengamedata` 即可——需要游戏本体，但**不用启动游戏**。
+>
+> 仍**无法离线获取**的是「每个预制体支持哪些 logic type、读/写」——`CanLogicRead`
+> 读的 `HasOnOffState` 等状态在 Unity 资产里，只能靠游戏内扫描（见 §5.8 与
+> `docs/backlog.md`）。
 
 ### 5.7 数据段布局
 
