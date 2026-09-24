@@ -363,16 +363,20 @@ VS Code `icg.redundantDeviceWrites`）会删除同块内、中间无读/屏障�
 
 ## 8. 内建表
 
-存放于 `internal/builtin`，通过 `go:embed` 加载：
+以 Go 源码形式存放在 `internal/builtin`：
 
-- **逻辑类型表**：`Temperature` `On` `Ratio` ... 用于校验。
-- **槽位类型表**：`Occupied` `Mature` ...
+- **逻辑类型表 / 槽位类型表**：`On` `Temperature` `Setting` ... 与 `Occupied` `Mature` ...，用于校验设备属性与槽位属性。
 - **批量模式表**：`Average`(0) `Sum`(1) `Minimum`(2) `Maximum`(3) `Count`(4)。
-- **游戏枚举表**（`EnumConstants`）：`SorterInstruction` / `PrinterInstruction` / `SlotClass` / `GasType` / `LogicSlotType` 等；未知 `Enum.Member` 原样输出。
+- **游戏枚举表**（`GameEnums` / `EnumConstants`）：`SorterInstruction` / `PrinterInstruction` / `SlotClass` / `GasType` / `LogicSlotType` 等；未知 `Enum.Member` 原样输出。
 - **数学常量表**（`RawConstants`）：`pi` / `deg2rad` / `rad2deg` / `epsilon`，原样输出。
-- **prefab hash 表**（可选）：常用设备类型名 → CRC-32，支持 `hash("...")` 之外的直接名字。
+- **prefab hash 表**：预制体名 → 显示标题，hash 即 CRC-32。
 
-表的来源可以是手工整理，或后续从游戏数据生成。所有表均可独立更新以适配游戏版本。
+逻辑类型、槽位类型与游戏枚举表不是手工维护：`tools/genenums` **从游戏
+`Assembly-CSharp.dll` 生成** `internal/builtin/gameenums_gen.go`（纯 Go 的
+ECMA-335 解析，无需 .NET SDK、无需启动游戏），`LogicTypes` / `SlotTypes` /
+`EnumConstants` 在 init 时由它派生。游戏更新后 `go run ./tools/genenums`
+重新生成并提交即可，漂移由 `internal/builtin/gameenums_test.go` 拦截。详见
+[`target-ic10.md` §5.8](target-ic10.md#58-枚举表同步生成器)。
 
 ---
 

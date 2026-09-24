@@ -107,9 +107,9 @@ runtime 更短者，所以拆分只会减小 runtime。语义前提：这些常�
 
 | code | 级别 | 含义 |
 |------|------|------|
-| `unknown-logic-type` | warning | 逻辑类型不在内建表中 |
-| `unknown-slot-type` | warning | 槽位类型不在内建表中 |
-| `unknown-enum` | warning | 未知 `Enum.Member`，原样输出（可用 `raw("...")` 显式原样输出） |
+| `unknown-logic-type` | warning | 逻辑类型不在内建表中；`message` 附带最接近的拼写建议（拼错时） |
+| `unknown-slot-type` | warning | 槽位类型不在内建表中；`message` 附带拼写建议 |
+| `unknown-enum` | warning | 未知 `Enum.Member`，原样输出；`message` 附带同组最接近的拼写建议（可用 `raw("...")` 显式原样输出） |
 | `no-main` | error | 找不到 `main` 函数 |
 | `data-too-large` | error | 数据段超出芯片栈 |
 | `stack-overlap` | error | 用户栈地址落在编译器区（数据段/溢出）或 `push` 深度超过用户上限 |

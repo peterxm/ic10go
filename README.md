@@ -59,7 +59,7 @@ j 1
 **M2 已完成**：IR 优化器（块内拷贝/常量传播、全局常量传播、常量折叠、代数化简、全局 CSE（可用表达式，含跨基本块设备读 CSE）、select 转换、冗余设备/槽位/批量读消除、存储转发、常量分支折叠、循环不变量外提（含设备读）、尾块合并、死存储消除、活跃性死代码消除、不可达块删除）、比较-分支融合、`&&`/`||`→`min`/`max`（含纯函数）、**函数外提 / 特化**（内联与 `jal` 按体积取短，常量实参调用点内联折叠）。**架构加固**：终结符统一接口、`ir.Verify` 校验器、`DefUse/Liveness/Dominators` 共享分析、pass 注册表 + 收敛诊断、内建语义单一来源（`builtin.Sem`）、sema 函数体类型检查。**便利语法**：`for i := range n` / `for i, v := range Table`、`case lo..hi` 区间、`if`/`switch` 初始化语句、带标签的 `break`/`continue`（`label Outer:`）。
 **M3 已完成**：批量 IO（`batch.read/readName/readSlot/readNameSlot/write/writeName/writeSlot`）、网络通道 `d.channel[conn][ch]`、栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr/clrById`（`get/put` 的 device 操作数接受端口 / id / 寄存器）、`dN.stack[addr]` / `id.stack[addr]` 语法糖、按 ReferenceId 读写 `readById/writeById`（`ld`/`sd`）、运行期端口槽位 `readDevSlot/writeDevSlot`（`ls/ss drN`）、`sorter.*` / `printer.*` 栈指令构建器（含字段位宽校验）、`raw("...")` 原样输出、未知 `Enum.Member` 原样输出、`isSet/isUnset/rmap/readReagent`、`approx/approxZero/notApprox/notApproxZero/logicalNor/isNotNaN`、`str("...")` 显示字符串、动态 logicType `read/write`、动态设备寄存器 `readDev/writeDev`（IC10 `drN`）、`LogicType.X` 枚举名透传、补充 logic type、游戏枚举/常量表同步（`EnumConstants`：`SorterInstruction`/`PrinterInstruction`/`SlotClass`/`GasType`/`LogicSlotType` 等；`RawConstants`：`pi`/`deg2rad`/`rad2deg`/`epsilon`）、批量模式 `Count`、**持久栈数据段**（`data` 表 / `switch ... table` / loader+runtime 两段流程 / 版本哨兵 / `--data-access` / `--data-layout` / `--unsafe` / `--auto-table`）。
 **M5 已完成**：测试用最小 IC10 解释器 `internal/vm`（寄存器 / 栈 / 设备 / 槽位 / 通道 / 批量 / 分支 / 标签与绝对行号），配套端到端语义测试与常量折叠差分测试；并经 `ic10c run` 暴露给用户调试。健壮性/保真：操作数与栈越界返回错误（不 panic）、`pi`/`deg2rad` 等游戏常量、`LineNumber`、确定性 `rand`、`rmap`、可选严格设备语义（见 [`docs/vm-improvements.md`](docs/vm-improvements.md)）。
-**M4 已完成**：`ic10c stats`（行/字节/寄存器/栈预算）、`ic10c graph`（源码级控制流图 → Mermaid，`--level ir` 为 IR 基本块）、`ic10c fmt`（格式化，支持 `-w`，保留注释/分组/空行/`data` 表；原生 `.ic`/`.ic10` 重排并对齐列，`--no-align` 关闭）、`ic10c disasm`（旧 IC10 反汇编注释）、`ic10c decompile`（IC10 → `.icg`，支持 `-s` 结构化）、`ic10c minify`（压缩现有 IC10 行数）、`ic10c run`（内置 VM 执行）、`ic10c lsp`（诊断 / 上下文补全 / 格式化 / hover / 定义 / 大纲 / 折叠 / 引用 / 重命名 / 参数提示 / 快速修复 / 语义高亮 / 预算内联 / 预制体 hash 补全（`hash("…")` 内与 hash 型实参，参数位按类型补全）与反查 / Wiki 文档链接；`.ic`/`.ic10` 原生指令补全、说明、未知指令诊断）、VSCode 扩展（`.icg` 与 `.ic`/`.ic10` 支持、片段、编译预览并自动处理数据段安装代码、VM 运行、反编译/压缩/注释命令）。
+**M4 已完成**：`ic10c stats`（行/字节/寄存器/栈预算）、`ic10c graph`（源码级控制流图 → Mermaid，`--level ir` 为 IR 基本块）、`ic10c fmt`（格式化，支持 `-w`，保留注释/分组/空行/`data` 表；原生 `.ic`/`.ic10` 重排并对齐列，`--no-align` 关闭）、`ic10c disasm`（旧 IC10 反汇编注释）、`ic10c decompile`（IC10 → `.icg`，支持 `-s` 结构化）、`ic10c minify`（压缩现有 IC10 行数）、`ic10c run`（内置 VM 执行）、`ic10c lsp`（诊断 / 上下文补全 / 格式化 / hover / 定义 / 大纲 / 折叠 / 引用 / 重命名 / 参数提示 / 快速修复（`unknown logic type` / `unknown slot type` / `unknown enum` 的 did-you-mean 建议）/ 语义高亮 / 预算内联 / 预制体 hash 补全（`hash("…")` 内与 hash 型实参，参数位按类型补全）与反查 / Wiki 文档链接；`.ic`/`.ic10` 原生指令补全、说明、未知指令诊断）、VSCode 扩展（`.icg` 与 `.ic`/`.ic10` 支持、片段、编译预览并自动处理数据段安装代码、VM 运行、反编译/压缩/注释命令）。
 **M6 已完成**：**多芯片**——一个 `.icg` 用 `chip 名字 { ... }` 声明多块芯片，各编译成独立程序（各自 128 行 / 4 KiB 预算与 loader；顶层 `const`/`data`/`func` 为公共区，chip 内可遮蔽）；`bus 名字 { 槽位 num ... }`（最多 8 槽，槽位下标即通道号）+ 每 chip `use 名字 on dev:conn` 默认访问点、`Bus.槽位[dev][conn]` 内联覆盖（唯一写者校验，`run` 按槽位自动接线）；CLI 按芯片写文件 / `--chip NAME` / JSON `chips[]` / `stats` 分组；VM `World` 多芯片同 tick 锁步；LSP 按光标所在 chip 隔离补全与签名，VSCode 编译命令弹芯片选择。另：超行数时把一次性设置写入外提到 loader，并支持新气体比例逻辑类型。
 
 当前可用：
@@ -104,7 +104,7 @@ sh editors/vscode/install.sh   # 优先用 code CLI 安装 .vsix，回退到复�
 
 > 提示：IC10 里常见的「尾调用跳转」状态机（如 `gasHeaters` 循环后 `j greenhouseGasCheck`）在 `.icg` 中请改写为结构化循环，因为函数不支持递归（编译期展开 / 外提）。
 >
-> 寄存器压力超过 16 时，编译器会自动把多余的值**溢出到宿主栈**（默认 `get/put db`，每次加载 1 行；`--spill stack` 回退为固定高地址槽 + `peek/poke` 暂存寄存器），而不是报错。未知 logic type 会给出**警告**（可用 `IC10C_NO_CHECK=1` 关闭）。
+> 寄存器压力超过 16 时，编译器会自动把多余的值**溢出到宿主栈**（默认 `get/put db`，每次加载 1 行；`--spill stack` 回退为固定高地址槽 + `peek/poke` 暂存寄存器），而不是报错。未知 logic type / 槽位类型 / 枚举成员会给出**警告**，并附 `did you mean "Temperature"?` 拼写建议（可用 `IC10C_NO_CHECK=1` 关闭）；内建枚举表由 [`tools/genenums`](tools/genenums) 从游戏程序集生成，无需手工维护。
 >
 > 反编译：`ic10c decompile` 会替换 `alias`/`define`、用 `:=` 声明首次写入的寄存器、用 `label`/`goto`/`call`/`ret` 表达控制流；配合寄存器拷贝合并，`ic10code/` 里的真实脚本都能反编译并在 128 行内重新编译（含最复杂的 Furnace，148→121 行）。加 `-s/--structured` 会基于后支配树还原 `if`/`else`/`for`；结构化失败时自动回退到 goto 形式。
 
@@ -120,6 +120,7 @@ go test ./...
 - 覆盖：寄存器复用、比较融合、select、死代码消除、批量聚合、栈、通道、槽位、真实脚本 `solar_tracker`
 - 前端/IR：`internal/ir` 的 `Verify`/`DefUse`/`Liveness` 单测，`internal/sema` 的函数体类型检查单测（含 `str` 显示串等不误报用例）
 - 工具：`fmt` 幂等性、`stats`、`disasm`、LSP 诊断与补全
+- 内建表：`internal/builtin/gameenums_test.go` 校验 `LogicTypes` / `SlotTypes` / `EnumConstants` 与游戏枚举镜像 `GameEnums`（由 `tools/genenums` 从游戏 `Assembly-CSharp.dll` 生成）一致，漂移即失败
 - 真实脚本：`ic10code/` 下的每个 `.ic`/`.ic10` 都做**反编译→重编译→设备写入序列对比**（`TestIc10CodeRoundTrip`）与 **minify 等价性**（`TestMinifyIc10Code`）；每个 `.icg` 端口还会与其同目录的 `.ic`/`.ic10` 做**设备状态集合等价**（`TestIc10CodePorts`）。第三方脚本仅本地保留，缺失时自动跳过；可用 `IC10CODE_EXTRA=/path/to/repo`（冒号分隔多个路径，类似 `PATH`）追加外部脚本仓库。`ic10code/stationeers-workspace/` 是 [StormCircuit/Stationeers-Workspace](https://github.com/StormCircuit/Stationeers-Workspace) 语料的本地副本：原始 `.ic10` 被 `.gitignore` 忽略，仅提交手工改写的 `.icg` 端口；`ic10code/github/` 是另行从社区仓库挑选的脚本副本（drclaw1188、EkimdaBrave、scriptslol、Trante02、Anexgohan），同样只提交 `.icg` 端口。`knownUnsupported`（`pkg/ic10/corpus_test.go`）列出已知的无效源码 / 超预算脚本并注明原因。
 - 数据段：`data` 表端到端（loader→runtime、版本哨兵、`--data-access stack`、`--data-layout middle`、`--auto-table`），见 `pkg/ic10/data_test.go` 与 `experiments/data-segment/`
 
@@ -131,7 +132,7 @@ go test ./...
 | [`QUICKSTART.md`](QUICKSTART.md) | 5 分钟上手 |
 | [`docs/spec.md`](docs/spec.md) | `.icg` 语言规范 |
 | [`docs/architecture.md`](docs/architecture.md) | 编译器架构与里程碑 M0–M6 |
-| [`docs/target-ic10.md`](docs/target-ic10.md) | IC10 目标约束、指令映射与内建数据 |
+| [`docs/target-ic10.md`](docs/target-ic10.md) | IC10 目标约束、指令映射与内建数据（含 `tools/genenums` 枚举表生成） |
 | [`docs/data-segment.md`](docs/data-segment.md) | 持久栈数据段：`data` 表 / loader+runtime / 布局 / 宿主兼容 |
 | [`docs/multichip.md`](docs/multichip.md) | 多芯片：`chip` / `bus` / `use`、通道分配、VM `World`、编辑器支持 |
 | [`docs/plugin-api.md`](docs/plugin-api.md) | `build --json` 机器接口：字段、诊断 code、桥接流程 |

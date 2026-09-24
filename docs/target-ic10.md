@@ -171,9 +171,10 @@ Filtration  Harvest  Plant  ClearMemory  Maximum
 NameHash  ...
 ```
 
-> 完整表以 `internal/builtin` 为准，可随游戏版本更新。当前已与游戏
-> `LogicType` 枚举（280 项，去 `None`）对齐。
-> **测试版本：Stationeers Hotfix `v0.2.6428.27798`（2026-08-13）**，游戏更新后需重新核对。
+> 完整表由 `go run ./tools/genenums` 从游戏 `Assembly-CSharp.dll` 生成到
+> `internal/builtin/gameenums_gen.go`，`LogicTypes` 在 init 时由它派生，不再手工
+> 维护（见 §5.8）。当前对齐 **357 项**（去 `None`）。
+> **生成版本：Stationeers Hotfix `v0.2.6428.27798`**。
 
 ### 5.3 槽位类型表
 
@@ -185,8 +186,8 @@ FreeSlots  HarvestedHash  LineNumber  Lock  MaturityRatio  Mode
 On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 ```
 
-> 当前已与游戏 `LogicSlotType` 枚举（32 项，去 `None`）对齐。
-> **测试版本：Stationeers Hotfix `v0.2.6428.27798`（2026-08-13）**。
+> 同样由 `gameenums_gen.go` 派生，对齐 **32 项**（去 `None`），见 §5.8。
+> **生成版本：Stationeers Hotfix `v0.2.6428.27798`**。
 
 ### 5.4 批量模式
 
@@ -210,8 +211,8 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
   表版本影响。可作为 `read` / `write` / `readDev` / `writeDev` 的逻辑类型实参。
 - **未知的 `Enum.Member`**：同样**原样输出并给出 `unknown-enum` 警告**，因此
   游戏更新新增枚举无需改编译器；`raw("...")` 可对任意操作数显式原样输出。
-- 需要编译器知道**数值**的枚举（表见 `internal/builtin.EnumConstants`，数值需
-  以游戏 Stationpedia 为准）：
+- 需要编译器知道**数值**的枚举（`internal/builtin.EnumConstants`，由游戏枚举生成
+  加少量兼容别名）：
   - `SorterInstruction`（低 8 位 OP 码）：`None`/`NOP`(0) / `FilterPrefabHashEquals`(1)
     / `FilterPrefabHashNotEquals`(2) / `FilterSortingClassCompare`(3)
     / `FilterSlotTypeCompare`(4) / `FilterQuantityCompare`(5)
@@ -294,6 +295,28 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 
 详见 [`data-segment.md`](data-segment.md)、
 [`spec.md` §4.6](spec.md#46-栈私有-pragma)。
+
+### 5.8 枚举表同步（生成器）
+
+`internal/builtin/gameenums_gen.go` 是游戏枚举的镜像，由 `tools/genenums` 直接
+读取 `Assembly-CSharp.dll` 生成（纯 Go 的 ECMA-335 解析，无需 .NET SDK、无需运行
+游戏）：
+
+```
+go run ./tools/genenums [Assembly-CSharp.dll] [输出文件]
+```
+
+- 省略参数时在常见 Steam 路径查找 DLL，输出
+  `internal/builtin/gameenums_gen.go`。
+- `LogicTypes` / `SlotTypes` 由 `GameEnums` 派生；`EnumConstants` 由除 `LogicType`
+  外的所有组派生，再叠加 `enumExtras`（旧前缀 `ReagentMode.*`、
+  `SorterInstruction.NOP`、裸条件运算名 `Equals`/`Greater`/`Less`/`NotEquals`、
+  `Stack.*` / `SorterStack.Size` / `PrinterStack.*` 便利常量）。`LogicType` 成员
+  是设备属性（见 §5.2），不作为枚举常量。
+- 游戏更新后重跑并提交生成文件即可。`internal/builtin/gameenums_test.go` 会在
+  生成数据缺失或派生结果不一致时失败。
+- 组名 → 游戏类型名的映射在 `tools/genenums/main.go` 顶部的 `groups`；某个类型被
+  改名会让生成器直接报错，而不是静默清空。
 
 ---
 
