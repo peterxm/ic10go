@@ -210,6 +210,18 @@ func TestUnknownEnumSuggestion(t *testing.T) {
 	}
 }
 
+// TestConstCallsPureFunctionFolds checks `const` may call a pure user function
+// and the call folds away entirely.
+func TestConstCallsPureFunctionFolds(t *testing.T) {
+	src := "func triple(x num) num { return x * 3 }\n" +
+		"const K = triple(3)\n" +
+		"func main() { d0.Setting = K }\n"
+	code := mustCompile(t, src)
+	if !strings.Contains(code, "s d0 Setting 9") {
+		t.Errorf("const user-function call not folded:\n%s", code)
+	}
+}
+
 func TestRedundantLoadEliminated(t *testing.T) {
 	code := mustCompile(t, "func main() { x := d0.Temperature; y := d0.Temperature; d1.Setting = x + y }\n")
 	if n := strings.Count(code, "l r"); n != 1 {

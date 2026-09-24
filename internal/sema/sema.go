@@ -130,6 +130,9 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 		DeclTypes:     map[*ast.Ident]Type{},
 	}
 
+	var pendingConsts []pendingConst
+	var pendingTables []pendingTable
+
 	for _, d := range file.Decls {
 		switch d := d.(type) {
 		case *ast.ConstDecl:
@@ -163,12 +166,9 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 				info.RawConsts[d.Name.Name] = raw
 				continue
 			}
-			v, ok := Eval(d.Value, info.Consts)
-			if !ok {
-				diags.Errorf(d.Value.Pos(), "constant %q is not a compile-time expression", d.Name.Name)
-				continue
-			}
-			info.Consts[d.Name.Name] = v
+			// A numeric constant is evaluated after every declaration is known
+			// (see evalPending), so it may call pure user functions.
+			pendingConsts = append(pendingConsts, pendingConst{d.Name.Name, d.Value})
 		case *ast.DataDecl:
 			if _, exists := info.DataIndex[d.Name.Name]; exists {
 				diags.Errorf(d.Name.Pos(), "data table %q redeclared", d.Name.Name)
@@ -190,17 +190,13 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 				diags.Errorf(d.Name.Pos(), "data table %q conflicts with a function", d.Name.Name)
 				continue
 			}
+			// Register the table now (so name conflicts are still caught) and
+			// fill its elements after the constants are resolved, so an element
+			// may call a pure user function.
 			t := &DataTable{Name: d.Name.Name}
-			for _, v := range d.Values {
-				lit, ok := dataLiteral(v, info.Consts)
-				if !ok {
-					diags.Errorf(v.Pos(), "data element is not a compile-time expression")
-					continue
-				}
-				t.Values = append(t.Values, lit)
-			}
 			info.Data = append(info.Data, t)
 			info.DataIndex[d.Name.Name] = t
+			pendingTables = append(pendingTables, pendingTable{table: t, exprs: d.Values})
 		case *ast.FuncDecl:
 			if _, exists := info.Funcs[d.Name.Name]; exists {
 				diags.Errorf(d.Name.Pos(), "function %q redeclared", d.Name.Name)
@@ -290,6 +286,8 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 			info.BusBindings[d.Bus.Name] = BusConn{Device: dev, Conn: b.Conn}
 		}
 	}
+
+	evalPending(info, diags, pendingConsts, pendingTables)
 
 	collectTableSwitches(info, diags, opts)
 	assignData(info, opts.FixedDataBase)
@@ -541,17 +539,45 @@ func sameDevice(a, b ast.Expr) bool {
 	return false
 }
 
+// evalState folds compile-time expressions. With funcs set it also interprets
+// pure user functions, so `const X = helper(3)` works when helper touches
+// nothing but its arguments.
+type evalState struct {
+	consts map[string]float64
+	funcs  map[string]*FuncInfo
+	devs   map[string]string
+	data   map[string]*DataTable
+	pure   map[string]bool
+	scope  []map[string]float64
+	steps  int
+	depth  int
+}
+
+// maxEvalSteps bounds compile-time interpretation so a non-terminating loop in
+// a `const` reports an error instead of hanging the compiler. Compile-time
+// helpers are expected to be tiny (a handful of table values).
+const maxEvalSteps = 200000
+
+// maxEvalDepth bounds compile-time call nesting (the language has no recursion,
+// so this only guards a malformed program).
+const maxEvalDepth = 64
+
 // Eval evaluates an expression to a compile-time constant. It returns false if
-// the expression is not constant.
+// the expression is not constant. User functions are not interpreted; the
+// declaration walk uses evalPending, which is.
 func Eval(e ast.Expr, consts map[string]float64) (float64, bool) {
+	return (&evalState{consts: consts}).expr(e)
+}
+
+func (ev *evalState) expr(e ast.Expr) (float64, bool) {
+	if ev.steps++; ev.steps > maxEvalSteps {
+		return 0, false
+	}
 	switch e := e.(type) {
 	case *ast.NumberLit:
 		return e.Value, true
 	case *ast.BoolLit:
-		if e.Value {
-			return 1, true
-		}
-		return 0, true
+		return boolToNum(e.Value), true
 	case *ast.SpecialLit:
 		switch e.Name {
 		case "nan":
@@ -563,73 +589,48 @@ func Eval(e ast.Expr, consts map[string]float64) (float64, bool) {
 		}
 		return 0, false
 	case *ast.ParenExpr:
-		return Eval(e.X, consts)
+		return ev.expr(e.X)
 	case *ast.Ident:
-		v, ok := consts[e.Name]
-		return v, ok
+		return ev.lookup(e.Name)
 	case *ast.UnaryExpr:
-		x, ok := Eval(e.X, consts)
-		if !ok {
-			return 0, false
-		}
-		switch e.Op {
-		case token.Minus:
-			return -x, true
-		case token.Plus:
-			return x, true
-		case token.Not:
-			if x == 0 {
-				return 1, true
-			}
-			return 0, true
-		case token.Tilde:
-			return float64(^int64(x)), true
-		}
-		return 0, false
+		return ev.unary(e)
 	case *ast.BinaryExpr:
-		return evalBinary(e, consts)
+		return ev.binary(e)
 	case *ast.TernaryExpr:
-		c, ok := Eval(e.Cond, consts)
+		c, ok := ev.expr(e.Cond)
 		if !ok {
 			return 0, false
 		}
 		if c != 0 {
-			return Eval(e.Then, consts)
+			return ev.expr(e.Then)
 		}
-		return Eval(e.Else, consts)
+		return ev.expr(e.Else)
 	case *ast.CallExpr:
-		return evalCall(e, consts)
+		return ev.call(e)
 	}
 	return 0, false
 }
 
-// EvalRaw evaluates an expression to a raw IC10 constant: str("...") for a
-// display string, or raw("...") for a verbatim operand (the escape hatch for
-// game constants the compiler does not know).
-func EvalRaw(e ast.Expr) (string, bool) {
-	call, ok := e.(*ast.CallExpr)
+func (ev *evalState) unary(e *ast.UnaryExpr) (float64, bool) {
+	x, ok := ev.expr(e.X)
 	if !ok {
-		return "", false
+		return 0, false
 	}
-	id, ok := call.Fun.(*ast.Ident)
-	if !ok || len(call.Args) != 1 {
-		return "", false
+	switch e.Op {
+	case token.Minus:
+		return -x, true
+	case token.Plus:
+		return x, true
+	case token.Not:
+		return boolToNum(x == 0), true
+	case token.Tilde:
+		return float64(^int64(x)), true
 	}
-	s, ok := call.Args[0].(*ast.StringLit)
-	if !ok {
-		return "", false
-	}
-	switch id.Name {
-	case "str":
-		return "STR(" + strconv.Quote(s.Value) + ")", true
-	case "raw":
-		return s.Value, true
-	}
-	return "", false
+	return 0, false
 }
 
-func evalBinary(e *ast.BinaryExpr, consts map[string]float64) (float64, bool) {
-	x, ok := Eval(e.X, consts)
+func (ev *evalState) binary(e *ast.BinaryExpr) (float64, bool) {
+	x, ok := ev.expr(e.X)
 	if !ok {
 		return 0, false
 	}
@@ -638,7 +639,7 @@ func evalBinary(e *ast.BinaryExpr, consts map[string]float64) (float64, bool) {
 		if x == 0 {
 			return 0, true
 		}
-		y, ok := Eval(e.Y, consts)
+		y, ok := ev.expr(e.Y)
 		if !ok {
 			return 0, false
 		}
@@ -648,17 +649,23 @@ func evalBinary(e *ast.BinaryExpr, consts map[string]float64) (float64, bool) {
 		if x != 0 {
 			return 1, true
 		}
-		y, ok := Eval(e.Y, consts)
+		y, ok := ev.expr(e.Y)
 		if !ok {
 			return 0, false
 		}
 		return boolToNum(y != 0), true
 	}
-	y, ok := Eval(e.Y, consts)
+	y, ok := ev.expr(e.Y)
 	if !ok {
 		return 0, false
 	}
-	switch e.Op {
+	return applyOp(e.Op, x, y)
+}
+
+// applyOp applies a pure binary operator. And/Or short-circuit and are handled
+// by the caller.
+func applyOp(op token.Kind, x, y float64) (float64, bool) {
+	switch op {
 	case token.Plus:
 		return x + y, true
 	case token.Minus:
@@ -695,7 +702,34 @@ func evalBinary(e *ast.BinaryExpr, consts map[string]float64) (float64, bool) {
 	return 0, false
 }
 
-func evalCall(e *ast.CallExpr, consts map[string]float64) (float64, bool) {
+// assignToBinary maps a compound assignment to the operator it applies.
+func assignToBinary(op token.Kind) (token.Kind, bool) {
+	switch op {
+	case token.PlusAssign:
+		return token.Plus, true
+	case token.MinusAssign:
+		return token.Minus, true
+	case token.StarAssign:
+		return token.Star, true
+	case token.SlashAssign:
+		return token.Slash, true
+	case token.PercentAssign:
+		return token.Percent, true
+	case token.AmpAssign:
+		return token.Amp, true
+	case token.PipeAssign:
+		return token.Pipe, true
+	case token.CaretAssign:
+		return token.Caret, true
+	case token.ShlAssign:
+		return token.Shl, true
+	case token.ShrAssign:
+		return token.Shr, true
+	}
+	return 0, false
+}
+
+func (ev *evalState) call(e *ast.CallExpr) (float64, bool) {
 	id, ok := e.Fun.(*ast.Ident)
 	if !ok {
 		return 0, false
@@ -709,35 +743,726 @@ func evalCall(e *ast.CallExpr, consts map[string]float64) (float64, bool) {
 		}
 		return 0, false
 	}
+	if ev.funcs != nil {
+		if _, isUser := ev.funcs[id.Name]; isUser {
+			return ev.userCall(id.Name, e)
+		}
+	}
 	args := make([]float64, len(e.Args))
 	for i, a := range e.Args {
-		v, ok := Eval(a, consts)
+		v, ok := ev.expr(a)
 		if !ok {
 			return 0, false
 		}
 		args[i] = v
 	}
-	switch id.Name {
-	case "abs":
-		return math.Abs(args[0]), len(args) == 1
-	case "sqrt":
-		return math.Sqrt(args[0]), len(args) == 1
-	case "floor":
-		return math.Floor(args[0]), len(args) == 1
-	case "ceil":
-		return math.Ceil(args[0]), len(args) == 1
-	case "round":
-		return math.Round(args[0]), len(args) == 1
-	case "trunc":
-		return math.Trunc(args[0]), len(args) == 1
-	case "pow":
-		return math.Pow(args[0], args[1]), len(args) == 2
-	case "min":
-		return math.Min(args[0], args[1]), len(args) == 2
-	case "max":
-		return math.Max(args[0], args[1]), len(args) == 2
+	return foldBuiltin(id.Name, args)
+}
+
+// foldBuiltin folds a pure builtin over constant arguments. Only builtins with
+// an exact arithmetic meaning are folded; anything with device/stack access or
+// nondeterministic output is left alone.
+func foldBuiltin(name string, a []float64) (float64, bool) {
+	switch len(a) {
+	case 1:
+		switch name {
+		case "abs":
+			return math.Abs(a[0]), true
+		case "sgn":
+			if a[0] > 0 {
+				return 1, true
+			} else if a[0] < 0 {
+				return -1, true
+			}
+			return 0, true
+		case "sqrt":
+			return math.Sqrt(a[0]), true
+		case "exp":
+			return math.Exp(a[0]), true
+		case "log":
+			return math.Log(a[0]), true
+		case "floor":
+			return math.Floor(a[0]), true
+		case "ceil":
+			return math.Ceil(a[0]), true
+		case "round":
+			return math.Round(a[0]), true
+		case "trunc":
+			return math.Trunc(a[0]), true
+		case "sin":
+			return math.Sin(a[0]), true
+		case "cos":
+			return math.Cos(a[0]), true
+		case "tan":
+			return math.Tan(a[0]), true
+		case "asin":
+			return math.Asin(a[0]), true
+		case "acos":
+			return math.Acos(a[0]), true
+		case "atan":
+			return math.Atan(a[0]), true
+		case "isNaN":
+			return boolToNum(math.IsNaN(a[0])), true
+		case "isNotNaN":
+			return boolToNum(!math.IsNaN(a[0])), true
+		}
+	case 2:
+		switch name {
+		case "pow":
+			return math.Pow(a[0], a[1]), true
+		case "atan2":
+			return math.Atan2(a[0], a[1]), true
+		case "min":
+			return math.Min(a[0], a[1]), true
+		case "max":
+			return math.Max(a[0], a[1]), true
+		}
+	case 3:
+		switch name {
+		case "clamp":
+			// IC10: clamp a into [min, max]; NaN bounds give NaN.
+			return ic10Clamp(a[0], a[1], a[2]), true
+		case "lerp":
+			// IC10: interpolate a..b by t, t clamped to 0..1.
+			t := ic10Clamp(a[2], 0, 1)
+			return a[0] + (a[1]-a[0])*t, true
+		}
 	}
 	return 0, false
+}
+
+// ic10Clamp matches IC10's `clamp`: NaN in either bound yields NaN.
+func ic10Clamp(x, lo, hi float64) float64 {
+	if math.IsNaN(lo) || math.IsNaN(hi) {
+		return math.NaN()
+	}
+	if x < lo {
+		return lo
+	}
+	if x > hi {
+		return hi
+	}
+	return x
+}
+
+// ---------------------------------------------------------------------------
+// Interpreting pure user functions
+// ---------------------------------------------------------------------------
+
+// evalFlow is how a statement leaves a compile-time function body.
+type evalFlow int
+
+const (
+	flowNormal evalFlow = iota
+	flowReturn
+	flowBreak
+	flowContinue
+	flowFail // not evaluable at compile time
+)
+
+func (ev *evalState) lookup(name string) (float64, bool) {
+	for i := len(ev.scope) - 1; i >= 0; i-- {
+		if v, ok := ev.scope[i][name]; ok {
+			return v, true
+		}
+	}
+	v, ok := ev.consts[name]
+	return v, ok
+}
+
+func (ev *evalState) declare(name string, v float64) {
+	if len(ev.scope) == 0 {
+		return
+	}
+	ev.scope[len(ev.scope)-1][name] = v
+}
+
+func (ev *evalState) assign(name string, v float64) bool {
+	for i := len(ev.scope) - 1; i >= 0; i-- {
+		if _, ok := ev.scope[i][name]; ok {
+			ev.scope[i][name] = v
+			return true
+		}
+	}
+	return false
+}
+
+// userCall interprets a pure user function over constant arguments.
+func (ev *evalState) userCall(name string, call *ast.CallExpr) (float64, bool) {
+	if !ev.isPure(name) {
+		return 0, false
+	}
+	fi := ev.funcs[name]
+	if fi == nil || fi.Decl == nil || fi.Decl.Body == nil {
+		return 0, false
+	}
+	if len(call.Args) != len(fi.Params) {
+		return 0, false
+	}
+	args := make([]float64, len(call.Args))
+	for i, a := range call.Args {
+		v, ok := ev.expr(a)
+		if !ok {
+			return 0, false
+		}
+		args[i] = v
+	}
+	if ev.depth >= maxEvalDepth {
+		return 0, false
+	}
+	ev.depth++
+	defer func() { ev.depth-- }()
+
+	scope := make(map[string]float64, len(fi.Params))
+	for i, p := range fi.Params {
+		scope[p] = args[i]
+	}
+	ev.scope = append(ev.scope, scope)
+	defer func() { ev.scope = ev.scope[:len(ev.scope)-1] }()
+
+	v, has, fl := ev.execStmts(fi.Decl.Body.List)
+	if fl == flowFail {
+		return 0, false
+	}
+	if fl == flowReturn && has {
+		return v, true
+	}
+	if fi.Decl.Result != "" {
+		return 0, false // declared a result but no return was reached
+	}
+	return 0, true // void function
+}
+
+func (ev *evalState) execBlock(b *ast.BlockStmt) (float64, bool, evalFlow) {
+	ev.scope = append(ev.scope, map[string]float64{})
+	defer func() { ev.scope = ev.scope[:len(ev.scope)-1] }()
+	return ev.execStmts(b.List)
+}
+
+func (ev *evalState) execStmts(list []ast.Stmt) (float64, bool, evalFlow) {
+	for _, s := range list {
+		v, has, fl := ev.execStmt(s)
+		if fl != flowNormal {
+			return v, has, fl
+		}
+	}
+	return 0, false, flowNormal
+}
+
+func (ev *evalState) execStmt(s ast.Stmt) (float64, bool, evalFlow) {
+	if ev.steps++; ev.steps > maxEvalSteps {
+		return 0, false, flowFail
+	}
+	switch s := s.(type) {
+	case *ast.BlockStmt:
+		return ev.execBlock(s)
+
+	case *ast.DeclStmt:
+		switch d := s.Decl.(type) {
+		case *ast.VarDecl:
+			v := 0.0
+			if d.Value != nil {
+				var ok bool
+				v, ok = ev.expr(d.Value)
+				if !ok {
+					return 0, false, flowFail
+				}
+			}
+			ev.declare(d.Name.Name, v)
+			return 0, false, flowNormal
+		case *ast.ConstDecl:
+			v, ok := ev.expr(d.Value)
+			if !ok {
+				return 0, false, flowFail
+			}
+			ev.declare(d.Name.Name, v)
+			return 0, false, flowNormal
+		}
+		return 0, false, flowFail
+
+	case *ast.AssignStmt:
+		id, ok := s.Lhs.(*ast.Ident)
+		if !ok {
+			return 0, false, flowFail
+		}
+		if s.Op == token.Define {
+			v, ok := ev.expr(s.Rhs)
+			if !ok {
+				return 0, false, flowFail
+			}
+			ev.declare(id.Name, v)
+			return 0, false, flowNormal
+		}
+		if bin, ok := assignToBinary(s.Op); ok {
+			old, ok := ev.lookup(id.Name)
+			if !ok {
+				return 0, false, flowFail
+			}
+			y, ok := ev.expr(s.Rhs)
+			if !ok {
+				return 0, false, flowFail
+			}
+			v, ok := applyOp(bin, old, y)
+			if !ok || !ev.assign(id.Name, v) {
+				return 0, false, flowFail
+			}
+			return 0, false, flowNormal
+		}
+		v, ok := ev.expr(s.Rhs)
+		if !ok || !ev.assign(id.Name, v) {
+			return 0, false, flowFail
+		}
+		return 0, false, flowNormal
+
+	case *ast.IncDecStmt:
+		id, ok := s.X.(*ast.Ident)
+		if !ok {
+			return 0, false, flowFail
+		}
+		v, ok := ev.lookup(id.Name)
+		if !ok {
+			return 0, false, flowFail
+		}
+		if s.Op == token.PlusPlus {
+			v++
+		} else {
+			v--
+		}
+		if !ev.assign(id.Name, v) {
+			return 0, false, flowFail
+		}
+		return 0, false, flowNormal
+
+	case *ast.IfStmt:
+		return ev.execIf(s)
+
+	case *ast.ForStmt:
+		return ev.execFor(s)
+
+	case *ast.RangeStmt:
+		return ev.execRange(s)
+
+	case *ast.ReturnStmt:
+		if s.Result == nil {
+			return 0, false, flowReturn
+		}
+		v, ok := ev.expr(s.Result)
+		if !ok {
+			return 0, false, flowFail
+		}
+		return v, true, flowReturn
+
+	case *ast.BreakStmt:
+		if s.Label != nil {
+			return 0, false, flowFail
+		}
+		return 0, false, flowBreak
+
+	case *ast.ContinueStmt:
+		if s.Label != nil {
+			return 0, false, flowFail
+		}
+		return 0, false, flowContinue
+
+	case *ast.ExprStmt:
+		// Only a call is worth evaluating; it must be pure to have got here.
+		if _, ok := s.X.(*ast.CallExpr); !ok {
+			return 0, false, flowFail
+		}
+		if _, ok := ev.expr(s.X); !ok {
+			return 0, false, flowFail
+		}
+		return 0, false, flowNormal
+	}
+	// switch, labels, goto, call and ret are not evaluable.
+	return 0, false, flowFail
+}
+
+func (ev *evalState) execIf(s *ast.IfStmt) (float64, bool, evalFlow) {
+	ev.scope = append(ev.scope, map[string]float64{})
+	defer func() { ev.scope = ev.scope[:len(ev.scope)-1] }()
+
+	if s.Init != nil {
+		if _, _, fl := ev.execStmt(s.Init); fl != flowNormal {
+			return 0, false, fl
+		}
+	}
+	c, ok := ev.expr(s.Cond)
+	if !ok {
+		return 0, false, flowFail
+	}
+	if c != 0 {
+		return ev.execBlock(s.Then)
+	}
+	if s.Else != nil {
+		switch e := s.Else.(type) {
+		case *ast.BlockStmt:
+			return ev.execBlock(e)
+		case *ast.IfStmt:
+			return ev.execIf(e)
+		}
+		return 0, false, flowFail
+	}
+	return 0, false, flowNormal
+}
+
+func (ev *evalState) execFor(s *ast.ForStmt) (float64, bool, evalFlow) {
+	ev.scope = append(ev.scope, map[string]float64{})
+	defer func() { ev.scope = ev.scope[:len(ev.scope)-1] }()
+
+	if s.Init != nil {
+		if _, _, fl := ev.execStmt(s.Init); fl != flowNormal {
+			return 0, false, fl
+		}
+	}
+	for {
+		if s.Cond != nil {
+			c, ok := ev.expr(s.Cond)
+			if !ok {
+				return 0, false, flowFail
+			}
+			if c == 0 {
+				break
+			}
+		}
+		v, has, fl := ev.execBlock(s.Body)
+		switch fl {
+		case flowReturn:
+			return v, has, flowReturn
+		case flowFail:
+			return 0, false, flowFail
+		case flowBreak:
+			return 0, false, flowNormal
+		}
+		if s.Post != nil {
+			if _, _, fl := ev.execStmt(s.Post); fl != flowNormal {
+				return 0, false, fl
+			}
+		}
+	}
+	return 0, false, flowNormal
+}
+
+func (ev *evalState) execRange(s *ast.RangeStmt) (float64, bool, evalFlow) {
+	// Only `for i := range count`; a data-table range is not numeric.
+	if s.Value != nil {
+		return 0, false, flowFail
+	}
+	n, ok := ev.expr(s.X)
+	if !ok || n < 0 || n != math.Trunc(n) || n > maxEvalSteps {
+		return 0, false, flowFail
+	}
+	ev.scope = append(ev.scope, map[string]float64{})
+	defer func() { ev.scope = ev.scope[:len(ev.scope)-1] }()
+
+	for i := 0.0; i < n; i++ {
+		ev.declare(s.Key.Name, i)
+		v, has, fl := ev.execBlock(s.Body)
+		switch fl {
+		case flowReturn:
+			return v, has, flowReturn
+		case flowFail:
+			return 0, false, flowFail
+		case flowBreak:
+			return 0, false, flowNormal
+		}
+	}
+	return 0, false, flowNormal
+}
+
+// ---------------------------------------------------------------------------
+// Purity
+// ---------------------------------------------------------------------------
+
+func (ev *evalState) isPure(name string) bool {
+	if ev.pure == nil {
+		ev.pure = pureFuncs(ev.funcs, ev.devs, ev.data)
+	}
+	return ev.pure[name]
+}
+
+// pureFuncs returns, for every function, whether it can be run at compile time:
+// no device access, no side-effecting or device builtin, no data-table read, and
+// no call to an impure function.
+func pureFuncs(funcs map[string]*FuncInfo, devs map[string]string, data map[string]*DataTable) map[string]bool {
+	impure := map[string]bool{}
+	for name, fi := range funcs {
+		if fi.Decl == nil || fi.Decl.Body == nil || bodyImpure(fi.Decl.Body, funcs, devs, data) {
+			impure[name] = true
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for name, fi := range funcs {
+			if impure[name] {
+				continue
+			}
+			bad := false
+			walkBodyCalls(fi.Decl.Body, func(c *ast.CallExpr) {
+				if id, ok := c.Fun.(*ast.Ident); ok {
+					if _, isFunc := funcs[id.Name]; isFunc && impure[id.Name] {
+						bad = true
+					}
+				}
+			})
+			if bad {
+				impure[name] = true
+				changed = true
+			}
+		}
+	}
+	pure := make(map[string]bool, len(funcs))
+	for name := range funcs {
+		pure[name] = !impure[name]
+	}
+	return pure
+}
+
+// bodyImpure reports whether a function body directly touches a device, the
+// stack, a data table, or a side-effecting/unknown call.
+func bodyImpure(body *ast.BlockStmt, funcs map[string]*FuncInfo, devs map[string]string, data map[string]*DataTable) bool {
+	bad := false
+	walkBody(body,
+		func(e ast.Expr) {
+			switch x := e.(type) {
+			case *ast.SelectorExpr:
+				if isDeviceExpr(x.X, devs) {
+					bad = true
+				}
+			case *ast.IndexExpr:
+				if id, ok := x.X.(*ast.Ident); ok {
+					if _, isData := data[id.Name]; isData {
+						bad = true
+					}
+				}
+				if isDeviceExpr(x.X, devs) {
+					bad = true
+				}
+			case *ast.CallExpr:
+				id, ok := x.Fun.(*ast.Ident)
+				if !ok {
+					bad = true
+					return
+				}
+				if _, isFunc := funcs[id.Name]; isFunc {
+					return // handled by the call-graph propagation
+				}
+				switch id.Name {
+				case "str", "raw", "yield", "sleep", "hcf":
+					bad = true
+					return
+				}
+				if s := builtin.SemOf(id.Name); s.SideEffect || s.ReadsDev || s.WritesDev {
+					bad = true
+				}
+			}
+		},
+		func(s ast.Stmt) {
+			switch s.(type) {
+			case *ast.LabelStmt, *ast.GotoStmt, *ast.CallStmt, *ast.RetStmt:
+				bad = true
+			}
+		})
+	return bad
+}
+
+func isDeviceExpr(e ast.Expr, devs map[string]string) bool {
+	switch x := e.(type) {
+	case *ast.DeviceLit:
+		return true
+	case *ast.Ident:
+		_, ok := devs[x.Name]
+		return ok
+	}
+	return false
+}
+
+// walkBody visits every expression and statement in a function body. The two
+// callbacks are kept separate so a caller can match on one kind.
+func walkBody(body *ast.BlockStmt, funcExpr func(ast.Expr), funcStmt func(ast.Stmt)) {
+	var expr func(ast.Expr)
+	var stmt func(ast.Stmt)
+	expr = func(e ast.Expr) {
+		if e == nil {
+			return
+		}
+		funcExpr(e)
+		switch v := e.(type) {
+		case *ast.UnaryExpr:
+			expr(v.X)
+		case *ast.BinaryExpr:
+			expr(v.X)
+			expr(v.Y)
+		case *ast.ParenExpr:
+			expr(v.X)
+		case *ast.CallExpr:
+			expr(v.Fun)
+			for _, a := range v.Args {
+				expr(a)
+			}
+		case *ast.SelectorExpr:
+			expr(v.X)
+		case *ast.IndexExpr:
+			expr(v.X)
+			expr(v.Index)
+		case *ast.TernaryExpr:
+			expr(v.Cond)
+			expr(v.Then)
+			expr(v.Else)
+		case *ast.RangeExpr:
+			expr(v.Lo)
+			expr(v.Hi)
+		}
+	}
+	stmt = func(s ast.Stmt) {
+		if s == nil {
+			return
+		}
+		funcStmt(s)
+		switch v := s.(type) {
+		case *ast.BlockStmt:
+			for _, st := range v.List {
+				stmt(st)
+			}
+		case *ast.ExprStmt:
+			expr(v.X)
+		case *ast.AssignStmt:
+			expr(v.Lhs)
+			expr(v.Rhs)
+		case *ast.IncDecStmt:
+			expr(v.X)
+		case *ast.IfStmt:
+			stmt(v.Init)
+			expr(v.Cond)
+			stmt(v.Then)
+			stmt(v.Else)
+		case *ast.ForStmt:
+			stmt(v.Init)
+			expr(v.Cond)
+			stmt(v.Post)
+			stmt(v.Body)
+		case *ast.RangeStmt:
+			expr(v.X)
+			stmt(v.Body)
+		case *ast.SwitchStmt:
+			stmt(v.Init)
+			expr(v.Tag)
+			for _, c := range v.Cases {
+				for _, ce := range c.Exprs {
+					expr(ce)
+				}
+				for _, cs := range c.Body {
+					stmt(cs)
+				}
+			}
+		case *ast.ReturnStmt:
+			expr(v.Result)
+		case *ast.DeclStmt:
+			switch d := v.Decl.(type) {
+			case *ast.VarDecl:
+				expr(d.Value)
+			case *ast.ConstDecl:
+				expr(d.Value)
+			}
+		}
+	}
+	for _, s := range body.List {
+		stmt(s)
+	}
+}
+
+func walkBodyCalls(body *ast.BlockStmt, visit func(*ast.CallExpr)) {
+	walkBody(body, func(e ast.Expr) {
+		if c, ok := e.(*ast.CallExpr); ok {
+			visit(c)
+		}
+	}, func(ast.Stmt) {})
+}
+
+// ---------------------------------------------------------------------------
+// Deferred declaration evaluation
+// ---------------------------------------------------------------------------
+
+// pendingConst is a `const NAME = expr` whose value is evaluated after every
+// declaration is known, so the expression may call user functions.
+type pendingConst struct {
+	name string
+	expr ast.Expr
+}
+
+// pendingTable is a `data` table whose elements are evaluated after the consts.
+type pendingTable struct {
+	table *DataTable
+	exprs []ast.Expr
+}
+
+// evalPending resolves the deferred consts (in declaration order, so a const
+// can reference an earlier one) and then the deferred data tables.
+func evalPending(info *Info, diags *diag.Bag, consts []pendingConst, tables []pendingTable) {
+	ev := &evalState{
+		consts: info.Consts,
+		funcs:  info.Funcs,
+		devs:   info.Devices,
+		data:   info.DataIndex,
+	}
+	for _, pc := range consts {
+		v, ok := ev.expr(pc.expr)
+		if !ok {
+			diags.Errorf(pc.expr.Pos(), "constant %q is not a compile-time expression", pc.name)
+			continue
+		}
+		info.Consts[pc.name] = v
+	}
+	for _, pt := range tables {
+		for _, e := range pt.exprs {
+			lit, ok := ev.dataLiteral(e)
+			if !ok {
+				diags.Errorf(e.Pos(), "data element is not a compile-time expression")
+				continue
+			}
+			pt.table.Values = append(pt.table.Values, lit)
+		}
+	}
+}
+
+// dataLiteral renders a data/table element as an IC10 literal: a number, or a
+// game enum name such as LogicType.Open (emitted verbatim, resolved by the game
+// assembler).
+func (ev *evalState) dataLiteral(e ast.Expr) (string, bool) {
+	if v, ok := ev.expr(e); ok {
+		return formatDataValue(v), true
+	}
+	if sel, ok := e.(*ast.SelectorExpr); ok {
+		if id, ok := sel.X.(*ast.Ident); ok {
+			return id.Name + "." + sel.Sel.Name, true
+		}
+	}
+	return "", false
+}
+
+// EvalRaw evaluates an expression to a raw IC10 constant: str("...") for a
+// display string, or raw("...") for a verbatim operand (the escape hatch for
+// game constants the compiler does not know).
+func EvalRaw(e ast.Expr) (string, bool) {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return "", false
+	}
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok || len(call.Args) != 1 {
+		return "", false
+	}
+	s, ok := call.Args[0].(*ast.StringLit)
+	if !ok {
+		return "", false
+	}
+	switch id.Name {
+	case "str":
+		return "STR(" + strconv.Quote(s.Value) + ")", true
+	case "raw":
+		return s.Value, true
+	}
+	return "", false
 }
 
 func boolToNum(b bool) float64 {
