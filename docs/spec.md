@@ -45,7 +45,7 @@ ident = letter { letter | digit | "_" }
 ```
 const  data  var   func  if    else  for    break  continue
 return switch case  default  range
-chip   bus   use
+chip   bus   use   import
 true   false nan   pinf  ninf
 ```
 
@@ -313,6 +313,28 @@ IC10 的持久栈跨 tick、跨换代码保留。默认编译器**无法确定**
 
 > 注意：设备栈 `d0.stack[...]` 属于共享设备，始终按可观测处理，不受本 pragma
 > 影响。
+
+### 4.7 导入（`import`）
+
+顶层 `import "路径"` 把另一个文件的 `const` / `data` / `func` 声明并入当前编译
+单元：
+
+```go
+import "lib.icg"
+import "shared/pid.icg"
+
+func main() { d0.Setting = Kp * errorTerm() }
+```
+
+- 路径相对**导入者所在目录**解析；省略扩展名时补 `.icg`。库搜索目录由
+  `Options.LibDirs` 提供。
+- 被导入文件只能声明 `const` / `data` / `func`：不能有 `chip` / `bus` / `use`，
+  也不能声明 `main`。
+- 同一文件只并入一次：菱形导入与循环导入自动去重。
+- `import` 所在位置即被导入声明的位置，因此后面的声明可以引用被导入的名字，
+  被导入文件之间也能互相引用（按各自 `import` 顺序）。
+- 导入在**编译期展开**，每个节点保留各自文件的位置，诊断指向正确的文件与行。
+- 编辑器（LSP）暂不跟随导入，只在单个缓冲区上检查。
 
 ---
 
