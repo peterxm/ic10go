@@ -17,7 +17,7 @@
 | 悬停文档 | 内建函数**签名 + 用法说明**、逻辑类型含义、枚举成员（如 `Color.Purple = 11`、`DisplayMode.Percent`）、关键字与底层原语、**变量/表达式的类型**；`.ic`/`.ic10` 显示指令说明；**预制体名 / 数字 hash 反查** |
 | 预制体 | `hash("…")` / `HASH("…")` 内补全 1900+ 预制体名；**hash 型实参处**（`batch.*` 的 typeHash、`sorter.filterPrefabHash`、`printer.executeRecipe` 等）直接选预制体名即插入 `hash("…")`；悬停数字 hash 显示预制体名与标题 |
 | 大纲 / 折叠 | 文档符号（函数、常量、变量、标签）+ 代码折叠；`.ic`/`.ic10` 显示标签大纲 |
-| 跳转定义 | `F12` / `Ctrl+点击` |
+| 跳转定义 | `F12` / `Ctrl+点击`；符号若声明在 `import` 的文件里，会跳到那个文件 |
 | 查找引用 / 重命名 | `Shift+F12` / `F2`（单文件内所有引用） |
 | 同名高亮 | 光标处标识符的所有出现位置高亮 |
 | 智能扩选 | `Shift+Alt+→` 从标识符扩到行、代码块、整个文件 |
@@ -27,16 +27,16 @@
 | 类型提示 | 变量声明后显示 inlay hint 类型（`: num` / `: bool` / `: device` / `: data`） |
 | 颜色 | `Color.Red` 等枚举成员显示颜色色块，点选可换色 |
 | 代码透镜 | 每个函数上方显示 **Compile to IC10** |
-| 文档链接 | 函数调用与 `data` 表引用可点击跳到声明行；`hash("…")` / `HASH("…")` / 数字预制体 hash 可点击打开社区 Wiki |
-| 预算常驻 | **状态栏**实时显示当前 `.icg` 的 `行/字节/行长/寄存器/栈` 预算（含数据段 `data a..b`、用户栈 `stack 个数/上限`；悬停显示用户/编译器分区、最高槽位与 `push`/手动 `db.stack[]`/数据段/溢出槽；点击即编译）；文件末尾另有 inlay hint |
+| 文档链接 | 函数调用与 `data` 表引用可点击跳到声明行；`import "…"` 的路径可点击打开目标文件；`hash("…")` / `HASH("…")` / 数字预制体 hash 可点击打开社区 Wiki |
+| 预算常驻 | **状态栏**实时显示当前 `.icg` 的 `行/字节/行长/寄存器/栈` 预算（含数据段 `data a..b`、用户栈 `stack 个数/上限`、一次性装载器 `loader N` 行；悬停显示用户/编译器分区、最高槽位与 `push`/手动 `db.stack[]`/数据段/溢出槽；点击即编译）；文件末尾另有 inlay hint |
 | 栈边界 | 用户栈上限默认固定为 `icg.userStack`（默认 128），用户槽位越界编译报错；开启 `icg.dynamicStack` 后按编译器实际数据段/溢出占用动态确定上限 |
 | 栈私有 | 单芯片默认 `// icg: private-stack`：允许把常量用户栈槽提升为寄存器、消除成对 `push`/`pop`，让 runtime 更短；多芯片默认 `// icg: shared-stack`（保守）。文件里写 pragma 可覆盖 |
 | 格式化 | `Shift+Alt+F`；`[icg]` 默认**保存时格式化**（可在设置中关闭）；`.ic`/`.ic10` 重排空白并对齐指令列 |
 | 数据段 | 命令 **“IC10 Go: 编译为 IC10”** 会自动识别 `data` 表：把一次性「安装代码」复制到剪贴板、并在旁边打开运行代码；`data` 表 / `switch ... table` 有语法高亮与补全。编译器还会把序言里的一次性设置写入（`Mode`/`On`/常量 `Setting`）自动外提到同一份安装代码：**超 128 行时**用来塞进预算，**本来就有 `data` 表时**顺带复用、让 runtime 更小。安装代码超过 128 行时自动拆成多块，扩展会逐块复制并提示继续 |
 | 多芯片 | 一个 `.icg` 用 `chip 名字 { ... }` 声明多块芯片（各自 128 行预算 / loader），用 `bus 名字 { 槽位 }` + `use 名字 on dev:conn`（默认访问点）或 `Bus.槽位[dev][conn]`（内联覆盖）声明通道；`chip`/`bus`/`use` 有语法高亮、语义高亮与片段；`Bus.` 补全槽位、悬停显示通道号。「编译为 IC10」多芯片时弹出芯片选择，再预览/复制该芯片的运行代码与安装代码；状态栏显示芯片数与各芯片预算的较大值 |
-| 片段 | `main`、`hyst`、`pid`（软件 PID）、`piddev`（硬件 PID 控制器配置）、`batchread`、`batchwrite`、`readlt`、`writelt`、`readdev`、`writedev`、`readbyid`、`writebyid`、`readdevslot`、`stackread`、`stackwrite`、`sorterfilter`、`printerexec`、`data`、`datagen`（编译期表推导）、`import`、`func2`（多返回值）、`multi`（多重赋值）、`constfn`（编译期常量函数）、`switchtable`、`chip`（多芯片）、`bus`（命名通道）、`func`、`const`、`slotread` 等 |
+| 片段 | `main`、`hyst`、`pid`（软件 PID）、`piddev`（硬件 PID 控制器配置）、`batchread`、`batchwrite`、`readlt`、`writelt`、`readdev`、`writedev`、`readbyid`、`writebyid`、`readdevslot`、`stackread`、`stackwrite`、`sorterfilter`、`printerexec`、`data`、`datagen`（编译期表推导）、`import`、`func2`（多返回值）、`multi`（多重赋值）、`constfn`（编译期常量函数）、`ternary`/`?:`（三目）、`str`（显示字符串）、`strcat`（编译期字符串拼接）、`hash`（预制体哈希）、`switchtable`、`chip`（多芯片）、`bus`（命名通道）、`func`、`const`、`slotread` 等 |
 | 新语法 | `import "路径"` **跟随导入**：被导入文件的函数/常量在诊断、补全、跳转里解析；多返回值 `func f() (num, num)` + `x, y := f()`；`data T = [expr for i in lo..hi]` 编译期表推导；`const K = helper(3)` 纯函数折叠、`hash("a" + "b")` 编译期字符串——均有高亮、语义高亮、诊断与片段 |
-| 导入补全 | 在 `import "` 后补全当前目录与子目录的 `.icg` 文件；改动磁盘上任意 `.icg` 会重新分析打开的文档，因此编辑被导入文件会刷新导入它的文件 |
+| 导入补全 | 在 `import "` 后补全当前目录与子目录的 `.icg` 文件；改动磁盘上任意 `.icg` 会重新分析打开的文档，因此编辑被导入文件会刷新导入它的文件；被导入文件里的错误会标在**该文件**上（而不是导入它的文件），`import` 路径可悬停查看解析到的文件、可点击打开 |
 
 **上下文感知补全**：
 - `import "` → 当前目录与子目录里的 `.icg` 文件
@@ -116,7 +116,7 @@ func main() {
 
 ## 五、命令
 
-命令面板（`Ctrl+Shift+P`）或编辑器右键菜单：
+命令面板（`Ctrl+Shift+P`）或编辑器右键菜单（`.icg` 内可用快捷键 `Ctrl+Alt+B` 编译、`Ctrl+Alt+R` 运行）：
 
 | 命令 | 说明 |
 |------|------|
@@ -146,6 +146,8 @@ func main() {
 | `icg.userStack` | `128` | 固定的用户栈大小；用户使用达到或超过它的槽位会在编译时报错 |
 | `icg.redundantDeviceWrites` | `false` | 删除重复的同值常量设备写（省行，但改变可观测写序列） |
 | `icg.mergeRenamedTails` | `false` | 在可证明安全时额外合并寄存器分配不同但结构相同的尾块（实验性） |
+| `icg.libDirs` | `[]` | 额外的 `import` 搜索目录（在导入文件所在目录之后查找）；相对路径以第一个工作区目录为基准。同时作用于语言服务器与编译/运行 |
+| `icg.trace.server` | `off` | 设为 `messages` 时在 `IC10 Go` 输出通道记录与语言服务器之间的消息 |
 | `icg.runSteps` | `0` | VM 运行步数上限（`--steps`）；`0` 用编译器默认 1000 |
 | `icg.runTrace` | `false` | VM 运行时打印每条执行的指令（`--trace`） |
 | `icg.runSet` | `[]` | VM 运行前设置设备值，每项一条，如 `d0.Temperature=350`（可重复 `--set`） |
