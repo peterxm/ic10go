@@ -132,6 +132,7 @@ go test ./...
 | [`QUICKSTART.md`](QUICKSTART.md) | 5 分钟上手 |
 | [`docs/spec.md`](docs/spec.md) | `.icg` 语言规范 |
 | [`docs/architecture.md`](docs/architecture.md) | 编译器架构与里程碑 M0–M6 |
+| [`docs/backlog.md`](docs/backlog.md) | 改进清单：零成本表达力与行数杠杆的优先级 |
 | [`docs/target-ic10.md`](docs/target-ic10.md) | IC10 目标约束、指令映射与内建数据（含 `tools/genenums` 枚举表生成） |
 | [`docs/data-segment.md`](docs/data-segment.md) | 持久栈数据段：`data` 表 / loader+runtime / 布局 / 宿主兼容 |
 | [`docs/multichip.md`](docs/multichip.md) | 多芯片：`chip` / `bus` / `use`、通道分配、VM `World`、编辑器支持 |
