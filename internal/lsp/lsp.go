@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -587,11 +589,92 @@ func (s *Server) completion(w *bufio.Writer, id json.RawMessage, params json.Raw
 		reply(w, id, []any{})
 		return
 	}
+	text := s.docs[p.TextDocument.URI]
 	if isIC10URI(p.TextDocument.URI) {
-		reply(w, id, attachDetail(ic10CompletionItems(s.docs[p.TextDocument.URI], p.Position)))
+		reply(w, id, attachDetail(ic10CompletionItems(text, p.Position)))
 		return
 	}
-	reply(w, id, attachDetail(completionItemsFor(s.docs[p.TextDocument.URI], p.Position)))
+	off := posToOffset(text, p.Position)
+	if start, prefix, ok := importArgContext(text, off); ok {
+		dir := s.root
+		if path := fileURIToPath(p.TextDocument.URI); path != "" {
+			dir = filepath.Dir(path)
+		}
+		reply(w, id, attachDetail(importPathItems(text, start, off, dir, prefix)))
+		return
+	}
+	reply(w, id, attachDetail(completionItemsFor(text, p.Position)))
+}
+
+// importArgContext reports whether the cursor is inside the path of an
+// `import "..."` declaration, returning the offset just after the opening quote
+// and the path typed so far.
+func importArgContext(text string, off int) (start int, prefix string, ok bool) {
+	if off > len(text) {
+		off = len(text)
+	}
+	lineStart := strings.LastIndexByte(text[:off], '\n') + 1
+	line := text[lineStart:off]
+	i := 0
+	for i < len(line) && (line[i] == ' ' || line[i] == '\t') {
+		i++
+	}
+	if !strings.HasPrefix(line[i:], "import") {
+		return 0, "", false
+	}
+	i += len("import")
+	if i >= len(line) || (line[i] != ' ' && line[i] != '\t') {
+		return 0, "", false
+	}
+	for i < len(line) && (line[i] == ' ' || line[i] == '\t') {
+		i++
+	}
+	if i >= len(line) || line[i] != '"' {
+		return 0, "", false
+	}
+	prefix = line[i+1:]
+	if strings.ContainsRune(prefix, '"') {
+		return 0, "", false
+	}
+	return lineStart + i + 1, prefix, true
+}
+
+// importPathItems completes the path of an `import "..."` with the .icg files
+// and subdirectories of dir (plus whatever subdirectory the prefix names).
+func importPathItems(text string, start, off int, dir, prefix string) []completionItem {
+	if dir == "" {
+		return nil
+	}
+	sub := ""
+	if i := strings.LastIndexByte(prefix, '/'); i >= 0 {
+		sub = prefix[:i+1]
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, filepath.FromSlash(sub)))
+	if err != nil {
+		return nil
+	}
+	rng := lspRange{Start: offsetToLSP(text, start), End: offsetToLSP(text, off)}
+	var items []completionItem
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		if e.IsDir() {
+			label := sub + name + "/"
+			items = append(items, completionItem{Label: label, Kind: 19, Detail: "directory",
+				TextEdit: &textEdit{Range: rng, NewText: label}})
+			continue
+		}
+		if !strings.HasSuffix(name, ".icg") {
+			continue
+		}
+		label := sub + name
+		items = append(items, completionItem{Label: label, Kind: 17, Detail: "import",
+			TextEdit: &textEdit{Range: rng, NewText: label}})
+	}
+	sortItems(items)
+	return items
 }
 
 // completionItemsFor returns context-aware completion items: after a device

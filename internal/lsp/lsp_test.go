@@ -770,3 +770,25 @@ func TestImportsResolveInLSP(t *testing.T) {
 		t.Errorf("imported symbol should resolve without errors:\n%s", out)
 	}
 }
+
+// TestImportPathCompletion checks `import "` lists the .icg files next to the
+// document.
+func TestImportPathCompletion(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "lib.icg"), []byte("const A = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "other.icg"), []byte("const B = 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainPath := filepath.Join(dir, "main.icg")
+	text := "import \""
+	if err := os.WriteFile(mainPath, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := "file://" + filepath.ToSlash(mainPath)
+	out := openAndRequest(t, uri, text, "textDocument/completion", `,"position":{"line":0,"character":8}`)
+	if !strings.Contains(out, "lib.icg") || !strings.Contains(out, "other.icg") {
+		t.Errorf("import completion should list sibling .icg files:\n%s", out)
+	}
+}
