@@ -466,9 +466,26 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	}
 	// Try each outline plan with and without constant data-read folding; the
 	// shortest runtime wins (folding is usually shorter, but not always).
+	// Try several outline plans and keep the shortest: all inlined, the planned
+	// set, and (when it has more than one member) each function alone, since
+	// outlining one function may pay off when the whole set does not.
 	outlines := []map[string]bool{nil}
 	if len(plan) > 0 {
 		outlines = append(outlines, plan)
+		if len(plan) > 1 {
+			names := make([]string, 0, len(plan))
+			for name := range plan {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			const maxSinglePlans = 2
+			for i, name := range names {
+				if i >= maxSinglePlans {
+					break
+				}
+				outlines = append(outlines, map[string]bool{name: true})
+			}
+		}
 	}
 	// Data-read folding only matters when there is a data segment; without one
 	// the two variants are identical, so skip the extra compile.
