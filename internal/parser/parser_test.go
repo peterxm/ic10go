@@ -287,3 +287,17 @@ func TestParseImport(t *testing.T) {
 		t.Errorf("path = %q, want lib.icg", imp.Path.Value)
 	}
 }
+
+func TestParseDataComprehension(t *testing.T) {
+	tree, diags := parse(t, "data T = [i * 2 for i in 0..9]\n")
+	if diags.HasErrors() {
+		t.Fatalf("unexpected errors: %+v", diags.Diags)
+	}
+	d, ok := tree.Decls[0].(*ast.DataDecl)
+	if !ok || d.Comp == nil {
+		t.Fatalf("decl = %#v, want a comprehension data table", tree.Decls[0])
+	}
+	if d.Comp.Var.Name != "i" {
+		t.Errorf("comprehension variable = %q, want i", d.Comp.Var.Name)
+	}
+}

@@ -151,14 +151,42 @@ func (p *parser) parseDataDecl() []ast.Decl {
 	name := p.parseIdent()
 	p.expect(token.Assign)
 	p.expect(token.LBracket)
-	var vals []ast.Expr
-	for !p.at(token.RBracket) && !p.at(token.EOF) {
-		vals = append(vals, p.parseExpr())
-		if p.at(token.Comma) {
-			p.advance()
-			continue
+	if p.at(token.RBracket) {
+		p.advance()
+		return []ast.Decl{&ast.DataDecl{NodeBase: base(kw.Pos), Name: name}}
+	}
+	first := p.parseExpr()
+	// Comprehension: `[ expr for i in lo..hi ]`.
+	if p.at(token.For) {
+		p.advance()
+		v := p.parseIdent()
+		inTok := p.expect(token.Ident)
+		if inTok.Text != "in" {
+			p.errorf(inTok.Pos, "expected 'in', found %q", inTok.Text)
 		}
-		break
+		lo := p.parseExpr()
+		p.expect(token.DotDot)
+		hi := p.parseExpr()
+		p.expect(token.RBracket)
+		return []ast.Decl{&ast.DataDecl{
+			NodeBase: base(kw.Pos),
+			Name:     name,
+			Comp: &ast.DataComp{
+				NodeBase: base(first.Pos()),
+				Expr:     first,
+				Var:      v,
+				Lo:       lo,
+				Hi:       hi,
+			},
+		}}
+	}
+	vals := []ast.Expr{first}
+	for p.at(token.Comma) && !p.at(token.EOF) {
+		p.advance()
+		if p.at(token.RBracket) {
+			break
+		}
+		vals = append(vals, p.parseExpr())
 	}
 	p.expect(token.RBracket)
 	return []ast.Decl{&ast.DataDecl{NodeBase: base(kw.Pos), Name: name, Values: vals}}

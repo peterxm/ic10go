@@ -196,7 +196,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 			t := &DataTable{Name: d.Name.Name}
 			info.Data = append(info.Data, t)
 			info.DataIndex[d.Name.Name] = t
-			pendingTables = append(pendingTables, pendingTable{table: t, exprs: d.Values})
+			pendingTables = append(pendingTables, pendingTable{table: t, decl: d})
 		case *ast.FuncDecl:
 			if _, exists := info.Funcs[d.Name.Name]; exists {
 				diags.Errorf(d.Name.Pos(), "function %q redeclared", d.Name.Name)
@@ -1393,8 +1393,12 @@ type pendingConst struct {
 // pendingTable is a `data` table whose elements are evaluated after the consts.
 type pendingTable struct {
 	table *DataTable
-	exprs []ast.Expr
+	decl  *ast.DataDecl
 }
+
+// maxDataGen bounds a `data` comprehension so a huge range is an error rather
+// than a stack overflow. The persistent stack is 512 slots.
+const maxDataGen = StackSize
 
 // evalPending resolves the deferred consts (in declaration order, so a const
 // can reference an earlier one) and then the deferred data tables.
@@ -1414,7 +1418,16 @@ func evalPending(info *Info, diags *diag.Bag, consts []pendingConst, tables []pe
 		info.Consts[pc.name] = v
 	}
 	for _, pt := range tables {
-		for _, e := range pt.exprs {
+		if pt.decl.Comp != nil {
+			vals, ok := ev.dataComp(pt.decl.Comp)
+			if !ok {
+				diags.Errorf(pt.decl.Comp.Pos(), "data table %q is not a compile-time expression", pt.decl.Name.Name)
+				continue
+			}
+			pt.table.Values = append(pt.table.Values, vals...)
+			continue
+		}
+		for _, e := range pt.decl.Values {
 			lit, ok := ev.dataLiteral(e)
 			if !ok {
 				diags.Errorf(e.Pos(), "data element is not a compile-time expression")
@@ -1438,6 +1451,36 @@ func (ev *evalState) dataLiteral(e ast.Expr) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// dataComp evaluates a `data` comprehension `[ expr for i in lo..hi ]` at
+// compile time. The bounds must fold to integers and the result must fit the
+// persistent stack.
+func (ev *evalState) dataComp(c *ast.DataComp) ([]string, bool) {
+	lo, ok := ev.expr(c.Lo)
+	if !ok {
+		return nil, false
+	}
+	hi, ok := ev.expr(c.Hi)
+	if !ok {
+		return nil, false
+	}
+	if lo != math.Trunc(lo) || hi != math.Trunc(hi) || hi < lo || hi-lo+1 > maxDataGen {
+		return nil, false
+	}
+	ev.scope = append(ev.scope, map[string]float64{})
+	defer func() { ev.scope = ev.scope[:len(ev.scope)-1] }()
+
+	out := make([]string, 0, int(hi-lo)+1)
+	for i := lo; i <= hi; i++ {
+		ev.scope[len(ev.scope)-1][c.Var.Name] = i
+		lit, ok := ev.dataLiteral(c.Expr)
+		if !ok {
+			return nil, false
+		}
+		out = append(out, lit)
+	}
+	return out, true
 }
 
 // EvalRaw evaluates an expression to a raw IC10 constant: str("...") for a

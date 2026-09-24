@@ -55,11 +55,23 @@ type ConstDecl struct {
 }
 
 // DataDecl is a top-level `data Name = [ ... ]` table. Its elements are
-// compile-time constants stored in the persistent IC10 stack.
+// compile-time constants stored in the persistent IC10 stack. It may instead be
+// a comprehension `data Name = [ expr for i in lo..hi ]`.
 type DataDecl struct {
 	NodeBase
 	Name   *Ident
 	Values []Expr
+	Comp   *DataComp // set for the comprehension form
+}
+
+// DataComp is `[ expr for i in lo..hi ]`: the compiler evaluates expr once per
+// index at compile time and stores the results as the table.
+type DataComp struct {
+	NodeBase
+	Expr Expr
+	Var  *Ident
+	Lo   Expr
+	Hi   Expr
 }
 
 type VarDecl struct {

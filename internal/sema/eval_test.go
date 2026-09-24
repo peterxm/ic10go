@@ -107,3 +107,42 @@ const B = countTo(7)
 		t.Errorf("B = %v, want 7", got)
 	}
 }
+
+func TestDataComprehension(t *testing.T) {
+	info, diags := check(t, `
+func sq(i num) num { return i * i }
+data Squares = [sq(i) for i in 0..4]
+data Doubles = [i * 2 for i in 1..3]
+`)
+	if diags.HasErrors() {
+		t.Fatalf("unexpected errors: %+v", diags.Diags)
+	}
+	checkValues(t, info, "Squares", []string{"0", "1", "4", "9", "16"})
+	checkValues(t, info, "Doubles", []string{"2", "4", "6"})
+}
+
+func TestDataComprehensionRejectsNonConstantBounds(t *testing.T) {
+	_, diags := check(t, `
+func main() { d0.On = 1 }
+data T = [i for i in 0..n]
+`)
+	if !diags.HasErrors() {
+		t.Error("expected an error for a non-constant comprehension bound")
+	}
+}
+
+func checkValues(t *testing.T, info *Info, name string, want []string) {
+	t.Helper()
+	tbl := info.DataIndex[name]
+	if tbl == nil {
+		t.Fatalf("data table %s missing", name)
+	}
+	if len(tbl.Values) != len(want) {
+		t.Fatalf("%s = %v, want %v", name, tbl.Values, want)
+	}
+	for i, w := range want {
+		if tbl.Values[i] != w {
+			t.Errorf("%s[%d] = %q, want %q", name, i, tbl.Values[i], w)
+		}
+	}
+}

@@ -215,6 +215,18 @@ func (p *printer) declIn(d Decl, inGroup bool) {
 	case *DataDecl:
 		p.write("data ")
 		p.write(d.Name.Name)
+		if d.Comp != nil {
+			p.write(" = [")
+			p.expr(d.Comp.Expr)
+			p.write(" for ")
+			p.write(d.Comp.Var.Name)
+			p.write(" in ")
+			p.expr(d.Comp.Lo)
+			p.write("..")
+			p.expr(d.Comp.Hi)
+			p.write("]")
+			return
+		}
 		if len(d.Values) == 0 {
 			p.write(" = []")
 			return
