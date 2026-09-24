@@ -137,7 +137,8 @@ const (
 )
 ```
 
-常量在编译期内联并折叠，不生成 `define`。
+常量在编译期内联并折叠，不生成 `define`。常量表达式可以调用**纯用户函数**与
+纯内建（见 §9.1），例如 `const K = triple(3)`。
 
 也可以给**设备端口**起别名（同样是编译期消解，不占寄存器）：
 
@@ -214,7 +215,7 @@ data RecipeDisplay = [ -1301215609, -404336834, 226410516 ]
 data RecipeHeat    = [ 0.009501, 0.009502, 0.009503 ]
 ```
 
-- 元素只能是编译期常量：数字、`hash("...")`，或游戏枚举名
+- 元素只能是编译期常量：数字、`hash("...")`、**纯函数调用**（见 §9.1），或游戏枚举名
   （如 `LogicType.Open`，原样写入 loader，由游戏汇编器解析）。
 - `Table[i]` 读栈：编译为 `get(db, base + i)`（1 条指令），`i` 可为变量。
 - 表**只读**，越界不检查（与 IC10 一致）。
@@ -721,11 +722,30 @@ put(d1, 9, printer.missingRecipeReagent(2, hash("Iron"))) // ceil<<8 | hash<<16 
 以下内容在编译期完成，不占运行期指令：
 
 - 常量折叠（算术、比较、位运算、逻辑）
-- `hash()` 的 CRC-32
+- **纯内建折叠**：`abs sgn sqrt exp log floor ceil round trunc sin cos tan
+  asin acos atan atan2 pow min max clamp lerp isNaN isNotNaN` 与 `hash()`
+- **纯用户函数求值**：`const` / `data` 可以调用**纯函数**，在编译期解释执行
 - 批量模式名 → 数字
 - 逻辑类型名 → IC10 标识符
 - 死代码消除、常量传播、公共子表达式消除
 - 设备成员合法性校验（可关闭）
+
+### 9.1 纯函数与编译期执行
+
+`const K = triple(3)`、`data T = [square(0), square(1)]` 里的调用会在编译期算完，
+产物里没有这次调用。一个函数是**纯**的，当且仅当它（及其调用的所有函数）：
+
+- 不访问设备/槽位/设备栈，不读写持久栈；
+- 不调用有副作用的内建（`yield`/`sleep`/`push`/`put`/`write`…）或未知调用；
+- 不读 `data` 表（其值是原始 IC10 字面量）。
+
+求值器支持局部变量、`if/else`、`for`、`range <count>`、`return`、赋值与
+`++/--`、三元、算术/比较、纯内建与纯用户函数调用。**switch、标签/`goto`、
+设备/data 参数**不参与编译期求值。
+
+编译期解释带**步数预算**：不终止的 `for {}` 会以
+`constant "K" is not a compile-time expression` 报错，而不是挂起编译器。非纯函数
+在 `const` 中同样报这个错。
 
 ---
 
