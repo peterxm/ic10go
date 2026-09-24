@@ -1642,7 +1642,12 @@ func (l *lowerer) lowerDeviceRead(e *ast.SelectorExpr) ir.Value {
 		// game enums work without a compiler update (the game assembler
 		// resolves the name). Warn so typos are still visible.
 		full := id.Name + "." + e.Sel.Name
-		l.diags.WarnfCode("unknown-enum", e.Pos(),
+		if fix := builtin.ClosestEnumMember(full); fix != "" {
+			l.diags.WarnfCode("unknown-enum", e.Sel.Pos(),
+				"unknown enum %q; did you mean %q? (emitting verbatim; add it to builtin.EnumConstants for a numeric value)", full, fix)
+			return &ir.Const{Raw: full}
+		}
+		l.diags.WarnfCode("unknown-enum", e.Sel.Pos(),
 			"unknown enum %q; emitting verbatim (add it to builtin.EnumConstants for a numeric value)", full)
 		return &ir.Const{Raw: full}
 	}
@@ -1655,12 +1660,20 @@ func (l *lowerer) checkLogic(pos source.Pos, name string) {
 	if l.noCheck || builtin.LogicTypes[name] {
 		return
 	}
+	if fix := builtin.ClosestLogicType(name); fix != "" {
+		l.diags.WarnfCode("unknown-logic-type", pos, "unknown logic type %q; did you mean %q?", name, fix)
+		return
+	}
 	l.diags.WarnfCode("unknown-logic-type", pos, "unknown logic type %q", name)
 }
 
 // checkSlot warns about a slot type that is not in the built-in table.
 func (l *lowerer) checkSlot(pos source.Pos, name string) {
 	if l.noCheck || builtin.SlotTypes[name] {
+		return
+	}
+	if fix := builtin.ClosestSlotType(name); fix != "" {
+		l.diags.WarnfCode("unknown-slot-type", pos, "unknown slot type %q; did you mean %q?", name, fix)
 		return
 	}
 	l.diags.WarnfCode("unknown-slot-type", pos, "unknown slot type %q", name)

@@ -460,10 +460,24 @@ func TestSignatureHelp(t *testing.T) {
 }
 
 func TestCodeActionDidYouMean(t *testing.T) {
-	diag := `"context":{"diagnostics":[{"range":{"start":{"line":0,"character":13},"end":{"line":0,"character":23}},"message":"unknown logic type \"Temperatur\"","severity":2,"source":"ic10c"}]}`
-	out := openAndRequest(t, "ca.icg", "func main() { d0.Temperatur = 1 }", "textDocument/codeAction", ","+diag)
-	if !strings.Contains(out, "Temperature") {
-		t.Errorf("code action did not suggest the closest logic type:\n%s", out)
+	diag := `"context":{"diagnostics":[{"range":{"start":{"line":0,"character":3},"end":{"line":0,"character":13}},"message":"unknown logic type \"Temperatur\"; did you mean \"Temperature\"?","severity":2,"source":"ic10c"}]}`
+	out := openAndRequest(t, "ca.icg", "d0.Temperatur", "textDocument/codeAction", ","+diag)
+	if !strings.Contains(out, `"newText":"Temperature"`) {
+		t.Errorf("code action did not replace the whole typo with Temperature:\n%s", out)
+	}
+	if !strings.Contains(out, `"title":"Change logic type to Temperature"`) {
+		t.Errorf("code action title missing:\n%s", out)
+	}
+}
+
+func TestCodeActionUnknownEnum(t *testing.T) {
+	diag := `"context":{"diagnostics":[{"range":{"start":{"line":0,"character":6},"end":{"line":0,"character":10}},"message":"unknown enum \"Color.Blck\"; did you mean \"Color.Black\"? (emitting verbatim)","severity":2,"source":"ic10c"}]}`
+	out := openAndRequest(t, "ce.icg", "Color.Blck", "textDocument/codeAction", ","+diag)
+	if !strings.Contains(out, `"title":"Change enum member to Color.Black"`) {
+		t.Errorf("code action did not suggest the right enum member:\n%s", out)
+	}
+	if !strings.Contains(out, `"newText":"Black"`) {
+		t.Errorf("code action should replace only the member:\n%s", out)
 	}
 }
 

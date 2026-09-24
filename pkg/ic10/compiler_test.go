@@ -181,6 +181,33 @@ func TestUnknownLogicTypeWarns(t *testing.T) {
 	if !strings.Contains(diags.Diags[0].Msg, "unknown logic type") {
 		t.Errorf("unexpected diagnostic: %s", diags.Diags[0].Msg)
 	}
+	if !strings.Contains(diags.Diags[0].Msg, `did you mean "Temperature"?`) {
+		t.Errorf("warning should suggest the right spelling: %s", diags.Diags[0].Msg)
+	}
+}
+
+// TestUnknownSlotTypeSuggestion checks a typo in a slot property names the
+// right spelling.
+func TestUnknownSlotTypeSuggestion(t *testing.T) {
+	_, diags, _ := ic10.Compile("test.icg", []byte("func main() { x := d0.slot[0].Quantit\n d1.Setting = x }\n"))
+	if diags.HasErrors() {
+		t.Fatal("a typo should warn, not error")
+	}
+	if len(diags.Diags) == 0 || !strings.Contains(diags.Diags[0].Msg, `did you mean "Quantity"?`) {
+		t.Errorf("slot typo should suggest Quantity, got %+v", diags.Diags)
+	}
+}
+
+// TestUnknownEnumSuggestion checks a typo in a game enum member names the
+// right spelling, staying inside the same group.
+func TestUnknownEnumSuggestion(t *testing.T) {
+	_, diags, _ := ic10.Compile("test.icg", []byte("func main() { d0.Color = Color.Blck }\n"))
+	if diags.HasErrors() {
+		t.Fatal("a typo should warn, not error")
+	}
+	if len(diags.Diags) == 0 || !strings.Contains(diags.Diags[0].Msg, `did you mean "Color.Black"?`) {
+		t.Errorf("enum typo should suggest Color.Black, got %+v", diags.Diags)
+	}
 }
 
 func TestRedundantLoadEliminated(t *testing.T) {

@@ -909,19 +909,28 @@ func (s *Server) codeAction(w *bufio.Writer, id json.RawMessage, params json.Raw
 		return
 	}
 	uri := p.TextDocument.URI
+	text := s.docs[uri]
 	var actions []any
 	for _, d := range p.Context.Diagnostics {
 		switch {
 		case strings.Contains(d.Message, "unknown logic type"):
 			if name := quoted(d.Message); name != "" {
-				if fix := closest(name, builtin.LogicTypes); fix != "" {
-					actions = append(actions, replaceAction(uri, "Change logic type to "+fix, d.Range, fix))
+				if fix := builtin.ClosestIn(name, builtin.LogicTypes); fix != "" {
+					actions = append(actions, replaceAction(uri, "Change logic type to "+fix, actionRange(text, d.Range, name), fix))
 				}
 			}
 		case strings.Contains(d.Message, "unknown slot type"):
 			if name := quoted(d.Message); name != "" {
-				if fix := closest(name, builtin.SlotTypes); fix != "" {
-					actions = append(actions, replaceAction(uri, "Change slot type to "+fix, d.Range, fix))
+				if fix := builtin.ClosestIn(name, builtin.SlotTypes); fix != "" {
+					actions = append(actions, replaceAction(uri, "Change slot type to "+fix, actionRange(text, d.Range, name), fix))
+				}
+			}
+		case strings.Contains(d.Message, "unknown enum"):
+			if full := quoted(d.Message); full != "" {
+				if fix := builtin.ClosestEnumMember(full); fix != "" {
+					// The diagnostic points at the member, so replace only it.
+					member := fix[strings.LastIndexByte(fix, '.')+1:]
+					actions = append(actions, replaceAction(uri, "Change enum member to "+fix, actionRange(text, d.Range, member), member))
 				}
 			}
 		case strings.Contains(d.Message, "no main function"):
@@ -963,50 +972,16 @@ func quoted(msg string) string {
 	return msg[i+1 : i+1+j]
 }
 
-func closest(name string, set map[string]bool) string {
-	best := ""
-	bestDist := 1 << 30
-	for cand := range set {
-		d := levenshtein(name, cand)
-		if d < bestDist {
-			bestDist = d
-			best = cand
-		}
+// actionRange returns the range a quickfix should replace for a diagnostic
+// whose message names an identifier of length nameLen. The compiler points the
+// diagnostic at the identifier start but leaves End unset, so the range is
+// widened to the whole word. When the document text is unavailable the original
+// range is kept.
+func actionRange(text string, r lspRange, name string) lspRange {
+	if text == "" {
+		return r
 	}
-	if best == "" || bestDist > 4 {
-		return ""
-	}
-	return best
-}
-
-func levenshtein(a, b string) int {
-	prev := make([]int, len(b)+1)
-	cur := make([]int, len(b)+1)
-	for j := range prev {
-		prev[j] = j
-	}
-	for i := 1; i <= len(a); i++ {
-		cur[0] = i
-		for j := 1; j <= len(b); j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			cur[j] = min3(cur[j-1]+1, prev[j]+1, prev[j-1]+cost)
-		}
-		prev, cur = cur, prev
-	}
-	return prev[len(b)]
-}
-
-func min3(a, b, c int) int {
-	if b < a {
-		a = b
-	}
-	if c < a {
-		a = c
-	}
-	return a
+	return nameRange(text, name, posToOffset(text, r.Start))
 }
 
 // ---------------------------------------------------------------------------
