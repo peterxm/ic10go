@@ -83,10 +83,11 @@ type VarDecl struct {
 
 type FuncDecl struct {
 	NodeBase
-	Name   *Ident
-	Params []*Param
-	Result string // "" means no result
-	Body   *BlockStmt
+	Name    *Ident
+	Params  []*Param
+	Result  string   // "" means no result
+	Results []string // non-nil for multiple results: `func f() (num, num)`
+	Body    *BlockStmt
 }
 
 // ChipDecl is a `chip Name { ... }` block: a separate IC10 program with its own
@@ -252,7 +253,8 @@ type RetStmt struct{ NodeBase }
 
 type ReturnStmt struct {
 	NodeBase
-	Result Expr // may be nil
+	Result  Expr   // may be nil
+	Results []Expr // non-nil for `return a, b`
 }
 
 func (*BlockStmt) stmtNode()    {}
@@ -358,6 +360,13 @@ type RangeExpr struct {
 	Hi Expr
 }
 
+// TupleExpr is a comma-separated expression list. It is only valid as the target
+// of a multi-value assignment (`x, y := f()`), never as a value.
+type TupleExpr struct {
+	NodeBase
+	Elems []Expr
+}
+
 func (*Ident) exprNode()        {}
 func (*NumberLit) exprNode()    {}
 func (*StringLit) exprNode()    {}
@@ -372,3 +381,4 @@ func (*SelectorExpr) exprNode() {}
 func (*IndexExpr) exprNode()    {}
 func (*TernaryExpr) exprNode()  {}
 func (*RangeExpr) exprNode()    {}
+func (*TupleExpr) exprNode()    {}

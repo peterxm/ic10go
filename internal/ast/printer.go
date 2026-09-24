@@ -269,7 +269,16 @@ func (p *printer) declIn(d Decl, inGroup bool) {
 			}
 		}
 		p.write(")")
-		if d.Result != "" {
+		if len(d.Results) > 0 {
+			p.write(" (")
+			for i, r := range d.Results {
+				if i > 0 {
+					p.write(", ")
+				}
+				p.write(r)
+			}
+			p.write(")")
+		} else if d.Result != "" {
 			p.write(" ")
 			p.write(d.Result)
 		}
@@ -474,7 +483,16 @@ func (p *printer) stmt(s Stmt) {
 		p.write("ret")
 	case *ReturnStmt:
 		p.write("return")
-		if s.Result != nil {
+		switch {
+		case len(s.Results) > 0:
+			p.write(" ")
+			for i, r := range s.Results {
+				if i > 0 {
+					p.write(", ")
+				}
+				p.expr(r)
+			}
+		case s.Result != nil:
 			p.write(" ")
 			p.expr(s.Result)
 		}
@@ -535,6 +553,13 @@ func (p *printer) expr(e Expr) {
 		p.write("[")
 		p.expr(e.Index)
 		p.write("]")
+	case *TupleExpr:
+		for i, el := range e.Elems {
+			if i > 0 {
+				p.write(", ")
+			}
+			p.expr(el)
+		}
 	case *TernaryExpr:
 		p.expr(e.Cond)
 		p.write(" ? ")

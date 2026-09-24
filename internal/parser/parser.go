@@ -244,11 +244,30 @@ func (p *parser) parseFuncDecl() *ast.FuncDecl {
 	}
 	p.expect(token.RParen)
 	result := ""
-	if p.at(token.Ident) {
+	var results []string
+	if p.at(token.LParen) {
+		p.advance()
+		for !p.at(token.RParen) && !p.at(token.EOF) {
+			if !p.at(token.Ident) {
+				p.errorf(p.cur().Pos, "expected a result type, found %s", describe(p.cur()))
+				break
+			}
+			results = append(results, p.advance().Text)
+			if p.at(token.Comma) {
+				p.advance()
+				continue
+			}
+			break
+		}
+		p.expect(token.RParen)
+	} else if p.at(token.Ident) {
 		result = p.advance().Text
 	}
+	if len(results) == 1 {
+		result, results = results[0], nil
+	}
 	body := p.parseBlock()
-	return &ast.FuncDecl{NodeBase: base(kw.Pos), Name: name, Params: params, Result: result, Body: body}
+	return &ast.FuncDecl{NodeBase: base(kw.Pos), Name: name, Params: params, Result: result, Results: results, Body: body}
 }
 
 func (p *parser) parseIdent() *ast.Ident {
@@ -459,6 +478,14 @@ func (p *parser) parseStmt() ast.Stmt {
 func (p *parser) parseSimpleStmt() ast.Stmt {
 	pos := p.cur().Pos
 	x := p.parseExpr()
+	if p.at(token.Comma) {
+		elems := []ast.Expr{x}
+		for p.at(token.Comma) {
+			p.advance()
+			elems = append(elems, p.parseExpr())
+		}
+		x = &ast.TupleExpr{NodeBase: base(pos), Elems: elems}
+	}
 	switch p.cur().Kind {
 	case token.Assign, token.Define,
 		token.PlusAssign, token.MinusAssign, token.StarAssign, token.SlashAssign,
@@ -688,6 +715,13 @@ func (p *parser) parseReturn() ast.Stmt {
 	r := &ast.ReturnStmt{NodeBase: base(kw.Pos)}
 	if !p.at(token.Semicolon) && !p.at(token.RBrace) && !p.at(token.EOF) {
 		r.Result = p.parseExpr()
+		for p.at(token.Comma) {
+			p.advance()
+			r.Results = append(r.Results, p.parseExpr())
+		}
+		if r.Results != nil {
+			r.Results = append([]ast.Expr{r.Result}, r.Results...)
+		}
 	}
 	return r
 }

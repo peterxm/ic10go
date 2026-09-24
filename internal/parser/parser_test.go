@@ -301,3 +301,18 @@ func TestParseDataComprehension(t *testing.T) {
 		t.Errorf("comprehension variable = %q, want i", d.Comp.Var.Name)
 	}
 }
+
+func TestParseMultiReturn(t *testing.T) {
+	tree, diags := parse(t, "func f() (num, num) { return 1, 2 }\n")
+	if diags.HasErrors() {
+		t.Fatalf("unexpected errors: %+v", diags.Diags)
+	}
+	fd, ok := tree.Decls[0].(*ast.FuncDecl)
+	if !ok || len(fd.Results) != 2 {
+		t.Fatalf("decl = %#v, want two results", tree.Decls[0])
+	}
+	r, ok := fd.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(r.Results) != 2 {
+		t.Fatalf("return = %#v, want two results", fd.Body.List[0])
+	}
+}

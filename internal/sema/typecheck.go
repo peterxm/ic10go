@@ -81,6 +81,9 @@ type typeChecker struct {
 	diags  *diag.Bag
 	scopes []map[string]binding
 	result string // declared result type of the function being checked
+	// resultCount is how many values the function returns (0 void, 1 single,
+	// >1 for `func f() (num, num)`).
+	resultCount int
 }
 
 // checkBodies type-checks every function body. It runs only when the
@@ -105,7 +108,13 @@ func (c *typeChecker) checkFunc(fi *FuncInfo) {
 	if d.Result != "" && !validTypeName(d.Result) {
 		c.diags.Errorf(d.Pos(), "unknown type %q", d.Result)
 	}
+	for _, r := range d.Results {
+		if !validTypeName(r) {
+			c.diags.Errorf(d.Pos(), "unknown type %q", r)
+		}
+	}
 	c.result = d.Result
+	c.resultCount = fi.Results
 	if d.Body == nil {
 		return
 	}
@@ -134,6 +143,9 @@ func (c *typeChecker) checkFunc(fi *FuncInfo) {
 	c.popScope()
 
 	if d.Result != "" && !terminates(d.Body) {
+		c.diags.Warnf(d.Name.Pos(), "missing return at end of %q", d.Name.Name)
+	}
+	if len(d.Results) > 0 && !terminates(d.Body) {
 		c.diags.Warnf(d.Name.Pos(), "missing return at end of %q", d.Name.Name)
 	}
 }
@@ -231,10 +243,23 @@ func (c *typeChecker) checkStmt(s ast.Stmt) {
 		}
 		c.popScope()
 	case *ast.ReturnStmt:
-		if v.Result != nil {
+		switch {
+		case len(v.Results) > 0:
+			for _, r := range v.Results {
+				c.expr(r)
+			}
+			if c.resultCount != len(v.Results) {
+				c.diags.Errorf(v.Pos(), "function returns %d values, but this returns %d", c.resultCount, len(v.Results))
+			}
+		case v.Result != nil:
 			c.expr(v.Result)
-		} else if c.result != "" {
+			if c.resultCount > 1 {
+				c.diags.Errorf(v.Pos(), "function returns %d values, but this returns 1", c.resultCount)
+			}
+		case c.result != "":
 			c.diags.Errorf(v.Pos(), "missing return value in %q", c.result)
+		case c.resultCount > 0:
+			c.diags.Errorf(v.Pos(), "missing return value")
 		}
 	}
 }
@@ -257,6 +282,10 @@ func (c *typeChecker) checkDecl(d ast.Decl) {
 }
 
 func (c *typeChecker) checkAssign(s *ast.AssignStmt) {
+	if tup, ok := s.Lhs.(*ast.TupleExpr); ok {
+		c.checkTupleAssign(s, tup)
+		return
+	}
 	rhs := c.expr(s.Rhs)
 	if id, ok := s.Lhs.(*ast.Ident); ok {
 		if s.Op == token.Define {
@@ -279,10 +308,41 @@ func (c *typeChecker) checkAssign(s *ast.AssignStmt) {
 	}
 }
 
+// checkTupleAssign handles `x, y := f()`: the right side must be a direct call
+// to a function returning that many values, and every name is a number.
+func (c *typeChecker) checkTupleAssign(s *ast.AssignStmt, tup *ast.TupleExpr) {
+	call, ok := s.Rhs.(*ast.CallExpr)
+	if !ok {
+		c.diags.Errorf(s.Rhs.Pos(), "multiple assignment needs a call returning several values")
+	} else if id, ok := call.Fun.(*ast.Ident); ok {
+		if fi, isFunc := c.info.Funcs[id.Name]; isFunc {
+			c.checkCallArgs(call, fi)
+			if fi.Results != len(tup.Elems) {
+				c.diags.Errorf(call.Pos(), "%s returns %d values, but %d names are assigned", id.Name, fi.Results, len(tup.Elems))
+			}
+		} else {
+			c.diags.Errorf(call.Pos(), "%s does not return several values", id.Name)
+		}
+	} else {
+		c.diags.Errorf(call.Pos(), "multiple assignment needs a direct function call")
+	}
+	for _, el := range tup.Elems {
+		id, ok := el.(*ast.Ident)
+		if !ok {
+			c.expr(el)
+			continue
+		}
+		if s.Op == token.Define {
+			c.declare(id, Num)
+		} else {
+			c.expr(id)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Expressions
 // ---------------------------------------------------------------------------
-
 func (c *typeChecker) expr(e ast.Expr) Type {
 	if e == nil {
 		return Any

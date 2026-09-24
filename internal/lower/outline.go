@@ -53,6 +53,11 @@ func PlanOutlines(info *sema.Info, noOutline bool) map[string]bool {
 
 // outlinable reports whether a function can safely be emitted as a subroutine.
 func outlinable(info *sema.Info, fi *sema.FuncInfo) bool {
+	// A multi-value function is always inlined: IC10's calling convention has a
+	// single result register, so it is emitted at each call site instead.
+	if len(fi.Decl.Results) > 0 {
+		return false
+	}
 	leaf, low := true, false
 	forEachCall(fi.Decl.Body, func(c *ast.CallExpr) {
 		if id, ok := c.Fun.(*ast.Ident); ok {

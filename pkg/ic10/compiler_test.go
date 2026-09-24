@@ -222,6 +222,48 @@ func TestConstCallsPureFunctionFolds(t *testing.T) {
 	}
 }
 
+// TestMultiReturn checks `x, y := f()` with a function returning two values.
+func TestMultiReturn(t *testing.T) {
+	src := "func divmod(a num, b num) (num, num) { return a - b, a + b }\n" +
+		"func main() { q, r := divmod(10, 3)\n d0.Setting = q * 100 + r }\n"
+	code := mustCompile(t, src)
+	if !strings.Contains(code, "s d0 Setting 713") {
+		t.Errorf("multi-return call not folded: q=7 r=13 want 713:\n%s", code)
+	}
+}
+
+func TestMultiReturnReadsDevices(t *testing.T) {
+	src := "func minmax(a num, b num) (num, num) {\n" +
+		"  if a < b { return a, b }\n" +
+		"  return b, a\n" +
+		"}\n" +
+		"func main() { lo, hi := minmax(d0.Temperature, d1.Temperature)\n" +
+		"  d2.Setting = lo\n d3.Setting = hi }\n"
+	code := mustCompile(t, src)
+	if !strings.Contains(code, "s d2 Setting") || !strings.Contains(code, "s d3 Setting") {
+		t.Errorf("multi-return device read not emitted:\n%s", code)
+	}
+}
+
+func TestMultiReturnErrors(t *testing.T) {
+	cases := []string{
+		// Used as a value.
+		"func pair() (num, num) { return 1, 2 }\nfunc main() { d0.Setting = pair() }\n",
+		// Wrong number of targets.
+		"func pair() (num, num) { return 1, 2 }\nfunc main() { x, y, z := pair()\n d0.Setting = x + y + z }\n",
+		// Wrong number of results.
+		"func pair() (num, num) { return 1 }\nfunc main() { x, y := pair()\n d0.Setting = x + y }\n",
+		// Used in a constant.
+		"func pair() (num, num) { return 1, 2 }\nconst K = pair()\nfunc main() { d0.Setting = K }\n",
+	}
+	for _, src := range cases {
+		_, diags, err := ic10.Compile("t.icg", []byte(src))
+		if err == nil && !diags.HasErrors() {
+			t.Errorf("expected a compile error for:\n%s", src)
+		}
+	}
+}
+
 func TestRedundantLoadEliminated(t *testing.T) {
 	code := mustCompile(t, "func main() { x := d0.Temperature; y := d0.Temperature; d1.Setting = x + y }\n")
 	if n := strings.Count(code, "l r"); n != 1 {

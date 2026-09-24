@@ -36,6 +36,9 @@ type Options struct {
 type FuncInfo struct {
 	Decl   *ast.FuncDecl
 	Params []string
+	// Results is how many values the function returns (0 for void, 1 for a
+	// single value, >1 for `func f() (num, num)`).
+	Results int
 }
 
 // BusInfo is a `bus Name { ... }` declaration: a named set of network channels
@@ -215,6 +218,12 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 				continue
 			}
 			fi := &FuncInfo{Decl: d}
+			switch {
+			case len(d.Results) > 0:
+				fi.Results = len(d.Results)
+			case d.Result != "":
+				fi.Results = 1
+			}
 			seen := map[string]bool{}
 			for _, p := range d.Params {
 				if seen[p.Name.Name] {
@@ -894,6 +903,10 @@ func (ev *evalState) userCall(name string, call *ast.CallExpr) (float64, bool) {
 	}
 	fi := ev.funcs[name]
 	if fi == nil || fi.Decl == nil || fi.Decl.Body == nil {
+		return 0, false
+	}
+	// A multi-value function has no single constant value.
+	if fi.Results > 1 {
 		return 0, false
 	}
 	if len(call.Args) != len(fi.Params) {

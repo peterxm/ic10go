@@ -212,8 +212,9 @@ func simplify(fn *ir.Function) {
 }
 
 type inlineCtx struct {
-	result *ir.Reg
-	end    *ir.Block
+	result  *ir.Reg
+	results []*ir.Reg
+	end     *ir.Block
 }
 
 type loopCtx struct {
@@ -533,6 +534,10 @@ func (l *lowerer) lowerDecl(d ast.Decl) {
 }
 
 func (l *lowerer) lowerAssign(s *ast.AssignStmt) {
+	if tup, ok := s.Lhs.(*ast.TupleExpr); ok {
+		l.lowerTupleAssign(s, tup)
+		return
+	}
 	// Compound assignment is desugared into load-op-store.
 	if s.Op != token.Assign && s.Op != token.Define {
 		op, ok := compoundBinOp(s.Op)
@@ -591,8 +596,54 @@ func (l *lowerer) lowerAssign(s *ast.AssignStmt) {
 	l.storeTo(s.Lhs, l.lowerExpr(s.Rhs))
 }
 
-// lowerInsInto lowers an ins(...) call directly into dst, whose previous value
-// is the base the field is inserted into (IC10 read-modify-write). It returns
+// lowerTupleAssign handles `x, y := f()` / `x, y = f()`: the right side must be
+// a multi-value function, which is always inlined, so the results bind straight
+// to the names.
+func (l *lowerer) lowerTupleAssign(s *ast.AssignStmt, tup *ast.TupleExpr) {
+	if s.Op != token.Define && s.Op != token.Assign {
+		l.diags.Errorf(s.Pos(), "multiple assignment supports only := or =")
+		return
+	}
+	call, ok := s.Rhs.(*ast.CallExpr)
+	if !ok {
+		l.diags.Errorf(s.Rhs.Pos(), "multiple assignment needs a call returning several values")
+		return
+	}
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok {
+		l.diags.Errorf(call.Pos(), "multiple assignment needs a direct function call")
+		return
+	}
+	fi, ok := l.info.Funcs[id.Name]
+	if !ok {
+		l.diags.Errorf(call.Pos(), "%s does not return several values", id.Name)
+		return
+	}
+	results := l.inlineMulti(id, fi, call.Args)
+	if len(results) == 0 {
+		return // inlineMulti already reported the problem
+	}
+	if len(results) != len(tup.Elems) {
+		l.diags.Errorf(call.Pos(), "%s returns %d values, but %d names are assigned", id.Name, len(results), len(tup.Elems))
+		return
+	}
+	for i, el := range tup.Elems {
+		ident, ok := el.(*ast.Ident)
+		if !ok {
+			l.diags.Errorf(el.Pos(), "multiple assignment target must be a name")
+			continue
+		}
+		if s.Op == token.Define {
+			r := l.b.NewReg(ident.Name)
+			l.b.Emit(&ir.Assign{Dst: r, Src: results[i]})
+			l.bind(ident.Name, r)
+			continue
+		}
+		l.storeTo(ident, results[i])
+	}
+}
+
+// lowerInsInto lowers an ins(...) call directly into dst, whose previous value// is the base the field is inserted into (IC10 read-modify-write). It returns
 // false when e is not an ins call.
 func (l *lowerer) lowerInsInto(dst *ir.Reg, e ast.Expr) bool {
 	call, ok := e.(*ast.CallExpr)
@@ -709,7 +760,16 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 
 func (l *lowerer) lowerReturn(s *ast.ReturnStmt) {
 	ctx := l.inline[len(l.inline)-1]
-	if s.Result != nil {
+	switch {
+	case len(s.Results) > 0:
+		if len(ctx.results) != len(s.Results) {
+			l.diags.Errorf(s.Pos(), "function returns %d values, but this returns %d", len(ctx.results), len(s.Results))
+			break
+		}
+		for i, e := range s.Results {
+			l.b.Emit(&ir.Assign{Dst: ctx.results[i], Src: l.lowerExpr(e)})
+		}
+	case s.Result != nil:
 		v := l.lowerExpr(s.Result)
 		if ctx.result != nil {
 			l.b.Emit(&ir.Assign{Dst: ctx.result, Src: v})
@@ -2346,19 +2406,40 @@ func (l *lowerer) modeValue(e ast.Expr) (ir.Value, bool) {
 }
 
 func (l *lowerer) inlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr, needResult bool) ir.Value {
+	v, _ := l.inlineInto(id, fi, args, needResult, false)
+	return v
+}
+
+// inlineMulti inlines a call to a function returning several values and returns
+// the result registers.
+func (l *lowerer) inlineMulti(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr) []*ir.Reg {
+	_, results := l.inlineInto(id, fi, args, true, true)
+	return results
+}
+
+func (l *lowerer) inlineInto(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr, needResult, multi bool) (ir.Value, []*ir.Reg) {
 	for _, n := range l.stack {
 		if n == id.Name {
 			l.diags.Errorf(id.Pos(), "recursion is not supported (function %q)", id.Name)
-			return &ir.Const{V: 0}
+			return &ir.Const{V: 0}, nil
 		}
 	}
 	if len(args) != len(fi.Decl.Params) {
 		l.diags.Errorf(id.Pos(), "%s expects %d arguments, got %d", id.Name, len(fi.Decl.Params), len(args))
-		return &ir.Const{V: 0}
+		return &ir.Const{V: 0}, nil
 	}
-	if needResult && fi.Decl.Result == "" {
+	switch {
+	case multi:
+		if len(fi.Decl.Results) == 0 {
+			l.diags.Errorf(id.Pos(), "function %q does not return several values", id.Name)
+			return &ir.Const{V: 0}, nil
+		}
+	case len(fi.Decl.Results) > 0:
+		l.diags.Errorf(id.Pos(), "function %q returns several values; assign them to names", id.Name)
+		return &ir.Const{V: 0}, nil
+	case needResult && fi.Decl.Result == "":
 		l.diags.Errorf(id.Pos(), "function %q does not return a value", id.Name)
-		return &ir.Const{V: 0}
+		return &ir.Const{V: 0}, nil
 	}
 
 	vals := make([]ir.Value, len(args))
@@ -2382,7 +2463,12 @@ func (l *lowerer) inlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr, 
 
 	end := l.newBlock()
 	ctx := inlineCtx{end: end}
-	if fi.Decl.Result != "" {
+	switch {
+	case multi:
+		for range fi.Decl.Results {
+			ctx.results = append(ctx.results, l.b.NewReg(id.Name+"$ret"))
+		}
+	case fi.Decl.Result != "":
 		ctx.result = l.b.NewReg(id.Name + "$ret")
 	}
 	l.inline = append(l.inline, ctx)
@@ -2419,9 +2505,9 @@ func (l *lowerer) inlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr, 
 	l.b.SetBlock(end)
 
 	if ctx.result != nil {
-		return ctx.result
+		return ctx.result, nil
 	}
-	return &ir.Const{V: 0}
+	return &ir.Const{V: 0}, ctx.results
 }
 
 // outlineCall emits a call to an outlined function: arguments are moved into the
