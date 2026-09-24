@@ -692,6 +692,9 @@ str("Ready!")              // 显示字符串，输出为 STR("Ready!")
 raw("Equals")              // 原样输出该 IC10 操作数（游戏枚举/关键字逃生口）
 ```
 
+> `hash` / `str` / `raw` 的实参可以是**编译期字符串拼接**：`hash("Structure" + "GasSensor")`、
+> `str("Re" + "ady!")` 都在编译期折叠，无需运行期字符串。
+
 > `raw("...")` 把字符串原样写进 IC10，用于编译器还不认识的游戏常量或汇编器
 > 关键字；未知的 `Enum.Member` 也会**原样输出并告警**，并在同一枚举组内给出最接近
 > 的拼写建议（例如 `Color.Blck` → `Color.Black`），因此游戏更新新增枚举
@@ -756,6 +759,7 @@ put(d1, 9, printer.missingRecipeReagent(2, hash("Iron"))) // ceil<<8 | hash<<16 
 - 常量折叠（算术、比较、位运算、逻辑）
 - **纯内建折叠**：`abs sgn sqrt exp log floor ceil round trunc sin cos tan
   asin acos atan atan2 pow min max clamp lerp isNaN isNotNaN` 与 `hash()`
+- **编译期字符串拼接**：`hash` / `str` / `raw` 的实参可为 `"A" + "B"`
 - **纯用户函数求值**：`const` / `data` 可以调用**纯函数**，在编译期解释执行
 - 批量模式名 → 数字
 - 逻辑类型名 → IC10 标识符
