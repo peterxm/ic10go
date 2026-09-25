@@ -3,7 +3,6 @@ package ic10
 import (
 	"strings"
 
-	"ic10go/internal/codegen"
 	"ic10go/internal/diag"
 	"ic10go/internal/source"
 )
@@ -20,9 +19,22 @@ type Limits struct {
 	Regs    int `json:"regs"`
 }
 
-// LimitsOf returns the IC10 editor limits enforced by the compiler.
+// LimitsOf returns the default IC10 editor limits enforced by the compiler.
 func LimitsOf() Limits {
-	return Limits{Lines: codegen.MaxLines, Bytes: codegen.MaxBytes, MaxLine: codegen.MaxLineLen, Regs: NumRegs}
+	return limitsOf(Options{})
+}
+
+// LimitsFor returns the IC10 editor limits in effect for opts, after applying
+// the defaults and any IC10C_MAX_* environment overrides. Tools that
+// report a budget without compiling use it.
+func LimitsFor(opts Options) Limits {
+	return limitsOf(stackEnv(opts))
+}
+
+// limitsOf converts the (already env-merged) options into the public Limits.
+func limitsOf(opts Options) Limits {
+	lim := opts.editorLimits()
+	return Limits{Lines: lim.Lines, Bytes: lim.Bytes, MaxLine: lim.LineLen, Regs: NumRegs}
 }
 
 // Position is a 1-based source position.
@@ -109,7 +121,7 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 		Lines:       []string{},
 		Chips:       []ChipJSON{},
 		Diagnostics: []Diagnostic{},
-		Limits:      LimitsOf(),
+		Limits:      LimitsFor(opts),
 		Data:        DataSegment{Access: accessName(opts), Layout: layoutName(opts)},
 	}
 

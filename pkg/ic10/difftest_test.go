@@ -313,7 +313,7 @@ func (g *gen) flushCallees(sb *strings.Builder) {
 
 func (g *gen) stmt(sb *strings.Builder, depth int) {
 	ind := strings.Repeat("    ", depth)
-	if depth >= 4 { // cap nesting so the unoptimized form still fits 128 lines
+	if depth >= 4 { // cap nesting so the unoptimized form still fits the line budget
 		g.simple(sb, ind)
 		return
 	}

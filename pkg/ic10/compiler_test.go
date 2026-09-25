@@ -170,6 +170,37 @@ func TestDeviceValidityBranch(t *testing.T) {
 	}
 }
 
+func TestLoopWithoutYieldWarns(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		warn bool
+	}{
+		{"unbounded", "func main() { for { d0.On = 1 } }", true},
+		{"explicit-yield", "func main() { for { yield(); d0.On = 1 } }", false},
+		{"sleep", "func main() { for { sleep(1); d0.On = 1 } }", false},
+		{"bounded", "func main() { for i := 0; i < 3; i++ { d0.On = 1 } }", false},
+		{"helper-yields", "func step() { yield(); d0.On = 1 }\nfunc main() { for { step() } }", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, diags, err := ic10.Compile("t.icg", []byte(tc.src))
+			if err != nil || diags.HasErrors() {
+				t.Fatalf("compile: %v %v", diags.Diags, err)
+			}
+			got := false
+			for _, d := range diags.Diags {
+				if d.Code == "loop-without-yield" {
+					got = true
+				}
+			}
+			if got != tc.warn {
+				t.Fatalf("loop-without-yield = %v, want %v (diags=%+v)", got, tc.warn, diags.Diags)
+			}
+		})
+	}
+}
+
 func TestUnknownLogicTypeWarns(t *testing.T) {
 	_, diags, _ := ic10.Compile("test.icg", []byte("func main() { d0.Temperatur = 1 }\n"))
 	if diags.HasErrors() {
@@ -303,8 +334,9 @@ func TestSplitSetupLoader(t *testing.T) {
 		}
 	}
 	b.WriteString("    for {\n")
-	// Enough loop lines to push the runtime over the 128-line limit.
-	for i := 0; i < 124; i++ {
+	// Enough loop lines to push the runtime just over the line limit, so the
+	// 6 hoisted setup writes bring it back under.
+	for i := 0; i < ic10.LimitsOf().Lines-4; i++ {
 		b.WriteString("        yield()\n")
 	}
 	b.WriteString("    }\n}\n")

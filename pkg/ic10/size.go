@@ -19,7 +19,7 @@ import (
 // for letting the compiler outline it.
 type SizeReport struct {
 	Total    int            // total IC10 lines
-	Limit    int            // the IC10 line limit (128)
+	Limit    int            // the IC10 line limit in effect (default 128)
 	ByFunc   map[string]int // source function -> lines ("" = main)
 	Outlined []string       // functions emitted once as subroutines
 	PeakLive int            // max virtual registers live at any program point
@@ -89,7 +89,7 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 		} else if opt.MergeTailsColored(fn, colors) {
 			fn.BuildCFG()
 		}
-		_, rep, _ := codegen.GenerateReportWithOptions(fn, colors, codegen.Options{SpillDB: !o.SpillStack})
+		_, rep, _ := codegen.GenerateReportWithOptions(fn, colors, codegen.Options{SpillDB: !o.SpillStack, Limits: o.editorLimits()})
 		if rep == nil {
 			return
 		}
@@ -97,7 +97,7 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 			bestTotal = rep.Total
 			best = &SizeReport{
 				Total:    rep.Total,
-				Limit:    codegen.MaxLines,
+				Limit:    o.editorLimits().Lines,
 				ByFunc:   rep.ByFunc,
 				PeakLive: maxPressure(fn),
 				Spills:   spillCount,

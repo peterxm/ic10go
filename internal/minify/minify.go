@@ -25,6 +25,17 @@ type Options struct {
 	KeepLabels bool
 	// DeadCode removes instructions that cannot be reached from line 0.
 	DeadCode bool
+	// MaxLineLen overrides the IC10 per-line character limit. Zero means the
+	// default MaxLineLen.
+	MaxLineLen int
+}
+
+// lineLimit resolves the effective per-line character limit.
+func (o Options) lineLimit() int {
+	if o.MaxLineLen > 0 {
+		return o.MaxLineLen
+	}
+	return MaxLineLen
 }
 
 type kind int
@@ -159,10 +170,11 @@ func minify(src string, opt Options) (string, error) {
 		}
 	}
 
+	limit := opt.lineLimit()
 	for i, ln := range out {
-		if len(ln) > MaxLineLen {
+		if len(ln) > limit {
 			return "", fmt.Errorf("line %d is %d characters, exceeding the %d character limit (try --keep-defines)",
-				i, len(ln), MaxLineLen)
+				i, len(ln), limit)
 		}
 	}
 	if len(out) == 0 {

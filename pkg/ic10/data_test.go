@@ -320,7 +320,7 @@ func TestSplitLoader(t *testing.T) {
 	for i := 0; i < 300; i++ {
 		fmt.Fprintf(&b, "put db %d %d\n", i, i)
 	}
-	chunks := ic10.SplitLoader(b.String())
+	chunks := ic10.SplitLoaderLines(b.String(), 128)
 	if len(chunks) != 3 {
 		t.Fatalf("chunks = %d, want 3", len(chunks))
 	}
@@ -333,6 +333,22 @@ func TestSplitLoader(t *testing.T) {
 	}
 	if joined.String() != b.String() {
 		t.Errorf("chunks do not rejoin to the original loader")
+	}
+
+	// A custom line limit changes the chunk size.
+	custom := ic10.SplitLoaderLines(b.String(), 256)
+	if len(custom) != 2 {
+		t.Fatalf("custom chunks = %d, want 2", len(custom))
+	}
+	for i, c := range custom {
+		if n := strings.Count(c, "\n"); n > 256 {
+			t.Errorf("custom chunk %d has %d lines, want <= 256", i, n)
+		}
+	}
+
+	// SplitLoader uses the configured default line limit.
+	if got := ic10.SplitLoader(b.String()); len(got) != len(ic10.SplitLoaderLines(b.String(), ic10.LimitsOf().Lines)) {
+		t.Errorf("SplitLoader default = %d chunks, want the LimitsOf().Lines chunking", len(got))
 	}
 }
 
@@ -350,26 +366,49 @@ func TestConstantDataReadFolds(t *testing.T) {
 	}
 }
 
-func TestLargeDataLoaderSplits(t *testing.T) {
+// dataSrcWithValues builds a program with a data table of n values, whose
+// loader needs roughly n+1 lines.
+func dataSrcWithValues(n int) []byte {
 	var b strings.Builder
 	b.WriteString("data T = [")
-	for i := 0; i < 200; i++ {
+	for i := 0; i < n; i++ {
 		if i > 0 {
 			b.WriteString(", ")
 		}
 		fmt.Fprintf(&b, "%d", i)
 	}
 	b.WriteString("]\nfunc main() { d0.Setting = T[d1.Setting] }\n")
-	res, diags, err := ic10.CompileResult("t.icg", []byte(b.String()), ic10.Options{})
+	return []byte(b.String())
+}
+
+func TestLargeDataLoaderSplits(t *testing.T) {
+	// More table values than the line limit, so the loader must be split.
+	res, diags, err := ic10.CompileResult("t.icg", dataSrcWithValues(ic10.LimitsOf().Lines+44), ic10.Options{})
 	if err != nil || diags.HasErrors() {
 		t.Fatalf("compile: %v %v", diags.Diags, err)
 	}
 	if len(res.Loaders) < 2 {
 		t.Fatalf("loaders = %d, want >= 2", len(res.Loaders))
 	}
+	maxLines := ic10.LimitsOf().Lines
 	for i, c := range res.Loaders {
-		if n := strings.Count(c, "\n"); n > 128 {
-			t.Errorf("loader chunk %d has %d lines, want <= 128", i, n)
+		if n := strings.Count(c, "\n"); n > maxLines {
+			t.Errorf("loader chunk %d has %d lines, want <= %d", i, n, maxLines)
+		}
+	}
+}
+
+func TestLargeDataLoaderCustomLimit(t *testing.T) {
+	res, diags, err := ic10.CompileResult("t.icg", dataSrcWithValues(200), ic10.Options{MaxLines: 64})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if len(res.Loaders) < 4 {
+		t.Fatalf("loaders = %d, want >= 4 with MaxLines=64", len(res.Loaders))
+	}
+	for i, c := range res.Loaders {
+		if n := strings.Count(c, "\n"); n > 64 {
+			t.Errorf("loader chunk %d has %d lines, want <= 64", i, n)
 		}
 	}
 }

@@ -15,7 +15,6 @@ import (
 
 	"ic10go/internal/ast"
 	"ic10go/internal/builtin"
-	"ic10go/internal/codegen"
 	"ic10go/internal/diag"
 	"ic10go/internal/lexer"
 	"ic10go/internal/parser"
@@ -1322,7 +1321,8 @@ func (s *Server) inlayHint(w *bufio.Writer, id json.RawMessage, params json.RawM
 	code, diags, err := ic10.CompileWithOptions(name, []byte(text), opts)
 	if err == nil && !diags.HasErrors() {
 		st := ic10.StatsOf(code)
-		label := fmt.Sprintf("  IC10: %d/%d 行 · %d/%d 字节 · %d/%d 寄存器", st.Lines, codegen.MaxLines, st.Bytes, codegen.MaxBytes, st.RegsUsed, 16)
+		lim := ic10.LimitsFor(opts)
+		label := fmt.Sprintf("  IC10: %d/%d 行 · %d/%d 字节 · %d/%d 寄存器", st.Lines, lim.Lines, st.Bytes, lim.Bytes, st.RegsUsed, 16)
 		if base, size, _, _ := ic10.DataStats(name, []byte(text), opts); base >= 0 {
 			label += fmt.Sprintf(" · data %d..%d", base, base+size-1)
 		}
@@ -1472,15 +1472,16 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 			}
 		}
 	}
+	limits := ic10.LimitsFor(ic10.Options{})
 	payload := map[string]any{
 		"uri":        uri,
 		"lines":      st.Lines,
 		"bytes":      st.Bytes,
 		"maxLineLen": st.MaxLineLen,
 		"regs":       st.RegsUsed,
-		"maxLines":   codegen.MaxLines,
-		"maxBytes":   codegen.MaxBytes,
-		"maxLineMax": codegen.MaxLineLen,
+		"maxLines":   limits.Lines,
+		"maxBytes":   limits.Bytes,
+		"maxLineMax": limits.MaxLine,
 		"maxRegs":    16,
 	}
 	if multi {

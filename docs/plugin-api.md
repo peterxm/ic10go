@@ -65,7 +65,7 @@ ic10c build --json <file.icg>
 | `data.access` | `get`（`put/get db`）或 `stack`（`poke/peek`）。 |
 | `data.layout` | `top` 或 `middle`。 |
 | `stats` | 行 / 字节 / 最长行 / 引用到的寄存器数。 |
-| `limits` | 固定上限（128 / 4096 / 90 / 16）。 |
+| `limits` | 编译器校验所用的 IC10 上限（默认 128 / 4096 / 90，寄存器恒为 16）。可用 `--max-lines` / `--max-bytes` / `--max-line` 或 `IC10C_MAX_LINES` / `IC10C_MAX_BYTES` / `IC10C_MAX_LINE` 覆盖，以跟随游戏变化；这里的值就是本次构建实际生效的值。 |
 | `diagnostics[]` | 诊断列表，按源码位置排序。 |
 
 ### 一次性设置写入（`data.setup`）
@@ -110,6 +110,7 @@ runtime 更短者，所以拆分只会减小 runtime。语义前提：这些常�
 | `unknown-logic-type` | warning | 逻辑类型不在内建表中；`message` 附带最接近的拼写建议（拼错时） |
 | `unknown-slot-type` | warning | 槽位类型不在内建表中；`message` 附带拼写建议 |
 | `unknown-enum` | warning | 未知 `Enum.Member`，原样输出；`message` 附带同组最接近的拼写建议（可用 `raw("...")` 显式原样输出） |
+| `loop-without-yield` | warning | 无 `yield()`/`sleep()` 的无条件 `for {}`；提示加 `yield()` 以免循环空转 |
 | `no-main` | error | 找不到 `main` 函数 |
 | `data-too-large` | error | 数据段超出芯片栈 |
 | `stack-overlap` | error | 用户栈地址落在编译器区（数据段/溢出）或 `push` 深度超过用户上限 |

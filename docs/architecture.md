@@ -397,7 +397,7 @@ ECMA-335 解析，无需 .NET SDK、无需启动游戏），`LogicTypes` / `Slot
 | `ic10c lsp` | 启动 LSP（stdio） |
 | `ic10c help [command]` | 帮助（中英双语） |
 
-环境变量：`IC10C_LANG`（输出语言）、`IC10C_NO_CHECK`（关闭 logic type 校验）、`IC10C_NO_OPT`（关闭优化，调试用）、`IC10C_NO_OUTLINE`（关闭函数外提）。
+环境变量：`IC10C_LANG`（输出语言）、`IC10C_NO_CHECK`（关闭 logic type 校验）、`IC10C_NO_OPT`（关闭优化，调试用）、`IC10C_NO_OUTLINE`（关闭函数外提）、`IC10C_MAX_LINES` / `IC10C_MAX_BYTES` / `IC10C_MAX_LINE`（覆盖 IC10 编辑器上限，默认 128 / 4096 / 90；也可用 `--max-lines` / `--max-bytes` / `--max-line`，VSCode `icg.maxLines` / `icg.maxBytes` / `icg.maxLine`）。
 
 配套：
 

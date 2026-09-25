@@ -359,6 +359,9 @@ class LspClient {
             unsafe: c.get('unsafe'),
             dataLayout: c.get('dataLayout'),
             dataAccess: c.get('dataAccess'),
+            maxLines: c.get('maxLines'),
+            maxBytes: c.get('maxBytes'),
+            maxLine: c.get('maxLine'),
             runSteps: c.get('runSteps'),
             runTrace: c.get('runTrace'),
             runSet: c.get('runSet'),
@@ -373,6 +376,9 @@ class LspClient {
         if (cfg.userStack && cfg.userStack > 0) env.IC10C_USER_STACK = String(cfg.userStack);
         if (cfg.redundantDeviceWrites === true) env.IC10C_REDUNDANT_DEVICE_WRITES = '1';
         if (cfg.mergeRenamedTails === true) env.IC10C_MERGE_RENAMED_TAILS = '1';
+        if (cfg.maxLines > 0) env.IC10C_MAX_LINES = String(cfg.maxLines);
+        if (cfg.maxBytes > 0) env.IC10C_MAX_BYTES = String(cfg.maxBytes);
+        if (cfg.maxLine > 0) env.IC10C_MAX_LINE = String(cfg.maxLine);
     }
 
     // buildFlags returns the shared ic10c build/run options from the settings.
@@ -674,37 +680,42 @@ class LspClient {
 
     // -- native IC10 (.ic / .ic10) -----------------------------------------
 
-    // checkIC10 reports the IC10 editor limits (128 lines / 4096 bytes / 90
-    // chars). Native IC10 has no full validator yet, so this is what we can
-    // check without the game's assembler.
+    // checkIC10 reports the IC10 editor limits (icg.maxLines / icg.maxBytes /
+    // icg.maxLine, default 128 lines / 4096 bytes / 90 chars). Native IC10 has
+    // no full validator yet, so this is what we can check without the game's
+    // assembler.
     checkIC10(doc) {
+        const cfg = this.config();
+        const maxLines = cfg.maxLines > 0 ? cfg.maxLines : 128;
+        const maxBytes = cfg.maxBytes > 0 ? cfg.maxBytes : 4096;
+        const maxLine = cfg.maxLine > 0 ? cfg.maxLine : 90;
         const text = doc.getText();
         const lines = text.split('\n');
         const bytes = Buffer.byteLength(text, 'utf8');
         const diags = [];
-        if (bytes > 4096) {
+        if (bytes > maxBytes) {
             diags.push(
                 this.ic10Diag(
                     new vscode.Range(0, 0, 0, 0),
-                    t(`program is ${bytes} bytes, exceeding the 4096-byte limit`, `程序为 ${bytes} 字节，超过 4096 字节上限`)
+                    t(`program is ${bytes} bytes, exceeding the ${maxBytes}-byte limit`, `程序为 ${bytes} 字节，超过 ${maxBytes} 字节上限`)
                 )
             );
         }
-        if (lines.length > 128) {
+        if (lines.length > maxLines) {
             diags.push(
                 this.ic10Diag(
                     new vscode.Range(0, 0, 0, 0),
-                    t(`program has ${lines.length} lines, exceeding the 128-line limit`, `程序有 ${lines.length} 行，超过 128 行上限`)
+                    t(`program has ${lines.length} lines, exceeding the ${maxLines}-line limit`, `程序有 ${lines.length} 行，超过 ${maxLines} 行上限`)
                 )
             );
         }
         lines.forEach((ln, i) => {
             const n = ln.length;
-            if (n > 90) {
+            if (n > maxLine) {
                 diags.push(
                     this.ic10Diag(
-                        new vscode.Range(i, 90, i, n),
-                        t(`line is ${n} characters, exceeding the 90-character limit`, `该行 ${n} 个字符，超过 90 字符上限`)
+                        new vscode.Range(i, maxLine, i, n),
+                        t(`line is ${n} characters, exceeding the ${maxLine}-character limit`, `该行 ${n} 个字符，超过 ${maxLine} 字符上限`)
                     )
                 );
             }

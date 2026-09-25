@@ -97,6 +97,16 @@ type Options struct {
 	// docs/tail-merge.md. IC10C_MERGE_RENAMED_TAILS=1 also turns it on.
 	MergeRenamedTails bool
 
+	// MaxLines, MaxBytes and MaxLineLen override the IC10 editor limits the
+	// generated program is validated against (and the line count a one-time
+	// loader is split at). Zero means the default (128 lines / 4096 bytes /
+	// 90 characters). IC10C_MAX_LINES, IC10C_MAX_BYTES and IC10C_MAX_LINE
+	// override them too, so the toolchain can follow the game if its limits
+	// change.
+	MaxLines   int
+	MaxBytes   int
+	MaxLineLen int
+
 	// Imports resolves `import "path"` declarations by reading the referenced
 	// files and merging their const/data/func declarations. The editor leaves
 	// it off (it checks a single buffer); the CLI turns it on.
@@ -143,7 +153,7 @@ func stackPragma(src []byte) (bool, bool) {
 }
 
 // DefaultUserStack is the default fixed user stack size. It leaves the
-// compiler 384 slots for the data segment (loader-capped at 128 lines) and
+// compiler 384 slots for the data segment (loader-capped at the line limit) and
 // register spills.
 const DefaultUserStack = 128
 
@@ -166,7 +176,35 @@ func stackEnv(opts Options) Options {
 	if !opts.MergeRenamedTails && os.Getenv("IC10C_MERGE_RENAMED_TAILS") != "" {
 		opts.MergeRenamedTails = true
 	}
+	if opts.MaxLines == 0 {
+		opts.MaxLines = positiveEnv("IC10C_MAX_LINES")
+	}
+	if opts.MaxBytes == 0 {
+		opts.MaxBytes = positiveEnv("IC10C_MAX_BYTES")
+	}
+	if opts.MaxLineLen == 0 {
+		opts.MaxLineLen = positiveEnv("IC10C_MAX_LINE")
+	}
 	return opts
+}
+
+// positiveEnv parses a positive integer from the environment, returning 0 when
+// it is unset or invalid.
+func positiveEnv(key string) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return 0
+	}
+	if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		return n
+	}
+	return 0
+}
+
+// editorLimits returns the codegen limits selected by opts, after applying the
+// defaults for any unset field.
+func (o Options) editorLimits() codegen.Limits {
+	return codegen.Limits{Lines: o.MaxLines, Bytes: o.MaxBytes, LineLen: o.MaxLineLen}.Resolve()
 }
 
 // fixedDataBase returns the fixed data base for the selected layout, or 0 for
@@ -314,7 +352,7 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			return Result{}, diags, derr
 		}
 		res.Loader = dl + res.Loader
-		res.Loaders = SplitLoader(res.Loader)
+		res.Loaders = SplitLoaderLines(res.Loader, opts.editorLimits().Lines)
 		res.Chips = []ChipResult{{Code: res.Code, Loader: res.Loader, Loaders: res.Loaders, Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, "")}}
 		return res, diags, nil
 	}
@@ -357,7 +395,7 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			continue
 		}
 		loader := dl + res.Loader
-		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, Loader: loader, Loaders: SplitLoader(loader), Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, ch.Name.Name)})
+		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, Loader: loader, Loaders: SplitLoaderLines(loader, opts.editorLimits().Lines), Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, ch.Name.Name)})
 	}
 	checkBusUse(common, busUses, diags)
 	if len(results) == 0 {
@@ -671,7 +709,11 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 	} else if opt.MergeTailsColored(fn, colors) {
 		fn.BuildCFG()
 	}
-	code, err := codegen.GenerateWithOptions(fn, colors, codegen.Options{RelJump: opts.RelJump, SpillDB: !opts.SpillStack})
+	code, err := codegen.GenerateWithOptions(fn, colors, codegen.Options{
+		RelJump: opts.RelJump,
+		SpillDB: !opts.SpillStack,
+		Limits:  opts.editorLimits(),
+	})
 	return code, colors, spillCount, err
 }
 
@@ -769,6 +811,8 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, no
 		// stack). Keep the load in that mode.
 		FoldData:  !opts.NoFoldDataReads && !opts.NoDataCheck && !opts.Unsafe,
 		RecordBus: opts.recordBus,
+		// The folding decision depends on the effective per-line limit.
+		MaxLineLen: opts.editorLimits().LineLen,
 	})
 	if diags.HasErrors() {
 		return nil

@@ -155,6 +155,21 @@ var userStackFlag = Flag{Long: "--user-stack", Arg: "N", Desc: text{
 	ZH: "固定的用户栈槽数（默认 128）；超过它的用户槽位会编译报错",
 }}
 
+var maxLinesFlag = Flag{Long: "--max-lines", Arg: "N", Desc: text{
+	EN: "IC10 line limit (default 128, env IC10C_MAX_LINES)",
+	ZH: "IC10 行数上限（默认 128，环境变量 IC10C_MAX_LINES）",
+}}
+
+var maxBytesFlag = Flag{Long: "--max-bytes", Arg: "N", Desc: text{
+	EN: "IC10 byte limit (default 4096, env IC10C_MAX_BYTES)",
+	ZH: "IC10 字节数上限（默认 4096，环境变量 IC10C_MAX_BYTES）",
+}}
+
+var maxLineFlag = Flag{Long: "--max-line", Arg: "N", Desc: text{
+	EN: "IC10 per-line character limit (default 90, env IC10C_MAX_LINE)",
+	ZH: "IC10 每行字符数上限（默认 90，环境变量 IC10C_MAX_LINE）",
+}}
+
 var libDirsFlag = Flag{Long: "--lib", Arg: "DIR", Desc: text{
 	EN: "extra directory to search for imports, after the importing file's directory (repeatable)",
 	ZH: "在导入文件所在目录之后，额外搜索导入的目录（可重复）",
@@ -173,12 +188,14 @@ var Commands = []Command{
 				"absolute line numbers (relative with --rel-jump), constants are\n" +
 				"inlined at compile time and CPU registers are reused by liveness.\n" +
 				"The IC10 editor limits (128 lines, 4096 bytes, 90 characters per\n" +
-				"line) are enforced.",
+				"line by default) are enforced; override them with --max-lines,\n" +
+				"--max-bytes and --max-line or the IC10C_MAX_* environment variables.",
 			ZH: "将 .icg 源码编译为 IC10 机器码并输出到标准输出。\n\n" +
 				"产物优先保证体积与执行效率，而非可读性：不生成 alias、define、\n" +
 				"注释、空行或标签，跳转默认使用绝对行号（--rel-jump 改为相对跳转），\n" +
 				"常量在编译期内联，CPU 寄存器按活跃区间复用。编译前会校验 IC10\n" +
-				"编辑器限制（128 行 / 4096 字节 / 每行 90 字符）。",
+				"编辑器限制（默认 128 行 / 4096 字节 / 每行 90 字符），可用\n" +
+				"--max-lines、--max-bytes、--max-line 或 IC10C_MAX_* 环境变量覆盖。",
 		},
 		Flags: []Flag{
 			{Long: "--json", Desc: text{
@@ -217,6 +234,9 @@ var Commands = []Command{
 			spillFlag,
 			dynamicStackFlag,
 			userStackFlag,
+			maxLinesFlag,
+			maxBytesFlag,
+			maxLineFlag,
 			redundantDeviceWritesFlag,
 			mergeRenamedTailsFlag,
 			{Long: "--data-access", Arg: "get|stack", Desc: text{
@@ -261,6 +281,9 @@ var Commands = []Command{
 				EN: "compile with the stable branch's ins argument order",
 				ZH: "用稳定版的 ins 参数顺序编译",
 			}},
+			maxLinesFlag,
+			maxBytesFlag,
+			maxLineFlag,
 			libDirsFlag,
 			commonHelp,
 		},
@@ -295,6 +318,7 @@ var Commands = []Command{
 			{Long: "--keep-defines", Desc: text{EN: "keep alias/define lines", ZH: "保留 alias/define 行"}},
 			{Long: "--keep-labels", Desc: text{EN: "keep label lines", ZH: "保留标签行"}},
 			{Long: "--no-dead-code", Desc: text{EN: "keep unreachable instructions", ZH: "保留不可达指令"}},
+			maxLineFlag,
 			{Short: "-w", Long: "--write", Desc: text{EN: "write the result back to the file", ZH: "将结果写回文件"}},
 			{Short: "-o", Long: "--output", Arg: "file", Desc: text{EN: "write the result to a file", ZH: "将结果写入文件"}},
 			commonHelp,
@@ -318,8 +342,8 @@ var Commands = []Command{
 				"引用到的 CPU 寄存器数量，以及栈预算——分为用户区（push/pop 与\n" +
 				"db.stack[]）和编译器区（数据段与寄存器溢出）。",
 		},
-		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, dynamicStackFlag, userStackFlag, redundantDeviceWritesFlag, mergeRenamedTailsFlag, libDirsFlag, commonHelp},
-		Examples: []string{"ic10c stats blink.icg", "ic10c stats --user-stack 128 blink.icg"},
+		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, dynamicStackFlag, userStackFlag, maxLinesFlag, maxBytesFlag, maxLineFlag, redundantDeviceWritesFlag, mergeRenamedTailsFlag, libDirsFlag, commonHelp},
+		Examples: []string{"ic10c stats blink.icg", "ic10c stats --user-stack 128 blink.icg", "ic10c stats --max-lines 200 blink.icg"},
 	},
 	{
 		Name: "size", Args: "<file.icg>",
@@ -334,7 +358,7 @@ var Commands = []Command{
 				"累计，因此占比最大的函数最值得简化或外提。\n" +
 				"含控制流的函数能精确归属；纯顺序的内联代码会归到调用者。",
 		},
-		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, libDirsFlag, commonHelp},
+		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, maxLinesFlag, maxBytesFlag, maxLineFlag, libDirsFlag, commonHelp},
 		Examples: []string{"ic10c size blink.icg"},
 	},
 	{
@@ -568,6 +592,18 @@ func Usage(l Lang) string {
 	writeFlag(&b, "IC10C_NO_OPT", "", text{
 		EN: "disable the optimiser (debugging)",
 		ZH: "关闭优化器（调试用）",
+	}.get(l))
+	writeFlag(&b, "IC10C_MAX_LINES", "", text{
+		EN: "override the IC10 line limit (default 128)",
+		ZH: "覆盖 IC10 行数上限（默认 128）",
+	}.get(l))
+	writeFlag(&b, "IC10C_MAX_BYTES", "", text{
+		EN: "override the IC10 byte limit (default 4096)",
+		ZH: "覆盖 IC10 字节数上限（默认 4096）",
+	}.get(l))
+	writeFlag(&b, "IC10C_MAX_LINE", "", text{
+		EN: "override the IC10 per-line character limit (default 90)",
+		ZH: "覆盖 IC10 每行字符数上限（默认 90）",
 	}.get(l))
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "%s:\n", lblExamples.get(l))

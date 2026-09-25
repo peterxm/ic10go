@@ -66,13 +66,22 @@ func dataLoaderFor(info *sema.Info, opts Options) (string, error) {
 // that already fits is returned as a single chunk, and an empty loader yields
 // nil.
 func SplitLoader(loader string) []string {
+	return SplitLoaderLines(loader, codegen.MaxLines)
+}
+
+// SplitLoaderLines is SplitLoader with an explicit line limit per chunk. A
+// maxLines <= 0 falls back to the default codegen.MaxLines.
+func SplitLoaderLines(loader string, maxLines int) []string {
 	if loader == "" {
 		return nil
+	}
+	if maxLines <= 0 {
+		maxLines = codegen.MaxLines
 	}
 	lines := strings.Split(strings.TrimSuffix(loader, "\n"), "\n")
 	var chunks []string
 	for len(lines) > 0 {
-		n := codegen.MaxLines
+		n := maxLines
 		if n > len(lines) {
 			n = len(lines)
 		}

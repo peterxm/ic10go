@@ -40,3 +40,33 @@ func TestValidateLineLimitMentionsBudget(t *testing.T) {
 		t.Fatalf("line limit error should hint at `ic10c stats`, got: %v", err)
 	}
 }
+
+func TestValidateWithCustomLimits(t *testing.T) {
+	code := strings.Repeat("move r0 1\n", 5)
+	if err := ValidateWith(code, Limits{Lines: 5}); err != nil {
+		t.Fatalf("5 lines should fit Lines=5: %v", err)
+	}
+	if err := ValidateWith(code, Limits{Lines: 4}); err == nil {
+		t.Fatal("expected a line count error with Lines=4")
+	}
+
+	long := "s d0 Setting " + strings.Repeat("1", 100) + "\n"
+	if err := ValidateWith(long, Limits{LineLen: 200}); err != nil {
+		t.Fatalf("long line should fit LineLen=200: %v", err)
+	}
+	if err := ValidateWith(long, Limits{LineLen: 50}); err == nil {
+		t.Fatal("expected a line length error with LineLen=50")
+	}
+
+	big := strings.Repeat("move r0 1\n", 200)
+	if err := ValidateWith(big, Limits{Lines: 500, Bytes: 1 << 20}); err != nil {
+		t.Fatalf("large program should fit raised lines/bytes: %v", err)
+	}
+}
+
+func TestLimitsResolveDefaults(t *testing.T) {
+	got := Limits{Lines: 256}.Resolve()
+	if got.Lines != 256 || got.Bytes != MaxBytes || got.LineLen != MaxLineLen {
+		t.Fatalf("Resolve = %+v, want {256 %d %d}", got, MaxBytes, MaxLineLen)
+	}
+}

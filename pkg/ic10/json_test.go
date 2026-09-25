@@ -70,6 +70,34 @@ func TestBuildJSONSuccessWithData(t *testing.T) {
 	assertJSONFields(t, res, "apiVersion", "ok", "code", "lines", "data", "chips", "stats", "limits", "diagnostics")
 }
 
+func TestLimitsForOverrides(t *testing.T) {
+	got := ic10.LimitsFor(ic10.Options{MaxLines: 200, MaxBytes: 9000, MaxLineLen: 120})
+	want := ic10.Limits{Lines: 200, Bytes: 9000, MaxLine: 120, Regs: 16}
+	if got != want {
+		t.Fatalf("LimitsFor = %+v, want %+v", got, want)
+	}
+	t.Setenv("IC10C_MAX_LINES", "256")
+	if got := ic10.LimitsFor(ic10.Options{}); got.Lines != 256 {
+		t.Fatalf("env override: got %d lines, want 256", got.Lines)
+	}
+	if got := ic10.LimitsFor(ic10.Options{MaxLines: 10}); got.Lines != 10 {
+		t.Fatalf("explicit option should win over env: got %d, want 10", got.Lines)
+	}
+}
+
+func TestBuildJSONCustomLimits(t *testing.T) {
+	res, err := ic10.BuildJSON("t.icg", []byte(jsonPlainSrc), ic10.Options{MaxLines: 512, MaxBytes: 1 << 20, MaxLineLen: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK {
+		t.Fatalf("ok = false, diagnostics: %+v", res.Diagnostics)
+	}
+	if res.Limits.Lines != 512 || res.Limits.Bytes != 1<<20 || res.Limits.MaxLine != 200 {
+		t.Fatalf("limits = %+v, want 512 / %d / 200", res.Limits, 1<<20)
+	}
+}
+
 func TestBuildJSONSetupLoader(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("func main() {\n")
@@ -79,7 +107,8 @@ func TestBuildJSONSetupLoader(t *testing.T) {
 		}
 	}
 	b.WriteString("    for {\n")
-	for i := 0; i < 124; i++ {
+	// Just over the line limit, so the setup writes are hoisted into a loader.
+	for i := 0; i < ic10.LimitsOf().Lines-4; i++ {
 		b.WriteString("        yield()\n")
 	}
 	b.WriteString("    }\n}\n")

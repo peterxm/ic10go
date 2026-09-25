@@ -214,6 +214,7 @@ func (c *typeChecker) checkStmt(s ast.Stmt) {
 		c.checkStmt(v.Else)
 		c.popScope()
 	case *ast.ForStmt:
+		c.warnLoopWithoutYield(v)
 		c.pushScope()
 		c.checkStmt(v.Init)
 		if v.Cond != nil {

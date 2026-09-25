@@ -48,11 +48,11 @@ func requireIc10Code(t *testing.T) {
 
 // knownUnsupported documents corpus files that the round-trip and minify tests
 // intentionally skip: invalid IC10 (the original would not assemble in-game),
-// or a decompile->recompile that exceeds the 128-line budget. Keys are file
+// or a decompile->recompile that exceeds the chip's line budget. Keys are file
 // base names with or without extension.
 var knownUnsupported = map[string]string{
-	"traderSolver":    "decompile->recompile exceeds the 128-line chip budget",
-	"traderSolverRAW": "decompile->recompile exceeds the 128-line chip budget",
+	"traderSolver":    "decompile->recompile exceeds the chip line budget",
+	"traderSolverRAW": "decompile->recompile exceeds the chip line budget",
 }
 
 // knownUnsupportedPorts lists hand ports whose original cannot be run for the

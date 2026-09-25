@@ -12,7 +12,6 @@ import (
 	"ic10go/internal/ast"
 	"ic10go/internal/cfg"
 	"ic10go/internal/cli"
-	"ic10go/internal/codegen"
 	"ic10go/internal/diag"
 	"ic10go/internal/disasm"
 	"ic10go/internal/flow"
@@ -177,8 +176,73 @@ func splitLibArgs(args []string) ([]string, []string) {
 	return rest, dirs
 }
 
+// limitArgs are the IC10 editor limit overrides parsed from the command line.
+// A zero field means "use the default / environment".
+type limitArgs struct {
+	lines int
+	bytes int
+	line  int
+}
+
+// splitLimitArgs extracts `--max-lines/--max-bytes/--max-line N` (or `=N`)
+// overrides, leaving the remaining arguments. It reports malformed values.
+func splitLimitArgs(args []string) ([]string, limitArgs, bool) {
+	rest := make([]string, 0, len(args))
+	var lim limitArgs
+	set := func(name, val string) bool {
+		n, err := strconv.Atoi(val)
+		if err != nil || n <= 0 {
+			fmt.Fprintf(os.Stderr, "ic10c: %s must be a positive integer\n", name)
+			return false
+		}
+		switch name {
+		case "--max-lines":
+			lim.lines = n
+		case "--max-bytes":
+			lim.bytes = n
+		case "--max-line":
+			lim.line = n
+		}
+		return true
+	}
+	limitName := func(s string) (string, bool) {
+		for _, n := range []string{"--max-lines", "--max-bytes", "--max-line"} {
+			if s == n || strings.HasPrefix(s, n+"=") {
+				return n, true
+			}
+		}
+		return "", false
+	}
+	for i := 0; i < len(args); i++ {
+		name, ok := limitName(args[i])
+		if !ok {
+			rest = append(rest, args[i])
+			continue
+		}
+		if eq := strings.IndexByte(args[i], '='); eq >= 0 {
+			if !set(name, args[i][eq+1:]) {
+				return nil, lim, false
+			}
+			continue
+		}
+		if i+1 >= len(args) {
+			fmt.Fprintf(os.Stderr, "ic10c: %s requires a positive integer\n", name)
+			return nil, lim, false
+		}
+		if !set(name, args[i+1]) {
+			return nil, lim, false
+		}
+		i++
+	}
+	return rest, lim, true
+}
+
 func cmdBuild(args []string) int {
 	args, libDirs := splitLibArgs(args)
+	args, lim, ok := splitLimitArgs(args)
+	if !ok {
+		return 2
+	}
 	stableIns := false
 	dataOnly := false
 	noDataCheck := false
@@ -287,14 +351,6 @@ func cmdBuild(args []string) int {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "build"))
 		return 2
 	}
-	data, err := os.ReadFile(files[0])
-	if err != nil {
-		if jsonOut {
-			return emitJSON(jsonIOError(files[0], err), 2)
-		}
-		fmt.Fprintln(os.Stderr, "ic10c:", err)
-		return 1
-	}
 
 	opts := ic10.Options{
 		StableInsOrder:        stableIns,
@@ -311,8 +367,20 @@ func cmdBuild(args []string) int {
 		UserStackLimit:        userStack,
 		RedundantDeviceWrites: redundantWrites,
 		MergeRenamedTails:     mergeRenamedTails,
+		MaxLines:              lim.lines,
+		MaxBytes:              lim.bytes,
+		MaxLineLen:            lim.line,
 		Imports:               true,
 		LibDirs:               libDirs,
+	}
+
+	data, err := os.ReadFile(files[0])
+	if err != nil {
+		if jsonOut {
+			return emitJSON(jsonIOError(files[0], err, opts), 2)
+		}
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
 	}
 
 	if jsonOut {
@@ -356,9 +424,10 @@ func cmdBuild(args []string) int {
 			return 1
 		}
 		fmt.Print(loader)
-		if n := strings.Count(loader, "\n"); n > codegen.MaxLines {
+		maxLines := ic10.LimitsFor(opts).Lines
+		if n := strings.Count(loader, "\n"); n > maxLines {
 			fmt.Fprintf(os.Stderr, "ic10c: loader is %d lines; split it into %d chunks (each <= %d lines) and run them in order\n",
-				n, (n+codegen.MaxLines-1)/codegen.MaxLines, codegen.MaxLines)
+				n, (n+maxLines-1)/maxLines, maxLines)
 		}
 		return 0
 	}
@@ -464,6 +533,10 @@ func writeLoaders(path string, loaders []string) int {
 
 func cmdRun(args []string) int {
 	args, libDirs := splitLibArgs(args)
+	args, lim, ok := splitLimitArgs(args)
+	if !ok {
+		return 2
+	}
 	steps := 1000
 	trace := false
 	stableIns := false
@@ -499,7 +572,10 @@ func cmdRun(args []string) int {
 		return 1
 	}
 	ic10Hint(file)
-	compiled, diags, err := ic10.CompileResult(file, data, ic10.Options{StableInsOrder: stableIns, Imports: true, LibDirs: libDirs})
+	compiled, diags, err := ic10.CompileResult(file, data, ic10.Options{
+		StableInsOrder: stableIns, MaxLines: lim.lines, MaxBytes: lim.bytes, MaxLineLen: lim.line,
+		Imports: true, LibDirs: libDirs,
+	})
 	if rc := report(source.NewFile(file, data), diags); rc != 0 {
 		return rc
 	}
@@ -645,6 +721,16 @@ func cmdMinify(args []string) int {
 			opt.KeepLabels = true
 		case "--no-dead-code":
 			opt.DeadCode = false
+		case "--max-line":
+			if i+1 < len(args) {
+				n, err := strconv.Atoi(args[i+1])
+				if err != nil || n <= 0 {
+					fmt.Fprintln(os.Stderr, "ic10c: --max-line must be a positive integer")
+					return 2
+				}
+				opt.MaxLineLen = n
+				i++
+			}
 		case "-w", "--write":
 			write = true
 		case "-o", "--output":
@@ -689,6 +775,10 @@ func cmdMinify(args []string) int {
 
 func cmdStats(args []string) int {
 	args, libDirs := splitLibArgs(args)
+	args, lim, ok := splitLimitArgs(args)
+	if !ok {
+		return 2
+	}
 	dataLayout := ""
 	unsafe := false
 	autoTable := false
@@ -745,7 +835,9 @@ func cmdStats(args []string) int {
 	}
 	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack,
 		DynamicStack: dynamicStack, UserStackLimit: userStack, RedundantDeviceWrites: redundantWrites,
-		MergeRenamedTails: mergeRenamedTails, Imports: true, LibDirs: libDirs}
+		MergeRenamedTails: mergeRenamedTails, MaxLines: lim.lines, MaxBytes: lim.bytes, MaxLineLen: lim.line,
+		Imports: true, LibDirs: libDirs}
+	limits := ic10.LimitsFor(opts)
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
@@ -768,22 +860,22 @@ func cmdStats(args []string) int {
 		}
 	}
 	if multi {
-		// Each chip has its own 128-line / 4 KiB budget.
+		// Each chip has its own line / byte budget.
 		for _, ch := range compiled.Chips {
 			s := ic10.StatsOf(ch.Code)
 			fmt.Printf("chip %s\n", ch.Name)
-			fmt.Printf("  lines      %3d / %d\n", s.Lines, codegen.MaxLines)
-			fmt.Printf("  bytes      %3d / %d\n", s.Bytes, codegen.MaxBytes)
-			fmt.Printf("  max line   %3d / %d\n", s.MaxLineLen, codegen.MaxLineLen)
+			fmt.Printf("  lines      %3d / %d\n", s.Lines, limits.Lines)
+			fmt.Printf("  bytes      %3d / %d\n", s.Bytes, limits.Bytes)
+			fmt.Printf("  max line   %3d / %d\n", s.MaxLineLen, limits.MaxLine)
 			fmt.Printf("  registers  %3d / %d\n", s.RegsUsed, ic10.NumRegs)
 			if ch.Loader != "" {
 				ls := ic10.StatsOf(ch.Loader)
 				if n := len(ch.Loaders); n > 1 {
 					fmt.Printf("  loader     %3d lines · %d / %d bytes (run once, %d chunks)\n",
-						ls.Lines, ls.Bytes, codegen.MaxBytes, n)
+						ls.Lines, ls.Bytes, limits.Bytes, n)
 				} else {
 					fmt.Printf("  loader     %3d / %d lines · %d / %d bytes (run once)\n",
-						ls.Lines, codegen.MaxLines, ls.Bytes, codegen.MaxBytes)
+						ls.Lines, limits.Lines, ls.Bytes, limits.Bytes)
 				}
 			}
 		}
@@ -791,9 +883,9 @@ func cmdStats(args []string) int {
 	}
 	code := compiled.Code
 	s := ic10.StatsOf(code)
-	fmt.Printf("lines      %3d / %d\n", s.Lines, codegen.MaxLines)
-	fmt.Printf("bytes      %3d / %d\n", s.Bytes, codegen.MaxBytes)
-	fmt.Printf("max line   %3d / %d\n", s.MaxLineLen, codegen.MaxLineLen)
+	fmt.Printf("lines      %3d / %d\n", s.Lines, limits.Lines)
+	fmt.Printf("bytes      %3d / %d\n", s.Bytes, limits.Bytes)
+	fmt.Printf("max line   %3d / %d\n", s.MaxLineLen, limits.MaxLine)
 	fmt.Printf("registers  %3d / %d\n", s.RegsUsed, ic10.NumRegs)
 	var stack ic10.StackReport
 	haveStack := false
@@ -830,10 +922,10 @@ func cmdStats(args []string) int {
 		ls := ic10.StatsOf(compiled.Loader)
 		if n := len(compiled.Loaders); n > 1 {
 			fmt.Printf("loader     %3d lines · %d / %d bytes (run once, %d chunks)\n",
-				ls.Lines, ls.Bytes, codegen.MaxBytes, n)
+				ls.Lines, ls.Bytes, limits.Bytes, n)
 		} else {
 			fmt.Printf("loader     %3d / %d lines · %d / %d bytes (run once)\n",
-				ls.Lines, codegen.MaxLines, ls.Bytes, codegen.MaxBytes)
+				ls.Lines, limits.Lines, ls.Bytes, limits.Bytes)
 		}
 	}
 	if base >= 0 {
@@ -853,6 +945,10 @@ func cmdStats(args []string) int {
 
 func cmdSize(args []string) int {
 	args, libDirs := splitLibArgs(args)
+	args, lim, ok := splitLimitArgs(args)
+	if !ok {
+		return 2
+	}
 	dataLayout := ""
 	unsafe := false
 	autoTable := false
@@ -887,7 +983,8 @@ func cmdSize(args []string) int {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "size"))
 		return 2
 	}
-	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack, Imports: true, LibDirs: libDirs}
+	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack,
+		MaxLines: lim.lines, MaxBytes: lim.bytes, MaxLineLen: lim.line, Imports: true, LibDirs: libDirs}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
@@ -1246,11 +1343,11 @@ func emitJSON(v any, code int) int {
 
 // jsonIOError builds a BuildResult that reports a file/IO failure, so that
 // `--json` always produces a parseable document.
-func jsonIOError(name string, err error) ic10.BuildResult {
+func jsonIOError(name string, err error, opts ic10.Options) ic10.BuildResult {
 	return ic10.BuildResult{
 		APIVersion: ic10.APIVersion,
 		Lines:      []string{},
-		Limits:     ic10.LimitsOf(),
+		Limits:     ic10.LimitsFor(opts),
 		Diagnostics: []ic10.Diagnostic{{
 			Severity: "error",
 			Code:     "io-error",

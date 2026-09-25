@@ -8,7 +8,7 @@ import "ic10go/internal/ir"
 // constants and that runs once before the first loop (its block is not inside a
 // loop and dominates a loop header). Device state persists, so such writes only
 // need to run once; hoisting them into a separate loader lets the runtime stay
-// inside the 128-line budget.
+// inside the line budget.
 //
 // It returns the setup function, or nil when nothing is hoistable. The caller
 // generates the two functions separately (the loader runs once, then the

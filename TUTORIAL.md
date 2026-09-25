@@ -59,6 +59,10 @@ db  →  芯片所插的宿主设备（比如显示屏）
 
 这些限制就是 ic10go 存在的理由：它帮你把高层代码压进这 128 行里。
 
+> 上表是游戏客户端的默认值。编译器的校验上限可配置（`--max-lines` / `--max-bytes` /
+> `--max-line` 或 `IC10C_MAX_LINES` / `IC10C_MAX_BYTES` / `IC10C_MAX_LINE`），
+> 以便游戏上限变化时无需改编译器。
+
 ---
 
 ## 2. 为什么要用 .icg / ic10go
@@ -794,7 +798,9 @@ func main() {
 
 ## 11. 限制、性能与最佳实践
 
-**硬限制**：128 行 / 4096 字节 / 每行 90 字符。超了 `build` 会报错，`stats` 可提前看。
+**硬限制**：默认 128 行 / 4096 字节 / 每行 90 字符。超了 `build` 会报错，`stats` 可提前看。
+这些上限可配置（`--max-lines` / `--max-bytes` / `--max-line`，或环境变量 `IC10C_MAX_LINES` /
+`IC10C_MAX_BYTES` / `IC10C_MAX_LINE`），以跟随游戏变化。
 
 **`yield()` 的用法**：芯片每 tick 会执行一批指令。主循环里放一个 `yield()`，
 让程序每 tick 只跑一遍、其余时间休眠，既省电又不会过热。需要等待时用 `sleep(秒)`。
@@ -828,6 +834,7 @@ for {
 | `missing main function` | 必须有 `func main()` |
 | `recursion is not supported` | 把递归改成循环 |
 | `unknown logic type "xxx"` | 逻辑类型拼写错误；可临时用 `IC10C_NO_CHECK=1` 关闭校验 |
+| `loop without yield()` 警告 | `for {}` 里没调用 `yield()`/`sleep()`；在主循环里加 `yield()` 让芯片每 tick 暂停一次 |
 | 编译报超出 128 行 | 用 `stats` 看占比，拆小逻辑、用 `batch`、减少重复 |
 | 脚本在游戏里行为不对 | 先用 `./ic10c run --trace` 本地复现；再核对端口/逻辑类型 |
 | `hash` 值对不上 | `hash()` 输出**有符号 int32**，如 `-400115994` |

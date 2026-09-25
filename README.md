@@ -73,11 +73,12 @@ ic10c build --chip NAME <file.icg>  # 多芯片：只输出指定芯片到 stdou
 ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
             [--data-layout top|middle] [--unsafe] [--auto-table] [--jump-table] \
             [--fast] [--rel-jump] [--spill db|stack] [--dynamic-stack] [--user-stack N] \
+            [--max-lines N] [--max-bytes N] [--max-line N] \
             [--redundant-device-writes] [--merge-renamed-tails] <file.icg>
                               # 兼容保留；loader 现在会自动输出（默认 <file>.data.ic）
 ic10c build --data-only [--chip NAME] <file.icg>  # 只输出一次性 loader（数据段 + 外提设置）
 ic10c run    <file.icg>       # 编译并在内置 VM 中运行（自动先跑一次性 loader；多芯片锁步；--steps/--set/--trace）
-ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] [--spill db|stack] [--dynamic-stack] [--user-stack N] [--redundant-device-writes] [--merge-renamed-tails] <file.icg>
+ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] [--spill db|stack] [--dynamic-stack] [--user-stack N] [--max-lines N] [--max-bytes N] [--max-line N] [--redundant-device-writes] [--merge-renamed-tails] <file.icg>
                               # 行 / 字节 / 寄存器预算 + 峰值活跃 / 溢出槽（多芯片按芯片分组；含 loader 预算）+ 栈预算（stack user 个数/上限，默认固定 128；--dynamic-stack 动态边界，越界报错；--redundant-device-writes 删除重复设备写）
 ic10c size   <file.icg>       # 按函数拆分行预算（找最占行数的函数）
 ic10c graph  [--level source|ir] [--func NAME] [--no-lines] [-o FILE] <file.icg>
@@ -93,6 +94,13 @@ ic10c help   [command]        # 帮助（中英双语，-L en|zh 切换）
 ```
 
 帮助默认跟随 `$LANG`，可用 `IC10C_LANG` 或全局选项 `-L/--lang en|zh` 覆盖。
+
+> IC10 编辑器上限（默认 **128 行 / 4096 字节 / 每行 90 字符**）是可配置的：
+> `--max-lines` / `--max-bytes` / `--max-line`，或环境变量 `IC10C_MAX_LINES` /
+> `IC10C_MAX_BYTES` / `IC10C_MAX_LINE`。这些是**编辑器侧**限制（芯片运行时并不检查
+> 脚本长度），所以改上限的**模组**可允许更大的脚本，用这些选项对齐即可。
+> VSCode 对应 `icg.maxLines` / `icg.maxBytes` / `icg.maxLine`。仅影响编译期校验、
+> `stats`、loader 分块与 `minify` 校验，不改变生成的机器码。
 
 编辑器：安装 VSCode 扩展获得语法高亮、诊断与补全：
 

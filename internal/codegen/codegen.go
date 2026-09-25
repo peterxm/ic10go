@@ -11,12 +11,43 @@ import (
 	"ic10go/internal/ir"
 )
 
-// IC10 editor limits.
+// IC10 editor limits the toolchain targets by default. They are used when a
+// Limits field is zero; callers can override them (see Limits and
+// Options.Limits, or the IC10C_MAX_* environment variables) so the toolchain
+// can follow the game if its limits change again. Keep these in sync with the
+// VSCode defaults (editors/vscode) and the docs.
 const (
 	MaxLines   = 128
 	MaxBytes   = 4096
 	MaxLineLen = 90
 )
+
+// Limits are the IC10 editor limits a program is validated against. A zero
+// field falls back to the corresponding default (MaxLines / MaxBytes /
+// MaxLineLen).
+type Limits struct {
+	Lines   int // maximum program lines
+	Bytes   int // maximum program bytes
+	LineLen int // maximum characters per line
+}
+
+// DefaultLimits are the editor limits used when a Limits field is zero.
+var DefaultLimits = Limits{Lines: MaxLines, Bytes: MaxBytes, LineLen: MaxLineLen}
+
+// Resolve fills zero fields with the defaults, so a partially-specified Limits
+// is usable.
+func (l Limits) Resolve() Limits {
+	if l.Lines <= 0 {
+		l.Lines = MaxLines
+	}
+	if l.Bytes <= 0 {
+		l.Bytes = MaxBytes
+	}
+	if l.LineLen <= 0 {
+		l.LineLen = MaxLineLen
+	}
+	return l
+}
 
 // relativeJump rewrites an absolute jump/branch line (whose text ends with a
 // space before the target) into its relative form, returning the new text and
@@ -49,15 +80,29 @@ const spillScratch = "r15"
 type line struct {
 	text   string
 	target *ir.Block
-	// imm, when set, is written instead of the target block's line number
-	// (used to branch straight to 9999 to halt).
+	// imm, when set, is written instead of the target block's line number.
 	imm string
-	fn  string // source function this line was emitted for ("" = main)
+	// halt marks a branch to a halt block. Its explicit target is resolved at
+	// render time to a line just past the program (see haltTarget), so it stays
+	// correct as the line limit grows.
+	halt bool
+	fn   string // source function this line was emitted for ("" = main)
+}
+
+// haltMarker is the IR-level sentinel a halt block jumps to. It is a marker,
+// not a real line: codegen renders it as a target past the configured program
+// length, so a program longer than haltMarker still halts correctly.
+const haltMarker = 9999
+
+// haltTarget returns a line number guaranteed to be past any valid program: one
+// beyond the configured line limit. IC10 halts when it jumps past the end.
+func haltTarget(limits Limits) string {
+	return strconv.Itoa(limits.Resolve().Lines + 1)
 }
 
 // isHaltBlock reports whether a block only halts by jumping past the program
-// (a bare `jump(9999)`). Such a block emits no line; branches to it target 9999
-// directly.
+// (a bare `jump(9999)`). Such a block emits no line; branches to it target
+// haltTarget directly.
 func isHaltBlock(b *ir.Block) bool {
 	if b == nil || len(b.Instrs) != 0 {
 		return false
@@ -67,7 +112,7 @@ func isHaltBlock(b *ir.Block) bool {
 		return false
 	}
 	c, ok := jd.Target.(*ir.Const)
-	return ok && c.Raw == "" && c.Special == "" && c.V == 9999
+	return ok && c.Raw == "" && c.Special == "" && c.V == haltMarker
 }
 
 // fallsThroughTo reports whether prev's terminator can fall through to b (which
@@ -109,6 +154,9 @@ type Options struct {
 	// of the peek/poke sp save-restore sequence (five lines per load). It must
 	// match the spill mode used by the register allocator.
 	SpillDB bool
+	// Limits overrides the IC10 editor limits the output is validated against.
+	// A zero field means the default; the zero Limits means DefaultLimits.
+	Limits Limits
 }
 
 // Generate renders a function to IC10 code and validates the result against the
@@ -295,10 +343,11 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 		}
 	}
 
-	// Branches to a halt block target 9999 directly.
+	// Branches to a halt block target past the program directly; the exact line
+	// is filled in at render time from the configured line limit.
 	for i := range lines {
 		if lines[i].target != nil && isHaltBlock(lines[i].target) {
-			lines[i].imm = "9999"
+			lines[i].halt = true
 			lines[i].target = nil
 		}
 	}
@@ -331,6 +380,14 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 
 	if err := checkCallLayout(blocks, lines, start); err != nil {
 		return "", nil, err
+	}
+
+	// Resolve halt branches to a line past the configured program length.
+	halt := haltTarget(opts.Limits)
+	for i := range lines {
+		if lines[i].halt {
+			lines[i].imm = halt
+		}
 	}
 
 	var sb strings.Builder
@@ -374,7 +431,7 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 		report.ByFunc[ln.fn]++
 	}
 
-	if err := Validate(code); err != nil {
+	if err := ValidateWith(code, opts.Limits); err != nil {
 		return "", report, err
 	}
 	return code, report, nil
@@ -525,22 +582,29 @@ func invertBranch(text string) (string, bool) {
 	return inv + text[len(mnemonic):], true
 }
 
-// Validate checks the IC10 editor limits.
+// Validate checks the code against the default IC10 editor limits.
 func Validate(code string) error {
-	if len(code) > MaxBytes {
-		return fmt.Errorf("script is %d bytes, exceeding the %d byte limit (see `ic10c stats` for the budget)", len(code), MaxBytes)
+	return ValidateWith(code, DefaultLimits)
+}
+
+// ValidateWith checks the code against explicit editor limits. A zero field in
+// limits falls back to the default.
+func ValidateWith(code string, limits Limits) error {
+	limits = limits.Resolve()
+	if len(code) > limits.Bytes {
+		return fmt.Errorf("script is %d bytes, exceeding the %d byte limit (see `ic10c stats` for the budget)", len(code), limits.Bytes)
 	}
 	trimmed := strings.TrimSuffix(code, "\n")
 	if trimmed == "" {
 		return nil
 	}
 	lines := strings.Split(trimmed, "\n")
-	if len(lines) > MaxLines {
-		return fmt.Errorf("script has %d lines, exceeding the %d line limit (see `ic10c stats`; split the logic, use batch IO, or `ic10c minify` for existing IC10)", len(lines), MaxLines)
+	if len(lines) > limits.Lines {
+		return fmt.Errorf("script has %d lines, exceeding the %d line limit (see `ic10c stats`; split the logic, use batch IO, or `ic10c minify` for existing IC10)", len(lines), limits.Lines)
 	}
 	for i, ln := range lines {
-		if len(ln) > MaxLineLen {
-			return fmt.Errorf("line %d is %d characters, exceeding the %d character limit", i, len(ln), MaxLineLen)
+		if len(ln) > limits.LineLen {
+			return fmt.Errorf("line %d is %d characters, exceeding the %d character limit", i, len(ln), limits.LineLen)
 		}
 	}
 	return nil

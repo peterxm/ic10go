@@ -45,6 +45,11 @@ type Options struct {
 	// write (write=true) with the access point used, so the caller can check
 	// producer/consumer counts and wire a multi-chip VM.
 	RecordBus func(bus, slot, devConn string, write bool)
+	// MaxLineLen is the IC10 per-line character limit. It caps how long a
+	// data-table literal may be for constant folding to inline it (see
+	// dataConst), so folding cannot push a line over the limit. Zero uses the
+	// conservative 90-character default.
+	MaxLineLen int
 }
 
 // emitDataCheck verifies the persistent data segment is installed: it reads the
@@ -55,6 +60,8 @@ func (l *lowerer) emitDataCheck() {
 	r := l.emitDataRead(&ir.Const{V: float64(l.info.Sentinel)})
 	l.b.SetTerm(&ir.Br{Cond: ir.Ne, A: r, B: &ir.Const{V: l.info.DataVersion}, Then: halt, Else: body})
 	l.b.SetBlock(halt)
+	// 9999 is the halt marker; codegen renders it as a line past the configured
+	// program length (see codegen.haltMarker/haltTarget).
 	l.b.SetTerm(&ir.JmpDyn{Target: &ir.Const{V: 9999}})
 	l.b.SetBlock(body)
 }
@@ -1387,7 +1394,7 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 			if l.opts.FoldData {
 				if i, ok := sema.Eval(e.Index, l.constEnv()); ok && i == math.Trunc(i) &&
 					i >= 0 && i < float64(len(t.Values)) {
-					if v, ok := dataConst(t.Values[int(i)]); ok {
+					if v, ok := dataConst(t.Values[int(i)], l.opts.MaxLineLen); ok {
 						return v
 					}
 				}
@@ -2679,13 +2686,23 @@ func (l *lowerer) lookup(name string) (ir.Value, bool) {
 	return nil, false
 }
 
+// dataFoldLineMargin is the room a line needs besides the literal itself
+// (mnemonic, destination, device, logic, separators). It turns the per-line
+// character limit into the longest foldable literal: at the original
+// 90-character limit this gives the original 40-character cap.
+const dataFoldLineMargin = 50
+
 // dataConst turns a data-table literal back into an IR constant. A numeric
 // literal folds further; anything else (enum member, raw text) is emitted
-// verbatim. Long literals are not folded, so folding cannot push a runtime line
-// over the 90-character limit; the compiler also compares the folded and
-// unfolded variants and keeps the shorter.
-func dataConst(s string) (ir.Value, bool) {
-	if len(s) > 40 {
+// verbatim. Literals too long to fold without overrunning maxLineLen are left
+// unfolded; the compiler also compares the folded and unfolded variants and
+// keeps the shorter.
+func dataConst(s string, maxLineLen int) (ir.Value, bool) {
+	maxLiteral := 40
+	if maxLineLen > 0 {
+		maxLiteral = maxLineLen - dataFoldLineMargin
+	}
+	if len(s) > maxLiteral {
 		return nil, false
 	}
 	if v, err := strconv.ParseFloat(s, 64); err == nil {

@@ -114,6 +114,21 @@
           "default": "get",
           "markdownDescription": "%icg.dataAccess.desc%"
         },
+        "icg.maxLines": {
+          "type": "number",
+          "default": 128,
+          "markdownDescription": "%icg.maxLines.desc%"
+        },
+        "icg.maxBytes": {
+          "type": "number",
+          "default": 4096,
+          "markdownDescription": "%icg.maxBytes.desc%"
+        },
+        "icg.maxLine": {
+          "type": "number",
+          "default": 90,
+          "markdownDescription": "%icg.maxLine.desc%"
+        },
         "icg.dynamicStack": {
           "type": "boolean",
           "default": false,

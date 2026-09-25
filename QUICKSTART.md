@@ -337,7 +337,7 @@ sh editors/vscode/install.sh      # 2. 安装扩展
 
 ## 10. 注意事项
 
-- **128 行 / 4 KiB / 90 字符** 是硬限制，`ic10c build` 会在超限时报错，`stats` 可提前查看。
+- **128 行 / 4 KiB / 90 字符** 是默认硬限制，`ic10c build` 会在超限时报错，`stats` 可提前查看。上限可配置（`--max-lines` / `--max-bytes` / `--max-line` 或 `IC10C_MAX_*`），以跟随游戏变化。
 - 输出**不可读**：不生成 `alias`/`define`/注释/空行/标签，跳转默认使用绝对行号（`--rel-jump` 在相对形式更短时才用）。
 - **持久栈分区**：用户栈 `[0, 128)`（`--user-stack N` 调整，`--dynamic-stack` 动态）；用户绝对槽位越界编译报错。`stats` 报告 `stack user`/`stack comp`。
 - **栈私有**：单芯片默认 `// icg: private-stack`（寄存器提升、`push/pop` 消除）；多芯片或 `// icg: shared-stack` 保持保守。

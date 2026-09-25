@@ -91,7 +91,7 @@ type FuncDecl struct {
 }
 
 // ChipDecl is a `chip Name { ... }` block: a separate IC10 program with its own
-// scope, main function and 128-line budget. Top-level declarations outside any
+// scope, main function and IC10 line budget. Top-level declarations outside any
 // chip are shared by every chip.
 type ChipDecl struct {
 	NodeBase

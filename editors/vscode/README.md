@@ -142,6 +142,9 @@ func main() {
 | `icg.unsafe` | `false` | 编译时加 `--unsafe`：跳过数据段运行时校验以进一步压缩代码 |
 | `icg.dataLayout` | `top` | 数据段位置 `--data-layout`：`top`（默认）或 `middle` |
 | `icg.dataAccess` | `get` | 数据段安装代码访问芯片栈的方式：`get`（标准 IC host）/ `stack`（设备 host，如空调） |
+| `icg.maxLines` | `128` | IC10 行数上限（`IC10C_MAX_LINES`）；游戏上限变化时上调 |
+| `icg.maxBytes` | `4096` | IC10 字节数上限（`IC10C_MAX_BYTES`） |
+| `icg.maxLine` | `90` | IC10 每行字符数上限（`IC10C_MAX_LINE`） |
 | `icg.dynamicStack` | `false` | 用户栈上限按编译器实际数据段/溢出占用动态计算，而非 `icg.userStack` 固定值 |
 | `icg.userStack` | `128` | 固定的用户栈大小；用户使用达到或超过它的槽位会在编译时报错 |
 | `icg.redundantDeviceWrites` | `false` | 删除重复的同值常量设备写（省行，但改变可观测写序列） |
