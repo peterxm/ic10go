@@ -1,0 +1,11 @@
+{
+  "program": "s27_printer.icg",
+  "chip": { "name": "A CHIP" },
+  "ports": { "d0": "LED" },
+  "cases": [
+    { "name": "none() = 0", "run": 2, "expect": { "d0.Setting": 0 } },
+    { "name": "waitUntilNextValid() = 3", "run": 1, "expect": { "d0.Setting": 3 } },
+    { "name": "jumpToAddress(10) = 10<<8|5", "run": 1, "expect": { "d0.Setting": 2565 } },
+    { "name": "deviceSetLock(1) = 1<<8|6", "run": 1, "expect": { "d0.Setting": 262 } }
+  ]
+}

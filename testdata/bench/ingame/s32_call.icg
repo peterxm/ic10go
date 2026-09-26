@@ -4,10 +4,10 @@ func main() {
 	for {
 		yield()
 		n = 0
-		if d3.Setting > 0 {
+		if d4.Setting > 0 {
 			call inc
 		}
-		if d3.Setting > 10 {
+		if d4.Setting > 10 {
 			call inc
 		}
 		d0.Setting = n

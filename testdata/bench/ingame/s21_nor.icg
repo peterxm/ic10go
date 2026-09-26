@@ -2,6 +2,6 @@
 func main() {
 	for {
 		yield()
-		d0.Setting = logicalNor(d3.Setting, 0)
+		d0.Setting = logicalNor(d4.Setting, 0)
 	}
 }

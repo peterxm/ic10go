@@ -1,0 +1,13 @@
+// printer.* 栈指令构建器：把常量打包值写到 LED，验证位段布局。
+func main() {
+	for {
+		yield()
+		d0.Setting = printer.none()
+		yield()
+		d0.Setting = printer.waitUntilNextValid()
+		yield()
+		d0.Setting = printer.jumpToAddress(10)
+		yield()
+		d0.Setting = printer.deviceSetLock(1)
+	}
+}

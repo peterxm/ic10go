@@ -2,7 +2,7 @@
 func main() {
 	for {
 		yield()
-		x := d3.Setting
+		x := d4.Setting
 		var n = 0
 		if x > 5 {
 			goto big

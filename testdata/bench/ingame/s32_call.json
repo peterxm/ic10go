@@ -1,10 +1,10 @@
 {
   "program": "s32_call.icg",
   "chip": { "name": "A CHIP" },
-  "ports": { "d0": "LED", "d3": "Memory" },
+  "ports": { "d0": "LED", "d4": "Memory" },
   "cases": [
-    { "name": "<= 0", "set": { "d3.Setting": 0 }, "run": 2, "expect": { "d0.Setting": 0 } },
-    { "name": "1..10", "set": { "d3.Setting": 5 }, "run": 2, "expect": { "d0.Setting": 1 } },
-    { "name": "> 10", "set": { "d3.Setting": 11 }, "run": 2, "expect": { "d0.Setting": 2 } }
+    { "name": "<= 0", "set": { "d4.Setting": 0 }, "run": 2, "expect": { "d0.Setting": 0 } },
+    { "name": "1..10", "set": { "d4.Setting": 5 }, "run": 2, "expect": { "d0.Setting": 1 } },
+    { "name": "> 10", "set": { "d4.Setting": 11 }, "run": 2, "expect": { "d0.Setting": 2 } }
   ]
 }

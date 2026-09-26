@@ -2,7 +2,7 @@
 func main() {
 	for {
 		yield()
-		x := d3.Setting
+		x := d4.Setting
 		var acc = 0
 		for i := range 3 {
 			acc += i

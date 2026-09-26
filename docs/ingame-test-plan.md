@@ -3,8 +3,9 @@
 > **2026-09-26 更新**：本文的手工流程（贴代码、拧旋钮、看 LED、记表）已可用
 > **游戏内测试台**自动化：见 [`ingame-testbench.md`](ingame-testbench.md)、
 > `tools/ingame-testbench`（mod）、`ic10c testbench`（harness）与 VSCode 面板。
-> §1 / §2.1 / §3.1 / §3.2 / §4.1 / §4.3 已转成可跑场景，在
-> `testdata/bench/ingame/`（把输入从只读旋钮 `d1` 改成可写的 Logic Memory `d3`，输出 `d0`）：
+> §1 / §2.1 / §2.3 / §2.5 / §3.1 / §3.2 / §4.1 / §4.3 已转成可跑场景，在
+> `testdata/bench/ingame/`（A CHIP：可写数值输入用 Logic Memory `d4`，输出 `d0`，
+> 打印机栈指令用 `d3`）：
 > ```bash
 > sh testdata/bench/ingame/run.sh        # 真机 + VM 差分，全通过
 > ```
