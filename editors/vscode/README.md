@@ -140,6 +140,8 @@ func main() {
 
 ### 游戏内测试台（真机调试）
 
+![IC10 Go：IC10 测试台视图、`.icg` 编辑与 Chip State 面板](https://raw.githubusercontent.com/peterxm/ic10go/main/docs/images/testbench.png)
+
 需要游戏内运行 `ic10go-testbench` mod（安装见 [`tools/ingame-testbench/README.md`](../../tools/ingame-testbench/README.md)，协议见 [`docs/ingame-testbench.md`](../../docs/ingame-testbench.md)）。连接后：
 
 - 状态栏左侧出现 `$(circuit-board) IC10: <芯片名>`；点击打开「IC10 芯片状态」面板。

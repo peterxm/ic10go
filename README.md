@@ -7,6 +7,11 @@
 - 实现：Go 1.27
 - 不改动游戏：产物为可粘贴进 IC10 编辑器的纯文本
 
+![IC10 Go：在 VSCode 里开发与真机调试（测试台视图 + `.icg` 编辑器 + Chip State 面板）](docs/images/testbench.png)
+
+> **游戏内测试台**：用 `ic10c testbench` / VSCode 面板把编译产物推到真机芯片、暂停下单步执行、
+> 实时查看寄存器 / 栈 / 设备，并用场景文件做回归。见 [`docs/ingame-testbench.md`](docs/ingame-testbench.md)。
+
 ## 特点
 
 - **寄存器复用**：活跃性分析 + 图着色（Chaitin-Briggs）+ 拷贝合并；寄存器不足时自动溢出到宿主栈（`get/put db`，每次加载 1 行；`--spill stack` 回退为 `peek/poke`）。
