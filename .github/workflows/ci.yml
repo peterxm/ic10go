@@ -37,4 +37,4 @@ jobs:
       - name: package vsix
         run: |
           cd editors/vscode
-          npx --yes @vscode/vsce package --allow-missing-repository
+          npx --yes @vscode/vsce package --allow-missing-repository --no-rewrite-relative-links

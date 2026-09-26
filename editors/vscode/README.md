@@ -143,13 +143,14 @@ func main() {
 需要游戏内运行 `ic10go-testbench` mod（安装见 [`tools/ingame-testbench/README.md`](../../tools/ingame-testbench/README.md)，协议见 [`docs/ingame-testbench.md`](../../docs/ingame-testbench.md)）。连接后：
 
 - 状态栏左侧出现 `$(circuit-board) IC10: <芯片名>`；点击打开「IC10 芯片状态」面板。
-- 侧边栏 **IC10** 活动视图列出连接状态、**全部 host**（点击可切换选中）、寄存器（`r0..r15` / `ra` / `sp`）、栈（全量 512 槽）与设备（含 `db` 宿主设备）；点击某个设备值可直接修改输入。
+- 侧边栏 **IC10** 活动视图列出连接状态与**全部 host**（点击切换选中）；选中项下是 **寄存器 / 栈 / 设备** 三个分组（**默认折叠**，按需展开），设备列出 `db`+`d0..d5` 全部端口（空端口灰显）并带绑定标签。
 - 编辑器标题栏 `$(cloud-upload)` 一键上传当前 `.icg`；`$(beaker)` 运行测试台场景。
-- **Chip State** 面板：顶栏 `Pause | Watch | Refresh`；寄存器网格、栈列表、设备表格；值变化时短暂高亮。全部使用 VS Code 主题变量，浅色 / 深色都好看。
+- **Chip State** 面板：顶栏 `Pause | Watch | Refresh`；寄存器网格、**可折叠**的全量栈（512 槽）、每个设备一张**可折叠卡片**（带绑定标签与只读 `probe`，如喷气背包的 `JetPackActivate`/`PropulsionActive`）；值变化时短暂高亮。全部使用 VS Code 主题变量，浅色 / 深色都好看。
+- 树的逻辑行支持 **设置值** 与 **⚡Pulse**（写 0→1，触发瞬态逻辑）。
 - `autoload`（见 mod 配置）可让游戏启动后自动进入指定测试存档，无需手动点。
 - 运行场景的结果以表格展示，每个 case 一行 ✓ / ✗ 与期望 / 实际值。
 
-示例场景在 [`testdata/bench/rel.json`](../../testdata/bench/rel.json)。
+回归场景在 [`testdata/bench/ingame/`](../../testdata/bench/ingame/)（`sh testdata/bench/ingame/run.sh`，见 [`docs/ingame-test-plan.md`](../../docs/ingame-test-plan.md)）。
 
 ## 六、设置
 

@@ -186,10 +186,10 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 
 - **入口**：照抄 exporter——`OnLoaded(List<Assembly>)` + `Awake()` 兜底，`_initialized` 去重。
 - **配置**：`Documents/My Games/Stationeers/ic10go/testbench.json` 的 `host` / `port` /
-  `autoload`（启动后自动载入的存档名）/ `autoloadDelay`（秒，默认 90）。载入走
-  `LoadHelper.LoadGame(path, station)`（与主菜单「载入最新」同路径），**不是** `loadgame`
-  控制台命令（后者参数是世界 id，如 `Mars2`）。`autoloadDelay` 必须晚于
-  `GameManager.Start`，否则会崩。
+  `autoload`（启动后自动载入的存档名）/ `autoloadDelay`（秒，默认 90，作为最早尝试时间）。
+  载入走 `LoadHelper.LoadGame(path, station)`（与主菜单「载入最新」同路径），**不是**
+  `loadgame` 控制台命令（后者参数是世界 id，如 `Mars2`）。为避免在 `GameManager.Start`
+  期间载入导致崩溃，会**等主菜单场景 `Base` 出现**后才载入（`autoloadDelay` 只是下限）。
 - **不需要 Harmony**（v1）：只用公开 API + 反射读私有字段；`Execute(int)` 用于单步。
   若真机发现暂停时游戏仍自行 tick 导致重复执行，再在 M5 加 Harmony 门控。
 - **线程**：`BenchServer` 在后台线程收请求，入队；`TestbenchPlugin.Update()` 在主线程出队执行，
@@ -384,11 +384,11 @@ Activity Bar「IC10」
 | 场景 `run` 断言成功；`--diff` 与 VM 一致（VM 已按 tick/yield 建模） | ✅ |
 | 多芯片：`push --as A/--as B`，A↔B 走 d5 通道，锁步 8 tick 后 B 的 LED = 7 | ✅ |
 | `WorldManager.SetGamePause(true)` 确实停住逻辑 | ✅ |
-| 可写输入 `Logic Memory`（d3）：`set d3.Setting=42` 读回 42，程序镜像到 d0 | ✅ |
+| 可写输入 `Logic Memory`（现 A CHIP `d4`，早期在 `d3`）：`set d4.Setting=42` 读回 42，程序镜像到 d0 | ✅ |
 | 设备 host（空调）：`db` 伪端口读到空调自身逻辑，`set db.On=1` 生效 | ✅ |
 | `state` 全量栈（`all:true`）：512 槽 | ✅ |
 | 暂停恢复可操作性：改用 `InputSourceCode.PauseGameToggle`（反射），不再直接写 `IsGamePaused` | ✅（用户确认） |
-| 自动载入存档：`testbench.json` 的 `autoload`+`autoloadDelay`，走 `LoadHelper.LoadGame`，真机免手动进存档 | ✅ |
+| 自动载入存档：`autoload`+`autoloadDelay`，门控在主菜单场景 `Base` 之后走 `LoadHelper.LoadGame`，真机免手动进存档 | ✅ |
 | 芯片放在槽位里的 host（AdvancedSuit/HardSuit）：从 `ChipSlot.Occupant` 解析，`state`/`push` 可用（`Slot.Get()` 有歧义） | ✅ |
 | 固定端口绑定（宇航服/平板）：`GetLogicableFromIndex` 返回绑定设备（`db`/`d0..d5` = SUIT/HELMET/BACKPACK/…），不再误用 `Devices[]` 顺序；`state` 带 `binding` 标签 | ✅ |
 | `ingame-test-plan.md` §1/2.1/2.3/2.5/3.1/3.2/4.1/4.3 转为可跑场景（`testdata/bench/ingame/`，数值输入用 Logic Memory `d4`，打印机栈指令用 `d3`，另有 `printer.*` 构建器用例），真机 + VM 全通过（9/9） | ✅ |
