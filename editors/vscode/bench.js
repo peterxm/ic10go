@@ -699,6 +699,7 @@ class Bench {
         } catch (err) {
             vscode.window.showErrorMessage(t('IC10: watch failed: ', 'IC10: 开启实时更新失败：') + err.message);
         }
+        this.renderPanel();
     }
 
     onEvent(ev) {
@@ -921,6 +922,15 @@ class Bench {
   document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
   document.getElementById('watch').addEventListener('click', () => vscode.postMessage({ type: 'watch' }));
   document.getElementById('pause').addEventListener('click', () => vscode.postMessage({ type: 'pause' }));
+  const openMap = {};
+  document.getElementById('main').addEventListener('click', (e) => {
+    const s = e.target && e.target.closest ? e.target.closest('summary') : null;
+    if (!s) return;
+    const det = s.parentElement;
+    if (!det || det.tagName !== 'DETAILS') return;
+    const key = det.getAttribute('data-key');
+    if (key) setTimeout(() => { openMap[key] = det.open; }, 0);
+  });
   window.addEventListener('message', (e) => {
     const m = e.data;
     if (!m || m.type !== 'state') return;
@@ -973,7 +983,7 @@ class Bench {
       const sp = st.stack.sp || 0;
       const vals = st.stack.values || {};
       const keys = Object.keys(vals).map(Number).sort((a, b) => a - b);
-      html += '<section><details><summary>Stack <span class="pill">sp ' + sp + ' / ' + (st.stack.size || keys.length || '?') + ' · ' + keys.length + ' slots</span></summary><div class="grid">';
+      html += '<section><details' + (openMap['stack'] ? ' open' : '') + ' data-key="stack"><summary>Stack <span class="pill">sp ' + sp + ' / ' + (st.stack.size || keys.length || '?') + ' · ' + keys.length + ' slots</span></summary><div class="grid">';
       for (const i of keys) {
         const v = vals[String(i)];
         next['[' + i + ']'] = v;
@@ -993,7 +1003,7 @@ class Bench {
           continue;
         }
         const desc = d.name || d.prefab || '';
-        html += '<details class="dev"><summary><span class="port">' + d.port + '</span> ' + binding +
+        html += '<details class="dev"' + (openMap['dev:' + d.port] ? ' open' : '') + ' data-key="dev:' + d.port + '"><summary><span class="port">' + d.port + '</span> ' + binding +
           ' <span class="muted">' + desc + '</span> <span class="pill">' + keys.length + ' logic</span></summary><table>';
         for (const k of keys) {
           next[d.port + '.' + k] = d.logic[k];
