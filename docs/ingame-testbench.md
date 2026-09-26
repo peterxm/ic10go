@@ -389,6 +389,7 @@ Activity Bar「IC10」
 | `state` 全量栈（`all:true`）：512 槽 | ✅ |
 | 暂停恢复可操作性：改用 `InputSourceCode.PauseGameToggle`（反射），不再直接写 `IsGamePaused` | ✅（用户确认） |
 | 自动载入存档：`testbench.json` 的 `autoload`+`autoloadDelay`，走 `LoadHelper.LoadGame`，真机免手动进存档 | ✅ |
+| 芯片放在槽位里的 host（AdvancedSuit/HardSuit）：从 `ChipSlot.Occupant` 解析，`state`/`push` 可用（`Slot.Get()` 有歧义） | ✅ |
 | 场景 `mem.json`（memory→LED，两个 case）+ `--diff` | ✅ 真机与 VM 都通过 |
 | 按钮 `Logic Button`（d2）：`Setting` 只读，随物理按下变化 | 只读（观察用） |
 

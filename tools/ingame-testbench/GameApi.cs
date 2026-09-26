@@ -79,7 +79,90 @@ namespace Ic10Go.Testbench
         private static readonly FieldInfo FRa = typeof(ProgrammableChip).GetField("_ReturnAddressIndex", Priv);
         private static readonly FieldInfo FExec = typeof(ProgrammableChip).GetField("_executeIndex", Priv);
         private static readonly FieldInfo FCustomName = typeof(Thing).GetField("_customName", Priv);
-        private static readonly Dictionary<Type, PropertyInfo> ChipProps = new Dictionary<Type, PropertyInfo>();
+        private static readonly Dictionary<Type, PropertyInfo[]> ChipPropCache = new Dictionary<Type, PropertyInfo[]>();
+
+        /// <summary>
+        /// Resolves the running ProgrammableChip behind a holder:
+        ///  * the holder is itself a chip;
+        ///  * a `ProgrammableChip` property (CircuitHousing);
+        ///  * a chip slot — `ChipSlot` on suits, `_ProgrammableChipSlot` on
+        ///    housings, or any `Slot` property whose occupant is a chip.
+        /// </summary>
+        private static ProgrammableChip ChipOf(ICircuitHolder h)
+        {
+            if (h is ProgrammableChip pc) return pc;
+            var type = h.GetType();
+            foreach (var prop in ChipProperties(type))
+            {
+                object value;
+                try { value = prop.GetValue(h); } catch { continue; }
+                if (value == null) continue;
+                if (value is ProgrammableChip direct) return direct;
+                var chip = ChipFromSlot(value);
+                if (chip != null) return chip;
+            }
+            return null;
+        }
+
+        private static PropertyInfo[] ChipProperties(Type type)
+        {
+            PropertyInfo[] cached;
+            if (ChipPropCache.TryGetValue(type, out cached)) return cached;
+
+            const BindingFlags all = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            var list = new List<PropertyInfo>();
+            var direct = type.GetProperty("ProgrammableChip", all);
+            if (direct != null && direct.CanRead) list.Add(direct);
+            foreach (var name in new[] { "ChipSlot", "_ProgrammableChipSlot" })
+            {
+                var p = type.GetProperty(name, all);
+                if (p != null && p.CanRead && !list.Contains(p)) list.Add(p);
+            }
+            foreach (var p in type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                if (!p.CanRead || list.Contains(p)) continue;
+                if (IsSlotType(p.PropertyType)) list.Add(p);
+            }
+            cached = list.ToArray();
+            ChipPropCache[type] = cached;
+            return cached;
+        }
+
+        private static bool IsSlotType(Type t)
+        {
+            return t != null && (t.FullName == "Assets.Scripts.Objects.Slot" || t.Name == "Slot");
+        }
+
+        private static ProgrammableChip ChipFromSlot(object slot)
+        {
+            if (slot == null) return null;
+            var t = slot.GetType();
+
+            // Prefer the Occupant property: Slot.Get() is ambiguous.
+            try
+            {
+                var occ = t.GetProperty("Occupant", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (occ != null && occ.CanRead)
+                {
+                    var v = occ.GetValue(slot);
+                    if (v is ProgrammableChip pc) return pc;
+                }
+            }
+            catch { }
+
+            // Fall back to a parameterless Get().
+            try
+            {
+                foreach (var m in t.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+                {
+                    if (m.Name != "Get" || m.GetParameters().Length != 0 || m.ReturnType == typeof(void)) continue;
+                    var v = m.Invoke(slot, null);
+                    if (v is ProgrammableChip pc) return pc;
+                }
+            }
+            catch { }
+            return null;
+        }
 
         public const int Ports = 6;
 
@@ -109,28 +192,6 @@ namespace Ic10Go.Testbench
                 });
             }
             return result;
-        }
-
-        /// <summary>
-        /// Resolves the running ProgrammableChip behind a holder. A bare
-        /// ProgrammableChip is itself a holder; a CircuitHousing holds one in a
-        /// private `ProgrammableChip` property (confirmed in Assembly-CSharp).
-        /// </summary>
-        private static ProgrammableChip ChipOf(ICircuitHolder h)
-        {
-            if (h is ProgrammableChip pc) return pc;
-            var type = h.GetType();
-            PropertyInfo prop;
-            if (!ChipProps.TryGetValue(type, out prop))
-            {
-                prop = type.GetProperty("ProgrammableChip", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                ChipProps[type] = prop;
-            }
-            if (prop != null && typeof(ProgrammableChip).IsAssignableFrom(prop.PropertyType))
-            {
-                try { return prop.GetValue(h) as ProgrammableChip; } catch { }
-            }
-            return null;
         }
 
         private static string NameOf(Thing t, int index)
@@ -290,6 +351,7 @@ namespace Ic10Go.Testbench
         {
             var holder = handle.Holder;
             var o = new JObject { ["chip"] = handle.ToJson() };
+            o["holder"] = DescribeHolder(holder);
             o["devices"] = DescribeArray(DevicesArray(holder));
             o["deviceIds"] = RawArray(GetMember(holder, "_DeviceIDs"));
             o["deviceLabels"] = RawArray(GetMember(holder, "_DeviceLabels"));
@@ -347,6 +409,49 @@ namespace Ic10Go.Testbench
                 outArr.Add(DescribeLogicable(item));
             }
             return outArr;
+        }
+
+        /// <summary>Diagnostic dump of the holder's chip-related properties.</summary>
+        public static JObject DescribeHolder(object holder)
+        {
+            var o = new JObject { ["type"] = holder != null ? holder.GetType().FullName : null };
+            var props = new JArray();
+            if (holder != null)
+            {
+                foreach (var p in ChipProperties(holder.GetType()))
+                {
+                    var e = new JObject { ["name"] = p.Name, ["propType"] = p.PropertyType.Name };
+                    try
+                    {
+                        var v = p.GetValue(holder);
+                        if (v == null) { e["value"] = JValue.CreateNull(); }
+                        else
+                        {
+                            e["valueType"] = v.GetType().FullName;
+                            var thing = v as Thing;
+                            if (thing != null) { e["prefab"] = thing.PrefabName; }
+                            var g = v.GetType().GetMethod(
+                                "Get", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                                null, Type.EmptyTypes, null);
+                            if (g != null)
+                            {
+                                var r = g.Invoke(v, null);
+                                if (r == null) { e["get"] = JValue.CreateNull(); }
+                                else
+                                {
+                                    e["get"] = r.GetType().FullName;
+                                    var rt = r as Thing;
+                                    if (rt != null) { e["getPrefab"] = rt.PrefabName; }
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex) { e["error"] = ex.Message; }
+                    props.Add(e);
+                }
+            }
+            o["chipProps"] = props;
+            return o;
         }
 
         private static JObject DescribeLogicable(object dev)
