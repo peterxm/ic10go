@@ -706,6 +706,8 @@ namespace Ic10Go.Testbench
                 }
                 catch { }
             }
+            var probe = ProbeProps(dev);
+            if (probe != null) entry["probe"] = probe;
             return entry;
         }
 

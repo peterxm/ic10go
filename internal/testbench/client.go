@@ -361,4 +361,5 @@ type DeviceState struct {
 	Binding string             `json:"binding,omitempty"`
 	Present *bool              `json:"present,omitempty"`
 	Logic   map[string]float64 `json:"logic"`
+	Probe   map[string]string  `json:"probe,omitempty"`
 }

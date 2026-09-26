@@ -968,7 +968,15 @@ class Bench {
           next[d.port + '.' + k] = d.logic[k];
           html += '<tr><td>' + k + '</td><td class="num">' + num(d.logic[k]) + '</td></tr>';
         }
-        html += '</table></details>';
+        html += '</table>';
+        if (d.probe && Object.keys(d.probe).length) {
+          html += '<table class="probe">';
+          for (const pk of Object.keys(d.probe)) {
+            html += '<tr><td class="muted">' + pk + '</td><td class="num">' + d.probe[pk] + '</td></tr>';
+          }
+          html += '</table>';
+        }
+        html += '</details>';
       }
       html += '</section>';
     }
