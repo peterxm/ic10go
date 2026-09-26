@@ -119,26 +119,34 @@ namespace Ic10Go.Testbench
             }
 
             // Optional autoload of a configured save. Loading during
-            // GameManager.Start crashes the game, so wait for a safe delay
-            // after launch (configurable), then load exactly once.
+            // GameManager.Start crashes the game, so wait until the main menu
+            // scene (Base) is actually up, then load exactly once.
             if (_config != null && !string.IsNullOrEmpty(_config.Autoload) && !_autoloadDone)
             {
                 if (Time.realtimeSinceStartup >= _autoloadNext)
                 {
-                    _autoloadDone = true;
                     string gs = GameApi.GameStateName();
-                    Debug.Log("[" + ModId + "] autoload check: state=" + gs +
-                              " scene=" + GameApi.SceneName() +
-                              " t=" + Time.realtimeSinceStartup.ToString("0"));
-                    if (gs == "None" || gs == "")
+                    string scene = GameApi.SceneName();
+                    if (gs == "Running" || gs == "Joining" || gs == "Waiting" || gs == "Paused" || gs == "Loading")
                     {
-                        Debug.Log("[" + ModId + "] autoloading save \"" + _config.Autoload + "\"");
-                        try { Debug.Log("[" + ModId + "] load -> " + GameApi.LoadSave(_config.Autoload)); }
-                        catch (Exception ex) { Debug.LogError("[" + ModId + "] autoload failed: " + ex); }
+                        _autoloadDone = true;
+                        Debug.Log("[" + ModId + "] autoload: world active (" + gs + "), done");
                     }
-                    else
+                    else if (gs == "None")
                     {
-                        Debug.Log("[" + ModId + "] autoload skipped (state " + gs + ")");
+                        bool menuUp = scene == "Base" || (Time.realtimeSinceStartup > 180f && scene != "" && scene != "Splash");
+                        if (menuUp)
+                        {
+                            _autoloadDone = true;
+                            Debug.Log("[" + ModId + "] autoload (scene=" + scene + " t=" + Time.realtimeSinceStartup.ToString("0") + "): " + _config.Autoload);
+                            try { Debug.Log("[" + ModId + "] load -> " + GameApi.LoadSave(_config.Autoload)); }
+                            catch (Exception ex) { Debug.LogError("[" + ModId + "] autoload failed: " + ex); }
+                        }
+                        else
+                        {
+                            Debug.Log("[" + ModId + "] autoload waiting (scene=" + scene + " t=" + Time.realtimeSinceStartup.ToString("0") + ")");
+                            _autoloadNext = Time.realtimeSinceStartup + 5f;
+                        }
                     }
                 }
             }

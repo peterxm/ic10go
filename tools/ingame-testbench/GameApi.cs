@@ -556,6 +556,10 @@ namespace Ic10Go.Testbench
             {
                 if (!force && !dev.CanLogicWrite(t)) throw new BenchError("unknown-logic", logic + " is not writable on this device (use force)");
                 if (pulse) dev.SetLogicValue(t, 0.0); // rising edge for momentary logic
+                // Workaround: on a jetpack the game does not wire the Activate
+                // logic to JetPackActivate, but the property is public/settable.
+                if (string.Equals(logic, "Activate", StringComparison.OrdinalIgnoreCase))
+                    TrySetBoolProperty(dev, "JetPackActivate", value != 0);
                 dev.SetLogicValue(t, value);
             }
             catch (BenchError) { throw; }
@@ -572,6 +576,16 @@ namespace Ic10Go.Testbench
             }
             catch (BenchError) { throw; }
             catch (Exception ex) { throw new BenchError("internal", "read " + logic + ": " + ex.Message); }
+        }
+
+        private static void TrySetBoolProperty(object o, string name, bool value)
+        {
+            try
+            {
+                var p = o.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (p != null && p.CanWrite && p.PropertyType == typeof(bool)) p.SetValue(o, value);
+            }
+            catch { }
         }
 
         // -- state ------------------------------------------------------------
