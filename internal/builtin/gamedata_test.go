@@ -1,6 +1,9 @@
 package builtin
 
-import "testing"
+import (
+	"sort"
+	"testing"
+)
 
 // TestPrefabsFromGame checks the prefab table was generated from the game and
 // still hashes back.
@@ -29,5 +32,27 @@ func TestScriptCommandHelp(t *testing.T) {
 		if ins, ok := IC10Instructions[m]; ok && ins.Desc != ScriptCommandHelp[m] {
 			t.Errorf("IC10Instructions[%s].Desc not refreshed from the game:\n got %q\nwant %q", m, ins.Desc, ScriptCommandHelp[m])
 		}
+	}
+}
+
+// TestGameInstructionCoverage fails when the game exposes an IC10 mnemonic that
+// the compiler's instruction table does not know, so a Stationeers update that
+// adds one is caught here instead of at runtime. `command` is a localization
+// placeholder (its help text is literally "command"), not a real opcode.
+func TestGameInstructionCoverage(t *testing.T) {
+	allow := map[string]bool{"command": true}
+	var missing []string
+	for m := range ScriptCommandHelp {
+		if allow[m] {
+			continue
+		}
+		if _, ok := IC10Instructions[m]; !ok {
+			missing = append(missing, m)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Errorf("game instructions missing from IC10Instructions: %v\n"+
+			"add them (or map them to an existing builtin) in internal/builtin/instructions.go", missing)
 	}
 }
