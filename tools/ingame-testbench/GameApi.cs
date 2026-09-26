@@ -511,6 +511,25 @@ namespace Ic10Go.Testbench
                 }
                 o["logic"] = vals;
             }
+            var probe = ProbeProps(dev);
+            if (probe != null) o["probe"] = probe;
+            return o;
+        }
+
+        /// <summary>Reflection probe for a few device state flags (diagnostics).</summary>
+        private static JObject ProbeProps(object dev)
+        {
+            var type = dev.GetType();
+            if (!type.Name.Contains("Jetpack")) return null;
+            var o = new JObject();
+            foreach (var name in new[] { "JetPackActivate", "PropulsionActive", "IsThrusting", "HasPropellent", "PropellantDelta", "On" })
+            {
+                var p = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (p != null && p.CanRead)
+                {
+                    try { o[name] = (p.GetValue(dev) ?? "").ToString(); } catch { }
+                }
+            }
             return o;
         }
 
