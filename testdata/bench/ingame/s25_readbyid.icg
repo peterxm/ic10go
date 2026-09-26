@@ -1,0 +1,11 @@
+// ingame-test-plan.md §2.5 readById / writeById（用 d3 电子打印机）。
+func main() {
+	for {
+		yield()
+		id := d3.ReferenceId
+		writeById(id, LogicType.On, 1)
+		v := readById(id, LogicType.On)
+		d3.stack[0] = v
+		d0.Setting = d3.stack[0]
+	}
+}

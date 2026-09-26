@@ -1,0 +1,12 @@
+// ingame-test-plan.md §2.3 clrById（用 d3 的电子打印机自带的栈/ReferenceId）。
+func main() {
+	for {
+		yield()
+		id := d3.ReferenceId
+		putd(id, 10, 123)
+		before := getd(id, 10)
+		clrById(id)
+		after := getd(id, 10)
+		d0.Setting = before*1000 + after
+	}
+}

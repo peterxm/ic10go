@@ -1,0 +1,8 @@
+{
+  "program": "s25_readbyid.icg",
+  "chip": { "name": "A CHIP" },
+  "ports": { "d0": "LED", "d3": "ElectronicsPrinter" },
+  "cases": [
+    { "name": "sd On 1 / ld On -> stack -> LED 1", "run": 2, "expect": { "d0.Setting": 1 } }
+  ]
+}
