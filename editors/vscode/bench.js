@@ -282,7 +282,7 @@ class BenchTree {
         for (const d of devices) {
             const item = new vscode.TreeItem(d.port, vscode.TreeItemCollapsibleState.Collapsed);
             item._kind = 'device';
-            item.description = d.name || d.prefab || '';
+            item.description = [d.binding, d.name || d.prefab].filter(Boolean).join(' · ');
             item.iconPath = new vscode.ThemeIcon('server-process');
             item._logic = d.logic || {};
             out.push(item);
@@ -895,7 +895,7 @@ class Bench {
           const key = d.port + '.' + k;
           next[key] = d.logic[k];
           html += '<tr>' +
-            (idx === 0 ? '<td class="port" rowspan="' + keys.length + '">' + d.port + '</td>' : '') +
+            (idx === 0 ? '<td class="port" rowspan="' + keys.length + '">' + d.port + (d.binding ? ' <span class="k">' + d.binding + '</span>' : '') + '</td>' : '') +
             '<td>' + k + '</td><td class="num">' + num(d.logic[k]) + '</td></tr>';
         });
       }

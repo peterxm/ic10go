@@ -321,13 +321,42 @@ namespace Ic10Go.Testbench
         {
             if (holder == null) return null;
             if (index < 0) return holder as ILogicable; // "db" = the host device
+            // Suits/tablets bind ports directly to worn items (so
+            // GetLogicableFromIndex yields a Thing); a CircuitHousing binds them
+            // to cable networks, so its Devices[] array holds the real device.
+            var dev = Port(holder, index, 0);
+            if (dev is Thing) return dev;
             var arr = DevicesArray(holder);
             if (arr != null && index < arr.Length)
             {
-                var dev = arr.GetValue(index) as ILogicable;
-                if (dev != null) return dev;
+                var d = arr.GetValue(index) as ILogicable;
+                if (d != null) return d;
             }
-            return Port(holder, index, 0);
+            return dev;
+        }
+
+        /// <summary>The host's port binding labels (db, d0..d5) from GetLogicBindings.</summary>
+        private static string[] BindingLabels(ICircuitHolder holder)
+        {
+            try
+            {
+                var list = holder.GetLogicBindings();
+                if (list == null || list.Count == 0) return null;
+                var arr = new string[list.Count];
+                for (int i = 0; i < list.Count; i++)
+                    arr[i] = list[i] != null ? list[i].Label : null;
+                return arr;
+            }
+            catch { return null; }
+        }
+
+        private static string BindingFor(string[] labels, int index)
+        {
+            if (labels == null) return null;
+            int i = index < 0 ? 0 : index + 1; // 7 entries: db, d0..d5
+            if (labels.Length == 6 && index >= 0) i = index; // 6 entries: d0..d5
+            if (i < 0 || i >= labels.Length) return null;
+            return labels[i];
         }
 
         private static readonly Dictionary<Type, FieldInfo> DevicesFields = new Dictionary<Type, FieldInfo>();
@@ -352,6 +381,8 @@ namespace Ic10Go.Testbench
             var holder = handle.Holder;
             var o = new JObject { ["chip"] = handle.ToJson() };
             o["holder"] = DescribeHolder(holder);
+            var labels = BindingLabels(holder);
+            if (labels != null) o["bindings"] = new JArray(labels);
             o["devices"] = DescribeArray(DevicesArray(holder));
             o["deviceIds"] = RawArray(GetMember(holder, "_DeviceIDs"));
             o["deviceLabels"] = RawArray(GetMember(holder, "_DeviceLabels"));
@@ -601,22 +632,23 @@ namespace Ic10Go.Testbench
         {
             var list = new JArray();
             if (holder == null) return list;
+            var labels = BindingLabels(holder);
             // `db` is the device the chip is mounted on (the host). On a device
             // host like an Air Conditioner this is how the program drives it.
             var host = holder as ILogicable;
-            if (host != null) list.Add(DeviceEntry("db", host));
+            if (host != null) list.Add(DeviceEntry("db", host, BindingFor(labels, -1)));
             for (int port = 0; port < Ports; port++)
             {
                 ILogicable dev;
                 try { dev = PortDevice(holder, port); }
                 catch { continue; }
                 if (dev == null) continue;
-                list.Add(DeviceEntry("d" + port, dev));
+                list.Add(DeviceEntry("d" + port, dev, BindingFor(labels, port)));
             }
             return list;
         }
 
-        private static JObject DeviceEntry(string label, ILogicable dev)
+        private static JObject DeviceEntry(string label, ILogicable dev, string binding)
         {
             var logic = new JObject();
             foreach (LogicType t in Enum.GetValues(typeof(LogicType)))
@@ -634,6 +666,7 @@ namespace Ic10Go.Testbench
                 ["port"] = label,
                 ["logic"] = logic,
             };
+            if (!string.IsNullOrEmpty(binding)) entry["binding"] = binding;
             var thing = dev as Thing;
             if (thing != null)
             {
