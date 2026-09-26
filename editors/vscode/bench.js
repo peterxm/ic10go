@@ -926,7 +926,7 @@ class Bench {
         const present = d.present !== false;
         if (!present || !keys.length) {
           html += '<div class="dev empty"><span class="port">' + d.port + '</span> ' + binding +
-            ' <span class="muted">' + t('empty', '空') + '</span></div>';
+            ' <span class="muted">empty</span></div>';
           continue;
         }
         const desc = d.name || d.prefab || '';
