@@ -820,6 +820,23 @@ class Bench {
     border: 1px solid var(--vscode-input-border, rgba(128,128,128,.35)); border-radius: 4px; padding: 1px 5px;
   }
   .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
+  .muted { color: var(--vscode-descriptionForeground); }
+  details.dev {
+    margin: 0 0 4px; padding: 3px 9px; border-radius: 6px;
+    border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.25));
+  }
+  details.dev > summary {
+    text-transform: none; letter-spacing: 0; font-size: var(--vscode-font-size);
+    font-weight: 500; margin: 0;
+  }
+  details.dev table { margin-top: 4px; }
+  details.dev td { padding: 2px 8px; border-bottom: none; }
+  .dev.empty {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 4px; padding: 3px 9px;
+    border: 1px dashed var(--vscode-editorWidget-border, rgba(128,128,128,.25));
+    border-radius: 6px; color: var(--vscode-descriptionForeground);
+  }
+  .port { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-charts-blue, #3794ff); }
   .pill { font-size: 10px; padding: 1px 7px; border-radius: 999px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
 </style>
 </head>
@@ -902,23 +919,26 @@ class Bench {
       html += '</div></details></section>';
     }
     if (st.devices && st.devices.length) {
-      html += '<section><h2>Devices</h2><table><thead><tr><th>port</th><th>logic</th><th style="text-align:right">value</th></tr></thead><tbody>';
+      html += '<section><h2>Devices</h2>';
       for (const d of st.devices) {
         const keys = Object.keys(d.logic || {}).sort();
-        const label = d.port + (d.binding ? ' <span class="k">' + d.binding + '</span>' : '');
-        if (!keys.length) {
-          html += '<tr><td class="port">' + label + '</td><td colspan="2" class="empty">empty</td></tr>';
+        const binding = d.binding ? '<span class="k">' + d.binding + '</span>' : '';
+        const present = d.present !== false;
+        if (!present || !keys.length) {
+          html += '<div class="dev empty"><span class="port">' + d.port + '</span> ' + binding +
+            ' <span class="muted">' + t('empty', '空') + '</span></div>';
           continue;
         }
-        keys.forEach((k, idx) => {
-          const key = d.port + '.' + k;
-          next[key] = d.logic[k];
-          html += '<tr>' +
-            (idx === 0 ? '<td class="port" rowspan="' + keys.length + '">' + label + '</td>' : '') +
-            '<td>' + k + '</td><td class="num">' + num(d.logic[k]) + '</td></tr>';
-        });
+        const desc = d.name || d.prefab || '';
+        html += '<details class="dev"><summary><span class="port">' + d.port + '</span> ' + binding +
+          ' <span class="muted">' + desc + '</span> <span class="pill">' + keys.length + ' logic</span></summary><table>';
+        for (const k of keys) {
+          next[d.port + '.' + k] = d.logic[k];
+          html += '<tr><td>' + k + '</td><td class="num">' + num(d.logic[k]) + '</td></tr>';
+        }
+        html += '</table></details>';
       }
-      html += '</tbody></table></section>';
+      html += '</section>';
     }
     if (st.errors && (st.errors.code || st.errors.compilation)) {
       html = '<section><h2>Error</h2><p>' + (st.errors.code || '') + ' line ' + st.errors.line + '</p></section>' + html;

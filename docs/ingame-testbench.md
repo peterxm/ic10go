@@ -308,7 +308,7 @@ Activity Bar「IC10」
 - 顶栏：芯片名 + 连接圆点 + `Pause | Watch | Refresh`（`Pause` 在实时更新旁，暂停时变 `Resume` 并高亮）。
 - **Registers**：网格（r0–r15 / ra / sp），等宽数字；值变化时短暂高亮（绿色淡出）。
 - **Stack**：默认**折叠**（`<details>`），展开后显示全部 512 槽，`sp` 行加色条。
-- **Devices**：`port | logic | value` 表格；列出 `db` + `d0..d5` **全部端口**（空端口显示 `empty`），并带绑定标签（`SUIT`/`HELMET`/…）。点击树里的 logic 可改输入。
+- **Devices**：每个设备一张**可折叠卡片**（`db` + `d0..d5`，空端口灰显 `empty`），带绑定标签与该设备的 logic 数量；展开看全部 logic，避免 `db` 那种几十条一次铺开。点击树里的 logic 可改输入。
 - **Program**：当前行 + `line/total`。
 - 全部用 `var(--vscode-*)` 变量、`--vscode-editorWidget-border` 描边、`--vscode-textCodeBlock-background`
   底色，无第三方 CSS；禁用内联脚本，`webview.cspSource` 白名单。
