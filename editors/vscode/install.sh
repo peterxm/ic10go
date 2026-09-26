@@ -30,7 +30,7 @@ if command -v code >/dev/null 2>&1; then
         fi
     done
     if [ -z "$vsix" ] && command -v npx >/dev/null 2>&1; then
-        ( cd "$here" && npx --yes @vscode/vsce package --allow-missing-repository >/dev/null 2>&1 ) || true
+        ( cd "$here" && npx --yes @vscode/vsce package --allow-missing-repository --no-rewrite-relative-links >/dev/null 2>&1 ) || true
         [ -f "$here/icg-$version.vsix" ] && vsix="$here/icg-$version.vsix"
     fi
     if [ -n "$vsix" ] && [ -f "$vsix" ]; then
@@ -58,9 +58,11 @@ mkdir -p "$dest"
 cp "$here/package.json" "$dest/"
 cp "$here"/package.nls*.json "$dest/"
 cp "$here/extension.js" "$dest/"
+cp "$here/bench.js" "$dest/"
 cp "$here/language-configuration.json" "$dest/"
 cp -R "$here/syntaxes" "$dest/"
 cp -R "$here/snippets" "$dest/"
+cp -R "$here/resources" "$dest/"
 
 echo "Installed IC10 Go extension $version to:"
 echo "  $dest"

@@ -1,0 +1,9 @@
+{
+  "program": "ac.icg",
+  "chip": { "name": "StructureAirConditioner" },
+  "ports": { "d0": "LED", "d1": "Memory", "db": "AirConditioner" },
+  "cases": [
+    { "name": "memory 123 -> LED 123, AC on", "set": { "d1.Setting": 123 }, "run": 2, "expect": { "d0.Setting": 123, "db.On": 1 } },
+    { "name": "memory 5 -> LED 5", "set": { "d1.Setting": 5 }, "run": 2, "expect": { "d0.Setting": 5 } }
+  ]
+}

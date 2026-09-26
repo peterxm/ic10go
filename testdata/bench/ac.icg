@@ -1,0 +1,9 @@
+// Testbench device-host program for the air conditioner:
+// keep the AC on (db), mirror the Logic Memory on d1 to the LED on d0.
+func main() {
+	for {
+		yield()
+		db.On = 1
+		d0.Setting = d1.Setting
+	}
+}

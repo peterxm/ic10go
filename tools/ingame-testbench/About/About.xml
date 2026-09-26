@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>ic10go testbench</Name>
+  <Author>ic10go</Author>
+  <Version>0.1.0</Version>
+  <ModID>ic10go-testbench</ModID>
+  <Description>[h1]ic10go testbench[/h1]
+A local test server for IC10 development. It lets the ic10go toolchain (`ic10c testbench`) and the VSCode extension upload a compiled program to a chip, set device inputs, step the chip, and read back registers, stack and device values.
+
+It listens on 127.0.0.1:7800 (NDJSON over TCP) and only acts when asked. Pair it with a test save that has IC hosts + a Logic Memory / LED; it can also auto-load that save at startup.
+
+Configure the port, auto-load save and delay in Documents\My Games\Stationeers\ic10go\testbench.json.</Description>
+  <Tags>
+    <Tag>Tool</Tag>
+  </Tags>
+</ModMetadata>

@@ -1,0 +1,29 @@
+// Testbench A/B link: chip A counts and publishes over the bus; chip B shows
+// the received value on its LED. Wire A.d5 <-> B.d5 on one cable network.
+bus Link {
+	value num
+}
+
+chip A {
+	use Link on d5:0
+
+	func main() {
+		var n = 0
+		for {
+			yield()
+			n += 1
+			Link.value = n
+		}
+	}
+}
+
+chip B {
+	use Link on d5:0
+
+	func main() {
+		for {
+			yield()
+			d0.Setting = Link.value
+		}
+	}
+}

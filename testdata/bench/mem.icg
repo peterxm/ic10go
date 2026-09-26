@@ -1,0 +1,7 @@
+// Testbench memory->LED: reads the Logic Memory on d3 and mirrors it on d0.
+func main() {
+	for {
+		yield()
+		d0.Setting = d3.Setting
+	}
+}

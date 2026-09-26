@@ -1,0 +1,8 @@
+{
+  "program": "counter.icg",
+  "chip": { "name": "A CHIP" },
+  "ports": { "d0": "LED" },
+  "cases": [
+    { "name": "10 ticks -> +10", "set": { "d0.Setting": 100 }, "run": 11, "expect": { "d0.Setting": 110 } }
+  ]
+}

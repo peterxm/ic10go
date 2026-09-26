@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.16",
+  "version": "0.7.18",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -24,7 +24,17 @@
     "onCommand:icg.minify",
     "onCommand:icg.disasm",
     "onCommand:icg.graph",
-    "onCommand:icg.restartServer"
+    "onCommand:icg.restartServer",
+    "onView:icg.bench",
+    "onCommand:icg.bench.connect",
+    "onCommand:icg.bench.disconnect",
+    "onCommand:icg.bench.push",
+    "onCommand:icg.bench.refresh",
+    "onCommand:icg.bench.watch",
+    "onCommand:icg.bench.runScenario",
+    "onCommand:icg.bench.openPanel",
+    "onCommand:icg.bench.pause",
+    "onCommand:icg.bench.loadSave"
   ],
   "contributes": {
     "languages": [
@@ -176,8 +186,51 @@
           "items": { "type": "string" },
           "default": [],
           "markdownDescription": "%icg.runSet.desc%"
+        },
+        "icg.bench.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "markdownDescription": "%icg.bench.host.desc%"
+        },
+        "icg.bench.port": {
+          "type": "number",
+          "default": 7800,
+          "markdownDescription": "%icg.bench.port.desc%"
+        },
+        "icg.bench.autoConnect": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%icg.bench.autoConnect.desc%"
+        },
+        "icg.bench.refreshInterval": {
+          "type": "number",
+          "default": 0,
+          "markdownDescription": "%icg.bench.refreshInterval.desc%"
+        },
+        "icg.bench.watchOnOpen": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%icg.bench.watchOnOpen.desc%"
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "icg",
+          "title": "%viewContainer.icg%",
+          "icon": "resources/ic10.svg"
+        }
+      ]
+    },
+    "views": {
+      "icg": [
+        {
+          "id": "icg.bench",
+          "name": "%view.bench%",
+          "icon": "$(circuit-board)"
+        }
+      ]
     },
     "commands": [
       {
@@ -209,6 +262,59 @@
       {
         "command": "icg.restartServer",
         "title": "%cmd.restartServer%"
+      },
+      {
+        "command": "icg.bench.push",
+        "title": "%cmd.bench.push%",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "icg.bench.connect",
+        "title": "%cmd.bench.connect%",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "icg.bench.disconnect",
+        "title": "%cmd.bench.disconnect%",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "icg.bench.refresh",
+        "title": "%cmd.bench.refresh%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "icg.bench.watch",
+        "title": "%cmd.bench.watch%",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "icg.bench.runScenario",
+        "title": "%cmd.bench.runScenario%",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "icg.bench.openPanel",
+        "title": "%cmd.bench.openPanel%",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "icg.bench.pause",
+        "title": "%cmd.bench.pause%",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "icg.bench.loadSave",
+        "title": "%cmd.bench.loadSave%",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "icg.bench.selectChip",
+        "title": "%cmd.bench.selectChip%"
+      },
+      {
+        "command": "icg.bench.setDevice",
+        "title": "%cmd.bench.setDevice%"
       }
     ],
     "menus": {
@@ -243,6 +349,65 @@
           "when": "editorLangId == ic10",
           "group": "navigation"
         }
+      ],
+      "editor/title": [
+        {
+          "command": "icg.bench.push",
+          "when": "editorLangId == icg",
+          "group": "navigation@1"
+        },
+        {
+          "command": "icg.bench.runScenario",
+          "when": "editorLangId == icg",
+          "group": "navigation@2"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "icg.bench.push",
+          "when": "view == icg.bench",
+          "group": "navigation@1"
+        },
+        {
+          "command": "icg.bench.runScenario",
+          "when": "view == icg.bench",
+          "group": "navigation@2"
+        },
+        {
+          "command": "icg.bench.watch",
+          "when": "view == icg.bench",
+          "group": "navigation@3"
+        },
+        {
+          "command": "icg.bench.refresh",
+          "when": "view == icg.bench",
+          "group": "navigation@4"
+        },
+        {
+          "command": "icg.bench.pause",
+          "when": "view == icg.bench",
+          "group": "navigation@5"
+        },
+        {
+          "command": "icg.bench.loadSave",
+          "when": "view == icg.bench",
+          "group": "navigation@6"
+        },
+        {
+          "command": "icg.bench.openPanel",
+          "when": "view == icg.bench",
+          "group": "navigation@7"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "icg.bench.setDevice",
+          "when": "false"
+        },
+        {
+          "command": "icg.bench.selectChip",
+          "when": "false"
+        }
       ]
     },
     "keybindings": [
@@ -256,6 +421,18 @@
         "command": "icg.run",
         "key": "ctrl+alt+r",
         "mac": "cmd+alt+r",
+        "when": "editorLangId == icg"
+      },
+      {
+        "command": "icg.bench.push",
+        "key": "ctrl+alt+u",
+        "mac": "cmd+alt+u",
+        "when": "editorLangId == icg"
+      },
+      {
+        "command": "icg.bench.runScenario",
+        "key": "ctrl+alt+t",
+        "mac": "cmd+alt+t",
         "when": "editorLangId == icg"
       }
     ]

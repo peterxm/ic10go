@@ -16,6 +16,20 @@ const mock = {
     window: {
         createOutputChannel: () => ({ appendLine: noop, append: noop, show: noop, dispose: noop }),
         createStatusBarItem: () => ({ show: noop, hide: noop, dispose: noop }),
+        registerTreeDataProvider: () => disposable(),
+        createWebviewPanel: () => ({
+            reveal: noop,
+            dispose: noop,
+            webview: {
+                html: '',
+                cspSource: 'vscode-webview://test',
+                postMessage: () => Promise.resolve(true),
+                onDidReceiveMessage: disposable,
+            },
+            onDidDispose: disposable,
+        }),
+        showOpenDialog: () => Promise.resolve([]),
+        showInputBox: () => Promise.resolve(undefined),
         onDidChangeActiveTextEditor: disposable,
         activeTextEditor: undefined,
         showWarningMessage: () => Promise.resolve(undefined),
@@ -49,7 +63,7 @@ const mock = {
         onDidChangeTextDocument: disposable,
         onDidCloseTextDocument: disposable,
         onDidChangeConfiguration: disposable,
-        getConfiguration: () => ({ get: () => undefined }),
+        getConfiguration: () => ({ get: (k) => (k === 'bench.autoConnect' ? false : undefined) }),
         createFileSystemWatcher: () => ({
             onDidChange: disposable,
             onDidCreate: disposable,
@@ -86,6 +100,31 @@ const mock = {
     SemanticTokensLegend: class {},
     Diagnostic: class {},
     DiagnosticSeverity: { Error: 1, Warning: 2, Information: 3 },
+    ViewColumn: { Active: 1, Beside: 2 },
+    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+    TreeItem: class {
+        constructor(label, collapsibleState) {
+            this.label = label;
+            this.collapsibleState = collapsibleState;
+        }
+    },
+    ThemeIcon: class {
+        constructor(id, color) {
+            this.id = id;
+            this.color = color;
+        }
+    },
+    ThemeColor: class {
+        constructor(id) {
+            this.id = id;
+        }
+    },
+    EventEmitter: class {
+        constructor() {
+            this.event = () => disposable();
+        }
+        fire() {}
+    },
 };
 
 const fakeProc = {

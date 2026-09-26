@@ -9,6 +9,7 @@ const cp = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { Bench } = require('./bench');
 
 // Oldest ic10c the extension is known to work with (build --json, current
 // enum/logic-type tables). Older servers are reported after initialize.
@@ -16,6 +17,9 @@ const MIN_SERVER_VERSION = '0.6.4';
 
 /** @type {LspClient|undefined} */
 let client;
+
+/** @type {Bench|undefined} */
+let bench;
 
 function activate(context) {
     client = new LspClient();
@@ -51,10 +55,17 @@ function activate(context) {
         watcher.onDidCreate(refresh),
         watcher.onDidDelete(refresh)
     );
+    bench = new Bench(client);
+    bench.register(context);
+    context.subscriptions.push({ dispose: () => bench && bench.dispose() });
     client.start();
 }
 
 function deactivate() {
+    if (bench) {
+        bench.dispose();
+        bench = undefined;
+    }
     if (client) {
         client.dispose();
         client = undefined;

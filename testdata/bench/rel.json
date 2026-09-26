@@ -1,0 +1,9 @@
+{
+  "program": "rel.icg",
+  "args": ["--rel-jump"],
+  "ports": { "d0": "LED", "d1": "Dial", "d2": "spare" },
+  "cases": [
+    { "name": "x <= 5 -> 31", "set": { "d1.Setting": 3 }, "run": 5, "expect": { "d0.Setting": 31 } },
+    { "name": "x > 5 -> 32", "set": { "d1.Setting": 8 }, "run": 5, "expect": { "d0.Setting": 32 } }
+  ]
+}

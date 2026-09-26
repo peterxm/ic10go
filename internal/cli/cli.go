@@ -460,6 +460,75 @@ var Commands = []Command{
 		},
 	},
 	{
+		Name: "testbench", Args: "ping|list|push|state|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
+		Summary: text{EN: "drive the in-game testbench mod", ZH: "驱动游戏内测试台 mod"},
+		Long: text{
+			EN: "Talk to the ic10go-testbench mod running in Stationeers over NDJSON/TCP\n" +
+				"(127.0.0.1:7800 by default). It uploads a compiled program to a chip,\n" +
+				"sets / reads device values, steps the chip and reads registers, stack and\n" +
+				"device state.\n\n" +
+				"Subcommands:\n" +
+				"  ping                      connection / version check\n" +
+				"  list                      list programmable chips\n" +
+				"  push <file.icg>           compile and upload (runs any loader first)\n" +
+				"  state                     registers / stack / devices\n" +
+				"  set d1.Setting=10 ...     set device input values\n" +
+				"  step [N]                  advance the chip N game ticks (paused)\n" +
+				"  ports                     dump how ports/devices are wired (diagnostic)\n" +
+				"  pause [on|off]            pause / resume the game\n" +
+				"  run <scenario.json>       run a scenario and assert expectations\n" +
+				"  watch                     stream live state events\n" +
+				"  saves                     list save folders\n" +
+				"  load <name>               load a save (game's loadgame command)\n" +
+				"  world                     game state / current world / paused\n\n" +
+				"`run` compiles scenario.program with scenario.args, uploads it, then runs\n" +
+				"each case (set / run ticks / expect). It pauses the world for a deterministic\n" +
+				"run and restores it afterwards. With --diff the same cases also run in the\n" +
+				"built-in VM for comparison (its budget is N*128 instructions).\n\n" +
+				"The mod lives in tools/ingame-testbench; see docs/ingame-testbench.md.",
+			ZH: "通过 NDJSON/TCP（默认 127.0.0.1:7800）与游戏内运行的 ic10go-testbench\n" +
+				"mod 通信：上传编译好的程序到芯片、读写设备值、单步执行，并读取寄存器、\n" +
+				"栈与设备状态。\n\n" +
+				"子命令：\n" +
+				"  ping                      连接/版本自检\n" +
+				"  list                      列出可编程芯片\n" +
+				"  push <file.icg>           编译并上传（必要时先跑 loader）\n" +
+				"  state                     寄存器 / 栈 / 设备\n" +
+				"  set d1.Setting=10 ...     设置设备输入值\n" +
+				"  step [N]                  推进芯片 N 个游戏 tick（暂停下）\n" +
+				"  ports                     诊断：打印端口/设备接线映射\n" +
+				"  pause [on|off]            暂停 / 恢复游戏\n" +
+				"  run <scenario.json>       跑场景并断言期望值\n" +
+				"  watch                     持续推送实时状态事件\n" +
+				"  saves                     列出存档\n" +
+				"  load <name>               载入存档（游戏的 loadgame 命令）\n" +
+				"  world                     游戏状态 / 当前世界 / 暂停\n\n" +
+				"`run` 会用 scenario.args 编译 scenario.program，上传后逐个 case 执行\n" +
+				"（set / run 若干 tick / expect）。为保证确定性会先暂停世界，结束后恢复。\n" +
+				"加 --diff 会用内置 VM 跑同一组 case 做对比（VM 按 N*128 条指令近似 tick）。\n\n" +
+				"mod 源码在 tools/ingame-testbench；协议见 docs/ingame-testbench.md。",
+		},
+		Flags: []Flag{
+			{Long: "--addr", Arg: "H:P", Desc: text{EN: "testbench address (env IC10_BENCH_ADDR)", ZH: "测试台地址（环境变量 IC10_BENCH_ADDR）"}},
+			{Long: "--chip", Arg: "NAME", Desc: text{EN: "select a chip by name or prefab", ZH: "按名字或预制体选择芯片"}},
+			{Long: "--as", Arg: "NAME", Desc: text{EN: "push: which `chip` block to upload (multi-chip sources)", ZH: "push：多芯片源码中上传哪个 `chip` 块"}},
+			{Long: "--data-access", Arg: "get|stack", Desc: text{EN: "push: data-segment access; use `stack` on a device host (e.g. air conditioner)", ZH: "push：数据段访问方式；设备 host（如空调）用 `stack`"}},
+			{Long: "--all", Desc: text{EN: "state: include the whole stack", ZH: "state：返回整段栈"}},
+			{Long: "--force", Desc: text{EN: "set: write even if the device reports the logic as read-only", ZH: "set：即使设备报告该逻辑为只读也强制写入"}},
+			{Long: "--diff", Desc: text{EN: "run: also run the scenario in the built-in VM", ZH: "run：同时用内置 VM 跑场景做对比"}},
+			{Long: "--json", Desc: text{EN: "machine-readable output", ZH: "输出机器可读的 JSON"}},
+			{Long: "--stable-ins", Desc: text{EN: "compile with the stable branch's ins argument order", ZH: "用稳定版的 ins 参数顺序编译"}},
+			libDirsFlag,
+			commonHelp,
+		},
+		Examples: []string{
+			"ic10c testbench ping",
+			"ic10c testbench push rel.icg --stable-ins",
+			"ic10c testbench set d1.Setting=10 && ic10c testbench state",
+			"ic10c testbench run testdata/bench/rel.json --diff",
+		},
+	},
+	{
 		Name:    "lsp",
 		Summary: text{EN: "run the language server on stdio", ZH: "在 stdio 上运行语言服务器"},
 		Long: text{

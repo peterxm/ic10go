@@ -84,7 +84,7 @@ install() {
 vsix() {
     mkdir -p "$DIST"
     info "packaging VSCode extension"
-    ( cd editors/vscode && npx --yes @vscode/vsce package --allow-missing-repository )
+    ( cd editors/vscode && npx --yes @vscode/vsce package --allow-missing-repository --no-rewrite-relative-links )
     mv editors/vscode/*.vsix "$DIST/" 2>/dev/null || true
     info "vsix in $DIST/"
 }

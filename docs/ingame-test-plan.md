@@ -1,5 +1,12 @@
 # 真机测试方案（新内建 / 优化 / `--rel-jump` 验证）
 
+> **2026-09-26 更新**：本文的手工流程（贴代码、拧旋钮、看 LED、记表）已可用
+> **游戏内测试台**自动化：见 [`ingame-testbench.md`](ingame-testbench.md)、
+> `tools/ingame-testbench`（mod）、`ic10c testbench`（harness）与 VSCode 面板。
+> 场景文件在 `testdata/bench/`（`counter` / `mem` / `ac` / `link`）。本文档保留
+> 作为手动核对步骤与期望值来源；注意**旋钮是只读物理输入**，自动化用例请改用
+> 逻辑内存（`Logic Memory`）或芯片间通道。
+
 > 目标：在 Stationeers 真机上验证近期新增的 IC10 能力与代码生成优化。
 > 测试版本：`v0.2.6428.27798`（或更新）。所有程序都可用 `ic10c build` 编译后
 > 粘贴进 IC10 编辑器。

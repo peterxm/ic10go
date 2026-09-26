@@ -124,6 +124,8 @@ parse:
 		return cmdDecompile(args)
 	case "lsp":
 		return cmdLSP()
+	case "testbench":
+		return cmdTestbench(args)
 	case "lex":
 		return cmdLex(args)
 	case "ast":

@@ -1,0 +1,24 @@
+// Testbench sample from docs/ingame-test-plan.md §4.1: exercises structured
+// control flow plus relative jumps (with "args": ["--rel-jump"]).
+func main() {
+	for {
+		yield()
+		x := d1.Setting
+		var n = 0
+		if x > 5 {
+			goto big
+		}
+		n = 1
+		goto cont
+		label big:
+		n = 2
+		label cont:
+		for i := 0; i < 4; i++ {
+			if i == 2 {
+				continue
+			}
+			n += 10
+		}
+		d0.Setting = n
+	}
+}
