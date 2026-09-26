@@ -280,11 +280,20 @@ class BenchTree {
         const devices = (this.bench.state && this.bench.state.devices) || [];
         const out = [];
         for (const d of devices) {
-            const item = new vscode.TreeItem(d.port, vscode.TreeItemCollapsibleState.Collapsed);
-            item._kind = 'device';
-            item.description = [d.binding, d.name || d.prefab].filter(Boolean).join(' · ');
-            item.iconPath = new vscode.ThemeIcon('server-process');
-            item._logic = d.logic || {};
+            const present = d.present !== false;
+            const item = new vscode.TreeItem(
+                d.port,
+                present ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
+            );
+            item._kind = present ? 'device' : 'deviceEmpty';
+            item.description = [d.binding, present ? d.name || d.prefab : t('empty', '空')]
+                .filter(Boolean)
+                .join(' · ');
+            item.iconPath = new vscode.ThemeIcon(
+                'server-process',
+                present ? undefined : new vscode.ThemeColor('disabledForeground')
+            );
+            item._logic = present ? d.logic || {} : {};
             out.push(item);
         }
         return out;
@@ -292,7 +301,7 @@ class BenchTree {
 }
 
 function group(kind, label, icon) {
-    const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.Expanded);
+    const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.Collapsed);
     item._kind = kind;
     item.iconPath = new vscode.ThemeIcon(icon);
     return item;
@@ -782,6 +791,12 @@ class Bench {
     font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em;
     color: var(--vscode-descriptionForeground); margin: 0 0 8px;
   }
+  summary {
+    cursor: pointer; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--vscode-descriptionForeground); margin: 0 0 8px;
+  }
+  summary::marker { color: var(--vscode-descriptionForeground); }
+  summary .pill { text-transform: none; letter-spacing: 0; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 6px; }
   .cell {
     display: flex; justify-content: space-between; gap: 8px;
@@ -878,24 +893,28 @@ class Bench {
       const sp = st.stack.sp || 0;
       const vals = st.stack.values || {};
       const keys = Object.keys(vals).map(Number).sort((a, b) => a - b);
-      html += '<section><h2>Stack <span class="pill">sp ' + sp + ' / ' + (st.stack.size || keys.length || '?') + ' · ' + keys.length + ' slots</span></h2><div class="grid">';
+      html += '<section><details><summary>Stack <span class="pill">sp ' + sp + ' / ' + (st.stack.size || keys.length || '?') + ' · ' + keys.length + ' slots</span></summary><div class="grid">';
       for (const i of keys) {
         const v = vals[String(i)];
         next['[' + i + ']'] = v;
         html += cell('[' + i + ']', v, i === sp);
       }
-      html += '</div></section>';
+      html += '</div></details></section>';
     }
     if (st.devices && st.devices.length) {
       html += '<section><h2>Devices</h2><table><thead><tr><th>port</th><th>logic</th><th style="text-align:right">value</th></tr></thead><tbody>';
       for (const d of st.devices) {
         const keys = Object.keys(d.logic || {}).sort();
-        if (!keys.length) continue;
+        const label = d.port + (d.binding ? ' <span class="k">' + d.binding + '</span>' : '');
+        if (!keys.length) {
+          html += '<tr><td class="port">' + label + '</td><td colspan="2" class="empty">empty</td></tr>';
+          continue;
+        }
         keys.forEach((k, idx) => {
           const key = d.port + '.' + k;
           next[key] = d.logic[k];
           html += '<tr>' +
-            (idx === 0 ? '<td class="port" rowspan="' + keys.length + '">' + d.port + (d.binding ? ' <span class="k">' + d.binding + '</span>' : '') + '</td>' : '') +
+            (idx === 0 ? '<td class="port" rowspan="' + keys.length + '">' + label + '</td>' : '') +
             '<td>' + k + '</td><td class="num">' + num(d.logic[k]) + '</td></tr>';
         });
       }

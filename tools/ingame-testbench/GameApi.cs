@@ -637,12 +637,13 @@ namespace Ic10Go.Testbench
             // host like an Air Conditioner this is how the program drives it.
             var host = holder as ILogicable;
             if (host != null) list.Add(DeviceEntry("db", host, BindingFor(labels, -1)));
+            // Always emit every port (empty ones included) so the count matches
+            // the host's bindings (d0..d5).
             for (int port = 0; port < Ports; port++)
             {
-                ILogicable dev;
+                ILogicable dev = null;
                 try { dev = PortDevice(holder, port); }
-                catch { continue; }
-                if (dev == null) continue;
+                catch { }
                 list.Add(DeviceEntry("d" + port, dev, BindingFor(labels, port)));
             }
             return list;
@@ -650,6 +651,17 @@ namespace Ic10Go.Testbench
 
         private static JObject DeviceEntry(string label, ILogicable dev, string binding)
         {
+            var entry = new JObject { ["port"] = label };
+            if (!string.IsNullOrEmpty(binding)) entry["binding"] = binding;
+
+            if (dev == null)
+            {
+                entry["present"] = false;
+                entry["logic"] = new JObject();
+                return entry;
+            }
+            entry["present"] = true;
+
             var logic = new JObject();
             foreach (LogicType t in Enum.GetValues(typeof(LogicType)))
             {
@@ -661,12 +673,8 @@ namespace Ic10Go.Testbench
                 }
                 catch { }
             }
-            var entry = new JObject
-            {
-                ["port"] = label,
-                ["logic"] = logic,
-            };
-            if (!string.IsNullOrEmpty(binding)) entry["binding"] = binding;
+            entry["logic"] = logic;
+
             var thing = dev as Thing;
             if (thing != null)
             {

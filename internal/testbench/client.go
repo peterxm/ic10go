@@ -355,8 +355,10 @@ type ChipErrors struct {
 
 // DeviceState is one device on a chip port.
 type DeviceState struct {
-	Port   string             `json:"port"`
-	Prefab string             `json:"prefab"`
-	Name   string             `json:"name"`
-	Logic  map[string]float64 `json:"logic"`
+	Port    string             `json:"port"`
+	Prefab  string             `json:"prefab"`
+	Name    string             `json:"name"`
+	Binding string             `json:"binding,omitempty"`
+	Present *bool              `json:"present,omitempty"`
+	Logic   map[string]float64 `json:"logic"`
 }
