@@ -179,20 +179,26 @@ class BenchTree {
     }
 
     getChildren(el) {
-        if (!el) return this.roots();
-        switch (el._kind) {
-            case 'registers':
-                return this.registerItems();
-            case 'stack':
-                return this.stackItems();
-            case 'devices':
-                return this.deviceItems();
-            case 'chip':
-                return this.chipItems();
-            case 'chipLeaf':
-                return [];
-            default:
-                return [];
+        try {
+            if (!el) return this.roots();
+            switch (el._kind) {
+                case 'registers':
+                    return this.registerItems();
+                case 'stack':
+                    return this.stackItems();
+                case 'devices':
+                    return this.deviceItems();
+                case 'chip':
+                    return this.chipItems();
+                case 'chipLeaf':
+                    return [];
+                default:
+                    return [];
+            }
+        } catch (err) {
+            const out = this.bench && this.bench.client && this.bench.client.output;
+            if (out) out.appendLine('IC10 tree: ' + (err && err.message));
+            return [];
         }
     }
 
@@ -349,23 +355,27 @@ function chipNode(chip, selected) {
 // handles the standard kinds above, so extend it here for 'device'.
 const baseGetChildren = BenchTree.prototype.getChildren;
 BenchTree.prototype.getChildren = function (el) {
-    if (el && el._kind === 'device') {
-        const out = [];
-        for (const k of Object.keys(el._logic || {})) {
-            const item = new vscode.TreeItem(k, vscode.TreeItemCollapsibleState.None);
-            item.description = String(el._logic[k]);
-            item.iconPath = new vscode.ThemeIcon('symbol-field');
-            item.contextValue = 'deviceLogic';
-            item.command = {
-                command: 'icg.bench.setDevice',
-                title: 'Set value',
-                arguments: [{ port: el.label, logic: k, value: el._logic[k] }],
-            };
-            out.push(item);
+    try {
+        if (el && el._kind === 'device') {
+            const out = [];
+            for (const k of Object.keys(el._logic || {})) {
+                const item = new vscode.TreeItem(k, vscode.TreeItemCollapsibleState.None);
+                item.description = String(el._logic[k]);
+                item.iconPath = new vscode.ThemeIcon('symbol-field');
+                item.contextValue = 'deviceLogic';
+                item.command = {
+                    command: 'icg.bench.setDevice',
+                    title: 'Set value',
+                    arguments: [{ port: el.label, logic: k, value: el._logic[k] }],
+                };
+                out.push(item);
+            }
+            return out;
         }
-        return out;
+        return baseGetChildren.call(this, el);
+    } catch (err) {
+        return [];
     }
-    return baseGetChildren.call(this, el);
 };
 
 // ---------------------------------------------------------------------------
@@ -538,14 +548,25 @@ class Bench {
             return;
         }
         try {
-            const stateArgs = { include: ['registers', 'stack', 'devices', 'program', 'errors'], all: true };
-            if (this.sel) stateArgs.chip = this.sel;
-            const [st, list] = await Promise.all([
-                c.call('state', stateArgs),
-                c.call('chip.list', {}).catch(() => ({ chips: [] })),
-            ]);
-            this.state = st;
+            const list = await c.call('chip.list', {}).catch(() => ({ chips: [] }));
             this.chips = list.chips || [];
+            // Drop a stale pinned selection (the game restarted and the id may
+            // now belong to a different holder).
+            if (this.sel && !this.chips.some((ch) => this.sameSel(ch, this.sel))) {
+                this.sel = undefined;
+            }
+            let st;
+            try {
+                st = await this.fetchState(c);
+            } catch (err) {
+                if (this.sel) {
+                    this.sel = undefined;
+                    st = await this.fetchState(c);
+                } else {
+                    throw err;
+                }
+            }
+            this.state = st;
             if (!this.sel && st.chip) this.sel = this.chipSel(st.chip);
             if (this.tree) this.tree.refresh();
             this.renderPanel();
@@ -554,6 +575,16 @@ class Bench {
             this.client.output.appendLine(`IC10 bench refresh failed: ${err.message}`);
             if (interactive) vscode.window.showErrorMessage(t('IC10: refresh failed. See the "IC10 Go" output.', 'IC10: 刷新失败，详见 "IC10 Go" 输出面板。'));
         }
+    }
+
+    sameSel(chip, sel) {
+        return sel && sel.id !== undefined ? chip.id === sel.id : chip.index === sel.index;
+    }
+
+    fetchState(c) {
+        const args = { include: ['registers', 'stack', 'devices', 'program', 'errors'], all: true };
+        if (this.sel) args.chip = this.sel;
+        return c.call('state', args);
     }
 
     async selectChip(chip) {
