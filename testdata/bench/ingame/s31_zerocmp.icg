@@ -1,0 +1,27 @@
+// ingame-test-plan.md §3.1 零比较 + 近似分支（输入改 d3）。
+func main() {
+	for {
+		yield()
+		x := d3.Setting
+		var n = 0
+		if x > 0 {
+			n += 1
+		}
+		if x < 0 {
+			n += 2
+		}
+		if x == 0 {
+			n += 4
+		}
+		if approx(x, 10, 0.001) {
+			n += 10
+		}
+		if notApprox(x, 10, 0.001) {
+			n += 20
+		}
+		if approxZero(x, 0.001) {
+			n += 40
+		}
+		d0.Setting = n
+	}
+}

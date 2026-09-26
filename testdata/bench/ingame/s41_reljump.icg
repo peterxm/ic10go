@@ -1,0 +1,23 @@
+// ingame-test-plan.md §4.1 relative jumps（输入改 d3）。
+func main() {
+	for {
+		yield()
+		x := d3.Setting
+		var n = 0
+		if x > 5 {
+			goto big
+		}
+		n = 1
+		goto cont
+		label big:
+		n = 2
+		label cont:
+		for i := 0; i < 4; i++ {
+			if i == 2 {
+				continue
+			}
+			n += 10
+		}
+		d0.Setting = n
+	}
+}

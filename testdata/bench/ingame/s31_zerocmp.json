@@ -1,0 +1,11 @@
+{
+  "program": "s31_zerocmp.icg",
+  "chip": { "name": "A CHIP" },
+  "ports": { "d0": "LED", "d3": "Memory" },
+  "cases": [
+    { "name": "10", "set": { "d3.Setting": 10 }, "run": 2, "expect": { "d0.Setting": 11 } },
+    { "name": "-3", "set": { "d3.Setting": -3 }, "run": 2, "expect": { "d0.Setting": 22 } },
+    { "name": "0", "set": { "d3.Setting": 0 }, "run": 2, "expect": { "d0.Setting": 64 } },
+    { "name": "7", "set": { "d3.Setting": 7 }, "run": 2, "expect": { "d0.Setting": 21 } }
+  ]
+}

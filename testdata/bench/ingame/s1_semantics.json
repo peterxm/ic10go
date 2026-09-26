@@ -1,0 +1,10 @@
+{
+  "program": "s1_semantics.icg",
+  "chip": { "name": "A CHIP" },
+  "ports": { "d0": "LED", "d3": "Memory" },
+  "cases": [
+    { "name": "range 0..2", "set": { "d3.Setting": 1 }, "run": 2, "expect": { "d0.Setting": 105 } },
+    { "name": "range 3..5", "set": { "d3.Setting": 4 }, "run": 2, "expect": { "d0.Setting": 205 } },
+    { "name": "default", "set": { "d3.Setting": 9 }, "run": 2, "expect": { "d0.Setting": 305 } }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "program": "s21_nor.icg",
+  "chip": { "name": "A CHIP" },
+  "ports": { "d0": "LED", "d3": "Memory" },
+  "cases": [
+    { "name": "0 -> -1", "set": { "d3.Setting": 0 }, "run": 2, "expect": { "d0.Setting": -1 } },
+    { "name": "1 -> -2", "set": { "d3.Setting": 1 }, "run": 2, "expect": { "d0.Setting": -2 } },
+    { "name": "5 -> -6", "set": { "d3.Setting": 5 }, "run": 2, "expect": { "d0.Setting": -6 } }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "program": "s43_bigloop.icg",
+  "chip": { "name": "A CHIP" },
+  "ports": { "d0": "LED" },
+  "cases": [
+    { "name": "first pass -> 20", "run": 2, "expect": { "d0.Setting": 20 } },
+    { "name": "second pass -> 40", "run": 1, "expect": { "d0.Setting": 40 } }
+  ]
+}

@@ -3,9 +3,12 @@
 > **2026-09-26 更新**：本文的手工流程（贴代码、拧旋钮、看 LED、记表）已可用
 > **游戏内测试台**自动化：见 [`ingame-testbench.md`](ingame-testbench.md)、
 > `tools/ingame-testbench`（mod）、`ic10c testbench`（harness）与 VSCode 面板。
-> 场景文件在 `testdata/bench/`（`counter` / `mem` / `ac` / `link`）。本文档保留
-> 作为手动核对步骤与期望值来源；注意**旋钮是只读物理输入**，自动化用例请改用
-> 逻辑内存（`Logic Memory`）或芯片间通道。
+> §1 / §2.1 / §3.1 / §3.2 / §4.1 / §4.3 已转成可跑场景，在
+> `testdata/bench/ingame/`（把输入从只读旋钮 `d1` 改成可写的 Logic Memory `d3`，输出 `d0`）：
+> ```bash
+> sh testdata/bench/ingame/run.sh        # 真机 + VM 差分，全通过
+> ```
+> 本文档保留作为手动核对步骤与期望值来源；注意**旋钮是只读物理输入**。
 
 > 目标：在 Stationeers 真机上验证近期新增的 IC10 能力与代码生成优化。
 > 测试版本：`v0.2.6428.27798`（或更新）。所有程序都可用 `ic10c build` 编译后

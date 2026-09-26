@@ -1,0 +1,18 @@
+// ingame-test-plan.md §3.2 条件调用融合（b<cond>al）（输入改 d3）。
+func main() {
+	var n = 0
+	for {
+		yield()
+		n = 0
+		if d3.Setting > 0 {
+			call inc
+		}
+		if d3.Setting > 10 {
+			call inc
+		}
+		d0.Setting = n
+	}
+	label inc:
+	n += 1
+	ret
+}

@@ -391,6 +391,7 @@ Activity Bar「IC10」
 | 自动载入存档：`testbench.json` 的 `autoload`+`autoloadDelay`，走 `LoadHelper.LoadGame`，真机免手动进存档 | ✅ |
 | 芯片放在槽位里的 host（AdvancedSuit/HardSuit）：从 `ChipSlot.Occupant` 解析，`state`/`push` 可用（`Slot.Get()` 有歧义） | ✅ |
 | 固定端口绑定（宇航服/平板）：`GetLogicableFromIndex` 返回绑定设备（`db`/`d0..d5` = SUIT/HELMET/BACKPACK/…），不再误用 `Devices[]` 顺序；`state` 带 `binding` 标签 | ✅ |
+| `ingame-test-plan.md` §1/2.1/3.1/3.2/4.1/4.3 转为可跑场景（`testdata/bench/ingame/`，输入改 Logic Memory `d3`），真机 + VM 全通过 | ✅ |
 | 场景 `mem.json`（memory→LED，两个 case）+ `--diff` | ✅ 真机与 VM 都通过 |
 | 按钮 `Logic Button`（d2）：`Setting` 只读，随物理按下变化 | 只读（观察用） |
 

@@ -1,0 +1,7 @@
+// ingame-test-plan.md §2.1 logicalNor（输入改 d3）。
+func main() {
+	for {
+		yield()
+		d0.Setting = logicalNor(d3.Setting, 0)
+	}
+}

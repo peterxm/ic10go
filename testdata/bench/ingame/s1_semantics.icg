@@ -1,0 +1,32 @@
+// ingame-test-plan.md §1 综合语义（输入改用可写的 Logic Memory d3）。
+func main() {
+	for {
+		yield()
+		x := d3.Setting
+		var acc = 0
+		for i := range 3 {
+			acc += i
+		}
+		switch x {
+		case 0..2:
+			acc += 100
+		case 3..5:
+			acc += 200
+		default:
+			acc += 300
+		}
+		label Outer:
+		for i := 0; i < 3; i++ {
+			for j := 0; j < 3; j++ {
+				if j == 1 {
+					continue Outer
+				}
+				if i == 2 {
+					break Outer
+				}
+				acc += 1
+			}
+		}
+		d0.Setting = acc
+	}
+}

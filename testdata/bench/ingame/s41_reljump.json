@@ -1,0 +1,10 @@
+{
+  "program": "s41_reljump.icg",
+  "args": ["--rel-jump"],
+  "chip": { "name": "A CHIP" },
+  "ports": { "d0": "LED", "d3": "Memory" },
+  "cases": [
+    { "name": "<= 5 -> 31", "set": { "d3.Setting": 3 }, "run": 2, "expect": { "d0.Setting": 31 } },
+    { "name": "> 5 -> 32", "set": { "d3.Setting": 8 }, "run": 2, "expect": { "d0.Setting": 32 } }
+  ]
+}
