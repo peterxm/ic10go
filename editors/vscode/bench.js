@@ -378,11 +378,18 @@ class Bench {
         this.conn = undefined;
         this.state = undefined;
         this.chips = [];
+        this.sel = undefined; // chip selector pinned for state/set
         this.watching = false;
         this.tree = undefined;
         this.panel = undefined;
         this.report = undefined;
         this.status = undefined;
+    }
+
+    // chipSel builds the protocol chip selector for the given chip.
+    chipSel(chip) {
+        if (!chip) return undefined;
+        return chip.id ? { id: chip.id } : { index: chip.index };
     }
 
     cfg() {
@@ -494,6 +501,7 @@ class Bench {
         }
         this.watching = false;
         this.state = undefined;
+        this.sel = undefined;
         this.setStatus(false);
         if (this.tree) this.tree.refresh();
         this.renderPanel();
@@ -502,6 +510,7 @@ class Bench {
     onClose() {
         this.conn = undefined;
         this.watching = false;
+        this.sel = undefined;
         this.setStatus(false);
         if (this.tree) this.tree.refresh();
         this.renderPanel();
@@ -528,12 +537,15 @@ class Bench {
             return;
         }
         try {
+            const stateArgs = { include: ['registers', 'stack', 'devices', 'program', 'errors'], all: true };
+            if (this.sel) stateArgs.chip = this.sel;
             const [st, list] = await Promise.all([
-                c.call('state', { include: ['registers', 'stack', 'devices', 'program', 'errors'], all: true }),
+                c.call('state', stateArgs),
                 c.call('chip.list', {}).catch(() => ({ chips: [] })),
             ]);
             this.state = st;
             this.chips = list.chips || [];
+            if (!this.sel && st.chip) this.sel = this.chipSel(st.chip);
             if (this.tree) this.tree.refresh();
             this.renderPanel();
             this.setStatus(true);
@@ -548,7 +560,8 @@ class Bench {
         const c = await this.connect(false);
         if (!c) return;
         try {
-            await c.call('chip.select', { chip: { index: chip.index } });
+            this.sel = this.chipSel(chip);
+            await c.call('chip.select', { chip: this.sel });
             await this.refresh(false);
         } catch (err) {
             vscode.window.showErrorMessage(t('IC10: select chip failed: ', 'IC10: 选择芯片失败：') + err.message);
@@ -681,7 +694,9 @@ class Bench {
         const c = await this.connect(false);
         if (!c) return;
         try {
-            await c.call('set', { writes: [{ port: arg.port, logic: arg.logic, value }] });
+            const setArgs = { writes: [{ port: arg.port, logic: arg.logic, value }] };
+            if (this.sel) setArgs.chip = this.sel;
+            await c.call('set', setArgs);
             await this.refresh(false);
         } catch (err) {
             vscode.window.showErrorMessage(t('IC10: set failed: ', 'IC10: 设置失败：') + err.message);
