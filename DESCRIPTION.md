@@ -31,4 +31,8 @@
 
 非官方项目，与 RocketWerkz / Stationeers 无任何关联。仓库不包含游戏资料或社区脚本等第三方内容。
 
-Unofficial project, not affiliated with RocketWerkz or Stationeers. The repository does not include third-party content such as game documentation or community scripts.
+**游戏内测试台**（`tools/ingame-testbench` + `ic10c testbench` + VSCode 面板）能读写设备状态、
+暂停世界、载入存档，**仅供单人 / 本地开发调试使用**；在多人服务器上使用可能被视为作弊并可能
+违反游戏服务条款，请不要那样用。`tools/dumpgameapi` 只在本地离线读取游戏程序集，用于核对 API。
+
+Unofficial project, not affiliated with RocketWerkz or Stationeers. The repository does not include third-party content such as game documentation or community scripts. The in-game testbench (`tools/ingame-testbench` + `ic10c testbench` + the VSCode panel) can read/write device state, pause the world and load saves; it is **for single-player/local debugging only** and must not be used on multiplayer servers, where it may be considered cheating and may violate the game's terms of service. `tools/dumpgameapi` only reads the game assembly offline to check the API.

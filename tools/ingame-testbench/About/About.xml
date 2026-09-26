@@ -9,7 +9,10 @@ A local test server for IC10 development. It lets the ic10go toolchain (`ic10c t
 
 It listens on 127.0.0.1:7800 (NDJSON over TCP) and only acts when asked. Pair it with a test save that has IC hosts + a Logic Memory / LED; it can also auto-load that save at startup.
 
-Configure the port, auto-load save and delay in Documents\My Games\Stationeers\ic10go\testbench.json.</Description>
+Configure the port, auto-load save and delay in Documents\My Games\Stationeers\ic10go\testbench.json.
+
+[h2]Disclaimer[/h2]
+Single-player / local development tool only. It can read and write device logic, step the chip and load saves; do NOT use it on multiplayer servers, where it may be considered cheating and may violate the game's terms of service. It does not modify the game or send anything over the network beyond 127.0.0.1. Unofficial; not affiliated with RocketWerkz.</Description>
   <Tags>
     <Tag>Tool</Tag>
   </Tags>

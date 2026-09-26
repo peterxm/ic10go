@@ -154,6 +154,8 @@ go test ./...
 | [`docs/tail-merge.md`](docs/tail-merge.md) | 尾块合并与寄存器颜色：气闸控制案例（`--merge-renamed-tails`，默认关闭） |
 
 > IC10 指令完整参考（`Stationeers_IC10_参考文档.md`）为第三方资料，仅本地保留、未随仓库分发。
+>
+> ⚠️ **游戏内测试台**（`tools/ingame-testbench` + `ic10c testbench` + VSCode 面板）能读写设备状态、暂停世界、载入存档，**仅供单人 / 本地开发调试**；请勿在多人服务器上使用（可能被视为作弊并违反游戏条款）。见 [`docs/ingame-testbench.md` §12](docs/ingame-testbench.md#12-免责声明--disclaimer)。
 
 ## 路线图
 

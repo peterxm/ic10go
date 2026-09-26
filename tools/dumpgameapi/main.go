@@ -10,6 +10,14 @@
 //
 // It is a pure-Go ECMA-335 reader: no .NET SDK, no decompiler, no running game,
 // only the DLL. The reader lives in internal/clr and is shared with genenums.
+//
+// Disclaimer: this is an offline development tool. It only reads a local copy
+// of the game assembly to list its API; it does not run inside the game,
+// contact any server, or affect a running session. It exists so the ic10go
+// toolchain can detect game updates. The in-game testbench mod
+// (tools/ingame-testbench), by contrast, can read and write device state and
+// load saves — it is meant for single-player/local testing only, and using it
+// on a multiplayer server may be considered cheating and is not supported.
 package main
 
 import (

@@ -11,6 +11,16 @@ It lets you:
 - **step** the chip deterministically while the world is paused,
 - **read back** registers, stack, program counter and device values.
 
+## Disclaimer
+
+**Single-player / local use only.** This mod can read and write device logic,
+pause the world and load saves, and is meant for debugging IC10 programs in a
+local, single-player test save. Using it on a **multiplayer server may be
+considered cheating**, degrades other players' experience, and may violate the
+game's terms of service — do not enable or use it there. It does not modify the
+game or send anything beyond `127.0.0.1`. Unofficial; not affiliated with
+RocketWerkz / Stationeers. Use at your own risk.
+
 There are **no Harmony patches and no gameplay changes**: everything goes through
 the game's public API, with reflection only for the chip's private register/stack
 arrays. It does nothing until a client connects.

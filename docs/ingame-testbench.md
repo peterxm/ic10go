@@ -410,3 +410,20 @@ Activity Bar「IC10」
 - **暂停/恢复**走游戏自己的 `InputSourceCode.PauseGameToggle(bool)`（社区 IC10 编辑器同款），
   避免只写 `WorldManager.IsGamePaused` 导致恢复后输入卡死。
 - **多芯片**：`chip.list` 返回全部 host；`push --as` 选编译块；多芯片场景文件尚未实现。
+
+---
+
+## 12. 免责声明 / Disclaimer
+
+本测试台（`ic10c testbench` + `tools/ingame-testbench` mod + VSCode 面板）与
+`tools/dumpgameapi` 都是**开发 / 测试工具**，用于在**单人 / 本地**环境里调试 IC10 程序
+（上传程序、读写设备、暂停下单步、读寄存器 / 栈、自动载入存档）。
+
+- **仅限单人 / 本地使用。** 测试台 mod 能读写设备状态、暂停世界、载入存档；在**多人服务器
+  上使用可能被视为作弊**，破坏他人体验，并可能违反游戏的服务条款。请不要在多人大厅 / 服务器
+  上启用或使用它。
+- **不修改游戏本体、不注入网络协议**；它只操作本机运行中的游戏实例，网络仅限 `127.0.0.1`。
+- `tools/dumpgameapi` 只在本地读取 `Assembly-CSharp.dll`（离线），不进入游戏、不影响任何会话；
+  它的用途是让工具链在游戏更新后核对 API，**并非**用于作弊。
+- 作者不对因使用本工具导致的封禁、存档损坏或其它后果负责；使用即表示自行承担风险，并遵守
+  Stationeers 的使用条款。本项目为**非官方**项目，与 RocketWerkz / Stationeers 无任何关联。

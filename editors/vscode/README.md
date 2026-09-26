@@ -152,6 +152,9 @@ func main() {
 
 回归场景在 [`testdata/bench/ingame/`](../../testdata/bench/ingame/)（`sh testdata/bench/ingame/run.sh`，见 [`docs/ingame-test-plan.md`](../../docs/ingame-test-plan.md)）。
 
+> ⚠️ 测试台能读写设备、暂停世界、载入存档，**仅供单人 / 本地开发调试**；请勿在多人服务器上使用
+> （可能被视为作弊并违反游戏条款）。详见 [`docs/ingame-testbench.md` §12](../../docs/ingame-testbench.md)。
+
 ## 六、设置
 
 | 设置 | 默认 | 说明 |
