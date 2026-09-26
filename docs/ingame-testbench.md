@@ -138,7 +138,7 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `chip.select` | `{target:{id?|name?|index?}}` | `{chip}` |
 | `push` | `{code, loaders?:[string], reset?:bool}` | `{chip, lines, loaders, compileError?}` |
 | `state` | `{include?:["registers","stack","devices","program","errors"]}` | `state`（见 §4.3） |
-| `set` | `{writes:[{port,logic,slot?,value}], force?:bool}` | `{applied:n}` |
+| `set` | `{writes:[{port,logic,slot?,value}], force?:bool, pulse?:bool}` | `{applied:n}` |
 | `get` | `{reads:[{port,logic,slot?}]}` | `{values:[...]}` |
 | `run` | `{ticks:n, mode?:"step"|"realtime"}` | `{ticks, line}` |
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
@@ -215,7 +215,7 @@ ic10c testbench list                       # 列出芯片
 ic10c testbench ping                        # 连接自检
 ic10c testbench push <file.icg> [--chip N] [--as NAME]  # 编译 + 上传（多芯片用 --as 选块；自动先跑 loader）
 ic10c testbench state [--chip N] [--all] [--json]
-ic10c testbench set d1.Setting=10 [...]      # 设置输入（--force 跳过只读校验）
+ic10c testbench set d1.Setting=10 [...]      # 设置输入（--force 跳过只读校验；--pulse 先写 0 再写值，触发瞬态逻辑）
 ic10c testbench step [N]                     # 推进芯片 N 个 tick（暂停下）
 ic10c testbench ports                        # 诊断：端口/设备接线映射
 ic10c testbench pause [on|off]               # 暂停 / 恢复游戏（确定性）

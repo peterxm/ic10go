@@ -48,5 +48,6 @@
   "cmd.bench.pause": "IC10 Go: 暂停 / 恢复游戏",
   "cmd.bench.loadSave": "IC10 Go: 载入存档",
   "cmd.bench.selectChip": "IC10 Go: 选择芯片",
-  "cmd.bench.setDevice": "IC10 Go: 设置设备值"
+  "cmd.bench.setDevice": "IC10 Go: 设置设备值",
+  "cmd.bench.pulseDevice": "IC10 Go: 脉冲（写 0 再写 1，触发瞬态逻辑）"
 }

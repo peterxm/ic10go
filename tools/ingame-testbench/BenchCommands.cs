@@ -151,6 +151,7 @@ namespace Ic10Go.Testbench
         {
             var h = ResolveChip(args["chip"]);
             bool force = args["force"] != null && (bool)args["force"];
+            bool pulse = args["pulse"] != null && (bool)args["pulse"];
             var writes = args["writes"] as JArray;
             if (writes == null) throw new BenchError("bad-request", "set needs \"writes\"");
             int applied = 0;
@@ -159,7 +160,7 @@ namespace Ic10Go.Testbench
                 int port = ParsePort((string)w["port"]);
                 var dev = GameApi.PortDevice(h.Holder, port);
                 bool hasSlot = w["slot"] != null;
-                GameApi.SetLogic(dev, (string)w["logic"], hasSlot ? (int)w["slot"] : 0, hasSlot, (double)w["value"], force);
+                GameApi.SetLogic(dev, (string)w["logic"], hasSlot ? (int)w["slot"] : 0, hasSlot, (double)w["value"], force, pulse);
                 applied++;
             }
             return new JObject { ["applied"] = applied };

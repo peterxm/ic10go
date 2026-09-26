@@ -27,6 +27,7 @@ func cmdTestbench(args []string) int {
 	addr := testbench.Addr()
 	stableIns, asJSON, all, diff := false, false, false, false
 	force := false
+	pulse := false
 	dataAccessStack := false
 	chipName := ""
 	asName := ""
@@ -67,6 +68,8 @@ func cmdTestbench(args []string) int {
 			all = true
 		case a == "--force":
 			force = true
+		case a == "--pulse":
+			pulse = true
 		case a == "--data-access" && i+1 < len(args):
 			dataAccessStack = args[i+1] == "stack"
 			i++
@@ -110,7 +113,7 @@ func cmdTestbench(args []string) int {
 	case "state":
 		return benchState(addr, chip, all, asJSON)
 	case "set":
-		return benchSet(addr, chip, rest, force, asJSON)
+		return benchSet(addr, chip, rest, force, pulse, asJSON)
 	case "step":
 		n := 1
 		if len(rest) > 0 {
@@ -488,9 +491,9 @@ func benchState(addr string, chip any, all, asJSON bool) int {
 	return 0
 }
 
-func benchSet(addr string, chip any, args []string, force, asJSON bool) int {
+func benchSet(addr string, chip any, args []string, force, pulse, asJSON bool) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "ic10c: usage: ic10c testbench set [--force] d1.Setting=10 ...")
+		fmt.Fprintln(os.Stderr, "ic10c: usage: ic10c testbench set [--force] [--pulse] d1.Setting=10 ...")
 		return 2
 	}
 	writes := make([]testbench.DeviceWrite, 0, len(args))
@@ -510,6 +513,9 @@ func benchSet(addr string, chip any, args []string, force, asJSON bool) int {
 	req := map[string]any{"writes": writes}
 	if force {
 		req["force"] = true
+	}
+	if pulse {
+		req["pulse"] = true
 	}
 	if chip != nil {
 		req["chip"] = chip

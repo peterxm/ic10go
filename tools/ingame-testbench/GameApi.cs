@@ -528,7 +528,7 @@ namespace Ic10Go.Testbench
             catch { throw new BenchError("unknown-logic", "unknown slot type \"" + name + "\""); }
         }
 
-        public static void SetLogic(ILogicable dev, string logic, int slot, bool hasSlot, double value, bool force = false)
+        public static void SetLogic(ILogicable dev, string logic, int slot, bool hasSlot, double value, bool force = false, bool pulse = false)
         {
             if (dev == null) throw new BenchError("no-device", "no device on that port");
             if (hasSlot) throw new BenchError("bad-request", "slot writes are not supported (read-only)");
@@ -536,6 +536,7 @@ namespace Ic10Go.Testbench
             try
             {
                 if (!force && !dev.CanLogicWrite(t)) throw new BenchError("unknown-logic", logic + " is not writable on this device (use force)");
+                if (pulse) dev.SetLogicValue(t, 0.0); // rising edge for momentary logic
                 dev.SetLogicValue(t, value);
             }
             catch (BenchError) { throw; }

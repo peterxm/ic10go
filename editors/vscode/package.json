@@ -34,7 +34,8 @@
     "onCommand:icg.bench.runScenario",
     "onCommand:icg.bench.openPanel",
     "onCommand:icg.bench.pause",
-    "onCommand:icg.bench.loadSave"
+    "onCommand:icg.bench.loadSave",
+    "onCommand:icg.bench.pulseDevice"
   ],
   "contributes": {
     "languages": [
@@ -315,6 +316,11 @@
       {
         "command": "icg.bench.setDevice",
         "title": "%cmd.bench.setDevice%"
+      },
+      {
+        "command": "icg.bench.pulseDevice",
+        "title": "%cmd.bench.pulseDevice%",
+        "icon": "$(zap)"
       }
     ],
     "menus": {
@@ -405,8 +411,19 @@
           "when": "false"
         },
         {
+          "command": "icg.bench.pulseDevice",
+          "when": "false"
+        },
+        {
           "command": "icg.bench.selectChip",
           "when": "false"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "icg.bench.pulseDevice",
+          "when": "view == icg.bench && viewItem == deviceLogic",
+          "group": "inline@1"
         }
       ]
     },

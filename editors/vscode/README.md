@@ -136,6 +136,7 @@ func main() {
 | `IC10 Go: Open Chip State Panel` | 打开「IC10 芯片状态」Webview 面板 |
 | `IC10 Go: Pause / Resume Game` | 暂停 / 恢复游戏（走游戏自身暂停流程，恢复后输入正常） |
 | `IC10 Go: Load Save` | 从存档列表选择并在游戏中载入（`LoadHelper.LoadGame`） |
+| `IC10 Go: Pulse` | 对瞬态逻辑写 0 再写 1（如喷气背包 `Activate`）；在树的逻辑行上右键/内联按钮
 
 ### 游戏内测试台（真机调试）
 

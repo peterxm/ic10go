@@ -48,5 +48,6 @@
   "cmd.bench.pause": "IC10 Go: Pause / Resume Game",
   "cmd.bench.loadSave": "IC10 Go: Load Save",
   "cmd.bench.selectChip": "IC10 Go: Select Chip",
-  "cmd.bench.setDevice": "IC10 Go: Set Device Value"
+  "cmd.bench.setDevice": "IC10 Go: Set Device Value",
+  "cmd.bench.pulseDevice": "IC10 Go: Pulse (write 0 then 1 for momentary logic)"
 }

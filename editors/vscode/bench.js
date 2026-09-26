@@ -426,6 +426,7 @@ class Bench {
         cmd('icg.bench.openPanel', () => this.openPanel());
         cmd('icg.bench.selectChip', (chip) => this.selectChip(chip));
         cmd('icg.bench.setDevice', (arg) => this.setDevice(arg));
+        cmd('icg.bench.pulseDevice', (arg) => this.pulseDevice(arg));
 
         const it = this.cfg().refreshInterval;
         if (it > 0) {
@@ -700,6 +701,22 @@ class Bench {
             await this.refresh(false);
         } catch (err) {
             vscode.window.showErrorMessage(t('IC10: set failed: ', 'IC10: 设置失败：') + err.message);
+        }
+    }
+
+    // pulseDevice writes 0 then 1 so edge-triggered logic (e.g. a jetpack's
+    // Activate) fires.
+    async pulseDevice(arg) {
+        if (!arg || !arg.port || !arg.logic) return;
+        const c = await this.connect(false);
+        if (!c) return;
+        try {
+            const req = { writes: [{ port: arg.port, logic: arg.logic, value: 1 }], pulse: true };
+            if (this.sel) req.chip = this.sel;
+            await c.call('set', req);
+            await this.refresh(false);
+        } catch (err) {
+            vscode.window.showErrorMessage(t('IC10: pulse failed: ', 'IC10: 脉冲失败：') + err.message);
         }
     }
 
