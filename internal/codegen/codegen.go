@@ -236,6 +236,16 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 				idx += n - 1
 				continue
 			}
+			if text, n, ok := foldIndirectDst(b.Instrs, idx, uses, colors); ok {
+				add(text, nil, b.Func)
+				idx += n - 1
+				continue
+			}
+			if text, n, ok := foldLoadOperand(b.Instrs, idx, uses, colors); ok {
+				add(text, nil, b.Func)
+				idx += n - 1
+				continue
+			}
 			if ls, ok := ins.(*ir.LoadSpill); ok {
 				dst := regName(ls.Dst, colors)
 				if spillDB {
@@ -475,6 +485,114 @@ func specialComputeText(ins ir.Instr, st *ir.StoreSpecial, loaded *ir.Reg, uses 
 		}
 	}
 	return "", false
+}
+
+// foldIndirectDst folds a computation into a store through a register-indexed
+// destination (IC10 rrN): `t = <op> ...; rrP = t` becomes `<op> rrP ...`. The
+// indirect form is an ordinary destination operand in IC10, so the temporary
+// and the copy are unnecessary. It returns the folded text and how many
+// instructions it consumed (always two), and only fires when the temporary's
+// sole use is the store.
+func foldIndirectDst(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[*ir.Reg]int) (string, int, bool) {
+	compute := instrs[i]
+	def := ir.DefOf(compute)
+	if def == nil {
+		return "", 0, false
+	}
+	// The lowerer materialises a call result into a temporary and copies it to
+	// the variable, so the store may read a copy of the computed value.
+	src := def
+	consume := 2
+	if i+2 < len(instrs) {
+		if cp, ok := instrs[i+1].(*ir.Assign); ok && uses[def] == 1 {
+			if r, ok := cp.Src.(*ir.Reg); ok && r == def && cp.Dst != def {
+				src, consume = cp.Dst, 3
+			}
+		}
+	}
+	if i+consume-1 >= len(instrs) {
+		return "", 0, false
+	}
+	st, ok := instrs[i+consume-1].(*ir.StoreIndirect)
+	if !ok || uses[src] != 1 {
+		return "", 0, false
+	}
+	if s, ok := st.Src.(*ir.Reg); !ok || s != src {
+		return "", 0, false
+	}
+	dst := indirectName(st.Ptr, colors)
+	operands := func(vals []ir.Value) string {
+		parts := make([]string, 0, len(vals))
+		for _, v := range vals {
+			parts = append(parts, valueText(v, colors))
+		}
+		return strings.Join(parts, " ")
+	}
+	switch v := compute.(type) {
+	case *ir.Bin:
+		return v.Op.IC10() + " " + dst + " " + operands([]ir.Value{v.A, v.B}), consume, true
+	case *ir.Un:
+		switch v.Op {
+		case ir.Neg:
+			return "sub " + dst + " 0 " + valueText(v.A, colors), consume, true
+		case ir.BitNot:
+			return "not " + dst + " " + valueText(v.A, colors), consume, true
+		case ir.Seqz:
+			return "seqz " + dst + " " + valueText(v.A, colors), consume, true
+		}
+	case *ir.Builtin:
+		text := builtin.Funcs[v.Name].Mnemonic + " " + dst
+		if args := operands(v.Args); args != "" {
+			text += " " + args
+		}
+		return text, consume, true
+	}
+	return "", 0, false
+}
+
+// foldLoadOperand folds a single-use load into the arithmetic that consumes it,
+// so the load line disappears: `u = ireg(rrP); d = u op b` becomes
+// `d = rrP op b` (the indexed form is an ordinary source operand in IC10). The
+// special registers fold the same way: `u = sp; d = u + k` -> `d = sp + k`. The
+// load must sit immediately before its consumer, so nothing can change the
+// pointed-to register in between.
+func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[*ir.Reg]int) (string, int, bool) {
+	if i+1 >= len(instrs) {
+		return "", 0, false
+	}
+	var loaded *ir.Reg
+	operand := ""
+	switch ld := instrs[i].(type) {
+	case *ir.LoadIndirect:
+		loaded, operand = ld.Dst, indirectName(ld.Ptr, colors)
+	case *ir.LoadSpecial:
+		loaded, operand = ld.Dst, ld.Name
+	default:
+		return "", 0, false
+	}
+	if uses[loaded] != 1 {
+		return "", 0, false
+	}
+	val := func(v ir.Value) string {
+		if r, ok := v.(*ir.Reg); ok && r == loaded {
+			return operand
+		}
+		return valueText(v, colors)
+	}
+	switch v := instrs[i+1].(type) {
+	case *ir.Bin:
+		return v.Op.IC10() + " " + regName(v.Dst, colors) + " " + val(v.A) + " " + val(v.B), 2, true
+	case *ir.Un:
+		switch v.Op {
+		case ir.Neg:
+			return "sub " + regName(v.Dst, colors) + " 0 " + val(v.A), 2, true
+		case ir.BitNot:
+			return "not " + regName(v.Dst, colors) + " " + val(v.A), 2, true
+		case ir.Seqz:
+			return "seqz " + regName(v.Dst, colors) + " " + val(v.A), 2, true
+		}
+	}
+	return "", 0, false
 }
 
 // Layout returns the codegen block order and each block's 0-based start line.

@@ -50,10 +50,7 @@ func requireIc10Code(t *testing.T) {
 // intentionally skip: invalid IC10 (the original would not assemble in-game),
 // or a decompile->recompile that cannot preserve behaviour. Keys are file base
 // names with or without extension.
-var knownUnsupported = map[string]string{
-	"traderSolver":    "decompile->recompile exceeds the chip line budget",
-	"traderSolverRAW": "decompile->recompile exceeds the chip line budget",
-}
+var knownUnsupported = map[string]string{}
 
 // knownUnsupportedPorts lists hand ports whose original cannot be run for the
 // port-equivalence test (invalid IC10). A port that compiles over budget would

@@ -217,3 +217,60 @@ func TestJumpTableEntriesSurviveNoOpRemoval(t *testing.T) {
 		t.Fatalf("code = %q, want %q", code, want)
 	}
 }
+
+func TestFoldIndirectDestination(t *testing.T) {
+	// `t = a * 2; setIreg(5, t)` becomes one instruction writing r5.
+	b := ir.NewBuilder("t")
+	a := b.NewReg("a")
+	tmp := b.NewReg("tmp")
+	b.Emit(&ir.Assign{Dst: a, Src: &ir.Const{V: 3}})
+	b.Emit(&ir.Bin{Op: ir.Mul, Dst: tmp, A: a, B: &ir.Const{V: 2}})
+	b.Emit(&ir.StoreIndirect{Ptr: &ir.Const{V: 5}, Src: tmp})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{a: 0, tmp: 1})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if want := "move r0 3\nmul r5 r0 2\n"; code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}
+
+func TestFoldIndirectLoadOperand(t *testing.T) {
+	// `u = ireg(rr0); d = u * -1` becomes `mul r2 rr0 -1`.
+	b := ir.NewBuilder("t")
+	ptr := b.NewReg("ptr")
+	u := b.NewReg("u")
+	d := b.NewReg("d")
+	b.Emit(&ir.Assign{Dst: ptr, Src: &ir.Const{V: 2}})
+	b.Emit(&ir.LoadIndirect{Dst: u, Ptr: ptr})
+	b.Emit(&ir.Bin{Op: ir.Mul, Dst: d, A: u, B: &ir.Const{V: -1}})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{ptr: 0, u: 1, d: 2})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if want := "move r0 2\nmul r2 rr0 -1\n"; code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}
+
+func TestNoFoldIndirectLoadWhenReused(t *testing.T) {
+	b := ir.NewBuilder("t")
+	ptr := b.NewReg("ptr")
+	u := b.NewReg("u")
+	d := b.NewReg("d")
+	e := b.NewReg("e")
+	b.Emit(&ir.Assign{Dst: ptr, Src: &ir.Const{V: 2}})
+	b.Emit(&ir.LoadIndirect{Dst: u, Ptr: ptr})
+	b.Emit(&ir.Bin{Op: ir.Mul, Dst: d, A: u, B: &ir.Const{V: -1}})
+	b.Emit(&ir.Assign{Dst: e, Src: u}) // second use: keep the load
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{ptr: 0, u: 1, d: 2, e: 3})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if !strings.Contains(code, "move r1 rr0") {
+		t.Fatalf("code = %q, want the indirect load kept", code)
+	}
+}
