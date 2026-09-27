@@ -3,6 +3,7 @@ package ic10_test
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -164,6 +165,7 @@ func runWrites(code string, init map[[2]string]float64) ([]string, bool) {
 	}
 	err := m.Run(200000)
 	writes = append(writes, deviceStacks(m)...)
+	writes = append(writes, deviceSlots(m)...)
 	return writes, err != nil && err != vm.ErrStepLimit
 }
 
@@ -181,6 +183,25 @@ func deviceStacks(m *vm.Machine) []string {
 			}
 		}
 	}
+	return out
+}
+
+// deviceSlots snapshots every device's slot values, so a build that writes
+// different slots (writeByIdSlot / writeDevSlot / ss) is caught even though slot
+// writes do not fire OnWrite. Sorted because the slot map is unordered.
+func deviceSlots(m *vm.Machine) []string {
+	var out []string
+	for _, name := range []string{"d0", "d1", "d2", "d3", "d4", "d5", "db"} {
+		d := m.Device(name)
+		for idx, vals := range d.Slots {
+			for logic, v := range vals {
+				if v != 0 {
+					out = append(out, fmt.Sprintf("%s.slot[%d].%s=%v", name, idx, logic, v))
+				}
+			}
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -205,6 +226,7 @@ func runWithLoader(runtime, loader string, init map[[2]string]float64) ([]string
 	}
 	err := m.Run(200000)
 	writes = append(writes, deviceStacks(m)...)
+	writes = append(writes, deviceSlots(m)...)
 	return writes, err != nil && err != vm.ErrStepLimit
 }
 
@@ -330,7 +352,7 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		g.simple(sb, ind)
 		return
 	}
-	switch g.rng.Intn(27) {
+	switch g.rng.Intn(28) {
 	case 0, 1:
 		g.simple(sb, ind)
 	case 2, 3:
@@ -465,6 +487,9 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		} else {
 			fmt.Fprintf(sb, "%s%s = %s.channel[%d][%d]\n", ind, g.varName(), g.channelDev(), g.rng.Intn(4), g.rng.Intn(8))
 		}
+	case 27:
+		// A slot write by ReferenceId (IC10 `ss rN i slt r?`).
+		fmt.Fprintf(sb, "%swriteByIdSlot(%s, %d, %s, %s)\n", ind, g.devId(), g.rng.Intn(4), g.slotType(), g.expr(2))
 	default:
 		ncase := 2 + g.rng.Intn(9) // 2..10 dense cases
 		if g.rng.Intn(2) == 0 {
@@ -532,11 +557,27 @@ func (g *gen) channelDev() string {
 	return devs[g.rng.Intn(len(devs))]
 }
 
+// slotType returns a slot logic name for readByIdSlot/writeByIdSlot.
+func (g *gen) slotType() string {
+	s := []string{"Occupied", "Quantity", "Class", "OccupantHash"}
+	return s[g.rng.Intn(len(s))]
+}
+
+// devId returns a device-id operand: a small id or a variable. The VM resolves
+// it through deviceByID, so it exercises the by-ReferenceId lowering (ls r? rN /
+// ss rN) rather than a port.
+func (g *gen) devId() string {
+	if g.rng.Intn(2) == 0 {
+		return strconv.Itoa(g.rng.Intn(6))
+	}
+	return g.varName()
+}
+
 func (g *gen) expr(depth int) string {
 	if depth <= 0 {
 		return g.atom()
 	}
-	switch g.rng.Intn(17) {
+	switch g.rng.Intn(18) {
 	case 0:
 		return g.atom()
 	case 1:
@@ -571,6 +612,9 @@ func (g *gen) expr(depth int) string {
 		return fmt.Sprintf("approx(%s, %s, %s)", g.expr(depth-1), g.expr(depth-1), g.expr(depth-1))
 	case 16:
 		return fmt.Sprintf("notApprox(%s, %s, %s)", g.expr(depth-1), g.expr(depth-1), g.expr(depth-1))
+	case 17:
+		// A slot read by ReferenceId (IC10 `ls r? rN i slt`).
+		return fmt.Sprintf("readByIdSlot(%s, %d, %s)", g.devId(), g.rng.Intn(4), g.slotType())
 	default:
 		return g.atom()
 	}

@@ -124,6 +124,41 @@ func runErr(t *testing.T, m *Machine, src string, steps int) error {
 	return m.Run(steps)
 }
 
+// TestNaNAndInfArithmetic pins f64 edge behaviour (the game and the emulator use
+// f64): 1/0 = +Inf, -1/0 = -Inf, 0/0 = NaN, NaN propagates, and NaN compares
+// unequal to everything.
+func TestNaNAndInfArithmetic(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want float64
+	}{
+		{"div-by-zero", "div r0 1 0\ns d1 Setting r0", math.Inf(1)},
+		{"neg-div-by-zero", "div r0 -1 0\ns d1 Setting r0", math.Inf(-1)},
+		{"zero-over-zero", "div r0 0 0\ns d1 Setting r0", math.NaN()},
+		{"mod-by-zero", "mod r0 5 0\ns d1 Setting r0", math.NaN()},
+		{"nan-propagates", "div r0 0 0\nadd r0 r0 1\ns d1 Setting r0", math.NaN()},
+		{"nan-is-not-zero", "div r0 0 0\nsnez r1 r0\ns d1 Setting r1", 1},
+		{"nan-not-less", "div r0 0 0\nslt r1 r0 1\ns d1 Setting r1", 0},
+		{"inf-mul", "mul r0 1e308 1e308\ns d1 Setting r0", math.Inf(1)},
+		{"inf-minus-inf", "div r0 1 0\nsub r0 r0 r0\ns d1 Setting r0", math.NaN()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := run(t, tc.src, 10).Get("d1", "Setting")
+			if math.IsNaN(tc.want) {
+				if !math.IsNaN(got) {
+					t.Errorf("= %v, want NaN", got)
+				}
+				return
+			}
+			if got != tc.want {
+				t.Errorf("= %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStackBoundsError(t *testing.T) {
 	cases := []struct {
 		src  string
