@@ -62,11 +62,12 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 	plan := lower.PlanOutlines(info, noOutline)
 	bestTotal := -1
 	var best *SizeReport
-	try := func(outline map[string]bool, noFold, noMem2Reg bool) {
+	sawSpill := false
+	try := func(outline map[string]bool, noFold, noMem2Reg, forceNoOpt bool) {
 		o := opts
 		o.NoFoldDataReads = noFold
 		o.NoMem2Reg = noMem2Reg
-		fn := lowerAndOptimize(info, o, outline, noCheck, noOpt, diags)
+		fn := lowerAndOptimize(info, o, outline, noCheck, noOpt || forceNoOpt, diags)
 		if fn == nil {
 			return
 		}
@@ -91,7 +92,13 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 		}
 		_, rep, _ := codegen.GenerateReportWithOptions(fn, colors, codegen.Options{SpillDB: !o.SpillStack, Limits: o.editorLimits()})
 		if rep == nil {
+			if !forceNoOpt {
+				sawSpill = true
+			}
 			return
+		}
+		if !forceNoOpt && (spillCount > 0 && rep.Total+fallbackMargin > o.editorLimits().Lines || rep.Total > o.editorLimits().Lines) {
+			sawSpill = true
 		}
 		if bestTotal == -1 || rep.Total < bestTotal {
 			bestTotal = rep.Total
@@ -127,8 +134,16 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 	for _, outline := range outlines {
 		for _, noFold := range folds {
 			for _, noMem2Reg := range mem2regs {
-				try(outline, noFold, noMem2Reg)
+				try(outline, noFold, noMem2Reg, false)
 			}
+		}
+	}
+	// Match Compile's size fallback: when the optimised build spills, an
+	// unoptimised build can be shorter.
+	if !noOpt && sawSpill {
+		try(nil, false, false, true)
+		if len(plan) > 0 {
+			try(plan, false, false, true)
 		}
 	}
 	if best == nil {

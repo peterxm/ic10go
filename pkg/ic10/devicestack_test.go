@@ -192,6 +192,16 @@ func TestReadWriteByID(t *testing.T) {
 	if !strings.Contains(code, "ld ") || !strings.Contains(code, "sd ") {
 		t.Errorf("code = %q, want ld/sd", code)
 	}
+	// The logic type must stay a static operand (`ld r? id LogicType.X`), not be
+	// materialised into a register and spilled into a data table.
+	for _, want := range []string{"ld ", "LogicType.Temperature", "LogicType.On"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("code = %q, want %q", code, want)
+		}
+	}
+	if strings.Contains(code, "put db") {
+		t.Errorf("logic constant was materialised into the data segment:\n%s", code)
+	}
 	m := vm.New()
 	m.Set("d1", "ReferenceId", 55)
 	m.Set("d1", "Temperature", 321)

@@ -12,12 +12,12 @@ j 13
 sgt r0 r1 100
 select r0 r0 100 r1
 s d0 Setting r0
-sgt r1 r2 20
-l r0 d0 Open
-seq r0 r0 1
-min r0 r1 r0
-s d0 On r0
-select r0 r1 1 0
+sgt r0 r2 20
+l r1 d0 Open
+seq r1 r1 1
+min r1 r0 r1
+s d0 On r1
+select r0 r0 1 0
 s d1 Setting r0
 ss d2 0 Mature 1
 yield

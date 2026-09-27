@@ -126,10 +126,38 @@ func isPhysRegRaw(v ir.Value) bool {
 
 func propagate(fn *ir.Function) bool {
 	changed := false
+	fn.BuildCFG()
+	_, liveOut := ir.Liveness(fn)
 	for _, b := range fn.Blocks {
+		// Copy propagation must not extend the source register's live range: a
+		// longer range raises register pressure and can force spills worth more
+		// lines than the propagation saves. Rewrite a use only when the value
+		// being substituted in is rematerialisable (a constant) or still live at
+		// that point (used later in the block, or live-out of it).
+		lastUse := map[*ir.Reg]int{}
+		for idx, ins := range b.Instrs {
+			u, _ := ir.DefUse(ins)
+			for _, r := range u {
+				lastUse[r] = idx
+			}
+		}
+		for _, r := range ir.TermUses(b.Term) {
+			lastUse[r] = len(b.Instrs)
+		}
+		lo := liveOut[b]
 		val := map[*ir.Reg]ir.Value{}
 		for idx, ins := range b.Instrs {
-			if rewriteUses(ins, val) {
+			allow := func(nv ir.Value) bool {
+				switch x := nv.(type) {
+				case *ir.Const:
+					return true
+				case *ir.Reg:
+					return lastUse[x] >= idx || lo[x]
+				default:
+					return true
+				}
+			}
+			if rewriteUses(ins, val, allow) {
 				changed = true
 			}
 			if f, ok := foldConst(ins); ok {
@@ -394,11 +422,11 @@ func constMapEqual(a, b map[*ir.Reg]*ir.Const) bool {
 	return true
 }
 
-func rewriteUses(i ir.Instr, val map[*ir.Reg]ir.Value) bool {
+func rewriteUses(i ir.Instr, val map[*ir.Reg]ir.Value, allow func(ir.Value) bool) bool {
 	changed := false
 	rw := func(v ir.Value) ir.Value {
 		if r, ok := v.(*ir.Reg); ok {
-			if nv, ok := val[r]; ok {
+			if nv, ok := val[r]; ok && allow(nv) {
 				changed = true
 				return nv
 			}
@@ -444,12 +472,12 @@ func rewriteUses(i ir.Instr, val map[*ir.Reg]ir.Value) bool {
 	case *ir.LoadDyn:
 		v.DevPtr = rw(v.DevPtr)
 		v.DevID = rw(v.DevID)
-		v.Logic = rwLogic(v.Logic, val, &changed)
+		v.Logic = rwLogic(v.Logic, val, allow, &changed)
 		v.Reagent = rw(v.Reagent)
 	case *ir.StoreDyn:
 		v.DevPtr = rw(v.DevPtr)
 		v.DevID = rw(v.DevID)
-		v.Logic = rwLogic(v.Logic, val, &changed)
+		v.Logic = rwLogic(v.Logic, val, allow, &changed)
 		v.Src = rw(v.Src)
 	case *ir.LoadIndirect:
 		v.Ptr = rw(v.Ptr)
@@ -464,12 +492,12 @@ func rewriteUses(i ir.Instr, val map[*ir.Reg]ir.Value) bool {
 
 // rwLogic rewrites a dynamic logic-type operand, but only to another register:
 // IC10's dynamic form requires a register, so a constant must not be folded in.
-func rwLogic(v ir.Value, val map[*ir.Reg]ir.Value, changed *bool) ir.Value {
+func rwLogic(v ir.Value, val map[*ir.Reg]ir.Value, allow func(ir.Value) bool, changed *bool) ir.Value {
 	r, ok := v.(*ir.Reg)
 	if !ok {
 		return v
 	}
-	if nv, ok := val[r]; ok {
+	if nv, ok := val[r]; ok && allow(nv) {
 		if nr, isReg := nv.(*ir.Reg); isReg {
 			*changed = true
 			return nr
@@ -744,7 +772,7 @@ func redundantLoads(fn *ir.Function) bool {
 				case k.dev != "":
 					invalidate(k.dev)
 				}
-				if v.Name == "push" || v.Name == "pop" {
+				if k.sp {
 					invalidate("sp")
 				}
 				// Forward a subsequent get of the same slot to the stored value
@@ -936,6 +964,9 @@ func globalCSE(fn *ir.Function) bool {
 			case k.dev != "":
 				invalidateDev(k.dev)
 			}
+			if k.sp {
+				invalidateDev("sp")
+			}
 		}
 		for idx, ins := range b.Instrs {
 			key, operands, dev, ok := exprKey(ins)
@@ -1109,6 +1140,9 @@ func transferAvail(b *ir.Block, in map[string]availExpr) map[string]availExpr {
 		case k.dev != "":
 			invalidateDev(k.dev)
 		}
+		if k.sp {
+			invalidateDev("sp")
+		}
 	}
 	for _, ins := range b.Instrs {
 		key, operands, dev, ok := exprKey(ins)
@@ -1217,6 +1251,7 @@ type loadKill struct {
 	dev     string // every load from this device
 	key     string // one exact load key
 	allDevs bool   // every device load, but not the stack (yield/sleep)
+	sp      bool   // the stack pointer moved (push/pop), invalidating sp loads
 }
 
 // loadWrite reports what a store invalidates.
@@ -1257,8 +1292,9 @@ func loadWrite(i ir.Instr) loadKill {
 				}
 				return loadKill{dev: "db"}
 			case "push", "pop":
-				// sp moves, so any stack slot may have been written.
-				return loadKill{dev: "db"}
+				// sp moves, so any stack slot may have been written and the
+				// stack pointer itself changed.
+				return loadKill{dev: "db", sp: true}
 			}
 			if sem.DeviceArg >= 0 && sem.DeviceArg < len(v.Args) {
 				if d, ok := v.Args[sem.DeviceArg].(*ir.Device); ok {

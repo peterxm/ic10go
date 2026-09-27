@@ -1893,7 +1893,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			return &ir.Const{V: 0}
 		}
 		devID := l.lowerExpr(call.Args[0])
-		logic := l.dynamicLogic(call.Args[1])
+		logic := l.deviceLogic(call.Args[1])
 		r := l.b.NewReg("read")
 		l.b.Emit(&ir.LoadDyn{Dst: r, DevID: devID, Logic: logic})
 		return r
@@ -1904,7 +1904,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 			return &ir.Const{V: 0}
 		}
 		devID := l.lowerExpr(call.Args[0])
-		logic := l.dynamicLogic(call.Args[1])
+		logic := l.deviceLogic(call.Args[1])
 		src := l.lowerExpr(call.Args[2])
 		l.b.Emit(&ir.StoreDyn{DevID: devID, Logic: logic, Src: src})
 		return &ir.Const{V: 0}
@@ -2002,6 +2002,14 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 	if id.Name == "jump" {
 		if len(call.Args) != 1 {
 			l.diags.Errorf(call.Pos(), "jump expects one argument")
+			return &ir.Const{V: 0}
+		}
+		// jump(ra) is a subroutine return (IC10 "j ra"). Model it as JmpRA so the
+		// CFG/liveness treat it as returning to a call site (keeping the callee's
+		// register writes visible to the caller) and the code generator emits
+		// `j ra` directly instead of a computed jump through a scratch register.
+		if ident, ok := call.Args[0].(*ast.Ident); ok && ident.Name == "ra" {
+			l.b.SetTerm(&ir.JmpRA{})
 			return &ir.Const{V: 0}
 		}
 		v := l.lowerExpr(call.Args[0])
@@ -2593,9 +2601,11 @@ func (l *lowerer) dynamicLogic(e ast.Expr) ir.Value {
 	return v
 }
 
-// deviceLogic lowers the logic-type argument of readDev/writeDev. A
-// LogicType.X selector is kept as a raw name so the code generator can emit it
-// directly (`l r? drN LogicType.X`); anything else is a runtime value.
+// deviceLogic lowers the logic-type argument of readDev/writeDev/readById/
+// writeById. A LogicType.X selector is kept as a raw name so the code generator
+// can emit it directly (`l r? drN LogicType.X` / `ld r? id LogicType.X`);
+// anything else is a runtime value. This avoids materialising the enum constant
+// into a register (which the allocator then tends to spill into a data table).
 func (l *lowerer) deviceLogic(e ast.Expr) ir.Value {
 	if sel, ok := e.(*ast.SelectorExpr); ok {
 		if id, ok := sel.X.(*ast.Ident); ok && id.Name == "LogicType" {

@@ -434,6 +434,11 @@ func checkBusUse(common []ast.Decl, uses map[string]*busUse, diags *diag.Bag) {
 	}
 }
 
+// fallbackMargin is how close to the line limit an optimised program must be
+// before Compile also tries an unoptimised build, which is sometimes shorter
+// because it spills less (copy propagation can extend live ranges).
+const fallbackMargin = 16
+
 // compileInfo runs the lower/optimize/codegen pipeline for one checked chip.
 func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error) {
 	noCheck, noOutline, noOpt := envSwitches()
@@ -441,22 +446,32 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	var best Result
 	haveBest := false
 	var bestErr error
+	sawSpill := false
 	consider := func(r Result) {
 		if !haveBest || better(r.Code, best.Code) {
 			best, haveBest = r, true
 		}
 	}
-	run := func(outline map[string]bool, noFold, noMem2Reg bool) {
+	run := func(outline map[string]bool, noFold, noMem2Reg, forceNoOpt bool) {
 		o := opts
 		o.NoFoldDataReads = noFold
 		o.NoMem2Reg = noMem2Reg
-		fn := lowerAndOptimize(info, o, outline, noCheck, noOpt, diags)
+		fn := lowerAndOptimize(info, o, outline, noCheck, noOpt || forceNoOpt, diags)
 		if fn == nil || diags.HasErrors() {
 			return
 		}
 		code, spills, err := generate(fn, info, o)
 		if err == nil {
+			// Only look for a smaller unoptimised build when it could matter:
+			// over a limit, or close enough that a few saved lines help.
+			if !forceNoOpt && spills > 0 && strings.Count(code, "\n")+fallbackMargin > o.editorLimits().Lines {
+				sawSpill = true
+			}
 			checkStackRegion(fn, info, spills, o, diags)
+		} else if !forceNoOpt {
+			// Over a limit (or another codegen error): an unoptimised build may
+			// fit, so try it as a fallback.
+			sawSpill = true
 		}
 		// Split out one-time setup writes when the runtime is over a limit, or
 		// when the program already needs a one-time loader (data segment): in
@@ -541,8 +556,18 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	for _, outline := range outlines {
 		for _, noFold := range folds {
 			for _, noMem2Reg := range mem2regs {
-				run(outline, noFold, noMem2Reg)
+				run(outline, noFold, noMem2Reg, false)
 			}
+		}
+	}
+	// Optimisation must not make the program longer: passes like copy
+	// propagation can extend live ranges and force the allocator to spill, which
+	// costs more lines than it saves. When that happened, also build an
+	// unoptimised program and keep whichever is shorter.
+	if !noOpt && sawSpill {
+		run(nil, false, false, true)
+		if len(plan) > 0 {
+			run(plan, false, false, true)
 		}
 	}
 	// Each candidate re-runs lowering, so warnings can repeat; keep one copy.

@@ -65,6 +65,27 @@ func main() {
 	}
 }
 
+// TestStackPointerNotCachedAcrossPushPop guards against the optimizer treating
+// a `sp` read as available across push/pop, which move sp (seen in the
+// reoreotest round-trip: `poke sp ..; pop; pop; pop; x := sp` read stale sp).
+func TestStackPointerNotCachedAcrossPushPop(t *testing.T) {
+	src := `func main() {
+    sp = 5
+    push(1)
+    a := sp
+    push(2)
+    b := sp
+    c := pop()
+    d := pop()
+    d0.Setting = a + b + c + d
+}`
+	m := runProgram(t, src, 100, nil)
+	// a=6, b=7, c=2, d=1 -> 16. A stale-sp cache yields a=b=6 -> 15.
+	if got := m.Get("d0", "Setting"); got != 16 {
+		t.Errorf("Setting = %v, want 16 (stale sp across push/pop?)", got)
+	}
+}
+
 // TestVMMultiBackEdgeLoop verifies that a condition using a variable assigned
 // on another path through a loop with several back edges is not hoisted by
 // LICM: the loop body must be treated as a whole.
