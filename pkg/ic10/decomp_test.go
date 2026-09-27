@@ -251,3 +251,18 @@ func TestDecompileStructuredFallback(t *testing.T) {
 	}
 	t.Logf("checked %d structured fallbacks", tested)
 }
+
+// TestDecompileStructuredLoopIf checks the structured decompiler recovers a
+// loop with an inner if from a back edge and a forward branch. The forward
+// branch targets a block whose only instruction is its own terminator; that
+// used to make the structurer fall back to the flat form.
+func TestDecompileStructuredLoopIf(t *testing.T) {
+	src := "l r0 d0 Setting\nbreq r0 0 2\ns d1 Setting 1\nyield\nj 0\n"
+	code, _, err := ic10.Decompile("t.ic", []byte(src), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(code, "for {") || !strings.Contains(code, "if ") {
+		t.Errorf("expected a structured loop with an if, got:\n%s", code)
+	}
+}

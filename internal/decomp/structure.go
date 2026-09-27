@@ -2,6 +2,7 @@ package decomp
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"ic10go/internal/ic10asm"
@@ -27,6 +28,8 @@ type structurer struct {
 	d             *decompiler
 	blocks        []*sBlock
 	lineBlk       map[int]int
+	lineKeys      []int
+	blockLabels   map[int][]string
 	loops         map[int]*sLoop
 	out           strings.Builder
 	indent        int
@@ -44,7 +47,7 @@ type structurer struct {
 // returns "" when the structuring cannot be trusted (every basic block must be
 // emitted exactly once); the caller then falls back to the flat form.
 func (d *decompiler) structure(lines []icLine) string {
-	st := &structurer{d: d, lineBlk: map[int]int{}, loops: map[int]*sLoop{}, indent: 1, emittedLabels: map[string]bool{}, visited: map[int]int{}}
+	st := &structurer{d: d, lineBlk: map[int]int{}, lineKeys: nil, blockLabels: map[int][]string{}, loops: map[int]*sLoop{}, indent: 1, emittedLabels: map[string]bool{}, visited: map[int]int{}}
 	st.buildBlocks(lines)
 	st.buildCFG()
 	st.computePdom()
@@ -279,6 +282,13 @@ func (s *structurer) buildBlocks(lines []icLine) {
 			cur = &sBlock{entryLine: -1}
 		}
 	}
+	var targetLines []int
+	for ln := range s.d.labelAt {
+		targetLines = append(targetLines, ln)
+	}
+	sort.Ints(targetLines)
+	ti := 0
+	prevLine := -1
 	for _, l := range lines {
 		if l.op == "" { // label line
 			if len(cur.insns) > 0 || cur.term != nil {
@@ -289,15 +299,23 @@ func (s *structurer) buildBlocks(lines []icLine) {
 			}
 			cur.labels = append(cur.labels, s.d.labelsAt[l.num]...)
 			cur.labelLines = append(cur.labelLines, l.num)
+			if l.num > prevLine {
+				prevLine = l.num
+			}
 			continue
 		}
 		if cur.term != nil {
 			flush()
 		}
 		// Split at branch targets so generated labels land on the right
-		// instruction.
-		if _, isTarget := s.d.labelAt[l.num]; isTarget {
-			flush()
+		// instruction. A target may sit on a blank line between two
+		// instructions, so also split when one falls strictly between the
+		// previous line and this one.
+		for ti < len(targetLines) && targetLines[ti] <= l.num {
+			if targetLines[ti] == l.num || targetLines[ti] > prevLine {
+				flush()
+			}
+			ti++
 		}
 		if cur.entryLine < 0 {
 			cur.entryLine = l.num
@@ -306,9 +324,15 @@ func (s *structurer) buildBlocks(lines []icLine) {
 			lc := l
 			cur.term = &lc
 			flush()
+			if l.num > prevLine {
+				prevLine = l.num
+			}
 			continue
 		}
 		cur.insns = append(cur.insns, l)
+		if l.num > prevLine {
+			prevLine = l.num
+		}
 	}
 	flush()
 	s.blocks = blocks
@@ -319,7 +343,41 @@ func (s *structurer) buildBlocks(lines []icLine) {
 		for _, ln := range b.labelLines {
 			s.lineBlk[ln] = bi
 		}
+		// A block whose only instruction is its terminator (a bare branch) has
+		// no body line, so map the terminator's line too. Otherwise a branch
+		// targeting that block looks up an unset entry and resolves to block 0.
+		if b.term != nil {
+			s.lineBlk[b.term.num] = bi
+		}
 	}
+	for ln := range s.lineBlk {
+		s.lineKeys = append(s.lineKeys, ln)
+	}
+	sort.Ints(s.lineKeys)
+	// Register every synthesized label (e.g. a target on a blank line) against
+	// the block that resolves to it, so it is emitted where the flat form would.
+	for t, name := range s.d.labelAt {
+		if name == "" {
+			continue
+		}
+		if bi, ok := s.blockAtLine(t); ok {
+			s.blockLabels[bi] = append(s.blockLabels[bi], name)
+		}
+	}
+}
+
+// blockAtLine resolves a branch target line to a block. A target may be a blank
+// or label-only line that no block owns, so fall back to the next instruction
+// at or after it (matching where the flat form emits the label).
+func (s *structurer) blockAtLine(line int) (int, bool) {
+	if bi, ok := s.lineBlk[line]; ok && bi >= 0 {
+		return bi, true
+	}
+	i := sort.SearchInts(s.lineKeys, line)
+	if i < len(s.lineKeys) {
+		return s.lineBlk[s.lineKeys[i]], true
+	}
+	return 0, false
 }
 
 func (s *structurer) labelIndex(term icLine) (int, bool) {
@@ -327,11 +385,7 @@ func (s *structurer) labelIndex(term icLine) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	bi, ok := s.lineBlk[t]
-	if !ok || bi < 0 {
-		return 0, false
-	}
-	return bi, true
+	return s.blockAtLine(t)
 }
 
 func (s *structurer) findLoops() {
@@ -437,6 +491,9 @@ func (s *structurer) emitLabels(b *sBlock) {
 		if name, ok := s.d.labelAt[b.entryLine]; ok {
 			emit(name)
 		}
+	}
+	for _, n := range s.blockLabels[b.index] {
+		emit(n)
 	}
 }
 
@@ -551,7 +608,14 @@ func (s *structurer) emitIf(i, t, end int, term icLine, cond string) int {
 	}
 
 	merge := s.lca(t, i+1)
-	if merge < 0 || merge < t || t <= i+1 {
+	if merge < t || merge >= len(s.blocks) {
+		// The post-dominator relation is degenerate (e.g. an infinite loop that
+		// never exits, so no virtual exit is reachable and lca falls back to
+		// it). Treat the branch target as the merge, i.e. an if-then; the
+		// blocks after it are emitted by the enclosing region.
+		merge = t
+	}
+	if merge < 0 || t <= i+1 {
 		return fallback()
 	}
 	if !s.regionClosed(i+1, t, merge) || !s.regionClosed(t, merge, merge) {
@@ -662,7 +726,9 @@ func (s *structurer) emitLoopBody(lp *sLoop) {
 				}
 			}
 		}
-		s.emitBlock(i, lp.end+1, -1)
+		// emitBlock may have consumed several blocks (e.g. an if/else); resume
+		// at the block it returned.
+		i = s.emitBlock(i, lp.end+1, -1) - 1
 	}
 }
 
