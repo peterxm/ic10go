@@ -12,6 +12,10 @@ const desiredMixerSetting = 0.65
 const maxVolatilesRatio = 0.65
 
 func main() {
+    // r1 (the previous iteration's volatiles ratio) is only refreshed when the
+    // computed setting is non-zero; the original skips the read entirely when
+    // it is zero and tests the stale value instead.
+    var ratio = 0
     for {
         gas1Analyzer.On = 1
         gas2Analyzer.On = 1
@@ -24,9 +28,10 @@ func main() {
         denominator := (1-desiredMixerSetting)*t2 + desiredMixerSetting*t1
         setting := numerator / denominator * 100
 
-        if setting == 0 {
-            setting = 100
-        } else if outputAnalyzer.RatioVolatiles > maxVolatilesRatio {
+        if setting != 0 {
+            ratio = outputAnalyzer.RatioVolatiles
+        }
+        if ratio > maxVolatilesRatio {
             setting = 100
         }
 
