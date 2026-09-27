@@ -335,6 +335,38 @@ namespace Ic10Go.Testbench
             return dev;
         }
 
+        /// <summary>Find a device by its ReferenceId, searching every circuit
+        /// holder's cable network. Used to observe devices a script addresses by
+        /// ReferenceId rather than through a port. Returns null when not found.</summary>
+        public static ILogicable DeviceById(int id)
+        {
+            List<ICircuitHolder> holders;
+            try { holders = CircuitHolders.AllCircuitHolders.ToList(); }
+            catch { return null; }
+            foreach (var h in holders)
+            {
+                if (h == null) continue;
+                try
+                {
+                    var d = h.GetLogicableFromId(id);
+                    if (d != null) return d;
+                }
+                catch { }
+            }
+            return null;
+        }
+
+        /// <summary>Describe a device by ReferenceId (logic + slots), or null when
+        /// no device with that id is found on any circuit holder's network.</summary>
+        public static JObject DescribeDeviceById(int id)
+        {
+            var dev = DeviceById(id);
+            if (dev == null) return null;
+            var e = DeviceEntry("id:" + id, dev, null);
+            e["id"] = id;
+            return e;
+        }
+
         /// <summary>The host's port binding labels (db, d0..d5) from GetLogicBindings.</summary>
         private static string[] BindingLabels(ICircuitHolder holder)
         {
@@ -567,8 +599,11 @@ namespace Ic10Go.Testbench
             if (dev == null) throw new BenchError("no-device", "no device on that port");
             try
             {
+                var t = ParseLogic(logic);
+                if (!hasSlot && !dev.CanLogicRead(t))
+                    throw new BenchError("unknown-logic", logic + " is not readable on this device");
                 if (hasSlot) return dev.GetLogicValue(ParseSlot(logic), slot);
-                return dev.GetLogicValue(ParseLogic(logic));
+                return dev.GetLogicValue(t);
             }
             catch (BenchError) { throw; }
             catch (Exception ex) { throw new BenchError("internal", "read " + logic + ": " + ex.Message); }
@@ -669,7 +704,9 @@ namespace Ic10Go.Testbench
             return list;
         }
 
-        private static JObject DeviceEntry(string label, ILogicable dev, string binding)
+        /// <summary>Describe a logicable device (logic values + slots) as JSON,
+        /// the same shape BuildDevices uses. Returns null when dev is null.</summary>
+        public static JObject DeviceEntry(string label, ILogicable dev, string binding)
         {
             var entry = new JObject { ["port"] = label };
             if (!string.IsNullOrEmpty(binding)) entry["binding"] = binding;

@@ -35,6 +35,7 @@ namespace Ic10Go.Testbench
                 case "state": return State(args);
                 case "set": return Set(args);
                 case "get": return Get(args);
+                case "device": return Device(args);
                 case "run": return Run(args);
                 case "reset": return Reset(args);
                 case "pause": return PauseCmd(args, plugin);
@@ -157,8 +158,11 @@ namespace Ic10Go.Testbench
             int applied = 0;
             foreach (var w in writes)
             {
-                int port = ParsePort((string)w["port"]);
-                var dev = GameApi.PortDevice(h.Holder, port);
+                bool byId = w["id"] != null;
+                int port = byId ? -1 : ParsePort((string)w["port"]);
+                var dev = byId ? GameApi.DeviceById((int)(long)w["id"]) : GameApi.PortDevice(h.Holder, port);
+                if (dev == null)
+                    throw new BenchError("no-device", byId ? ("no device with id " + w["id"]) : ("no device on port " + w["port"]));
                 bool hasSlot = w["slot"] != null;
                 GameApi.SetLogic(dev, (string)w["logic"], hasSlot ? (int)w["slot"] : 0, hasSlot, (double)w["value"], force, pulse);
                 applied++;
@@ -174,18 +178,38 @@ namespace Ic10Go.Testbench
             var values = new JArray();
             foreach (var r in reads)
             {
-                int port = ParsePort((string)r["port"]);
-                var dev = GameApi.PortDevice(h.Holder, port);
+                bool byId = r["id"] != null;
+                int port = byId ? -1 : ParsePort((string)r["port"]);
+                var dev = byId ? GameApi.DeviceById((int)(long)r["id"]) : GameApi.PortDevice(h.Holder, port);
+                if (dev == null)
+                    throw new BenchError("no-device", byId ? ("no device with id " + r["id"]) : ("no device on port " + r["port"]));
                 bool hasSlot = r["slot"] != null;
                 double v = GameApi.GetLogic(dev, (string)r["logic"], hasSlot ? (int)r["slot"] : 0, hasSlot);
                 values.Add(new JObject
                 {
-                    ["port"] = PortLabel(port),
+                    ["port"] = byId ? ("id:" + r["id"]) : PortLabel(port),
                     ["logic"] = (string)r["logic"],
                     ["value"] = GameApi.Num(v),
                 });
             }
             return new JObject { ["values"] = values };
+        }
+
+        /// <summary>device {ids:[...]} reads devices by ReferenceId (logic + slots),
+        /// for scripts that address devices by id rather than through a port.</summary>
+        private static JObject Device(JObject args)
+        {
+            var ids = args["ids"] as JArray;
+            if (ids == null) throw new BenchError("bad-request", "device needs \"ids\"");
+            var arr = new JArray();
+            foreach (var t in ids)
+            {
+                int id = (int)(long)t;
+                var e = GameApi.DescribeDeviceById(id);
+                if (e == null) e = new JObject { ["id"] = id, ["present"] = false };
+                arr.Add(e);
+            }
+            return new JObject { ["devices"] = arr };
         }
 
         // -- watch ------------------------------------------------------------
