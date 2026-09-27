@@ -658,3 +658,104 @@ func genIndirectProgram(seed int64) string {
 	sb.WriteString("}\n")
 	return sb.String()
 }
+
+// TestDifferentialMultiChip compiles random two-chip bus programs with and
+// without optimisation and checks that the lockstep device-write sequence
+// matches.
+func TestDifferentialMultiChip(t *testing.T) {
+	for seed := int64(0); seed < 400; seed++ {
+		src := genMultiChipProgram(seed)
+
+		t.Setenv("IC10C_NO_OPT", "")
+		optRes, diags, err := ic10.CompileResult("mc.icg", []byte(src), ic10.Options{})
+		if diags.HasErrors() || err != nil {
+			t.Fatalf("seed %d: optimized compile: %v %v\n%s", seed, diags.Diags, err, src)
+		}
+		t.Setenv("IC10C_NO_OPT", "1")
+		rawRes, diags, err := ic10.CompileResult("mc.icg", []byte(src), ic10.Options{})
+		if diags.HasErrors() || err != nil {
+			t.Fatalf("seed %d: unoptimized compile: %v %v\n%s", seed, diags.Diags, err, src)
+		}
+
+		init := deviceInit(seed)
+		wa, ea := runWorldWrites(optRes, init)
+		wb, eb := runWorldWrites(rawRes, init)
+		if wa != wb || ea != eb {
+			t.Fatalf("seed %d: optimized and unoptimized differ (err %v vs %v)\n%s\n--- optimized ---\n%v\n--- unoptimized ---\n%v",
+				seed, ea, eb, src, wa, wb)
+		}
+	}
+}
+
+// runWorldWrites loads every chip of a multi-chip result into a world (wiring
+// the buses as `ic10c run` does), runs it lockstep and returns each chip's
+// writes in its own order. The chips' instruction counts differ between builds,
+// so their relative timing - and therefore the global interleaving - is not
+// comparable; the per-chip sequence is.
+func runWorldWrites(res ic10.Result, init map[[2]string]float64) (string, bool) {
+	w := vm.NewWorld()
+	perChip := make([][]string, len(res.Chips))
+	for i, ch := range res.Chips {
+		m := w.AddChip()
+		idx := i
+		m.OnWrite = func(dev, logic string, v float64) {
+			perChip[idx] = append(perChip[idx], fmt.Sprintf("%s.%s=%v", dev, logic, v))
+		}
+		if err := m.Load(ch.Code); err != nil {
+			return "", true
+		}
+	}
+	busAccess := map[string][]string{}
+	for _, ch := range res.Chips {
+		for slot, conns := range ch.BusAccess {
+			busAccess[slot] = append(busAccess[slot], conns...)
+		}
+	}
+	for _, conns := range busAccess {
+		w.Wire(conns...)
+	}
+	for k, v := range init {
+		w.Set(k[0], k[1], v)
+	}
+	err := w.Run(1000)
+	out := make([]string, len(perChip))
+	for i, s := range perChip {
+		out[i] = strings.Join(s, "|")
+	}
+	return strings.Join(out, " ## "), err != nil && err != vm.ErrStepLimit
+}
+
+// genMultiChipProgram builds a small two-chip bus program. Each chip writes and
+// reads only its own bus slot, so its behaviour does not depend on the other
+// chip's instruction timing (which differs between optimized builds). The bus
+// is still lowered and wired, exercising the multi-chip compile path.
+func genMultiChipProgram(seed int64) string {
+	rng := rand.New(rand.NewSource(seed))
+	slots := []string{"x", "y", "z"}
+	nslots := 2 + rng.Intn(2)
+	var sb strings.Builder
+	sb.WriteString("bus B {\n")
+	for i := 0; i < nslots; i++ {
+		fmt.Fprintf(&sb, "    %s num\n", slots[i])
+	}
+	sb.WriteString("}\n")
+
+	producer := []string{
+		"            B.x = d1.Pressure\n",
+		"            B.x = d1.On + d2.Setting\n",
+		"            if d1.On > 0 { B.x = 1 } else { B.x = 2 }\n",
+	}
+	sb.WriteString("chip producer {\n    use B on db:0\n    func main() {\n        for {\n            yield()\n")
+	sb.WriteString(producer[rng.Intn(len(producer))])
+	sb.WriteString("        }\n    }\n}\n")
+
+	consumer := []string{
+		"            B.y = d1.Setting\n            d0.Setting = B.y\n",
+		"            B.y = d4.On + 1\n            d0.On = B.y\n",
+		"            B.y = 3\n            if B.y > 1 { d0.On = 1 } else { d0.On = 0 }\n",
+	}
+	sb.WriteString("chip consumer {\n    use B on d3:1\n    func main() {\n        for {\n            yield()\n")
+	sb.WriteString(consumer[rng.Intn(len(consumer))])
+	sb.WriteString("        }\n    }\n}\n")
+	return sb.String()
+}
