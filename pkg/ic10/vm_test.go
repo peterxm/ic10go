@@ -118,6 +118,44 @@ func TestJumpRAReturn(t *testing.T) {
 	}
 }
 
+// TestInlinedEarlyReturnWithLoop guards against a codegen bug where an early
+// return from an inlined function that also contains a loop jumped into that
+// loop instead of returning (removeRedundantJumps remapped the branch to the
+// line after the removed jump instead of to the jump's target).
+func TestInlinedEarlyReturnWithLoop(t *testing.T) {
+	src := `func f(x num, n num) num {
+    room := d3.Pressure
+    door := d4.On
+    db.Setting = door
+    if door != 0 { return n }
+    if room <= 0.002 { return n }
+    for {
+        d1.On = 7
+        if d3.Pressure <= 0.002 { break }
+    }
+    return 1
+}
+func main() {
+    n := 1
+    for {
+        db.Setting = 1
+        if d0.On != 0 { n = f(d0.On, n) } else { n = 0 }
+        d5.Setting = n
+    }
+}`
+	m := runProgram(t, src, 400, func(m *vm.Machine) {
+		m.Set("d0", "On", 1)
+		m.Set("d4", "On", 5)
+		m.Set("d3", "Pressure", 0)
+	})
+	if got := m.Get("d5", "Setting"); got != 1 {
+		t.Errorf("d5.Setting = %v, want 1 (early return)", got)
+	}
+	if got := m.Get("d1", "On"); got != 0 {
+		t.Errorf("early return did not skip the loop: d1.On = %v, want 0", got)
+	}
+}
+
 // TestVMMultiBackEdgeLoop verifies that a condition using a variable assigned
 // on another path through a loop with several back edges is not hoisted by
 // LICM: the loop body must be treated as a whole.

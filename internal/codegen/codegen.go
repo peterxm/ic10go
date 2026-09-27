@@ -517,6 +517,10 @@ func checkCallLayout(blocks []*ir.Block, lines []line, start map[*ir.Block]int) 
 // Both paths then reach the same line, so the unconditional jump is dead.
 func removeRedundantJumps(lines []line, start map[*ir.Block]int) ([]line, map[*ir.Block]int) {
 	removed := make([]bool, len(lines))
+	// redirect records, for a removed line, where its (removed) jump went, so a
+	// branch that targeted the removed jump is remapped to the jump's target
+	// rather than to whatever line now follows it.
+	redirect := map[int]*ir.Block{}
 	for i := 0; i+1 < len(lines); i++ {
 		if removed[i] {
 			continue
@@ -534,6 +538,7 @@ func removeRedundantJumps(lines []line, start map[*ir.Block]int) ([]line, map[*i
 		}
 		lines[i] = line{text: inv, target: j.target, fn: br.fn}
 		removed[i+1] = true
+		redirect[i+1] = j.target
 		i++
 	}
 	kept := make([]line, 0, len(lines))
@@ -546,16 +551,28 @@ func removeRedundantJumps(lines []line, start map[*ir.Block]int) ([]line, map[*i
 		index[i] = len(kept)
 		kept = append(kept, ln)
 	}
+	preStart := make(map[*ir.Block]int, len(start))
 	for b, s := range start {
-		ns := s
-		for ns < len(index) && index[ns] < 0 {
-			ns++
+		preStart[b] = s
+	}
+	resolve := func(s int) int {
+		for n := 0; n <= len(lines); n++ {
+			if s < 0 || s >= len(index) {
+				return len(kept)
+			}
+			if index[s] >= 0 {
+				return index[s]
+			}
+			if t, ok := redirect[s]; ok {
+				s = preStart[t]
+				continue
+			}
+			s++
 		}
-		if ns < len(index) {
-			start[b] = index[ns]
-		} else {
-			start[b] = len(kept)
-		}
+		return len(kept)
+	}
+	for b := range start {
+		start[b] = resolve(preStart[b])
 	}
 	return kept, start
 }
