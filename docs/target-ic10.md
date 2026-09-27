@@ -216,9 +216,12 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 
 编译器识别两类游戏枚举：
 
-- **`LogicType.<成员>`**（如 `LogicType.Open`、`LogicType.Channel0`）：不查表，
-  **原样输出**到 IC10，由游戏汇编器解析。因此任何合法成员都能用，也不受内建
-  表版本影响。可作为 `read` / `write` / `readDev` / `writeDev` 的逻辑类型实参。
+- **`LogicType.<成员>`**（如 `LogicType.Open`、`LogicType.Channel0`）：作为
+  **逻辑类型实参**时输出**裸成员名**（`Open`）——游戏只在纯数据位置接受带前缀的
+  `LogicType.X`，逻辑类型操作数必须是裸名；作为**数值**使用时保持 `LogicType.X`
+  原样输出。两种情况都不查表、由游戏汇编器解析，因此任何合法成员都能用，也不受
+  内建表版本影响。可作为 `read` / `write` / `readDev` / `writeDev` / `readById` /
+  `writeById` 的逻辑类型实参。
 - **未知的 `Enum.Member`**：同样**原样输出并给出 `unknown-enum` 警告**，因此
   游戏更新新增枚举无需改编译器；`raw("...")` 可对任意操作数显式原样输出。
 - 需要编译器知道**数值**的枚举（`internal/builtin.EnumConstants`，由游戏枚举生成

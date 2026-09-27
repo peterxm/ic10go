@@ -141,6 +141,32 @@ func TestDynamicLogicType(t *testing.T) {
 	}
 }
 
+// TestLogicOperandBareName checks the emitted IC10 uses the bare member name for
+// a logic-type operand: the game rejects `LogicType.X` there (it is valid only
+// in a value / pure-data position).
+func TestLogicOperandBareName(t *testing.T) {
+	src := `func main() {
+    r0 := readById(7, LogicType.Activate)
+    writeById(7, LogicType.On, r0)
+    r1 := readDev(2, LogicType.Open)
+    writeDev(2, LogicType.Lock, r1)
+}`
+	code := mustCompile(t, src)
+	if strings.Contains(code, "LogicType.") {
+		t.Errorf("logic-type operand must be the bare name, got:\n%s", code)
+	}
+	for _, name := range []string{"Activate", "On", "Open", "Lock"} {
+		if !strings.Contains(code, name) {
+			t.Errorf("missing bare logic name %q in:\n%s", name, code)
+		}
+	}
+	// In a value position the qualified name is kept (a pure-data operation).
+	val := mustCompile(t, "func main() { d0.Setting = read(d1, LogicType.Activate) }")
+	if !strings.Contains(val, "LogicType.Activate") {
+		t.Errorf("value position should keep LogicType.Activate, got:\n%s", val)
+	}
+}
+
 func TestStableInsOrder(t *testing.T) {
 	src := []byte("func main() { x := ins(1, 8, 8)\n d0.Setting = x }\n")
 	code, diags, err := ic10.Compile("t.icg", src)

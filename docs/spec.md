@@ -579,7 +579,7 @@ v := readDev(idx, lt)           // l r drN (r_lt)
 writeDev(idx, lt, v)            // s drN (r_lt) v
 ```
 
-`LogicType.X`（如 `LogicType.Open`）作为游戏枚举名原样输出，可作为 `read`/`write`/`readDev`/`writeDev` 的逻辑类型实参。
+`LogicType.X`（如 `LogicType.Open`）作为 `read`/`write`/`readDev`/`writeDev`/`readById`/`writeById` 的**逻辑类型实参**时输出**裸成员名** `X`（游戏只接受裸名）；作为普通**数值**使用时保持 `LogicType.X` 原样输出。
 
 ### 7.5 设备状态查询
 

@@ -2602,14 +2602,16 @@ func (l *lowerer) dynamicLogic(e ast.Expr) ir.Value {
 }
 
 // deviceLogic lowers the logic-type argument of readDev/writeDev/readById/
-// writeById. A LogicType.X selector is kept as a raw name so the code generator
-// can emit it directly (`l r? drN LogicType.X` / `ld r? id LogicType.X`);
-// anything else is a runtime value. This avoids materialising the enum constant
-// into a register (which the allocator then tends to spill into a data table).
+// writeById. A LogicType.X selector is emitted as its bare member name so the
+// code generator can use it directly (`l r? drN X` / `ld r? id X`): the game
+// only accepts the bare name as a logic-type operand (`LogicType.X` is valid
+// only in a value / pure-data position). Anything else is a runtime value.
+// This also avoids materialising the enum constant into a register (which the
+// allocator then tends to spill into a data table).
 func (l *lowerer) deviceLogic(e ast.Expr) ir.Value {
 	if sel, ok := e.(*ast.SelectorExpr); ok {
 		if id, ok := sel.X.(*ast.Ident); ok && id.Name == "LogicType" {
-			return &ir.Const{Raw: "LogicType." + sel.Sel.Name}
+			return &ir.Const{Raw: sel.Sel.Name}
 		}
 	}
 	return l.dynamicLogic(e)
