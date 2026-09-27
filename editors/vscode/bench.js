@@ -895,6 +895,15 @@ class Bench {
   }
   details.dev table { margin-top: 4px; }
   details.dev td { padding: 2px 8px; border-bottom: none; }
+  details.slots {
+    margin-top: 6px; padding: 3px 9px; border-radius: 6px;
+    border: 1px dashed var(--vscode-editorWidget-border, rgba(128,128,128,.35));
+  }
+  details.slots > summary, details.slot > summary {
+    text-transform: none; letter-spacing: 0; font-size: var(--vscode-font-size); font-weight: 500; margin: 0;
+  }
+  details.slot { margin: 2px 0 2px 8px; }
+  details.slot table { margin-top: 2px; }
   .dev.empty {
     display: flex; align-items: center; gap: 8px; margin-bottom: 4px; padding: 3px 9px;
     border: 1px dashed var(--vscode-editorWidget-border, rgba(128,128,128,.25));
@@ -1003,8 +1012,9 @@ class Bench {
           continue;
         }
         const desc = d.name || d.prefab || '';
+        const slotCount = d.slots && d.slots.length ? d.slots.length : 0;
         html += '<details class="dev"' + (openMap['dev:' + d.port] ? ' open' : '') + ' data-key="dev:' + d.port + '"><summary><span class="port">' + d.port + '</span> ' + binding +
-          ' <span class="muted">' + desc + '</span> <span class="pill">' + keys.length + ' logic</span></summary><table>';
+          ' <span class="muted">' + desc + '</span> <span class="pill">' + keys.length + ' logic' + (slotCount ? ' · ' + slotCount + ' slots' : '') + '</span></summary><table>';
         for (const k of keys) {
           next[d.port + '.' + k] = d.logic[k];
           html += '<tr><td>' + k + '</td><td class="num">' + num(d.logic[k]) + '</td></tr>';
@@ -1016,6 +1026,26 @@ class Bench {
             html += '<tr><td class="muted">' + pk + '</td><td class="num">' + d.probe[pk] + '</td></tr>';
           }
           html += '</table>';
+        }
+        if (slotCount) {
+          const skey = 'slots:' + d.port;
+          html += '<details class="slots"' + (openMap[skey] ? ' open' : '') + ' data-key="' + skey +
+            '"><summary>Slots <span class="pill">' + slotCount + '</span></summary>';
+          for (const s of d.slots) {
+            const lk = Object.keys(s.logic || {}).sort();
+            const bits = [];
+            if (s.logic && s.logic.Occupied !== undefined) bits.push('Occupied=' + num(s.logic.Occupied));
+            if (s.logic && s.logic.Quantity !== undefined) bits.push('Quantity=' + num(s.logic.Quantity));
+            if (s.logic && s.logic.Class !== undefined) bits.push('Class=' + num(s.logic.Class));
+            const key = 'slot:' + d.port + ':' + s.index;
+            html += '<details class="slot"' + (openMap[key] ? ' open' : '') + ' data-key="' + key +
+              '"><summary>slot ' + s.index + (bits.length ? ' <span class="muted">' + bits.join('  ') + '</span>' : '') + '</summary><table>';
+            for (const k of lk) {
+              html += '<tr><td>' + k + '</td><td class="num">' + num(s.logic[k]) + '</td></tr>';
+            }
+            html += '</table></details>';
+          }
+          html += '</details>';
         }
         html += '</details>';
       }

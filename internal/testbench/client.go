@@ -361,5 +361,12 @@ type DeviceState struct {
 	Binding string             `json:"binding,omitempty"`
 	Present *bool              `json:"present,omitempty"`
 	Logic   map[string]float64 `json:"logic"`
+	Slots   []SlotState        `json:"slots,omitempty"`
 	Probe   map[string]string  `json:"probe,omitempty"`
+}
+
+// SlotState is one logic slot (inventory slot) of a device.
+type SlotState struct {
+	Index int                `json:"index"`
+	Logic map[string]float64 `json:"logic"`
 }

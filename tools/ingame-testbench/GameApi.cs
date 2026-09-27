@@ -695,6 +695,32 @@ namespace Ic10Go.Testbench
             }
             entry["logic"] = logic;
 
+            // Logic slots (inventories): e.g. a suit has 8 slots with
+            // Occupied / OccupantHash / Quantity / Class / PrefabHash / ...
+            int totalSlots = 0;
+            try { totalSlots = dev.TotalSlots; } catch { }
+            if (totalSlots > 0)
+            {
+                var slots = new JArray();
+                int n = Math.Min(totalSlots, 16);
+                for (int i = 0; i < n; i++)
+                {
+                    var slot = new JObject { ["index"] = i, ["logic"] = new JObject() };
+                    foreach (LogicSlotType st in Enum.GetValues(typeof(LogicSlotType)))
+                    {
+                        if ((int)st == 0) continue;
+                        try
+                        {
+                            if (!dev.CanLogicRead(st, i)) continue;
+                            slot["logic"][st.ToString()] = Num(dev.GetLogicValue(st, i));
+                        }
+                        catch { }
+                    }
+                    slots.Add(slot);
+                }
+                if (slots.Count > 0) entry["slots"] = slots;
+            }
+
             var thing = dev as Thing;
             if (thing != null)
             {
