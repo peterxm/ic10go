@@ -26,6 +26,9 @@ const (
 	bankStateBudget = 20000
 	// bankSp is the pseudo-register index of the stack pointer.
 	bankSp = 16
+	// bankMaxRange caps the reserved range: a wider one leaves too few
+	// registers for the compiler to allocate efficiently.
+	bankMaxRange = 12
 )
 
 // noBank marks "no indirect bank".
@@ -110,6 +113,12 @@ func (d *decompiler) indirectBank(lines []icLine) (int, int, bool) {
 	}
 	if hi < 0 {
 		return 0, 0, false // no dynamic indirect access
+	}
+	if hi-lo+1 > bankMaxRange {
+		// A pointer that sweeps most of the register file leaves too few
+		// registers for the compiler to allocate; report rather than emit a
+		// program that is pathological to compile.
+		return 0, 0, false
 	}
 	return lo, hi, true
 }
