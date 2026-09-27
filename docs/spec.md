@@ -403,8 +403,11 @@ for i, v := range Table { ... }   // v = Table[i]
 
 - `range` 后接整数（编译期常量或运行时值，表示 `0..n-1`）或 `data` 表（长度编译期已知）。
 - `break` / `continue` 可带外层循环标签：`break Outer` / `continue Outer`（标签写在循环前的 `label Outer:`）。
-- 建议在长循环内显式调用 `yield()`。编译器会对**无 `yield()`/`sleep()` 的无条件 `for {}`**
-  发出 `loop-without-yield` 警告（芯片每 tick 指令数有限，不暂停会让循环空转、费电发热）。
+- 建议在长循环内显式调用 `yield()`。编译器会对**无 `yield()`/`sleep()` 且无法离开**
+  （无 `break`、无跳到循环外的 `goto`、无 `return`）的 `for {}` 发出
+  `loop-without-yield` 警告（芯片每 tick 指令数有限，不暂停会让循环空转、费电发热）；
+  带 `break`/`goto` 出的有界循环（含反编译出的 `for { ...; if cond { break } }`/do-while）
+  不会误报。
 
 ### 5.4 switch
 
@@ -875,7 +878,7 @@ j 1
 | `unknown-logic-type` | 设备属性名不在内建表 | 原样输出，并给出最接近的拼写建议 |
 | `unknown-slot-type` | 槽位属性名不在内建表 | 同上 |
 | `unknown-enum` | 未知 `Enum.Member` | 原样输出（交给游戏汇编器），给出同组建议 |
-| `loop-without-yield` | 无条件 `for {}` 内无 `yield()`/`sleep()` | 加 `yield()`，否则循环空转、费电发热 |
+| `loop-without-yield` | 无法离开的 `for {}` 内无 `yield()`/`sleep()`（含 `break`/`goto` 出/`return` 即算有界） | 加 `yield()`，否则循环空转、费电发热 |
 
 逻辑类型、槽位类型与游戏枚举表由游戏 `Assembly-CSharp.dll` 生成（见
 [`target-ic10.md` §5.8](target-ic10.md#58-枚举表同步生成器)），因此新版本新增的

@@ -181,6 +181,16 @@ func TestLoopWithoutYieldWarns(t *testing.T) {
 		{"sleep", "func main() { for { sleep(1); d0.On = 1 } }", false},
 		{"bounded", "func main() { for i := 0; i < 3; i++ { d0.On = 1 } }", false},
 		{"helper-yields", "func step() { yield(); d0.On = 1 }\nfunc main() { for { step() } }", false},
+		// A break (or return) bounds the loop, so it no longer warns: this is
+		// the decompiler's `for { ...; if cond { break } }` shape.
+		{"break-bounded", "func main() { for { d0.On = 1\n if d0.Setting > 0 { break } } }", false},
+		{"return-bounded", "func main() { for { if d0.Setting > 0 { return }\n d0.On = 1 } }", false},
+		// A break in a nested loop does not leave the outer loop.
+		{"nested-break", "func main() { for { for { break }\n d0.On = 1 } }", true},
+		// A goto to an outer label leaves the loop (the structurer emits this);
+		// a goto to an inner label stays inside it.
+		{"goto-out", "func main() { for { if d0.Setting > 0 { goto done }\n d0.On = 1 }\n label done:\n d0.On = 0 }", false},
+		{"goto-inner", "func main() { for { label again:\n d0.On = 1\n goto again } }", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

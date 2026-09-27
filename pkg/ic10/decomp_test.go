@@ -190,6 +190,26 @@ func TestDecompileMarksDynamicStack(t *testing.T) {
 	}
 }
 
+// TestDecompileDrainLoopNoYieldWarns checks the structured decompiler's
+// `for { ...; if cond { break } }` (a do/while drain) does not trip the
+// loop-without-yield warning, which targets unbounded loops.
+func TestDecompileDrainLoopNoYieldWarns(t *testing.T) {
+	src := "loop:\npop r0\nsub r1 sp r14\nputd r11 r1 r0\nbrgtz r1 -4\n"
+	code, _, err := ic10.Decompile("t.ic", []byte(src), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(code, "for {") || !strings.Contains(code, "break") {
+		t.Fatalf("expected a bounded for/break, got:\n%s", code)
+	}
+	_, diags, _ := ic10.Compile("t.icg", []byte(code))
+	for _, d := range diags.Diags {
+		if d.Code == "loop-without-yield" {
+			t.Fatalf("unexpected loop-without-yield warning:\n%s", code)
+		}
+	}
+}
+
 // TestDecompileKeepsDefaultStack checks an ordinary program is left without the
 // dynamic-stack pragma.
 func TestDecompileKeepsDefaultStack(t *testing.T) {

@@ -8,7 +8,10 @@ import "ic10go/internal/ast"
 // fast as the chip allows: it burns power/heat and reacts at a fixed tick rate.
 //
 // Only `for { ... }` (no condition) is reported, so the warning stays focused
-// on the main/long-running loops instead of every bounded helper loop.
+// on the main/long-running loops instead of every bounded helper loop. A body
+// that can leave the loop (a `break` targeting it, or a `return`) is bounded
+// too — most often a decompiled do/while, which the decompiler writes as
+// `for { ...; if cond { break } }` — so it is not reported either.
 func (c *typeChecker) warnLoopWithoutYield(s *ast.ForStmt) {
 	if s.Cond != nil {
 		return
@@ -16,8 +19,87 @@ func (c *typeChecker) warnLoopWithoutYield(s *ast.ForStmt) {
 	if c.pauses([]ast.Stmt{s.Body}, map[string]bool{}) {
 		return
 	}
+	if c.loopExits(s.Body) {
+		return
+	}
 	c.diags.WarnfCode("loop-without-yield", s.Pos(),
 		"loop without yield(); add yield() inside the loop so the chip pauses each tick")
+}
+
+// loopExits reports whether the loop body can leave the loop: a `break`
+// targeting it (not a nested loop/switch), a `goto` to a label declared outside
+// it, or a `return`/`ret`.
+func (c *typeChecker) loopExits(body *ast.BlockStmt) bool {
+	inner := map[string]bool{}
+	collectLabels(body.List, inner)
+	return c.exitsLoopBody(body.List, false, inner)
+}
+
+// collectLabels records every label declared in stmts; a goto to a label outside
+// the set leaves the loop.
+func collectLabels(stmts []ast.Stmt, into map[string]bool) {
+	for _, s := range stmts {
+		switch v := s.(type) {
+		case *ast.BlockStmt:
+			collectLabels(v.List, into)
+		case *ast.IfStmt:
+			collectLabels([]ast.Stmt{v.Then, v.Else}, into)
+		case *ast.ForStmt:
+			collectLabels(v.Body.List, into)
+		case *ast.RangeStmt:
+			collectLabels(v.Body.List, into)
+		case *ast.SwitchStmt:
+			for _, cc := range v.Cases {
+				collectLabels(cc.Body, into)
+			}
+		case *ast.LabelStmt:
+			if v.Name != nil {
+				into[v.Name.Name] = true
+			}
+		}
+	}
+}
+
+func (c *typeChecker) exitsLoopBody(stmts []ast.Stmt, nested bool, inner map[string]bool) bool {
+	for _, s := range stmts {
+		if c.stmtExitsLoop(s, nested, inner) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *typeChecker) stmtExitsLoop(s ast.Stmt, nested bool, inner map[string]bool) bool {
+	switch v := s.(type) {
+	case nil:
+		return false
+	case *ast.BlockStmt:
+		return c.exitsLoopBody(v.List, nested, inner)
+	case *ast.IfStmt:
+		return c.stmtExitsLoop(v.Then, nested, inner) || c.stmtExitsLoop(v.Else, nested, inner)
+	case *ast.BreakStmt:
+		// A labelled break targets an outer construct, so it still exits.
+		return !nested || v.Label != nil
+	case *ast.ReturnStmt, *ast.RetStmt:
+		return true
+	case *ast.GotoStmt:
+		// The structured decompiler emits a goto to an outer label when it
+		// cannot turn a loop exit into a break.
+		return v.Name == nil || !inner[v.Name.Name]
+	case *ast.ForStmt:
+		return c.stmtExitsLoop(v.Body, true, inner)
+	case *ast.RangeStmt:
+		return c.stmtExitsLoop(v.Body, true, inner)
+	case *ast.SwitchStmt:
+		// A `break` inside a case leaves the switch, not the loop.
+		for _, cc := range v.Cases {
+			if c.exitsLoopBody(cc.Body, true, inner) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
 }
 
 // pauses reports whether any statement in stmts calls yield()/sleep(), directly
