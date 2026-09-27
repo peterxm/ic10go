@@ -594,6 +594,12 @@ namespace Ic10Go.Testbench
             catch (Exception ex) { throw new BenchError("internal", "write " + logic + ": " + ex.Message); }
         }
 
+        /// <summary>The chip's _Registers array (r0..r15, ra, sp), or null.</summary>
+        public static double[] ReadRegisters(ProgrammableChip chip)
+        {
+            try { return FRegs?.GetValue(chip) as double[]; } catch { return null; }
+        }
+
         public static double GetLogic(ILogicable dev, string logic, int slot, bool hasSlot)
         {
             if (dev == null) throw new BenchError("no-device", "no device on that port");

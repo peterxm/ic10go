@@ -36,6 +36,7 @@ namespace Ic10Go.Testbench
                 case "set": return Set(args);
                 case "get": return Get(args);
                 case "device": return Device(args);
+                case "trace": return Trace(args);
                 case "writes": return Writes(args);
                 case "run": return Run(args);
                 case "reset": return Reset(args);
@@ -220,6 +221,42 @@ namespace Ic10Go.Testbench
             bool clear = args["clear"] != null && (bool)args["clear"];
             int from = args["from"] != null ? (int)args["from"] : 0;
             return WriteTrace.Snapshot(clear, from);
+        }
+
+        private static readonly string[] StoreOps = { "s", "sd", "ss", "put", "putd", "clr", "clrd", "sb", "sbn", "sbs" };
+
+        /// <summary>trace {n} runs n instructions one at a time and returns every
+        /// store instruction it executed (line + register snapshot), so a script
+        /// that is believed to be idle can be checked.</summary>
+        private static JObject Trace(JObject args)
+        {
+            var h = ResolveChip(args["chip"]);
+            if (h.Chip == null) throw new BenchError("no-chip", "selected holder is not a ProgrammableChip");
+            int n = args["n"] != null ? (int)args["n"] : 512;
+            if (n < 1) n = 1;
+            if (n > 100000) n = 100000;
+            string srcText = "";
+            try { srcText = h.Chip.GetSourceCode(); } catch { }
+            var src = srcText.Replace("\r", "").Split('\n');
+            var hits = new JArray();
+            int steps = 0;
+            for (int i = 0; i < n; i++)
+            {
+                int pc = -1;
+                try { pc = (int)h.Chip.LineNumber; } catch { }
+                string text = pc >= 0 && pc < src.Length ? src[pc].Trim() : "";
+                string op = text.Length == 0 ? "" : text.Split(' ')[0];
+                if (Array.IndexOf(StoreOps, op) >= 0)
+                {
+                    var regs = GameApi.ReadRegisters(h.Chip);
+                    var snap = new JArray();
+                    if (regs != null) foreach (var v in regs) snap.Add(v);
+                    hits.Add(new JObject { ["pc"] = pc, ["text"] = text, ["regs"] = snap });
+                }
+                try { h.Chip.Execute(1); } catch { break; }
+                steps++;
+            }
+            return new JObject { ["steps"] = steps, ["hitCount"] = hits.Count, ["hits"] = hits };
         }
 
         // -- watch ------------------------------------------------------------
