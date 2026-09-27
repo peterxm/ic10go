@@ -127,6 +127,10 @@ func (d *decompiler) valueOperandOK(s string) bool {
 			return true
 		}
 	}
+	// A label name is its line number when used as a value.
+	if _, ok := d.nameToLine[s]; ok {
+		return true
+	}
 	return false
 }
 

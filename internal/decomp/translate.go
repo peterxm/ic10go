@@ -81,6 +81,21 @@ func (d *decompiler) translate(l icLine) []string {
 	if !d.validOperands(l) {
 		return d.invalid(l)
 	}
+	// A label used as a value is its line number. Only the `move` form is
+	// translated: in other positions the compiler can leave an unresolved label
+	// reference (see docs/backlog.md), so those instructions are reported
+	// instead of emitting a program that does not assemble.
+	if l.op != "move" {
+		target := jumpTargetIndex(l.op)
+		for i, a := range l.args {
+			if i == target {
+				continue
+			}
+			if _, ok := d.nameToLine[d.resolve(a)]; ok {
+				return d.unsupported(l)
+			}
+		}
+	}
 	switch l.op {
 	case "move":
 		// A constant stored into the return-address register is a manual

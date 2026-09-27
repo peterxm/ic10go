@@ -253,6 +253,14 @@ func (d *decompiler) operand(s string) string {
 		i, _ := bankRegIndex(s)
 		return fmt.Sprintf("ireg(%d)", i)
 	}
+	// A label used as a value is its line number; .icg expresses that with the
+	// label itself, which the compiler resolves against its own layout. Names
+	// that are something else in operand position (a logic type, a port, a
+	// number, ...) keep their meaning.
+	if line, ok := d.nameToLine[s]; ok && !knownOperandNames[s] && !isNumberOperand(s) &&
+		!isPortName(s) && !isCallLike(s) && !isStringLiteral(s) {
+		return d.labelOf(line)
+	}
 	return normalizeCall(normalizeHash(normalizeNumber(s)))
 }
 
@@ -490,6 +498,11 @@ func (d *decompiler) absolute(l icLine, idx int) (int, bool) {
 func (d *decompiler) labelOf(line int) string {
 	if name, ok := d.labelAt[line]; ok {
 		return name
+	}
+	// A label that is not a jump target still has a source name; use it so a
+	// label used as a value (its line number) resolves to a defined label.
+	if names := d.labelsAt[line]; len(names) > 0 {
+		return names[0]
 	}
 	return fmt.Sprintf("L%d", line)
 }

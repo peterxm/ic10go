@@ -652,12 +652,22 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 			code = strings.ReplaceAll(code, ref, strconv.Itoa(start[b]))
 		}
 	}
+	// A label reference whose block is not in the layout cannot be resolved;
+	// emitting the placeholder would write control characters into the program.
+	// This is a compiler bug (see docs/backlog.md), so fail loudly.
+	unresolved := strings.IndexByte(code, '\x01') >= 0
 
 	report := &Report{Total: len(lines), ByFunc: map[string]int{}}
 	for _, ln := range lines {
 		report.ByFunc[ln.fn]++
 	}
 
+	if unresolved {
+		// A label reference whose block is not in the layout cannot be resolved;
+		// emitting the placeholder would write control characters into the
+		// program. This is a compiler bug (see docs/backlog.md), so fail loudly.
+		return "", report, fmt.Errorf("internal error: unresolved label reference in generated code")
+	}
 	if err := ValidateWith(code, opts.Limits); err != nil {
 		return "", report, err
 	}

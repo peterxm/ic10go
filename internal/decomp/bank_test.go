@@ -60,3 +60,34 @@ func TestDecompileNestedIndirect(t *testing.T) {
 		}
 	}
 }
+
+// IC10 lets a label be used as a value (its line number). .icg expresses that
+// with the label itself, which the compiler resolves against its own layout.
+func TestDecompileLabelAsValue(t *testing.T) {
+	// Only the assignment form is translated (see docs/backlog.md): the
+	// compiler resolves a label reference reliably there.
+	src := "move r15 target\ns db Setting r15\ntarget:\nyield\n"
+	code, warns, err := Decompile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v\n%s", warns, code)
+	}
+	if !strings.Contains(code, "r15 := target") {
+		t.Errorf("output is missing the label value:\n%s", code)
+	}
+}
+
+// A label used as a value in another position is reported rather than
+// translated into a program that does not assemble.
+func TestDecompileLabelAsValueElsewhereWarns(t *testing.T) {
+	src := "brlt r15 target 3\ns db Setting r15\ntarget:\nyield\n"
+	code, warns, err := Decompile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) == 0 {
+		t.Fatalf("expected a warning for the branch-condition label:\n%s", code)
+	}
+}

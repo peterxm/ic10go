@@ -449,3 +449,19 @@ func TestIndirectRegisterOutOfRange(t *testing.T) {
 		t.Fatal("expected an out-of-range pointer error")
 	}
 }
+
+// A label used as a value is its line number, counting every source line
+// (comments and blanks included). Verified against the game: with the label on
+// the fourth line the chip stores 3.
+func TestLabelAsValue(t *testing.T) {
+	m := New()
+	if err := m.Load("move r1 near\n# comment\n\nnear:\nyield\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(5); err != nil && err != ErrStepLimit {
+		t.Fatalf("run: %v", err)
+	}
+	if m.Regs[1] != 3 {
+		t.Fatalf("r1 = %v, want 3 (the label's line number)", m.Regs[1])
+	}
+}

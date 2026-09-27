@@ -690,6 +690,10 @@ func (m *Machine) num(s string) (float64, error) {
 	if v, ok := parseNum(s); ok {
 		return v, nil
 	}
+	// A label used as a value is its line number (the assembler resolves it).
+	if line, ok := m.Program.Labels[s]; ok {
+		return float64(line), nil
+	}
 	return 0, fmt.Errorf("not a number or register: %q", s)
 }
 
