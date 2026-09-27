@@ -37,6 +37,7 @@ namespace Ic10Go.Testbench
                 case "get": return Get(args);
                 case "device": return Device(args);
                 case "trace": return Trace(args);
+                case "program": return ProgramCmd(args);
                 case "writes": return Writes(args);
                 case "run": return Run(args);
                 case "reset": return Reset(args);
@@ -257,6 +258,18 @@ namespace Ic10Go.Testbench
                 steps++;
             }
             return new JObject { ["steps"] = steps, ["hitCount"] = hits.Count, ["hits"] = hits };
+        }
+
+        /// <summary>program {} returns the chip's current IC10 source, so a chip
+        /// can be decompiled/recompiled without guessing from a save.</summary>
+        private static JObject ProgramCmd(JObject args)
+        {
+            var h = ResolveChip(args["chip"]);
+            if (h.Chip == null) throw new BenchError("no-chip", "selected holder is not a ProgrammableChip");
+            string code = "";
+            try { code = h.Chip.GetSourceCode(); } catch { }
+            int lines = code.Length == 0 ? 0 : code.Replace("\r", "").Split('\n').Length;
+            return new JObject { ["lines"] = lines, ["code"] = code };
         }
 
         // -- watch ------------------------------------------------------------

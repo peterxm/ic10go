@@ -61,5 +61,6 @@ cp bin/Release/ic10go-testbench.dll \
 |---|---|
 | `device {ids:[…]}` | 按 ReferenceId 读设备的 logic + 槽位（可读的才读得到） |
 | `trace {n}` | 逐条 `Execute(1)`，返回执行到的存储指令 + 寄存器 |
+| `program` | 芯片当前 IC10 源码（配合 `--from-chip`，无需从存档猜源码） |
 | `writes {clear?,from?}` | Harmony 钩子记录的 logic 写（含**游戏自身**的写；对芯片的写无效） |
 | `get`/`set` | `port` 或 `id` |

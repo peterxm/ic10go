@@ -70,6 +70,10 @@ def val(tok, al, de, regs):
     if m:
         i = int(m.group(1))
         return regs[i] if i < len(regs) else None
+    if t == "ra":
+        return regs[16] if len(regs) > 16 else None
+    if t == "sp":
+        return regs[17] if len(regs) > 17 else None
     mh = re.match(r'HASH\("([^"]*)"\)', t)
     if mh:
         h = zlib.crc32(mh.group(1).encode()) & 0xffffffff
@@ -122,6 +126,10 @@ def run_once(b, chip, code, n):
     return [effect(h, al, de) for h in hits]
 
 
+def fetch_program(b, chip):
+    return b.call("program", {"chip": chip})["code"]
+
+
 def compare(label, A, B):
     m = min(len(A), len(B))
     bad = [(i, A[i], B[i]) for i in range(m) if A[i] != B[i]]
@@ -134,7 +142,8 @@ def compare(label, A, B):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("chip")
-    ap.add_argument("original")
+    ap.add_argument("original", nargs="?", help="IC10 file; omit with --from-chip")
+    ap.add_argument("--from-chip", action="store_true", help="use the chip's current source")
     ap.add_argument("--n", type=int, default=4000)
     ap.add_argument("--ic10c", default="ic10c")
     ap.add_argument("--addr", default="127.0.0.1:7800")
@@ -145,13 +154,19 @@ def main():
     ADDR = (host, int(port or 7800))
 
     target = {"index": int(args.chip)} if args.chip.isdigit() else {"name": args.chip}
-    orig = open(args.original).read()
-    recomp = recompile(args.ic10c, args.original)
-
     b = Bench()
     b.call("pause", {"on": True})
     b.call("chip.select", {"target": target})
+    srcpath = args.original
     try:
+        if args.from_chip or not args.original:
+            orig = fetch_program(b, target)
+            srcpath = tempfile.NamedTemporaryFile(suffix=".ic10", delete=False).name
+            open(srcpath, "w").write(orig)
+        else:
+            orig = open(srcpath).read()
+        recomp = recompile(args.ic10c, srcpath)
+
         O1 = run_once(b, target, orig, args.n)
         O2 = run_once(b, target, orig, args.n)
         R = run_once(b, target, recomp, args.n)

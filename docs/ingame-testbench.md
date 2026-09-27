@@ -197,6 +197,7 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `device` | `{ids:[...]}` | `{devices:[{id,logic,slots,…}]}`（按 ReferenceId） |
 | `writes` | `{clear?:bool, from?:int}` | `{writes:[{seq,id,device,logic,slot,value}], count}` |
 | `trace` | `{n:int}` | `{steps, hitCount, hits:[{pc,text,regs}]}`（逐条 `Execute(1)`，只回存储指令） |
+| `program` | `{}` | `{lines, code}`（芯片当前 IC10 源码） |
 | `run` | `{ticks:n, mode?:"step"|"realtime"}` | `{ticks, line}` |
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
 | `ports` | `{chip?}` | diagnostic: `Devices[]`, ids, labels, lookups |
