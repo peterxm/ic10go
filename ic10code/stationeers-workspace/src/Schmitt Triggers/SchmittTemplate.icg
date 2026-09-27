@@ -2,6 +2,9 @@
 //
 // 原脚本：Schmitt Triggers/SchmittTemplate.ic10
 // 用途：把 gasTempDevice 的温度回显到宿主 Setting，并驱动 radiatorValve。
+//
+// 与原脚本保持相同的两态结构与可观测写顺序：每个状态先写 valve.On，再读
+// 温度、写 db.Setting；状态切换时不插入 yield。
 
 const radiatorValve = d0
 const gasTempDevice = d1
@@ -10,15 +13,20 @@ const minTemp = 650
 const maxTemp = 700
 
 func main() {
-    cooling := false
     for {
-        yield()
-
+        // 不冷却：阀门关；温度达到 maxTemp 切换到冷却。
+        radiatorValve.On = 0
         t := gasTempDevice.Temperature
         db.Setting = t
-
-        if t >= maxTemp { cooling = true }
-        if t < minTemp { cooling = false }
-        radiatorValve.On = cooling ? 1 : 0
+        if t >= maxTemp {
+            for {
+                radiatorValve.On = 1
+                t = gasTempDevice.Temperature
+                db.Setting = t
+                if t < minTemp { break }
+                yield()
+            }
+        }
+        yield()
     }
 }

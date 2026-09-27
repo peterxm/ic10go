@@ -96,39 +96,46 @@ func TestIc10CodePorts(t *testing.T) {
 				t.Fatalf("port failed to compile: diags=%v err=%v", diags.Diags, err)
 			}
 
-			a := vm.New()
-			portSetup(a)
-			if err := a.Load(string(origSrc)); err != nil {
-				t.Fatalf("original load: %v", err)
-			}
-
-			b := vm.New()
-			portSetup(b)
-			// If the port uses a data segment, install it with the loader.
-			if loader, lerr := ic10.DataLoader(port, newSrc); lerr == nil && loader != "" {
-				lm := vm.New()
-				if err := lm.Load(loader); err != nil {
-					t.Fatalf("loader load: %v", err)
-				}
-				if err := lm.Run(200); err != nil && err != vm.ErrStepLimit {
-					t.Fatalf("loader run: %v", err)
-				}
-				copy(b.Stack, lm.Stack)
-			}
-			if err := b.Load(compiled); err != nil {
-				t.Fatalf("port load: %v", err)
-			}
-
 			// Compare the set of device states reached rather than a
 			// fixed-step snapshot: the port and the original may take a
 			// different number of instructions per iteration, and may even
 			// converge or cycle differently, but they must visit the same
-			// device states.
-			sa := stateSet(a, 8000)
-			sb := stateSet(b, 8000)
-			if !sameStateSet(sa, sb) {
-				t.Errorf("reachable device states differ\n only original: %s\n only port: %s",
-					diffStates(sa, sb), diffStates(sb, sa))
+			// device states. Run the fixed setup plus several random
+			// device-value seeds so value-dependent branches are covered.
+			for _, seed := range []int64{0, 1, 2, 3, 4, 5} {
+				a := vm.New()
+				b := vm.New()
+				if seed == 0 {
+					portSetup(a)
+					portSetup(b)
+				} else {
+					portSetupSeed(a, seed)
+					portSetupSeed(b, seed)
+				}
+				if err := a.Load(string(origSrc)); err != nil {
+					t.Fatalf("original load: %v", err)
+				}
+				// If the port uses a data segment, install it with the loader.
+				if loader, lerr := ic10.DataLoader(port, newSrc); lerr == nil && loader != "" {
+					lm := vm.New()
+					if err := lm.Load(loader); err != nil {
+						t.Fatalf("loader load: %v", err)
+					}
+					if err := lm.Run(200); err != nil && err != vm.ErrStepLimit {
+						t.Fatalf("loader run: %v", err)
+					}
+					copy(b.Stack, lm.Stack)
+				}
+				if err := b.Load(compiled); err != nil {
+					t.Fatalf("port load: %v", err)
+				}
+
+				sa := stateSet(a, 8000)
+				sb := stateSet(b, 8000)
+				if !sameStateSet(sa, sb) {
+					t.Errorf("seed %d: reachable device states differ\n only original: %s\n only port: %s",
+						seed, diffStates(sa, sb), diffStates(sb, sa))
+				}
 			}
 		})
 	}
