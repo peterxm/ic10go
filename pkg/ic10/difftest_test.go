@@ -317,7 +317,7 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		g.simple(sb, ind)
 		return
 	}
-	switch g.rng.Intn(26) {
+	switch g.rng.Intn(27) {
 	case 0, 1:
 		g.simple(sb, ind)
 	case 2, 3:
@@ -445,6 +445,13 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 		fmt.Fprintf(sb, "%s%s = get(%s, %d)\n", ind, g.varName(), g.stackDev(), g.rng.Intn(8))
 	case 25:
 		fmt.Fprintf(sb, "%sclr(%s)\n", ind, g.stackDev())
+	case 26:
+		// Network channels (IC10 `l/s d?:conn ChannelN`).
+		if g.rng.Intn(2) == 0 {
+			fmt.Fprintf(sb, "%s%s.channel[%d][%d] = %s\n", ind, g.channelDev(), g.rng.Intn(4), g.rng.Intn(8), g.expr(2))
+		} else {
+			fmt.Fprintf(sb, "%s%s = %s.channel[%d][%d]\n", ind, g.varName(), g.channelDev(), g.rng.Intn(4), g.rng.Intn(8))
+		}
 	default:
 		ncase := 2 + g.rng.Intn(9) // 2..10 dense cases
 		if g.rng.Intn(2) == 0 {
@@ -504,6 +511,12 @@ func (g *gen) stackDev() string {
 func (g *gen) devTarget() string {
 	logics := []string{"On", "Setting", "Mode"}
 	return g.devPort() + "." + logics[g.rng.Intn(len(logics))]
+}
+
+// channelDev returns a device port whose network channels are safe to use.
+func (g *gen) channelDev() string {
+	devs := []string{"d0", "d1", "d2"}
+	return devs[g.rng.Intn(len(devs))]
 }
 
 func (g *gen) expr(depth int) string {
