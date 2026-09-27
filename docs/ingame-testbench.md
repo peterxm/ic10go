@@ -192,8 +192,9 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `chip.select` | `{target:{id?|name?|index?}}` | `{chip}` |
 | `push` | `{code, loaders?:[string], reset?:bool}` | `{chip, lines, loaders, compileError?}` |
 | `state` | `{include?:["registers","stack","devices","program","errors"]}` | `state`（见 §4.3） |
-| `set` | `{writes:[{port,logic,slot?,value}], force?:bool, pulse?:bool}` | `{applied:n}` |
-| `get` | `{reads:[{port,logic,slot?}]}` | `{values:[...]}` |
+| `set` | `{writes:[{port,logic,slot?,value}], force?:bool, pulse?:bool}` — `port` or `id` | `{applied:n}` |
+| `get` | `{reads:[{port,logic,slot?}]}` — `port` or `id` | `{values:[...]}` |
+| `device` | `{ids:[...]}` | `{devices:[{id,logic,slots,…}]}`（按 ReferenceId） |
 | `run` | `{ticks:n, mode?:"step"|"realtime"}` | `{ticks, line}` |
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
 | `ports` | `{chip?}` | diagnostic: `Devices[]`, ids, labels, lookups |
