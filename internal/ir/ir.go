@@ -483,6 +483,10 @@ type Function struct {
 	Blocks  []*Block
 	Entry   *Block
 	NumRegs int
+	// Params are registers that are defined before the function runs: function
+	// parameters written at the call site, and values a pass models as
+	// pre-initialised (e.g. mem2reg's promoted-slot initial value).
+	Params []*Reg
 	// ReservedRegs marks physical registers the function accesses indirectly
 	// (IC10 rrN via ireg/setIreg, declared with reserveRegs). The allocator
 	// never colours a virtual register there, so indirect access is safe.

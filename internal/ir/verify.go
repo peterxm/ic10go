@@ -52,6 +52,40 @@ func Verify(fn *Function) error {
 			}
 		}
 	}
+	if err := verifyDefinite(fn); err != nil {
+		return err
+	}
+	return nil
+}
+
+func verifyDefinite(fn *Function) error {
+	defined := map[*Reg]bool{}
+	for _, r := range fn.Params {
+		defined[r] = true
+	}
+	for _, b := range fn.Blocks {
+		for _, ins := range b.Instrs {
+			_, d := DefUse(ins)
+			for _, r := range d {
+				defined[r] = true
+			}
+		}
+	}
+	for _, b := range fn.Blocks {
+		for _, ins := range b.Instrs {
+			u, _ := DefUse(ins)
+			for _, r := range u {
+				if !defined[r] {
+					return fmt.Errorf("ir: block %d uses register %d %q, which is never defined", b.ID, r.ID, r.Name)
+				}
+			}
+		}
+		for _, r := range TermUses(b.Term) {
+			if !defined[r] {
+				return fmt.Errorf("ir: block %d's terminator uses register %d %q, which is never defined", b.ID, r.ID, r.Name)
+			}
+		}
+	}
 	return nil
 }
 

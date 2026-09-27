@@ -192,6 +192,7 @@ func promoteSlot(fn *ir.Function, slot int) bool {
 	merge := map[*ir.Block]*ir.Reg{}
 	if needsInit {
 		regIn[fn.Entry] = fn.NewReg("slotinit")
+		fn.Params = append(fn.Params, regIn[fn.Entry])
 	}
 	for changed := true; changed; {
 		changed = false

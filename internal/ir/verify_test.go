@@ -55,3 +55,25 @@ func TestVerifyReachableRejectsUnreachable(t *testing.T) {
 		t.Fatal("expected VerifyReachable to reject the unreachable block")
 	}
 }
+
+func TestVerifyRejectsUndefinedUse(t *testing.T) {
+	fn := &Function{Name: "main"}
+	entry := fn.NewBlock()
+	entry.Instrs = append(entry.Instrs, &Assign{Dst: fn.NewReg("a"), Src: fn.NewReg("never")})
+	entry.Term = &Ret{}
+	if err := Verify(fn); err == nil {
+		t.Fatal("expected an error for a use of a register that is never defined")
+	}
+}
+
+func TestVerifyAcceptsParamUse(t *testing.T) {
+	fn := &Function{Name: "main"}
+	p := fn.NewReg("p")
+	fn.Params = append(fn.Params, p)
+	entry := fn.NewBlock()
+	entry.Instrs = append(entry.Instrs, &Assign{Dst: fn.NewReg("a"), Src: p})
+	entry.Term = &Ret{}
+	if err := Verify(fn); err != nil {
+		t.Fatalf("a Params register must count as defined: %v", err)
+	}
+}
