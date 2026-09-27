@@ -783,6 +783,8 @@ func baseCompletionItems() []completionItem {
 		ci("writeById", 3, "device by ReferenceId"),
 		ci("readDevSlot", 3, "runtime device port slot"),
 		ci("writeDevSlot", 3, "runtime device port slot"),
+		ci("readByIdSlot", 3, "device by ReferenceId slot"),
+		ci("writeByIdSlot", 3, "device by ReferenceId slot"),
 		ci("isLoadValid", 3, "condition only"),
 		ci("isStoreValid", 3, "condition only"),
 		ci("hash", 3, "compile-time CRC-32"), ci("str", 3, "display string"), ci("raw", 3, "verbatim operand"),
@@ -1118,6 +1120,9 @@ var callParams = map[string][]string{
 
 	"readDevSlot":  {"value", "value", "slot"},
 	"writeDevSlot": {"value", "value", "slot", "value"},
+
+	"readByIdSlot":  {"value", "value", "slot"},
+	"writeByIdSlot": {"value", "value", "slot", "value"},
 }
 
 // argCompletionItems returns context-specific completions when off sits at a

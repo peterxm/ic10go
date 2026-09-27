@@ -657,7 +657,7 @@ func (m *Machine) target(s string) (int, error) {
 // understands. It is checked before dispatch so a malformed line returns an
 // error instead of panicking on an out-of-range operand index.
 var opArity = map[string]int{
-	"move": 2, "select": 4, "rand": 1, "not": 2, "neg": 2,
+	"move": 2, "select": 4, "rand": 1, "not": 2,
 	"add": 3, "sub": 3, "mul": 3, "div": 3, "mod": 3, "pow": 3, "atan2": 3, "min": 3, "max": 3,
 	"and": 3, "or": 3, "xor": 3, "nor": 3, "sll": 3, "sra": 3, "srl": 3, "sla": 3, "rol": 3, "ror": 3,
 	"ext": 4, "ins": 4, "clamp": 4, "lerp": 4,
@@ -802,8 +802,6 @@ func (m *Machine) execOp(ins *Instr) error {
 		mask := bitMask(length) << off
 		m.Regs[dst] = float64((base & ^mask) | ((field << off) & mask))
 		return nil
-	case "neg":
-		return m.setDst(a[0], -mustNum(m, a[1]))
 	case "abs", "sgn", "sqrt", "exp", "log", "floor", "ceil", "round", "trunc",
 		"sin", "cos", "tan", "asin", "acos", "atan":
 		return m.unOp(ins.Op, a[0], a[1])

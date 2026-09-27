@@ -154,4 +154,18 @@ var IC10Instructions = map[string]IC10Insn{
 	"trunc":  {"REGISTER VALUE", "Register = a with fractional part removed"},
 	"xor":    {"REGISTER VALUE VALUE", "Performs a bitwise logical XOR (exclusive OR) operation on the binary representation of two values. Each bit of the result is determined by evaluating the corresponding bits of the input values. If the bits are different (one bit is 0 and the other is 1), the resulting bit is set to 1. If the bits are the same (both 0 or both 1), the resulting bit is set to 0."},
 	"yield":  {"", "Pauses execution for 1 tick"},
+
+	// The game accepts these mnemonics but its localization (ScriptCommandHelp)
+	// omits them, so they are listed explicitly (verified against the game).
+	"clamp": {"REGISTER VALUE VALUE VALUE", "Register = a clamped to the inclusive range [b, c]."},
+	"clr":   {"DEVICE", "Clears a device's stack."},
+	"clrd":  {"DEVICE_ID", "Clears the stack of the device with the given id."},
+	"ext":   {"REGISTER VALUE VALUE VALUE", "Register = the bit field of a starting at b for c bits."},
+	"ins":   {"REGISTER VALUE VALUE VALUE", "Register = a with b inserted at bit c for d bits."},
+	"lerp":  {"REGISTER VALUE VALUE VALUE", "Register = linear interpolation from a to b by t."},
+	"pow":   {"REGISTER VALUE VALUE", "Register = a raised to the power b."},
+	"rmap":  {"REGISTER DEVICE VALUE", "Register = the prefab hash that reagent value b maps to on a device."},
+	"rol":   {"REGISTER VALUE VALUE", "Register = a rotated left by b bits."},
+	"ror":   {"REGISTER VALUE VALUE", "Register = a rotated right by b bits."},
+	"sgn":   {"REGISTER VALUE", "Register = the sign of a: -1, 0 or 1."},
 }

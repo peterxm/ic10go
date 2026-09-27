@@ -213,6 +213,13 @@ func init() {
 	// readReagentById(reg, mode, key): lr r? rN mode key (device by ReferenceId).
 	add("readReagentById", 3, true, "lr")
 
+	// readByIdSlot(id, index, slt) / writeByIdSlot(id, index, slt, v): read or
+	// write a device slot by ReferenceId (IC10 "ls r? rN i slt" / "ss rN i slt r?").
+	// Lowered specially (the slot type is a name, not a value); listed here so
+	// codegen renders them.
+	add("readByIdSlot", 3, true, "ls")
+	add("writeByIdSlot", 4, false, "ss")
+
 	// Bitwise and approximate comparison forms that IC10 has but Go-like
 	// operators do not express in a single instruction.
 	add("logicalNor", 2, true, "nor")

@@ -119,8 +119,8 @@ func (d *decompiler) translate(l icLine) []string {
 			return []string{d.assignDst(l.args[0], fmt.Sprintf("readDevSlot(%s, %s, %s)", reg, d.a(l, 2), l.args[3]))}
 		}
 		if _, ok := d.deviceIDArg(l.args[1]); ok {
-			// `ls r? i slt` (slot by ReferenceId) has no .icg form yet.
-			return d.unsupported(l)
+			// `ls r? rN i slt` (slot by ReferenceId).
+			return []string{d.assignDst(l.args[0], fmt.Sprintf("readByIdSlot(%s, %s, %s)", d.a(l, 1), d.a(l, 2), l.args[3]))}
 		}
 		dst := d.assignDst(l.args[0], fmt.Sprintf("%s.slot[%s].%s", d.resolve(l.args[1]), d.a(l, 2), l.args[3]))
 		return []string{dst}
@@ -129,8 +129,8 @@ func (d *decompiler) translate(l icLine) []string {
 			return []string{fmt.Sprintf("writeDevSlot(%s, %s, %s, %s)", reg, d.a(l, 1), l.args[2], d.a(l, 3))}
 		}
 		if _, ok := d.deviceIDArg(l.args[0]); ok {
-			// `ss r? i slt r?` (slot by ReferenceId) has no .icg form yet.
-			return d.unsupported(l)
+			// `ss rN i slt r?` (slot by ReferenceId).
+			return []string{fmt.Sprintf("writeByIdSlot(%s, %s, %s, %s)", d.a(l, 0), d.a(l, 1), l.args[2], d.a(l, 3))}
 		}
 		return []string{fmt.Sprintf("%s.slot[%s].%s = %s", d.resolve(l.args[0]), d.a(l, 1), l.args[2], d.a(l, 3))}
 	case "lb", "lbn", "lbs", "lbns":

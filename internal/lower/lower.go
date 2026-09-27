@@ -1998,6 +1998,45 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		return &ir.Const{V: 0}
 	}
 
+	// readByIdSlot(id, index, slt) / writeByIdSlot(id, index, slt, v) read or
+	// write a device slot by ReferenceId (IC10 "ls r? rN i slt" / "ss rN i slt r?").
+	if id.Name == "readByIdSlot" {
+		if len(call.Args) != 3 {
+			l.diags.Errorf(call.Pos(), "readByIdSlot expects a device id, a slot index and a slot type")
+			return &ir.Const{V: 0}
+		}
+		devID := l.lowerExpr(call.Args[0])
+		index := l.lowerExpr(call.Args[1])
+		slt, ok := l.logicName(call.Args[2])
+		if !ok {
+			l.diags.Errorf(call.Args[2].Pos(), "expected a slot type name")
+			return &ir.Const{V: 0}
+		}
+		l.checkSlot(call.Args[2].Pos(), slt)
+		r := l.b.NewReg("readslot")
+		l.b.Emit(&ir.Builtin{Name: "readByIdSlot", Dst: r,
+			Args: []ir.Value{devID, index, &ir.Const{Raw: slt}}})
+		return r
+	}
+	if id.Name == "writeByIdSlot" {
+		if len(call.Args) != 4 {
+			l.diags.Errorf(call.Pos(), "writeByIdSlot expects a device id, a slot index, a slot type and a value")
+			return &ir.Const{V: 0}
+		}
+		devID := l.lowerExpr(call.Args[0])
+		index := l.lowerExpr(call.Args[1])
+		slt, ok := l.logicName(call.Args[2])
+		if !ok {
+			l.diags.Errorf(call.Args[2].Pos(), "expected a slot type name")
+			return &ir.Const{V: 0}
+		}
+		l.checkSlot(call.Args[2].Pos(), slt)
+		src := l.lowerExpr(call.Args[3])
+		l.b.Emit(&ir.Builtin{Name: "writeByIdSlot",
+			Args: []ir.Value{devID, index, &ir.Const{Raw: slt}, src}})
+		return &ir.Const{V: 0}
+	}
+
 	// jump(expr) performs a computed jump (IC10 "j r0").
 	if id.Name == "jump" {
 		if len(call.Args) != 1 {

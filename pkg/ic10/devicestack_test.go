@@ -224,6 +224,41 @@ func TestReadWriteByID(t *testing.T) {
 	}
 }
 
+// TestReadWriteByIdSlot checks readByIdSlot/writeByIdSlot (IC10 ls/ss by
+// ReferenceId) emit the bare slot name with the id as the device operand.
+func TestReadWriteByIdSlot(t *testing.T) {
+	src := `func main() {
+    r0 := readByIdSlot(7, 2, Occupied)
+    writeByIdSlot(7, 2, OccupantHash, r0)
+}`
+	code := mustCompile(t, src)
+	if !strings.Contains(code, "ls ") || !strings.Contains(code, "ss ") {
+		t.Fatalf("expected ls/ss, got:\n%s", code)
+	}
+	if !strings.Contains(code, "Occupied") || !strings.Contains(code, "OccupantHash") {
+		t.Errorf("expected bare slot names:\n%s", code)
+	}
+	if strings.Contains(code, "SlotType.") || strings.Contains(code, "Occupied.slot") {
+		t.Errorf("unexpected qualified slot type:\n%s", code)
+	}
+}
+
+// TestDecompileSlotById checks ls/ss with a ReferenceId register become
+// readByIdSlot/writeByIdSlot (and recompile).
+func TestDecompileSlotById(t *testing.T) {
+	src := "ls r0 r1 2 Occupied\nss r1 2 OccupantHash r0\nj 0\n"
+	code, _, err := ic10.Decompile("t.ic", []byte(src), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(code, "readByIdSlot(") || !strings.Contains(code, "writeByIdSlot(") {
+		t.Fatalf("expected readByIdSlot/writeByIdSlot, got:\n%s", code)
+	}
+	if _, diags, cerr := ic10.Compile("t.icg", []byte(code)); diags.HasErrors() || cerr != nil {
+		t.Fatalf("decompiled output does not compile: %v %v\n%s", diags.Diags, cerr, code)
+	}
+}
+
 // TestDeviceStackByID checks the id.stack[addr] sugar (getd/putd by id).
 func TestDeviceStackByID(t *testing.T) {
 	src := `func main() {

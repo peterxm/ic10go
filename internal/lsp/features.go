@@ -1197,6 +1197,7 @@ var specialBuiltins = map[string]bool{
 	"hash": true, "str": true, "raw": true,
 	"read": true, "write": true, "readDev": true, "writeDev": true,
 	"readById": true, "writeById": true, "readDevSlot": true, "writeDevSlot": true,
+	"readByIdSlot": true, "writeByIdSlot": true,
 	"jump": true, "ireg": true, "setIreg": true,
 	"isLoadValid": true, "isStoreValid": true,
 }

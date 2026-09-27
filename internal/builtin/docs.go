@@ -80,14 +80,16 @@ var Docs = map[string]Doc{
 	"readReagent": {"readReagent(dev, mode, key)", "Read a device reagent (IC10 lr).", "读取设备反应物（IC10 lr）。"},
 	"logicalNor":  {"logicalNor(a, b)", "Bitwise NOR (IC10 nor).", "按位或非（IC10 nor）。"},
 
-	"read":         {"read(dev, lt)", "Read a device logic type chosen at runtime.", "读取运行期决定的 logic type。"},
-	"write":        {"write(dev, lt, v)", "Write a device logic type chosen at runtime.", "写入运行期决定的 logic type。"},
-	"readById":     {"readById(id, lt)", "Read a logic type from a device by ReferenceId (IC10 ld).", "按 ReferenceId 读取 logic type（IC10 ld）。"},
-	"writeById":    {"writeById(id, lt, v)", "Write a logic type to a device by ReferenceId (IC10 sd).", "按 ReferenceId 写入 logic type（IC10 sd）。"},
-	"readDevSlot":  {"readDevSlot(reg, index, slt)", "Read a slot property from a runtime-selected device port (IC10 ls drN).", "从运行期选择的设备端口读取槽位属性（IC10 ls drN）。"},
-	"writeDevSlot": {"writeDevSlot(reg, index, slt, v)", "Write a slot property to a runtime-selected device port (IC10 ss drN).", "向运行期选择的设备端口写入槽位属性（IC10 ss drN）。"},
-	"isLoadValid":  {"isLoadValid(dev, \"lt\")", "Condition: device supports reading lt.", "条件：设备支持读取该 logic type。"},
-	"isStoreValid": {"isStoreValid(dev, \"lt\")", "Condition: device supports writing lt.", "条件：设备支持写入该 logic type。"},
+	"read":          {"read(dev, lt)", "Read a device logic type chosen at runtime.", "读取运行期决定的 logic type。"},
+	"write":         {"write(dev, lt, v)", "Write a device logic type chosen at runtime.", "写入运行期决定的 logic type。"},
+	"readById":      {"readById(id, lt)", "Read a logic type from a device by ReferenceId (IC10 ld).", "按 ReferenceId 读取 logic type（IC10 ld）。"},
+	"writeById":     {"writeById(id, lt, v)", "Write a logic type to a device by ReferenceId (IC10 sd).", "按 ReferenceId 写入 logic type（IC10 sd）。"},
+	"readByIdSlot":  {"readByIdSlot(id, index, slt)", "Read a slot property from a device by ReferenceId (IC10 ls rN).", "按 ReferenceId 读取槽位属性（IC10 ls rN）。"},
+	"writeByIdSlot": {"writeByIdSlot(id, index, slt, v)", "Write a slot property to a device by ReferenceId (IC10 ss rN).", "按 ReferenceId 写入槽位属性（IC10 ss rN）。"},
+	"readDevSlot":   {"readDevSlot(reg, index, slt)", "Read a slot property from a runtime-selected device port (IC10 ls drN).", "从运行期选择的设备端口读取槽位属性（IC10 ls drN）。"},
+	"writeDevSlot":  {"writeDevSlot(reg, index, slt, v)", "Write a slot property to a runtime-selected device port (IC10 ss drN).", "向运行期选择的设备端口写入槽位属性（IC10 ss drN）。"},
+	"isLoadValid":   {"isLoadValid(dev, \"lt\")", "Condition: device supports reading lt.", "条件：设备支持读取该 logic type。"},
+	"isStoreValid":  {"isStoreValid(dev, \"lt\")", "Condition: device supports writing lt.", "条件：设备支持写入该 logic type。"},
 }
 
 // BatchDocs documents the batch.* methods (keyed by method name).
