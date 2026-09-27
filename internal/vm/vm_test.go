@@ -71,6 +71,45 @@ func TestAbsJumpTargets(t *testing.T) {
 	}
 }
 
+// TestRunTicks checks the chip-tick model: a tick ends at yield/sleep, or after
+// the per-tick instruction budget (the game's 128) when the program never
+// yields.
+func TestRunTicks(t *testing.T) {
+	yielding := New()
+	if err := yielding.Load("move r0 0\nL:\nadd r0 r0 1\nyield\nblt r0 3 L"); err != nil {
+		t.Fatal(err)
+	}
+	if err := yielding.RunTicks(3); err != nil {
+		t.Fatal(err)
+	}
+	if yielding.Ticks != 3 || yielding.Regs[0] != 3 {
+		t.Errorf("yielding loop: Ticks=%d r0=%v, want 3/3", yielding.Ticks, yielding.Regs[0])
+	}
+
+	spin := New()
+	if err := spin.Load("move r0 0\nL:\nadd r0 r0 1\nj L"); err != nil {
+		t.Fatal(err)
+	}
+	if err := spin.RunTicks(1); err != nil {
+		t.Fatal(err)
+	}
+	if spin.Regs[0] >= DefaultTickLimit || spin.Regs[0] < DefaultTickLimit/4 {
+		t.Errorf("non-yielding ran %v instructions in one tick, want about %d", spin.Regs[0], DefaultTickLimit)
+	}
+
+	small := New()
+	small.TickLimit = 16
+	if err := small.Load("move r0 0\nL:\nadd r0 r0 1\nj L"); err != nil {
+		t.Fatal(err)
+	}
+	if err := small.RunTicks(1); err != nil {
+		t.Fatal(err)
+	}
+	if small.Regs[0] >= 16 {
+		t.Errorf("TickLimit=16 ran %v instructions", small.Regs[0])
+	}
+}
+
 func TestStackOps(t *testing.T) {
 	m := run(t, "push 3\npush 4\npop r0\npeek r1\ns d0 A r0\ns d1 B r1", 10)
 	if m.Get("d0", "A") != 4 || m.Get("d1", "B") != 3 {

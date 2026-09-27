@@ -89,8 +89,11 @@ type Machine struct {
 	Clock   float64
 	Ticks   int
 	Halted  bool
-	Devices map[string]*Device
-	order   []*Device
+	// TickLimit is the per-tick instruction budget RunTicks uses (0 means
+	// DefaultTickLimit, the game's 128).
+	TickLimit int
+	Devices   map[string]*Device
+	order     []*Device
 	// Trace, when non-nil, receives one line per executed instruction.
 	Trace io.Writer
 	// OnWrite, when non-nil, is called for every device logic write.
@@ -343,6 +346,38 @@ func (m *Machine) Run(maxSteps int) error {
 
 // ErrStepLimit indicates the execution budget was exhausted.
 var ErrStepLimit = fmt.Errorf("vm: step limit reached")
+
+// DefaultTickLimit is the game's per-tick instruction budget: ProgrammableChip
+// executes at most this many instructions per tick.
+const DefaultTickLimit = 128
+
+// RunTicks advances the chip by up to `ticks` ticks the way the game does: a
+// tick ends at yield/sleep, or after TickLimit instructions (DefaultTickLimit
+// when 0) if the program never yields. Unlike Run, the budget is per tick, so a
+// program that yields once per loop advances one tick per iteration. It stops
+// early when the program halts.
+func (m *Machine) RunTicks(ticks int) error {
+	if m.Program == nil {
+		return fmt.Errorf("vm: no program loaded")
+	}
+	limit := m.TickLimit
+	if limit <= 0 {
+		limit = DefaultTickLimit
+	}
+	for t := 0; t < ticks; t++ {
+		before := m.Ticks
+		for budget := limit; m.Ticks == before && budget > 0; budget-- {
+			done, err := m.Step()
+			if err != nil {
+				return err
+			}
+			if done {
+				return nil
+			}
+		}
+	}
+	return nil
+}
 
 // Step executes a single instruction. done is true when the program has halted
 // or run past its end (label/comment lines do not consume a step).

@@ -49,7 +49,7 @@
 | B1 | `LogicType.LineNumber`（含槽位 `LineNumber`）未建模，真机返回当前行号 |
 | B2 | `l/s/lr/ls/ss` 对未连接设备自动建并返回 0；真机抛 `DeviceNotFound` |
 | B3 | `deviceByID` 找不到时回退 `db`；真机抛 `UnknownDeviceID` |
-| B4 | 无 128 行/tick 预算与时钟模型；`Time` 逻辑类型未建模 |
+| B4 | `Time` 逻辑类型与 `sleep` 的**秒→tick 换算**未建模/近似（tick 预算已由 `RunTicks` 建模，见 P3） |
 | B5 | 通道以 `d0:0` 伪设备表示，非真正的网络通道（`vm.World` 已让同一 `dev:conn` 的多芯片共享它；仍未建模"不同设备同网络"的拓扑） |
 
 ### 2.3 可观测性 / 工具
@@ -98,6 +98,10 @@
   `rN` 寄存器 / 数值）。真机上 `ls r? rN i slt` / `ss rN i slt r?` 是**按 ReferenceId**
   访问槽位；此前只经 `devName`（只认 `drN`），寄存器会被解析成名为 `rN` 的幽灵设备——
   原版与重编译都错成一样，所以往返测试「通过」却掩盖了它（真机 A/B 发现的）。
+- **tick 预算**：`Machine.RunTicks(n)` 按游戏的方式推进——一 tick 到 `yield`/`sleep`
+  结束，否则满 `TickLimit`（默认 128）条指令。`ic10c testbench --diff` 用它对齐真机 tick。
+  仍未建模：`Time` 逻辑类型、`sleep` 的秒→tick 换算（现在 `sleep(v)` 只前进 1 tick 并把
+  `Clock` 加 `v`）。
 
 ### P4 工具链（待办，未选择）
 
@@ -129,7 +133,7 @@
 1. 补齐 P4/P5，并把 `internal/vm` 提升为可对外引用的包（稳定 API + 版本化）。
 2. 更完整的设备/网络模型：真实通道网络、`ReferenceId` 网络内解析、设备类型
    属性（`NoStore` 等从设备类型推导而非手工设置）。
-3. 128 行/tick 预算、`Time`/`sleep` 时钟、自动 yield 的真实节奏。
+3. `sleep` 的秒→tick 换算与 `Time` 逻辑类型（tick 预算已由 `RunTicks` 建模）。
 4. 独立文档（`docs/vm.md`）与 `ic10c run` 的完整手册。
 5. 与真机行为的差分测试（对照 emulator 或游戏内截图/日志）。
 

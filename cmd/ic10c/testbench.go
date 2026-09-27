@@ -791,7 +791,7 @@ func benchDiff(sc *testbench.Scenario, code string, loaders []string) (*testbenc
 			m.Set(port, logic, v)
 		}
 		if cs.Run > 0 {
-			if err := vmRunTicks(m, cs.Run); err != nil && err != vm.ErrStepLimit {
+			if err := m.RunTicks(cs.Run); err != nil && err != vm.ErrStepLimit {
 				return nil, err
 			}
 		}
@@ -816,29 +816,6 @@ func benchDiff(sc *testbench.Scenario, code string, loaders []string) (*testbenc
 		}
 	}
 	return rep, nil
-}
-
-// vmRunTicks advances the VM by `ticks` ticks the way the game does: a tick
-// ends at yield/sleep, or after 128 instructions if the program never yields.
-func vmRunTicks(m *vm.Machine, ticks int) error {
-	for t := 0; t < ticks; t++ {
-		before := m.Ticks
-		budget := 128
-		for m.Ticks == before {
-			done, err := m.Step()
-			if err != nil {
-				return err
-			}
-			if done {
-				return nil
-			}
-			budget--
-			if budget <= 0 {
-				break
-			}
-		}
-	}
-	return nil
 }
 
 func parseWrite(s string) (testbench.DeviceWrite, bool) {
