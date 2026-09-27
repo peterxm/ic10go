@@ -54,11 +54,23 @@ func AllocateReservedSpillsMode(fn *ir.Function, k, reserved int, mode SpillMode
 	// (already excluded from the palette); the db path needs none.
 	top := 511 - reserved
 	sp := &spiller{fn: fn, slots: map[*ir.Reg]int{}, next: top}
+	// Spilling rewrites the function and gives its load/store scratch its own
+	// registers, so one round of growth is normal. Doubling, on the other hand,
+	// means each round adds more pressure than it removes; with too few
+	// available registers that runs away (the spilled set doubles every round)
+	// and the round cap would sit on an exponentially growing function. Fail
+	// instead, keeping the "did not converge" wording callers already match on.
+	const instrBudget = 20000
+	prev := -1
 	for iter := 0; iter < 64; iter++ {
 		colors, spilled := tryColorPartial(fn, palette)
 		if len(spilled) == 0 {
 			return colors, top - sp.next, nil
 		}
+		if n := instrCount(fn); (prev >= 32 && len(spilled) >= 2*prev) || n > instrBudget {
+			return nil, 0, fmt.Errorf("register allocation did not converge: %d values need spilling with %d register(s) available, IR at %d instructions (too many reserved with reserveRegs?)", len(spilled), len(palette), n)
+		}
+		prev = len(spilled)
 		sp.spill(spilled)
 	}
 	return nil, 0, fmt.Errorf("register allocation did not converge")
@@ -79,6 +91,14 @@ func paletteFor(fn *ir.Function, k int, mode SpillMode) []int {
 		p = append(p, i)
 	}
 	return p
+}
+
+func instrCount(fn *ir.Function) int {
+	n := 0
+	for _, b := range fn.Blocks {
+		n += len(b.Instrs)
+	}
+	return n
 }
 
 func tryColor(fn *ir.Function, palette []int) (map[*ir.Reg]int, bool) {

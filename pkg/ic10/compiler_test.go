@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"ic10go/internal/vm"
 	"ic10go/pkg/ic10"
@@ -1428,5 +1429,29 @@ func TestRelJumpPicksShorterForm(t *testing.T) {
 	sr, _, _ := ic10.CompileWithOptions("t.icg", small, ic10.Options{RelJump: true})
 	if len(sr) > len(sa) {
 		t.Errorf("rel-jump grew the small program: abs=%d rel=%d", len(sa), len(sr))
+	}
+}
+
+// A reserveRegs range that leaves no usable register cannot converge: each
+// spill round doubles the work, so the allocator must fail fast with a clear
+// message instead of running the round cap on an exponentially growing IR.
+func TestAllReservedFailsFast(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("func main() {\n    reserveRegs(0, 15)\n    var p = 1\n")
+	for i := 0; i < 30; i++ {
+		fmt.Fprintf(&b, "    setIreg(%d, get(db, %d))\n", i, i)
+	}
+	b.WriteString("    var s = 0\n")
+	for i := 0; i < 30; i++ {
+		fmt.Fprintf(&b, "    s = s + ireg(%d)\n", i)
+	}
+	b.WriteString("    put(db, 0, s)\n}\n")
+	start := time.Now()
+	_, _, err := ic10.CompileResult("t.icg", []byte(b.String()), ic10.Options{DynamicStack: true})
+	if err == nil || !strings.Contains(err.Error(), "did not converge") {
+		t.Fatalf("expected a convergence error, got %v", err)
+	}
+	if d := time.Since(start); d > 10*time.Second {
+		t.Fatalf("allocation took %v; it should fail fast", d)
 	}
 }
