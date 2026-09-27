@@ -97,6 +97,10 @@ def effect(hit, al, de):
         op = "sd"
     if op == "clr":
         op = "clrd"
+    # The compiler emits the unified `put` for the deprecated by-id `putd`
+    # (the game treats them the same), so compare them as one op.
+    if op == "putd":
+        op = "put"
     a = parts[1:]
     dev = lambda t: val(t, al, de, regs, sp, ra)
     if op == "sd" and len(a) >= 3:
@@ -124,6 +128,11 @@ def recompile(ic10c, source):
 def run_once(b, chip, code, n):
     al, de = symbols(code)
     b.call("push", {"chip": chip, "code": code, "reset": True})
+    # push ignores its reset flag, so ask for a real reset: it zeroes the
+    # registers/sp/PC. Without it a program that reads a register it never
+    # writes (common in hand-written IC10) starts from the previous run's
+    # values, and the two forms are not compared from the same state.
+    b.call("reset", {"chip": chip})
     hits = b.call("trace", {"chip": chip, "n": n})["hits"]
     return [effect(h, al, de) for h in hits]
 
