@@ -43,6 +43,9 @@ type decompiler struct {
 	lineCount  int
 	tmpN       int
 	warnings   []Warning
+	// bankLo/bankHi are the registers a dynamic indirect access can name; they
+	// stay physical (reserveRegs + ireg/setIreg). noBank when there is none.
+	bankLo, bankHi int
 }
 
 // sharedStackDirective marks the output's housing stack as shared, so the
@@ -153,6 +156,19 @@ func decompile(src string, structured bool) (string, []Warning, error) {
 	// not also read).
 	b.WriteString(sharedStackDirective)
 	b.WriteString("func main() {\n")
+	d.bankLo, d.bankHi = noBank, noBank
+	if line, has := dynamicIndirect(lines); has {
+		lo, hi, ok := d.indirectBank(lines)
+		if !ok {
+			// A register written through a pointer the analysis cannot bound
+			// cannot be modelled: the variable translation may read the wrong
+			// register. Report it rather than emitting silently wrong code.
+			d.warnings = append(d.warnings, Warning{Line: line, Text: "register access through an unbounded pointer"})
+		} else {
+			d.bankLo, d.bankHi = lo, hi
+			fmt.Fprintf(&b, "    // registers written through a runtime pointer stay physical\n    reserveRegs(%d, %d)\n", lo, hi)
+		}
+	}
 	d.declared = map[string]bool{}
 	regs := d.readFirstRegisters(lines)
 	if structured {
@@ -160,6 +176,9 @@ func decompile(src string, structured bool) (string, []Warning, error) {
 		regs = d.allRegisters(lines)
 	}
 	for _, r := range regs {
+		if d.bankReg(r) {
+			continue // a physical register: no variable, and it starts at 0
+		}
 		d.declared[r] = true
 		fmt.Fprintf(&b, "    var %s = 0\n", r)
 	}
@@ -222,6 +241,12 @@ func (d *decompiler) operand(s string) string {
 	s = d.resolve(s)
 	if isIndirect(s) {
 		return "ireg(" + strings.TrimPrefix(s, "r") + ")"
+	}
+	if d.bankReg(s) {
+		// A bank register is physical: read it directly (ireg with a constant
+		// pointer is the zero-copy form).
+		i, _ := bankRegIndex(s)
+		return fmt.Sprintf("ireg(%d)", i)
 	}
 	return normalizeCall(normalizeHash(normalizeNumber(s)))
 }

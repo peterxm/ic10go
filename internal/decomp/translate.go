@@ -51,6 +51,12 @@ func (d *decompiler) assignDst(dstArg, expr string) string {
 		ptr := strings.TrimPrefix(dst, "r")
 		return fmt.Sprintf("%s := %s; setIreg(%s, %s)", tmp, expr, ptr, tmp)
 	}
+	if d.bankReg(dst) {
+		// A register the program also writes through a runtime pointer must
+		// stay physical, or the two views would diverge.
+		i, _ := bankRegIndex(dst)
+		return fmt.Sprintf("setIreg(%d, %s)", i, expr)
+	}
 	op := " = "
 	if isDirectReg(dst) && !d.declared[dst] {
 		op = " := "

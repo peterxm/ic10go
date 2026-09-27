@@ -112,8 +112,10 @@ mod r0 r0 rr5
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(warns) != 0 {
-		t.Fatalf("unexpected warnings: %v", warns)
+	// r5 is never assigned here, so its value (and therefore the register the
+	// pointer names) is unknown: the translator reports that it cannot bound it.
+	if len(warns) != 1 {
+		t.Fatalf("expected an unbounded-pointer warning, got %v", warns)
 	}
 	if !strings.Contains(code, "setIreg(r5,") {
 		t.Errorf("indirect store not translated:\n%s", code)
