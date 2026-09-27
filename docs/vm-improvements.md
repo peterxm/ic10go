@@ -94,6 +94,10 @@
 - **严格设备语义（开关）**：`Machine.Strict`（默认 false，保持宽松）开启时
   `l/s/lr/ls/ss/ld/sd/get/put/...` 对未连接设备返回 `ErrDeviceNotFound`，
   `deviceByID` 找不到返回 `ErrUnknownDeviceID`。
+- **`ls`/`ss` 按 ReferenceId**：`ls`/`ss` 的设备操作数与 `l`/`s` 一致（端口 / `drN` /
+  `rN` 寄存器 / 数值）。真机上 `ls r? rN i slt` / `ss rN i slt r?` 是**按 ReferenceId**
+  访问槽位；此前只经 `devName`（只认 `drN`），寄存器会被解析成名为 `rN` 的幽灵设备——
+  原版与重编译都错成一样，所以往返测试「通过」却掩盖了它（真机 A/B 发现的）。
 
 ### P4 工具链（待办，未选择）
 

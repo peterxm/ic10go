@@ -25,6 +25,28 @@ func TestArithmetic(t *testing.T) {
 	}
 }
 
+// TestSlotByReferenceId checks ls/ss resolve a device-id register: IC10
+// `ls r? rN i slt` / `ss rN i slt r?` address a device by ReferenceId, exactly
+// like `l`/`s`. Before this the operand went through devName (which only knows
+// drN), so a register resolved to a phantom device named "rN".
+func TestSlotByReferenceId(t *testing.T) {
+	m := New()
+	m.Device("d1").Values["ReferenceId"] = 77
+	m.SetSlot("d1", 2, "Occupied", 1)
+	if err := m.Load("move r1 77\nls r0 r1 2 Occupied\nmove r2 9\nss r1 2 Quantity r2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(20); err != nil && err != ErrStepLimit {
+		t.Fatalf("run: %v", err)
+	}
+	if got := m.Regs[0]; got != 1 {
+		t.Errorf("ls by ReferenceId read Occupied = %v, want 1", got)
+	}
+	if got := m.GetSlot("d1", 2, "Quantity"); got != 9 {
+		t.Errorf("ss by ReferenceId wrote Quantity = %v, want 9", got)
+	}
+}
+
 func TestLabelLoop(t *testing.T) {
 	src := "move r0 0\nmove r1 0\nL:\nadd r1 r1 r0\nadd r0 r0 1\nblt r0 5 L\ns d0 Setting r1"
 	m := run(t, src, 100)

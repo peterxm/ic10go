@@ -889,24 +889,27 @@ func (m *Machine) execOp(ins *Instr) error {
 		return nil
 	case "ls":
 		dst, _ := m.reg(a[0])
-		name := m.devName(a[1])
-		if err := m.checkDevice(m.Device(name)); err != nil {
+		// The device operand is a port, a port register (drN), or a device id
+		// register/value — the same forms `l`/`s` accept (IC10 `ls r? rN i slt`
+		// reads a slot by ReferenceId).
+		d := m.dev(a[1])
+		if err := m.checkDevice(d); err != nil {
 			return err
 		}
-		if a[3] == "LineNumber" && name == m.SelfDevice {
+		if a[3] == "LineNumber" && d.Name == m.SelfDevice {
 			m.Regs[dst] = float64(ins.Line)
 			return nil
 		}
 		slot, _ := m.num(a[2])
-		m.Regs[dst] = m.GetSlot(name, int(slot), a[3])
+		m.Regs[dst] = m.GetSlot(d.Name, int(slot), a[3])
 		return nil
 	case "ss":
-		name := m.devName(a[0])
-		if err := m.checkDevice(m.Device(name)); err != nil {
+		d := m.dev(a[0])
+		if err := m.checkDevice(d); err != nil {
 			return err
 		}
 		slot, _ := m.num(a[1])
-		m.SetSlot(name, int(slot), a[2], mustNum(m, a[3]))
+		m.SetSlot(d.Name, int(slot), a[2], mustNum(m, a[3]))
 		return nil
 	case "lb", "lbn", "lbs", "lbns":
 		return m.batchLoad(ins.Op, a)
