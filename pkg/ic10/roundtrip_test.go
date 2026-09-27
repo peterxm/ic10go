@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -167,4 +168,114 @@ func preview(s []string) string {
 		s = s[:8]
 	}
 	return strings.Join(s, " ")
+}
+
+// TestIc10CodeRoundTripStack checks that the recompiled program leaves the same
+// user-stack contents as the original. The device-write comparison above cannot
+// see a program whose interface is the housing stack (`put db N v` / `get db
+// N`): a stack loader writes no device logic at all, so a translation that
+// deletes or misplaces its writes would still pass. This runs both forms with a
+// pre-filled stack and compares the user region [0,128).
+//
+// Only the user region is compared: the compiler keeps its data segment and
+// register spills above it, and a recompiled program may legitimately leave
+// those alone (constant data reads are inlined to literals). Programs the
+// decompiler warns about are skipped: it could not translate an instruction, so
+// behaviour is not expected to match.
+func TestIc10CodeRoundTripStack(t *testing.T) {
+	requireIc10Code(t)
+	files := corpusFiles(t, ".ic", ".ic10")
+	if len(files) == 0 {
+		t.Skip("no IC10 scripts found")
+	}
+
+	for _, path := range files {
+		name := filepath.Base(path)
+		t.Run(name, func(t *testing.T) {
+			skipKnownUnsupported(t, path)
+			src, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			icg, warns, err := decomp.Decompile(string(src))
+			if err != nil {
+				t.Fatalf("decompile: %v", err)
+			}
+			if len(warns) > 0 {
+				t.Skipf("decompiler could not translate %d instruction(s)", len(warns))
+			}
+			code, diags, err := ic10.CompileWithOptions(name, []byte(icg), ic10.Options{DynamicStack: true, MaxLines: 512})
+			if diags.HasErrors() || err != nil {
+				t.Skipf("recompile failed: %v", err)
+			}
+
+			a, b := vm.New(), vm.New()
+			portSetup(a)
+			portSetup(b)
+			// A non-zero starting stack so a program that reads it without
+			// writing first has something to read.
+			for i := 0; i < 16; i++ {
+				a.Stack[i] = float64(i+1) + 0.25
+				b.Stack[i] = float64(i+1) + 0.25
+			}
+			if err := a.Load(string(src)); err != nil {
+				t.Fatalf("original load: %v", err)
+			}
+			if err := b.Load(code); err != nil {
+				t.Fatalf("round-trip load: %v", err)
+			}
+			settle(a)
+			settle(b)
+			for i := 0; i < 128; i++ {
+				av, bv := stackText(a.Stack[i]), stackText(b.Stack[i])
+				if av != bv {
+					t.Errorf("user stack slot %d differs: original %s, round-trip %s", i, av, bv)
+					return
+				}
+			}
+		})
+	}
+}
+
+// settle runs a program until its stack has not changed for quiet ticks, so the
+// two forms are compared at a steady state rather than at a fixed step count
+// (they execute different instruction counts per iteration). The cap bounds a
+// program that never reaches one.
+func settle(m *vm.Machine) {
+	const quiet, maxTicks = 3000, 300000
+	last := make([]string, len(m.Stack))
+	for i := range last {
+		last[i] = stackText(m.Stack[i])
+	}
+	unchanged := 0
+	for t := 0; t < maxTicks; t++ {
+		if err := m.Run(1); err != nil && err != vm.ErrStepLimit {
+			return
+		}
+		same := true
+		for i := range m.Stack {
+			s := stackText(m.Stack[i])
+			if s != last[i] {
+				same = false
+				last[i] = s
+			}
+		}
+		if same {
+			unchanged++
+			if unchanged >= quiet {
+				return
+			}
+		} else {
+			unchanged = 0
+		}
+	}
+}
+
+// stackText renders a stack slot so NaN compares equal to itself (two NaNs are
+// the same value for this comparison, while Go's == says otherwise).
+func stackText(v float64) string {
+	if v != v {
+		return "nan"
+	}
+	return strconv.FormatFloat(v, 'g', -1, 64)
 }

@@ -568,11 +568,13 @@ func Parse(src string) (*Program, error) {
 	}
 	resolve := func(s string) string {
 		// IC10's HASH("...") is a compile-time CRC-32; resolve it so the VM
-		// matches scripts that use symbolic hashes.
-		if h, ok := resolveHashCall(s); ok {
-			return strconv.Itoa(int(h))
-		}
+		// matches scripts that use symbolic hashes. It must be retried on every
+		// symbol expansion: a `define X HASH("name")` stores the call text, so
+		// the hash is only seen after X is replaced.
 		for i := 0; i < 10; i++ {
+			if h, ok := resolveHashCall(s); ok {
+				return strconv.Itoa(int(h))
+			}
 			v, ok := prog.Symbols[s]
 			if !ok {
 				return s

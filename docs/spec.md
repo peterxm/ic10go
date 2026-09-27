@@ -330,6 +330,10 @@ IC10 的持久栈跨 tick、跨换代码保留。默认编译器**无法确定**
 - `shared-stack`：用户栈可能与其它程序共享，保持保守。
 - 默认：**单芯片 → `private-stack`**，含 `chip` 块的多芯片 → `shared-stack`。
   pragma 优先于默认。
+- ⚠️ **向宿主栈发布数据时必须用 `shared-stack`**：`db` 栈是芯片所在**机壳**的栈，
+  别的芯片（和玩家 UI）都能读。单芯片的 `private-stack` 会把「本程序从不读回」的
+  `put db N v` / `db.stack[N] = v` 当死存储删掉，于是装载器可以静默变成空程序。
+  反编译器给它的产物总会加 `// icg: shared-stack`。
 - 这些优化只在能**减少或持平** runtime 行数时采用（编译器会比较两种产物）。
 
 另有一个栈**边界** pragma：

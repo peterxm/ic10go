@@ -45,6 +45,11 @@ type decompiler struct {
 	warnings   []Warning
 }
 
+// sharedStackDirective marks the output's housing stack as shared, so the
+// compiler keeps explicit housing-stack writes instead of treating them as
+// private scratch. See the comment in decompile where it is emitted.
+const sharedStackDirective = "// icg: shared-stack\n"
+
 // Decompile converts IC10 source into .icg source. Control flow is expressed
 // with label/goto/call/ret.
 func Decompile(src string) (string, []Warning, error) {
@@ -138,6 +143,15 @@ func decompile(src string, structured bool) (string, []Warning, error) {
 	}
 
 	var b strings.Builder
+	// A decompiled program's housing stack ("db") may be an interface: the
+	// original IC10 could have been one chip of a multi-chip system that
+	// publishes values for others to read. The compiler otherwise treats a
+	// single-chip program's stack as private and may drop housing-stack writes
+	// that the program never reads back, silently deleting the published data
+	// (a `put db N v` loader compiles to nothing). Mark the output shared so
+	// those writes survive; the cost is small (few programs write slots they do
+	// not also read).
+	b.WriteString(sharedStackDirective)
 	b.WriteString("func main() {\n")
 	d.declared = map[string]bool{}
 	regs := d.readFirstRegisters(lines)

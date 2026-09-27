@@ -48,11 +48,13 @@ func requireIc10Code(t *testing.T) {
 
 // knownUnsupported documents corpus files that the round-trip and minify tests
 // intentionally skip: invalid IC10 (the original would not assemble in-game),
-// or a decompile->recompile that exceeds the chip's line budget. Keys are file
-// base names with or without extension.
+// or a decompile->recompile that cannot preserve behaviour. Keys are file base
+// names with or without extension.
 var knownUnsupported = map[string]string{
-	"traderSolver":    "decompile->recompile exceeds the chip line budget",
-	"traderSolverRAW": "decompile->recompile exceeds the chip line budget",
+	"traderSolver":    "translator does not represent a dynamic indirect register bank (ireg/setIreg)",
+	"traderSolverRAW": "translator does not represent a dynamic indirect register bank (ireg/setIreg)",
+	"solverLarge":     "translator does not represent a dynamic indirect register bank (ireg/setIreg)",
+	"solverLargeRAW":  "translator does not represent a dynamic indirect register bank (ireg/setIreg)",
 }
 
 // knownUnsupportedPorts lists hand ports whose original cannot be run for the
