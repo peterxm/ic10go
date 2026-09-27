@@ -537,6 +537,15 @@ func (w *World) Device(name string) *Device {
 // Set sets a logic value on a world device (for test setup).
 func (w *World) Set(name, logic string, v float64) { w.Device(name).Values[logic] = v }
 
+// SetSlot sets a device slot logic value in the world.
+func (w *World) SetSlot(name string, slot int, logic string, v float64) {
+	d := w.Device(name)
+	if d.Slots[slot] == nil {
+		d.Slots[slot] = map[string]float64{}
+	}
+	d.Slots[slot][logic] = v
+}
+
 // Get reads a logic value from a world device.
 func (w *World) Get(name, logic string) float64 { return w.Device(name).Values[logic] }
 

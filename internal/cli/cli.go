@@ -254,7 +254,7 @@ var Commands = []Command{
 		},
 	},
 	{
-		Name: "run", Args: "<file.icg> [--steps N | --ticks N] [--set name.logic=v] [--seed N] [--strict] [--dump] [--json] [--trace] [--stable-ins]",
+		Name: "run", Args: "<file.icg> [--steps N | --ticks N] [--set name.logic=v] [--device name=hash[,namehash]] [--seed N] [--strict] [--dump] [--json] [--trace] [--stable-ins]",
 		Summary: text{EN: "compile and run in the built-in VM", ZH: "编译并在内置 VM 中运行"},
 		Long: text{
 			EN: "Compile the file and run it in the built-in IC10 VM, then print\n" +
@@ -281,8 +281,12 @@ var Commands = []Command{
 				ZH: "改跑 N 个芯片 tick（而非 N 条指令）",
 			}},
 			{Long: "--set", Arg: "name.logic=v", Desc: text{
-				EN: "set a device value before running (repeatable)",
-				ZH: "运行前设置设备值（可重复）",
+				EN: "set a device (or name.slot[i].logic=v) value before running (repeatable)",
+				ZH: "运行前设置设备值（可重复；也支持 name.slot[i].logic=v）",
+			}},
+			{Long: "--device", Arg: "name=hash[,namehash]", Desc: text{
+				EN: "give a device a prefab hash so batch.* can match it (repeatable)",
+				ZH: "给设备设置预制体 hash，供 batch.* 匹配（可重复）",
 			}},
 			{Long: "--seed", Arg: "N", Desc: text{
 				EN: "seed for rand() (default 0)",

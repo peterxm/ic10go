@@ -549,6 +549,7 @@ func cmdRun(args []string) int {
 	dump := false
 	jsonOut := false
 	var sets []string
+	var devices []string
 	var file string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -571,6 +572,11 @@ func cmdRun(args []string) int {
 		case "--set":
 			if i+1 < len(args) {
 				sets = append(sets, args[i+1])
+				i++
+			}
+		case "--device":
+			if i+1 < len(args) {
+				devices = append(devices, args[i+1])
 				i++
 			}
 		case "--stable-ins":
@@ -632,12 +638,25 @@ func cmdRun(args []string) int {
 			}
 		}
 		for _, s := range sets {
-			name, logic, value, ok := parseSet(s)
+			name, logic, slot, hasSlot, value, ok := parseSet(s)
 			if !ok {
-				fmt.Fprintf(os.Stderr, "ic10c: bad --set %q (want name.logic=value)\n", s)
+				fmt.Fprintf(os.Stderr, "ic10c: bad --set %q (want name.logic=value or name.slot[i].logic=value)\n", s)
 				return 2
 			}
-			m.Set(name, logic, value)
+			if hasSlot {
+				m.SetSlot(name, slot, logic, value)
+			} else {
+				m.Set(name, logic, value)
+			}
+		}
+		for _, s := range devices {
+			name, hash, nameHash, ok := parseDevice(s)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "ic10c: bad --device %q (want name=hash[,namehash])\n", s)
+				return 2
+			}
+			d := m.Device(name)
+			d.Hash, d.NameHash = hash, nameHash
 		}
 		if err := m.Load(compiled.Code); err != nil {
 			fmt.Fprintln(os.Stderr, "ic10c:", err)
@@ -658,12 +677,25 @@ func cmdRun(args []string) int {
 	// the same device/connection share its network channels).
 	w := vm.NewWorld()
 	for _, s := range sets {
-		name, logic, value, ok := parseSet(s)
+		name, logic, slot, hasSlot, value, ok := parseSet(s)
 		if !ok {
-			fmt.Fprintf(os.Stderr, "ic10c: bad --set %q (want name.logic=value)\n", s)
+			fmt.Fprintf(os.Stderr, "ic10c: bad --set %q (want name.logic=value or name.slot[i].logic=value)\n", s)
 			return 2
 		}
-		w.Set(name, logic, value)
+		if hasSlot {
+			w.SetSlot(name, slot, logic, value)
+		} else {
+			w.Set(name, logic, value)
+		}
+	}
+	for _, s := range devices {
+		name, hash, nameHash, ok := parseDevice(s)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "ic10c: bad --device %q (want name=hash[,namehash])\n", s)
+			return 2
+		}
+		d := w.Device(name)
+		d.Hash, d.NameHash = hash, nameHash
 	}
 	for _, ch := range compiled.Chips {
 		m := w.AddChip()
@@ -824,11 +856,24 @@ func printRunJSON(machines []*vm.Machine, names []string) {
 	out.Devices = map[string]any{}
 	if len(machines) > 0 {
 		for name, d := range machines[0].Devices {
+			dev := map[string]any{}
 			vals := map[string]any{}
 			for logic, v := range d.Values {
 				vals[logic] = jsonNum(v)
 			}
-			out.Devices[name] = vals
+			dev["logic"] = vals
+			if len(d.Slots) > 0 {
+				slots := map[string]any{}
+				for idx, sv := range d.Slots {
+					slotVals := map[string]any{}
+					for logic, v := range sv {
+						slotVals[logic] = jsonNum(v)
+					}
+					slots[strconv.Itoa(idx)] = slotVals
+				}
+				dev["slots"] = slots
+			}
+			out.Devices[name] = dev
 		}
 	}
 	b, err := json.MarshalIndent(out, "", "  ")
@@ -839,22 +884,65 @@ func printRunJSON(machines []*vm.Machine, names []string) {
 	fmt.Println(string(b))
 }
 
-// parseSet parses a "name.logic=value" device initialiser.
-func parseSet(s string) (name, logic string, value float64, ok bool) {
+// parseSet parses a device initialiser: "name.logic=value" or
+// "name.slot[i].logic=value".
+func parseSet(s string) (name, logic string, slot int, hasSlot bool, value float64, ok bool) {
 	eq := strings.IndexByte(s, '=')
 	if eq < 0 {
-		return "", "", 0, false
+		return
 	}
 	v, err := strconv.ParseFloat(s[eq+1:], 64)
 	if err != nil {
-		return "", "", 0, false
+		return
 	}
 	lhs := s[:eq]
+	if i := strings.Index(lhs, ".slot["); i >= 0 {
+		name = lhs[:i]
+		rest := lhs[i+len(".slot["):]
+		j := strings.IndexByte(rest, ']')
+		if j < 0 {
+			return
+		}
+		slot, err = strconv.Atoi(rest[:j])
+		if err != nil || slot < 0 {
+			return
+		}
+		rest = rest[j+1:]
+		if len(rest) < 2 || rest[0] != '.' {
+			return
+		}
+		logic = rest[1:]
+		return name, logic, slot, true, v, name != "" && logic != ""
+	}
 	dot := strings.LastIndexByte(lhs, '.')
 	if dot < 0 {
-		return "", "", 0, false
+		return
 	}
-	return lhs[:dot], lhs[dot+1:], v, true
+	return lhs[:dot], lhs[dot+1:], 0, false, v, true
+}
+
+// parseDevice parses "name=hash[,namehash]" for batch matching. Hashes are
+// Go-style integers (decimal, 0x..., possibly negative, as in IC10 `lb`).
+func parseDevice(s string) (name string, hash, nameHash uint32, ok bool) {
+	eq := strings.IndexByte(s, '=')
+	if eq < 0 {
+		return
+	}
+	name = s[:eq]
+	parts := strings.SplitN(s[eq+1:], ",", 2)
+	h, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 0, 64)
+	if err != nil {
+		return
+	}
+	hash = vm.HashOf(h)
+	if len(parts) == 2 {
+		nh, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 0, 64)
+		if err != nil {
+			return
+		}
+		nameHash = vm.HashOf(nh)
+	}
+	return name, hash, nameHash, name != ""
 }
 
 func printDeviceMap(devices map[string]*vm.Device) {

@@ -3,7 +3,7 @@
 > 定位：`internal/vm` 是**测试用**的最小 IC10 解释器（同时通过 `ic10c run` 暴露给
 > 用户调试）。本轮目标是**更准、更稳**，不改变其「测试用」定位。
 >
-> 本文记录现状、发现的问题与分阶段计划。P1–P3 已实现；P4、P5 部分实现。
+> 本文记录现状、发现的问题与分阶段计划。P1–P4 已实现，P5 部分实现。
 
 ---
 
@@ -47,10 +47,10 @@
 | # | 问题 |
 |---|------|
 | B1 | `LogicType.LineNumber`（含槽位 `LineNumber`）未建模，真机返回当前行号 |
-| B2 | `l/s/lr/ls/ss` 对未连接设备自动建并返回 0；真机抛 `DeviceNotFound` |
-| B3 | `deviceByID` 找不到时回退 `db`；真机抛 `UnknownDeviceID` |
+| B2 | `l/s/lr/ls/ss` 对未连接设备自动建并返回 0；真机抛 `DeviceNotFound`（`Machine.Strict` / `ic10c run --strict` 可选同真机；默认仍宽松，避免测试与生成器到处注册设备） |
+| B3 | `deviceByID` 找不到时回退 `db`；真机抛 `UnknownDeviceID`（同上，`Strict` 时可选） |
 | B4 | `Time` 逻辑类型与 `sleep` 的**秒→tick 换算**未建模/近似（tick 预算已由 `RunTicks` 建模，见 P3） |
-| B5 | 通道以 `d0:0` 伪设备表示，非真正的网络通道（`vm.World` 已让同一 `dev:conn` 的多芯片共享它；仍未建模"不同设备同网络"的拓扑） |
+| B5 | 通道以「访问点伪设备」（`d0:0` 等）表示；同一网络的多个访问点用 `vm.World.Wire` 合并成一条网（已建模「不同设备同网络」），但**拓扑仍需场景显式声明**，不会自动从存档/真机推导 |
 
 ### 2.3 可观测性 / 工具
 
@@ -103,13 +103,13 @@
   仍未建模：`Time` 逻辑类型、`sleep` 的秒→tick 换算（现在 `sleep(v)` 只前进 1 tick 并把
   `Clock` 加 `v`）。
 
-### P4 工具链（部分实现）
+### P4 工具链（已实现）
 
 - `Machine.OnRead` 钩子（`l`/`ld`/`ls` 的读）。
 - `ic10c run`：`--ticks N`（按 chip tick 跑，见 P3）、`--seed N`、`--strict`（同真机报错）、
-  `--dump`（寄存器 / 栈 / PC / 时钟）、`--json`（机器可读状态）。
-- 仍缺：`--device name=hash[,namehash]`（注册可批量匹配的设备）、
-  `--set d0.slot[0].On=1` 槽位初始化。
+  `--dump`（寄存器 / 栈 / PC / 时钟）、`--json`（机器可读状态，含槽位）、
+  `--device name=hash[,namehash]`（给设备预制体 hash，供 `batch.*` 匹配）、
+  `--set name.slot[i].logic=v`（槽位初始化，也支持 `name.logic=v`）。
 
 ### P5 测试强化（部分实现）
 
