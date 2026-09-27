@@ -70,9 +70,22 @@ func TestDifferentialRenamedTails(t *testing.T) {
 }
 
 // TestDifferentialData runs the same comparison on programs that use a `data`
-// table: the loader is installed once, then each runtime reads the table.
+// table: the loader is installed once, then each runtime reads the table. It
+// covers the default layout and both data-segment options
+// (--data-access stack, --data-layout middle).
 func TestDifferentialData(t *testing.T) {
-	runDifferential(t, ic10.Options{}, 300, genDataProgram, true)
+	for _, tc := range []struct {
+		name string
+		opts ic10.Options
+	}{
+		{"default", ic10.Options{}},
+		{"access-stack", ic10.Options{DataAccessStack: true}},
+		{"layout-middle", ic10.Options{DataLayout: "middle"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runDifferential(t, tc.opts, 300, genDataProgram, true)
+		})
+	}
 }
 
 func runDifferential(t *testing.T, opts ic10.Options, seeds int, genFunc func(int64) string, withData bool) {
