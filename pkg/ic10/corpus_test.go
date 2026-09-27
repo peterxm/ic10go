@@ -53,9 +53,8 @@ func requireIc10Code(t *testing.T) {
 var knownUnsupported = map[string]string{}
 
 // knownUnsupportedPorts lists hand ports whose original cannot be run for the
-// port-equivalence test (invalid IC10). A port that compiles over budget would
-// also go here; traderSolver's hand port fits, so it is only in
-// knownUnsupported (for the round-trip test).
+// port-equivalence test (invalid IC10: the source uses an undefined `hash`
+// register, which would not assemble in-game).
 var knownUnsupportedPorts = map[string]string{
 	"oreSorter":    "source uses an undefined `hash` register (invalid IC10)",
 	"sorterSample": "source uses an undefined `hash` register (invalid IC10)",
