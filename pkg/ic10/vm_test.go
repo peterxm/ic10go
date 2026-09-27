@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"ic10go/internal/vm"
@@ -83,6 +84,37 @@ func TestStackPointerNotCachedAcrossPushPop(t *testing.T) {
 	// a=6, b=7, c=2, d=1 -> 16. A stale-sp cache yields a=b=6 -> 15.
 	if got := m.Get("d0", "Setting"); got != 16 {
 		t.Errorf("Setting = %v, want 16 (stale sp across push/pop?)", got)
+	}
+}
+
+// TestJumpRAReturn guards against lowering `jump(ra)` to a computed jump
+// through a scratch register, which clobbered a caller value live across a
+// local call (seen in roboCoordinator). It must lower to IC10 `j ra`.
+func TestJumpRAReturn(t *testing.T) {
+	src := `func main() {
+    v := d0.Setting
+    if d0.On > 0 { call sub }
+    d1.Setting = v
+    jump(9999)
+    label sub:
+    d2.Setting = 1
+    jump(ra)
+}`
+	code := mustCompile(t, src)
+	if !strings.Contains(code, "j ra") {
+		t.Errorf("jump(ra) should lower to `j ra`, got:\n%s", code)
+	}
+	m := vm.New()
+	m.Set("d0", "On", 1)
+	m.Set("d0", "Setting", 42)
+	if err := m.Load(code); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if err := m.Run(200); err != nil && err != vm.ErrStepLimit {
+		t.Fatalf("run: %v", err)
+	}
+	if got := m.Get("d1", "Setting"); got != 42 {
+		t.Errorf("value live across the call changed: d1.Setting = %v, want 42", got)
 	}
 }
 

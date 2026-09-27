@@ -1016,7 +1016,17 @@ func availableExprs(fn *ir.Function) (in, out map[*ir.Block]map[string]availExpr
 	for changed := true; changed; {
 		changed = false
 		for _, b := range fn.Blocks {
-			ni := meetAvail(b, out)
+			var ni map[string]availExpr
+			if b == fn.Entry {
+				// At the function entry the registers are undefined, so no
+				// expression is available yet. Do not seed the entry from its
+				// predecessors: an entry that is also a loop header would
+				// otherwise inherit expressions from the back edge, which are
+				// not available on the first pass.
+				ni = map[string]availExpr{}
+			} else {
+				ni = meetAvail(b, out)
+			}
 			no := transferAvail(b, ni)
 			if !availEqual(ni, in[b]) {
 				in[b] = ni
@@ -1806,7 +1816,7 @@ func licm(fn *ir.Function) bool {
 	loops := findLoops(fn, succs, dom, preds)
 	changed := false
 	for _, lp := range loops {
-		pre, outside, created := ensurePreheader(fn, lp, preds)
+		pre, outside, created := ensurePreheader(fn, lp, preds, dom)
 		if pre == nil {
 			continue
 		}
@@ -1874,15 +1884,23 @@ func findLoops(fn *ir.Function, succs map[*ir.Block][]*ir.Block, dom map[*ir.Blo
 // only entry to it, creating one when the header has several outside
 // predecessors. It also returns the outside predecessors and whether a new
 // block was created (so the caller can undo it when nothing is hoisted).
-func ensurePreheader(fn *ir.Function, lp *loop, preds map[*ir.Block][]*ir.Block) (*ir.Block, []*ir.Block, bool) {
+func ensurePreheader(fn *ir.Function, lp *loop, preds map[*ir.Block][]*ir.Block, dom map[*ir.Block]map[*ir.Block]bool) (*ir.Block, []*ir.Block, bool) {
 	h := lp.header
+	// A loop whose header is the function entry has nowhere before it to put
+	// hoisted code: the initial entry reaches the header without running any
+	// preheader, so hoisting would read a register before it is defined.
+	if h == fn.Entry {
+		return nil, nil, false
+	}
 	var outside []*ir.Block
 	for _, p := range preds[h] {
 		if !lp.blocks[p] {
 			outside = append(outside, p)
 		}
 	}
-	if len(outside) == 1 && len(outside[0].Term.Successors()) == 1 {
+	// Only reuse an existing outside block as the preheader when it dominates
+	// the header (so the hoisted code runs on every path into the loop).
+	if len(outside) == 1 && len(outside[0].Term.Successors()) == 1 && dom[outside[0]][h] {
 		return outside[0], outside, false
 	}
 	if len(outside) == 0 {

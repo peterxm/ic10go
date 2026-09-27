@@ -2,6 +2,7 @@ package ic10_test
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -36,6 +37,28 @@ func portSetup(m *vm.Machine) {
 	}
 	m.Device("db").Values["Setting"] = 0.00300006003000050000
 	m.Device("db").Set = true
+}
+
+// portSetupSeed is portSetup with deterministic pseudo-random logic values, so
+// that value-dependent branches the fixed setup never reaches are exercised
+// too. Both the original and the port are given the same values.
+func portSetupSeed(m *vm.Machine, seed int64) {
+	portSetup(m)
+	rng := rand.New(rand.NewSource(seed))
+	devs := []string{"d0", "d1", "d2", "d3", "d4", "d5", "db"}
+	logics := []string{
+		"Setting", "On", "Mode", "Activate", "Open", "Lock",
+		"Temperature", "Pressure", "Stress", "Rpm", "Ratio",
+		"Throttle", "CombustionLimiter", "Reagents", "RecipeHash",
+		"CompletionRatio", "RatioMethane", "Color", "SignalID", "SignalStrength",
+	}
+	for _, name := range devs {
+		d := m.Device(name)
+		d.Set = true
+		for _, k := range logics {
+			d.Values[k] = float64(rng.Intn(31) - 15)
+		}
+	}
 }
 
 // TestIc10CodePorts runs every hand-written port next to its original .ic

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"ic10go/internal/source"
 )
@@ -532,9 +533,14 @@ func (f *Function) BuildCFG() {
 		b.Preds = nil
 		b.Succs = nil
 	}
+	byID := map[int]*Block{}
+	for _, b := range f.Blocks {
+		byID[b.ID] = b
+	}
 	// A ret (JmpRA) can return to any call site, so it may transfer control to
-	// any call's return block. Modelling this keeps values written by a callee
-	// live after the call.
+	// any call's return block. It can also jump to a block whose address was
+	// stored into ra for a hand-rolled call (`ra = <label>; goto sub`).
+	// Modelling both keeps values written by a callee live after the call.
 	var returns []*Block
 	for _, b := range f.Blocks {
 		if b.Term != nil {
@@ -543,6 +549,19 @@ func (f *Function) BuildCFG() {
 		if hr, ok := b.Term.(interface{ returnBlock() *Block }); ok {
 			if r := hr.returnBlock(); r != nil {
 				returns = append(returns, r)
+			}
+		}
+		for _, ins := range b.Instrs {
+			ss, ok := ins.(*StoreSpecial)
+			if !ok || ss.Name != "ra" {
+				continue
+			}
+			if c, ok := ss.Src.(*Const); ok {
+				if id, ok := labelRefID(c.Raw); ok {
+					if t := byID[id]; t != nil {
+						returns = append(returns, t)
+					}
+				}
 			}
 		}
 	}
@@ -558,6 +577,20 @@ func (f *Function) BuildCFG() {
 			s.Preds = append(s.Preds, b)
 		}
 	}
+}
+
+// labelRefID extracts the block id from a label-reference placeholder produced
+// by LabelRef, reporting false for anything else.
+func labelRefID(raw string) (int, bool) {
+	if !strings.HasPrefix(raw, labelRefMark+"L") || !strings.HasSuffix(raw, labelRefMark) {
+		return 0, false
+	}
+	body := strings.TrimSuffix(strings.TrimPrefix(raw, labelRefMark+"L"), labelRefMark)
+	id, err := strconv.Atoi(body)
+	if err != nil {
+		return 0, false
+	}
+	return id, true
 }
 
 // ---------------------------------------------------------------------------

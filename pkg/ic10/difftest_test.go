@@ -425,14 +425,19 @@ func (g *gen) stmt(sb *strings.Builder, depth int) {
 			g.simple(sb, ind)
 			return
 		}
-		// A conditional low-level call: `if cond { call C }`.
+		// A conditional low-level call: `if cond { call C }`. The callee returns
+		// with `ret` or the equivalent `jump(ra)`.
 		name := fmt.Sprintf("C%d", g.labels)
 		g.labels++
 		fmt.Fprintf(sb, "%sif %s { call %s }\n", ind, g.expr(2), name)
 		var body strings.Builder
 		fmt.Fprintf(&body, "    label %s:\n", name)
 		fmt.Fprintf(&body, "    %s += 1\n", g.varName())
-		body.WriteString("    ret\n")
+		if g.rng.Intn(2) == 0 {
+			body.WriteString("    ret\n")
+		} else {
+			body.WriteString("    jump(ra)\n")
+		}
 		g.callees = append(g.callees, body.String())
 	case 23:
 		fmt.Fprintf(sb, "%sput(%s, %d, %s)\n", ind, g.stackDev(), g.rng.Intn(8), g.expr(2))
@@ -546,7 +551,7 @@ func (g *gen) expr(depth int) string {
 }
 
 func (g *gen) atom() string {
-	switch g.rng.Intn(10) {
+	switch g.rng.Intn(12) {
 	case 0:
 		return strconv.Itoa(g.rng.Intn(20))
 	case 1, 2:
@@ -570,6 +575,10 @@ func (g *gen) atom() string {
 			return fmt.Sprintf("%s[%d]", t, g.rng.Intn(g.tableLen))
 		}
 		return "3"
+	case 7:
+		// Reading the stack pointer directly: it must not be commoned up across
+		// push/pop.
+		return "sp"
 	default:
 		return strconv.Itoa(g.rng.Intn(5))
 	}

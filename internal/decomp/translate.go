@@ -71,6 +71,17 @@ func (d *decompiler) translate(l icLine) []string {
 	}
 	switch l.op {
 	case "move":
+		// A constant stored into the return-address register is a manual
+		// subroutine return target, so reference the label (the code generator
+		// resolves it to the recompiled line) instead of the original line
+		// number.
+		if d.resolve(l.args[0]) == "ra" {
+			if t, ok := d.absolute(l, 1); ok {
+				if _, hasLabel := d.labelAt[t]; hasLabel {
+					return []string{"ra = " + d.labelOf(t)}
+				}
+			}
+		}
 		return []string{d.assignDst(l.args[0], d.a(l, 1))}
 	case "l":
 		if d.isDynLogic(l.args[2]) {
