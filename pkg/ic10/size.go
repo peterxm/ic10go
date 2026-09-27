@@ -52,6 +52,7 @@ type StackReport struct {
 // the same inlined/outlined selection as Compile.
 func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 	opts = stackEnv(opts)
+	opts = applyFileStackPragmas(src, opts)
 	info, diags, private := parseAndCheck(name, src, opts)
 	if info == nil || diags.HasErrors() {
 		return nil, fmt.Errorf("compile failed")

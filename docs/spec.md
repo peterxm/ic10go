@@ -32,7 +32,7 @@
 // icg: shared-stack    // 用户栈可能与后继程序共享，保持保守（多芯片默认）
 ```
 
-见 [§4.6](#46-栈私有-pragma)。
+见 [§4.6](#46-栈-pragma)。
 
 ### 2.2 标识符
 
@@ -243,7 +243,9 @@ data Squares = [ sq(i) for i in 0..255 ]   // 编译期展开成 256 个值
 - 512 槽持久栈分为**用户区** `[0, userLimit)` 与**编译器区** `[userLimit, 511]`
   （数据段 + 寄存器溢出）。用户上限默认固定 `--user-stack N`（默认 128）；
   `--dynamic-stack` 改为按数据段/溢出动态计算。用户绝对地址越界、`push` 超深
-  会编译报错。默认 `--data-layout top`；`--data-layout middle` 把数据段放到
+  会编译报错。文件也可用 `// icg: dynamic-stack` pragma 自行声明动态边界
+  （反编译旧脚本会自动加上），显式 `--user-stack`/`--dynamic-stack` 仍优先。
+  默认 `--data-layout top`；`--data-layout middle` 把数据段放到
   固定槽 `256`、高地址留给寄存器溢出。
 - 默认 runtime 会校验数据段版本（缺失/过期则停机）；`--no-data-check` 或
   `--unsafe` 可跳过校验以缩短代码（`--unsafe` 会在 CLI 打印警告）。
@@ -308,7 +310,7 @@ CLI：`ic10c build x.icg` 会为每个 chip 写 `<file>.<chip>.ic`（及各自�
 `.data.ic`）；`ic10c build --chip NAME x.icg` 只输出指定 chip。`--json` 的
 `chips[]` 列出每块芯片。
 
-### 4.6 栈私有 pragma
+### 4.6 栈 pragma
 
 IC10 的持久栈跨 tick、跨换代码保留。默认编译器**无法确定**用户栈槽是否会被
 后继程序读取（例如 loader→runtime 交接、手动换程序），因此对用户栈的
@@ -324,6 +326,18 @@ IC10 的持久栈跨 tick、跨换代码保留。默认编译器**无法确定**
 - 默认：**单芯片 → `private-stack`**，含 `chip` 块的多芯片 → `shared-stack`。
   pragma 优先于默认。
 - 这些优化只在能**减少或持平** runtime 行数时采用（编译器会比较两种产物）。
+
+另有一个栈**边界** pragma：
+
+```go
+// icg: dynamic-stack
+```
+
+它等价于命令行 `--dynamic-stack`：用户区上限改为按数据段/溢出动态计算，
+于是程序可以使用高位栈槽（旧式手写 IC10 常把整块 512 槽栈当数据/暂存区）。
+`ic10c decompile` 对这类程序会自动加上该 pragma，使产物无需额外开关即可编译。
+显式的 `--dynamic-stack` 或非默认的 `--user-stack N`（及对应环境变量）会覆盖它；
+默认值 128 视为未设置，因此编辑器透传默认设置时不会压掉 pragma。
 
 > 注意：设备栈 `d0.stack[...]` 属于共享设备，始终按可观测处理，不受本 pragma
 > 影响。

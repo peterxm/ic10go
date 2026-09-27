@@ -384,7 +384,14 @@ class LspClient {
     applyStackEnv(env) {
         const cfg = this.config();
         if (cfg.dynamicStack === true) env.IC10C_DYNAMIC_STACK = '1';
-        if (cfg.userStack && cfg.userStack > 0) env.IC10C_USER_STACK = String(cfg.userStack);
+        // Only export a user stack size the user actually changed. The schema
+        // default (128) must not leak into ic10c's environment: it would mask a
+        // file's `// icg: dynamic-stack` pragma.
+        const usDefault = vscode.workspace.getConfiguration('icg').inspect('userStack');
+        const defaultUserStack = usDefault ? usDefault.defaultValue : undefined;
+        if (cfg.userStack && cfg.userStack > 0 && cfg.userStack !== defaultUserStack) {
+            env.IC10C_USER_STACK = String(cfg.userStack);
+        }
         if (cfg.redundantDeviceWrites === true) env.IC10C_REDUNDANT_DEVICE_WRITES = '1';
         if (cfg.mergeRenamedTails === true) env.IC10C_MERGE_RENAMED_TAILS = '1';
         if (cfg.maxLines > 0) env.IC10C_MAX_LINES = String(cfg.maxLines);

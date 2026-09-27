@@ -152,6 +152,41 @@ func stackPragma(src []byte) (bool, bool) {
 	return false, false
 }
 
+// dynamicStackPragma reports whether the source carries an
+// `// icg: dynamic-stack` file pragma. The decompiler writes it for legacy IC10
+// that manages the whole 512-slot stack (whose high slots the fixed [0..127]
+// user region would reject), so the recompiled program builds with the default
+// options.
+func dynamicStackPragma(src []byte) bool {
+	for _, line := range strings.Split(string(src), "\n") {
+		t := strings.TrimSpace(line)
+		if !strings.HasPrefix(t, "//") {
+			continue
+		}
+		t = strings.TrimSpace(strings.TrimPrefix(t, "//"))
+		if strings.HasPrefix(t, "icg:") &&
+			strings.TrimSpace(strings.TrimPrefix(t, "icg:")) == "dynamic-stack" {
+			return true
+		}
+	}
+	return false
+}
+
+// applyFileStackPragmas turns on the dynamic stack boundary when the file asks
+// for it and the caller did not pick a different stack size. An explicit
+// --dynamic-stack, or a --user-stack N other than the default, wins; the
+// default 128 counts as "unset" so an editor that forwards its (default)
+// settings through the environment does not mask the file's pragma.
+func applyFileStackPragmas(src []byte, opts Options) Options {
+	if opts.DynamicStack || (opts.UserStackLimit != 0 && opts.UserStackLimit != DefaultUserStack) {
+		return opts
+	}
+	if dynamicStackPragma(src) {
+		opts.DynamicStack = true
+	}
+	return opts
+}
+
 // DefaultUserStack is the default fixed user stack size. It leaves the
 // compiler 384 slots for the data segment (loader-capped at the line limit) and
 // register spills.
@@ -288,6 +323,7 @@ func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Ba
 // only has to run once; the chip is then overwritten with the runtime.
 func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, error) {
 	opts = stackEnv(opts)
+	opts = applyFileStackPragmas(src, opts)
 	file := source.NewFile(name, src)
 	diags := &diag.Bag{}
 	toks := lexer.Tokenize(file, diags)

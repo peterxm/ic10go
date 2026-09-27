@@ -181,8 +181,10 @@ ic10c build main.icg
 
 用户上限默认**固定**为 `--user-stack N`（默认 128，环境变量 `IC10C_USER_STACK`，
 VS Code `icg.userStack`）。加 `--dynamic-stack`（环境变量 `IC10C_DYNAMIC_STACK`，
-VS Code `icg.dynamicStack`，默认关）改为动态：`userLimit = 512 - size - spills`
-（`middle` 布局为 `256`）。
+VS Code `icg.dynamicStack`，默认关，或文件 pragma `// icg: dynamic-stack`）改为动态：
+`userLimit = 512 - size - spills`（`middle` 布局为 `256`）。显式的
+`--dynamic-stack` 或非默认 `--user-stack` 优先于文件 pragma（默认 128 视为未设置）；
+`ic10c decompile` 对使用高位栈槽的旧脚本会自动加上该 pragma。
 
 | 布局 | data 段 | 寄存器溢出 | 动态边界 |
 |------|---------|------------|----------|

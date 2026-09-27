@@ -173,6 +173,36 @@ func TestDecompileStructuredSmoke(t *testing.T) {
 	}
 }
 
+// TestDecompileMarksDynamicStack checks the decompiler prepends the
+// dynamic-stack pragma for legacy IC10 that uses slots above the fixed user
+// stack, so the output compiles with the default options.
+func TestDecompileMarksDynamicStack(t *testing.T) {
+	src := "put db 495 1\nget r0 db 495\ns d0 Setting r0\nj 0\n"
+	code, _, err := ic10.Decompile("t.ic", []byte(src), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(code, "// icg: dynamic-stack\n") {
+		t.Fatalf("expected the dynamic-stack pragma, got:\n%s", code)
+	}
+	if _, diags, cerr := ic10.Compile("t.icg", []byte(code)); diags.HasErrors() || cerr != nil {
+		t.Fatalf("decompiled output does not compile by default: %v %v", diags.Diags, cerr)
+	}
+}
+
+// TestDecompileKeepsDefaultStack checks an ordinary program is left without the
+// dynamic-stack pragma.
+func TestDecompileKeepsDefaultStack(t *testing.T) {
+	src := "l r0 d1 Pressure\ns d0 Setting r0\nj 0\n"
+	code, _, err := ic10.Decompile("t.ic", []byte(src), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(code, "dynamic-stack") {
+		t.Fatalf("unexpected dynamic-stack pragma:\n%s", code)
+	}
+}
+
 func roundTripWith(t *testing.T, path string, setup func(*vm.Machine), dec func(string) (string, []decomp.Warning, error)) {
 	t.Helper()
 	src, err := os.ReadFile(path)

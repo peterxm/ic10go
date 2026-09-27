@@ -290,8 +290,11 @@ stack comp   9 @ [503..511] (data 9 + spills 0)
   只在报告中标记，不作为错误。
 - 动态开关：CLI `--dynamic-stack`（默认关）、`--user-stack N`，环境变量
   `IC10C_DYNAMIC_STACK` / `IC10C_USER_STACK`，VS Code `icg.dynamicStack`
-  （默认关）与 `icg.userStack`（默认 128）。固定模式下若数据段 + 溢出放不下
-  编译器区，同样报错。
+  （默认关）与 `icg.userStack`（默认 128），以及文件 pragma
+  `// icg: dynamic-stack`（显式 `--dynamic-stack` 或**非默认** `--user-stack`
+  优先；默认 128 视为未设置）。固定模式下若数据段 + 溢出放不下编译器区，
+  同样报错。`ic10c decompile` 对使用高位栈槽的旧脚本会自动加上该 pragma，
+  使产物无需额外开关即可编译。
 
 ### 6.7 分区带来的优化
 
@@ -564,6 +567,7 @@ IC10 → `.icg` 的翻译分两步：
    - 健壮性：只含自身终结符的「裸分支」块也登记行号（否则指向它的跳转解析到块 0）；落在空行/仅标签行上的分支目标同样触发切块并发射其合成标签；不退出循环的内层 `if` 在后支配关系退化（无虚拟出口）时仍结构化。
    - 若无法保证每个基本块恰好发射一次，或产物无法编译，自动回退到扁平形式（`ic10.Decompile` 封装了该策略）。
    - 结构化仍是**尽力而为**：无法结构化的循环保留为 `goto`，因此不会误编译。
+   - **栈边界**：旧式手写 IC10 常用整块 512 槽栈。翻译后若只因超出默认 `[0..127]` 用户区而编译失败、加上 `// icg: dynamic-stack` 就能编译，`ic10.Decompile` 会自动加上该 pragma，使产物在 CLI 与编辑器里默认即可编译。
 
 `ic10code/` 里的真实脚本（作者自有 + 本地保留的第三方脚本，后者缺失时自动跳过）都会做**反编译 → 重编译 → 设备写入序列对比**（`TestIc10CodeRoundTrip` / `TestIc10CodeRoundTripStructured`，扁平与结构化各一遍，且各自跑固定设备值 + 若干随机种子）与 **minify 等价性**（`TestMinifyIc10Code`；minify 在展开 define 会超行宽时自动保留 define）。
 

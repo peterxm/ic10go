@@ -700,6 +700,35 @@ func TestStackFixedLimitRejected(t *testing.T) {
 	}
 }
 
+func TestDynamicStackPragma(t *testing.T) {
+	src := "// icg: dynamic-stack\nfunc main() { db.stack[400] = 1\n d0.Setting = db.stack[400] }"
+	if _, diags, err := ic10.Compile("t.icg", []byte(src)); diags.HasErrors() || err != nil {
+		t.Fatalf("pragma should allow slot 400: err=%v diags=%v", err, diags.Diags)
+	}
+	// Without the pragma the default fixed [0..127] region rejects it.
+	plain := strings.TrimPrefix(src, "// icg: dynamic-stack\n")
+	if _, diags, _ := ic10.Compile("t.icg", []byte(plain)); !diags.HasErrors() {
+		t.Fatal("expected the default fixed bound to reject slot 400")
+	}
+	// An explicit option still wins over the pragma (a non-default user size).
+	if _, diags, _ := ic10.CompileWithOptions("t.icg", []byte(src), ic10.Options{UserStackLimit: 30}); !diags.HasErrors() {
+		t.Fatal("explicit --user-stack should override the pragma")
+	}
+	// The default user size does not, so an editor forwarding it cannot mask
+	// the pragma.
+	if _, diags, err := ic10.CompileWithOptions("t.icg", []byte(src), ic10.Options{UserStackLimit: ic10.DefaultUserStack}); diags.HasErrors() || err != nil {
+		t.Fatalf("the default user size should not mask the pragma: err=%v diags=%v", err, diags.Diags)
+	}
+	// The stack report follows the pragma too.
+	rep, err := ic10.Size("t.icg", []byte(src), ic10.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Stack.Dynamic {
+		t.Errorf("size report should be dynamic, got %+v", rep.Stack)
+	}
+}
+
 func TestPureFuncShortCircuitUsesMax(t *testing.T) {
 	src := `func open(d num) num { return batch.read(d, "Open", "Maximum") }
 func main() {
