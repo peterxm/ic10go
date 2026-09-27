@@ -87,6 +87,10 @@ type line struct {
 	// correct as the line limit grows.
 	halt bool
 	fn   string // source function this line was emitted for ("" = main)
+	// table marks a jump-table entry (`j <case>` right after the dispatch).
+	// The entries are addressed by index, so a no-op entry must never be
+	// dropped: doing so would renumber the rest of the table.
+	table bool
 }
 
 // haltMarker is the IR-level sentinel a halt block jumps to. It is a marker,
@@ -290,7 +294,7 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 				add("add "+reg+" "+reg+" 1", nil, b.Func)
 				add("jr "+reg, nil, b.Func)
 				for _, tb := range t.Table {
-					add("j ", tb, b.Func)
+					lines = append(lines, line{text: "j ", target: tb, fn: b.Func, table: true})
 				}
 			} else {
 				add("j "+valueText(t.Target, colors), nil, b.Func)
@@ -360,19 +364,18 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 		}
 	}
 
-	// A branch to a block that produced no line would resolve past the end.
-	needNop := false
+	lines, start = simplifyBranches(lines, start)
+
+	// A branch to a block that produced no line would resolve past the end;
+	// give the program a line for it to land on. This is checked after the
+	// branch cleanup, which can remove a block's only line.
 	for _, ln := range lines {
 		if ln.target != nil && start[ln.target] >= len(lines) {
-			needNop = true
+			lines = append(lines, line{text: "move r0 r0"})
 			break
 		}
 	}
-	if needNop {
-		add("move r0 r0", nil, "")
-	}
 
-	lines, start = removeRedundantJumps(lines, start)
 	return blocks, lines, start
 }
 
@@ -618,6 +621,20 @@ func checkCallLayout(blocks []*ir.Block, lines []line, start map[*ir.Block]int) 
 	return nil
 }
 
+// simplifyBranches tidies the emitted line list: it folds redundant
+// branch/jump pairs and drops branches whose target is the following line,
+// repeating until neither applies (one change can enable the other).
+func simplifyBranches(lines []line, start map[*ir.Block]int) ([]line, map[*ir.Block]int) {
+	for {
+		n := len(lines)
+		lines, start = removeRedundantJumps(lines, start)
+		lines, start = dropNoOpBranches(lines, start)
+		if len(lines) == n {
+			return lines, start
+		}
+	}
+}
+
 // removeRedundantJumps rewrites "b<cond> ... T" followed by "j J" into the
 // inverted branch "b<!cond> ... J" when T is the instruction after the jump.
 // Both paths then reach the same line, so the unconditional jump is dead.
@@ -632,7 +649,7 @@ func removeRedundantJumps(lines []line, start map[*ir.Block]int) ([]line, map[*i
 			continue
 		}
 		br, j := lines[i], lines[i+1]
-		if br.target == nil || j.target == nil || !strings.HasPrefix(j.text, "j ") {
+		if br.target == nil || j.target == nil || j.table || !strings.HasPrefix(j.text, "j ") {
 			continue
 		}
 		inv, ok := invertBranch(br.text)
@@ -647,6 +664,37 @@ func removeRedundantJumps(lines []line, start map[*ir.Block]int) ([]line, map[*i
 		redirect[i+1] = j.target
 		i++
 	}
+	return removeLines(lines, start, removed, redirect)
+}
+
+// dropNoOpBranches removes a jump or conditional branch whose target is the
+// line right after it: taking the branch and falling through reach the same
+// line, so the instruction does nothing. Table entries and calls are left
+// alone (a jump-table entry is addressed by index, and a call has to run).
+func dropNoOpBranches(lines []line, start map[*ir.Block]int) ([]line, map[*ir.Block]int) {
+	removed := make([]bool, len(lines))
+	any := false
+	for i, ln := range lines {
+		if ln.target == nil || ln.table || start[ln.target] != i+1 {
+			continue
+		}
+		if _, isBranch := invertBranch(ln.text); !isBranch && !strings.HasPrefix(ln.text, "j ") {
+			continue
+		}
+		removed[i] = true
+		any = true
+	}
+	if !any {
+		return lines, start
+	}
+	return removeLines(lines, start, removed, nil)
+}
+
+// removeLines drops the marked lines and remaps the block start lines. A
+// removed line with a redirect is followed to its target, so a branch that
+// targeted a removed jump still lands where that jump went; a removed line
+// without one simply falls through to the next kept line.
+func removeLines(lines []line, start map[*ir.Block]int, removed []bool, redirect map[int]*ir.Block) ([]line, map[*ir.Block]int) {
 	kept := make([]line, 0, len(lines))
 	index := make([]int, len(lines))
 	for i, ln := range lines {

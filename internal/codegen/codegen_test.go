@@ -169,3 +169,51 @@ func TestNoFoldSpecialArithWhenStoreSourceDiffers(t *testing.T) {
 		t.Fatalf("code = %q, want %q", code, want)
 	}
 }
+
+func TestDropNoOpBranch(t *testing.T) {
+	// A conditional branch whose both edges lead to the next line does nothing
+	// and must be dropped.
+	b := ir.NewBuilder("t")
+	cond := b.NewReg("cond")
+	next := b.NewBlock()
+	b.Emit(&ir.Assign{Dst: cond, Src: &ir.Const{V: 1}})
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: cond, Then: next, Else: next})
+	b.SetBlock(next)
+	x := b.NewReg("x")
+	b.Emit(&ir.Bin{Op: ir.Add, Dst: x, A: &ir.Const{V: 1}, B: &ir.Const{V: 2}})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{cond: 0, x: 1})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if want := "move r0 1\nadd r1 1 2\n"; code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}
+
+func TestJumpTableEntriesSurviveNoOpRemoval(t *testing.T) {
+	// The second table entry points at a case block laid out right after the
+	// table, which looks like a no-op jump; it must be kept because the entries
+	// are addressed by index.
+	b := ir.NewBuilder("t")
+	idx := b.NewReg("idx")
+	b0, b1 := b.NewBlock(), b.NewBlock()
+	b.Emit(&ir.Assign{Dst: idx, Src: &ir.Const{V: 0}})
+	b.SetTerm(&ir.JmpDyn{Target: idx, Table: []*ir.Block{b0, b1}})
+	b.SetBlock(b1)
+	y := b.NewReg("y")
+	b.Emit(&ir.Assign{Dst: y, Src: &ir.Const{V: 2}})
+	b.SetTerm(&ir.Ret{})
+	b.SetBlock(b0)
+	x := b.NewReg("x")
+	b.Emit(&ir.Assign{Dst: x, Src: &ir.Const{V: 1}})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{idx: 0, y: 2, x: 1})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	want := "move r0 0\nadd r0 r0 1\njr r0\nj 6\nj 5\nmove r2 2\nmove r1 1\n"
+	if code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}
