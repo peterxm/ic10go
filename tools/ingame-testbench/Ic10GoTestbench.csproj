@@ -16,6 +16,7 @@
     <!-- Path to the game installation. Override with -p:StationeersDir=... -->
     <StationeersDir Condition="'$(StationeersDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Stationeers</StationeersDir>
     <StationeersManaged>$(StationeersDir)/rocketstation_Data/Managed</StationeersManaged>
+    <BepInExCore>$(StationeersDir)/BepInEx/core</BepInExCore>
   </PropertyGroup>
 
   <!-- net472 can be built on Linux once the reference assemblies are available. -->
@@ -40,6 +41,11 @@
     </Reference>
     <Reference Include="Newtonsoft.Json">
       <HintPath>$(StationeersManaged)/Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- BepInEx's HarmonyX, used only to trace device writes. -->
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExCore)/0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

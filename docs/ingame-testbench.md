@@ -195,6 +195,7 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `set` | `{writes:[{port,logic,slot?,value}], force?:bool, pulse?:bool}` — `port` or `id` | `{applied:n}` |
 | `get` | `{reads:[{port,logic,slot?}]}` — `port` or `id` | `{values:[...]}` |
 | `device` | `{ids:[...]}` | `{devices:[{id,logic,slots,…}]}`（按 ReferenceId） |
+| `writes` | `{clear?:bool, from?:int}` | `{writes:[{seq,id,device,logic,slot,value}], count}` |
 | `run` | `{ticks:n, mode?:"step"|"realtime"}` | `{ticks, line}` |
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
 | `ports` | `{chip?}` | diagnostic: `Devices[]`, ids, labels, lookups |
@@ -247,6 +248,10 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
   期间载入导致崩溃，会**等主菜单场景 `Base` 出现**后才载入（`autoloadDelay` 只是下限）。
 - **不需要 Harmony**（v1）：只用公开 API + 反射读私有字段；`Execute(int)` 用于单步。
   若真机发现暂停时游戏仍自行 tick 导致重复执行，再在 M5 加 Harmony 门控。
+- **设备写追踪**（v2）：唯一的 Harmony 用途——给全部 `ILogicable.SetLogicValue`
+  实现挂前缀，记录每条 logic 写（`writes` 命令），用于对拍只写 logic
+  （`Setting`/`Color`/`Mode`）的脚本。它也会记录**游戏自身**的写入（传感器等在
+  tick 时被写），所以只在暂停下单步时用，或按目标设备 id 过滤。
 - **线程**：`BenchServer` 在后台线程收请求，入队；`TestbenchPlugin.Update()` 在主线程出队执行，
   结果回写并发回。所有游戏 API 只在主线程调用。
 - **chip 定位**：遍历 `CircuitHolders.AllCircuitHolders`（`ICircuitHolder`），拿 `ProgrammableChip`；

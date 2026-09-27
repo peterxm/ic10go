@@ -36,6 +36,7 @@ namespace Ic10Go.Testbench
                 case "set": return Set(args);
                 case "get": return Get(args);
                 case "device": return Device(args);
+                case "writes": return Writes(args);
                 case "run": return Run(args);
                 case "reset": return Reset(args);
                 case "pause": return PauseCmd(args, plugin);
@@ -210,6 +211,15 @@ namespace Ic10Go.Testbench
                 arr.Add(e);
             }
             return new JObject { ["devices"] = arr };
+        }
+
+        /// <summary>writes {clear?, from?} returns the device logic writes the
+        /// program performed since the last clear (Harmony trace).</summary>
+        private static JObject Writes(JObject args)
+        {
+            bool clear = args["clear"] != null && (bool)args["clear"];
+            int from = args["from"] != null ? (int)args["from"] : 0;
+            return WriteTrace.Snapshot(clear, from);
         }
 
         // -- watch ------------------------------------------------------------

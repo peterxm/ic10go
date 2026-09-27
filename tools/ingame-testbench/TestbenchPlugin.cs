@@ -9,7 +9,10 @@
 //   * step the chip deterministically while the world is paused,
 //   * read back registers, stack, program counter and device values.
 //
-// It has no Harmony patches: everything goes through the game's public API
+// It uses one Harmony patch (WriteTrace): a prefix on ILogicable.SetLogicValue
+// that records device writes, so a script's write-only logic (Setting/Color/
+// Mode) can be compared between the original and a recompiled program.
+// Everything else goes through the game's public API
 // (ProgrammableChip.Execute / ReadMemory / SetSourceCode, ILogicable.SetLogicValue,
 // CircuitHolders.AllCircuitHolders), with reflection only for the chip's private
 // register/stack arrays. All game access happens on the Unity main thread.
@@ -66,6 +69,14 @@ namespace Ic10Go.Testbench
                 _server = new BenchServer(cfg.Host, cfg.Port, this);
                 _server.Start();
                 Debug.Log("[" + ModId + "] listening on " + cfg.Host + ":" + cfg.Port);
+                try
+                {
+                    UnityEngine.Debug.Log("[" + ModId + "] device-write trace: " + WriteTrace.Install());
+                }
+                catch (Exception hex)
+                {
+                    UnityEngine.Debug.LogError("[" + ModId + "] failed to install the device-write trace: " + hex);
+                }
                 if (!string.IsNullOrEmpty(cfg.Autoload))
                     Debug.Log("[" + ModId + "] will autoload save \"" + cfg.Autoload + "\" at the main menu");
             }
