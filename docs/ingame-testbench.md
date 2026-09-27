@@ -495,6 +495,63 @@ Activity Bar「IC10」
 
 ---
 
+## 真机测试调试经验（踩坑记录）
+
+做「反编译 → 重编译 → 真机逐写对比」（`testdata/bench/ab/`）时踩到的点：
+
+### 改 mod 必须重启游戏
+BepInEx / LaunchPad 的**热加载不可靠**：换 DLL 后**没改动**的方法还能用，但**改过方法体**的
+调用会报 `Method has zero rva`（Mono 解析到不一致的元数据）。所以每次改 mod 都要
+重编 → 拷 DLL 到 `mods/ic10go-testbench/` → **重启游戏**（会按 `autoload` 载档）。
+日志：`…/AppData/LocalLow/Rocketwerkz/rocketstation/Player.log`。
+
+### 不要在游戏内用 `world.load` 载档
+`world.load` 只在**主菜单**可靠；在世界里调用会让世界卡在 `Loading` 并弹「启动游戏时发生失败」。
+崩了就杀进程重启（`autoload` 会恢复），**存档不会坏**（每 5 分钟自动存一份）。换档请回主菜单。
+
+### `push` 会 `Reset()`，但 `Reset()` 保留栈
+`push` 每次都 `chip.Reset()` 再 `SetSourceCode`；实测 `Reset()` **保留 512 槽栈的内容**
+（寄存器 / `sp` / PC 会复位）。所以依赖栈状态的脚本，`push` 前后行为可能不同；要“同一状态跑两遍”，
+只能靠主菜单重载存档，或接受状态漂移（见下面的相位问题）。
+
+### 芯片的写**不走** `ILogicable.SetLogicValue`
+IC10 解释器把每行**编译成 `ProgrammableChip+_Operation` 的子类**，写在各子类自己的
+`Execute(index)` 里（`_Operation._SetDeviceValue` 也不是入口）。所以给 `SetLogicValue` 的
+全部实现挂 Harmony 前缀，只能看到**游戏自身**的写（传感器等 tick 时被写），**看不到芯片的写**。
+要看芯片的写，用 `trace`（逐条 `Execute(1)` + PC + 寄存器）在宿主机还原。
+
+### `_Registers` 是 `[r0..r15, sp, ra]`
+`_Registers[16]` 是 **`sp`**、`[17]` 是 `ra`。`_StackPointerIndex` / `_ReturnAddressIndex`
+**不是** IC10 的 `sp`/`ra`（实测恒为小常数），别拿来解析操作数。解码 `put db sp …` 时必须用
+`_Registers[16]`，否则地址全错。
+
+### `state` 只能读端口设备；按 id 的设备用 `device`
+`state` 的设备来自 `GetLogicBindings()` / `Devices[]`（芯片的 `db` + `d0..d5`）。按
+**ReferenceId** 访问的网络设备（大多数打印机 / 机械）要用 `device {ids:[…]}`（内部走
+`GetLogicableFromId`）。`CanLogicRead` 为假的 logic（`Setting` / `Color` / `Mode`）**读不回来**，
+只能靠写追踪 / `trace`。
+
+### `get` 对不可读 logic 会抛 `Method has zero rva`
+Mono 调接口里的空实现会报这个（`state` 的读取会 `CanLogicRead` 过滤，所以没事）。`get` 现在
+先查 `CanLogicRead`，给明确报错。
+
+### 真机 A/B 的相位问题（重要）
+逐写对比是在**固定指令预算**（`--n` 条指令）内比前缀：原版与重编译每轮指令数不同，窗口会落在
+**不同相位**。所以必须**先跑「原版 ×2」做确定性对照**：
+
+- 对照 0 差异 → 原版稳定，`原版 vs 重编译` 的差异才可信；
+- 对照本身就有差异 → 该芯片在窗口内**依赖变化中的设备状态**（如离心机实时 `Rpm`/`Stress`），
+  此法测不了，需先固定输入或做隔离场景。
+
+判定「效果」时：`s <reg> …` ≡ `sd <reg> …`（都是按 ReferenceId 写）；枚举 `Color.Green` 与
+`2` 用 `testdata/bench/ab/enums.json` 归一化（`go run ./tools/dumpenums` 更新）。
+
+### 选芯片
+`list --json` 看每块芯片的 `lines` / `programmable`；空转（窗口内不写）的芯片看不出差异；
+事件驱动的芯片（等占用传感器 / 按钮 / 拉杆）要先触发再跑。
+
+---
+
 ## 12. 免责声明 / Disclaimer
 
 本测试台（`ic10c testbench` + `tools/ingame-testbench` mod + VSCode 面板）与
