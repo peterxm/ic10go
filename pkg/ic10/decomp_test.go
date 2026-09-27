@@ -266,3 +266,20 @@ func TestDecompileStructuredLoopIf(t *testing.T) {
 		t.Errorf("expected a structured loop with an if, got:\n%s", code)
 	}
 }
+
+// TestDecompileStructuredCallInLoop checks that a conditional call (`-al`
+// branch) whose target is the block right after the loop stays a call. It used
+// to be mis-structured as a loop-exit `break`.
+func TestDecompileStructuredCallInLoop(t *testing.T) {
+	src := "l r0 d0 On\nbgtzal r0 3\nyield\nj 0\ns d1 On 1\nj ra\n"
+	code, _, err := ic10.Decompile("t.ic", []byte(src), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(code, "call ") {
+		t.Errorf("expected a call, got:\n%s", code)
+	}
+	if strings.Contains(code, "break") {
+		t.Errorf("call was mis-structured as a break:\n%s", code)
+	}
+}

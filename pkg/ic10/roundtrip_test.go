@@ -109,27 +109,39 @@ func TestIc10CodeRoundTripStructured(t *testing.T) {
 				t.Skipf("structured output does not compile (falls back to flat): %v", err)
 			}
 
-			a := vm.New()
-			portSetup(a)
-			if err := a.Load(string(src)); err != nil {
-				t.Fatalf("original load: %v", err)
-			}
-			b := vm.New()
-			portSetup(b)
-			if err := b.Load(code); err != nil {
-				t.Fatalf("structured load: %v", err)
-			}
-
-			const writes = 100
-			wa := writeSequence(a, writes, 40000)
-			wb := writeSequence(b, writes, 40000)
-			if strings.Join(wa, "|") != strings.Join(wb, "|") {
-				i := 0
-				for i < len(wa) && i < len(wb) && wa[i] == wb[i] {
-					i++
+			// The fixed setup, plus several random device-value seeds so
+			// value-dependent branches are covered too.
+			for _, seed := range []int64{0, 1, 2, 3, 4, 5} {
+				a := vm.New()
+				b := vm.New()
+				if seed == 0 {
+					portSetup(a)
+					portSetup(b)
+				} else {
+					portSetupSeed(a, seed)
+					portSetupSeed(b, seed)
 				}
-				t.Errorf("device writes differ at %d (len %d vs %d)\n original[%d:]: %s\n structured[%d:]: %s",
-					i, len(wa), len(wb), i, preview(wa[i:]), i, preview(wb[i:]))
+				if err := a.Load(string(src)); err != nil {
+					t.Fatalf("original load: %v", err)
+				}
+				if err := b.Load(code); err != nil {
+					t.Fatalf("structured load: %v", err)
+				}
+
+				writes, steps := 100, 40000
+				if seed != 0 {
+					writes, steps = 60, 30000
+				}
+				wa := writeSequence(a, writes, steps)
+				wb := writeSequence(b, writes, steps)
+				if strings.Join(wa, "|") != strings.Join(wb, "|") {
+					i := 0
+					for i < len(wa) && i < len(wb) && wa[i] == wb[i] {
+						i++
+					}
+					t.Errorf("seed %d: device writes differ at %d (len %d vs %d)\n original[%d:]: %s\n structured[%d:]: %s",
+						seed, i, len(wa), len(wb), i, preview(wa[i:]), i, preview(wb[i:]))
+				}
 			}
 		})
 	}

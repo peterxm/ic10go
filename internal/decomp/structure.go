@@ -677,7 +677,8 @@ func (s *structurer) emitLoopBody(lp *sLoop) {
 		b := s.blocks[i]
 		// A branch back to the loop header.
 		if b.term != nil {
-			if t, ok := s.labelIndex(*b.term); ok && t == lp.header {
+			_, _, withRA, isBr := ic10asm.BranchInfo(b.term.op)
+			if t, ok := s.labelIndex(*b.term); ok && t == lp.header && (!isBr || !withRA) {
 				s.visit(i)
 				s.emitLabels(b)
 				for _, ins := range b.insns {
@@ -708,9 +709,10 @@ func (s *structurer) emitLoopBody(lp *sLoop) {
 				continue
 			}
 		}
-		// A branch to the loop exit becomes a break.
+		// A branch to the loop exit becomes a break. A call (-al branch) is not
+		// an exit even when it targets the block after the loop.
 		if b.term != nil {
-			if cond, _, _, ok := ic10asm.BranchInfo(b.term.op); ok {
+			if cond, _, withRA, ok := ic10asm.BranchInfo(b.term.op); ok && !withRA {
 				if t, ok := s.labelIndex(*b.term); ok && t == lp.end+1 {
 					s.visit(i)
 					s.emitLabels(b)
