@@ -9,6 +9,8 @@
 - **中文**：用 Go 风格语法编写 Stationeers IC10 芯片程序，编译为高效紧凑的 IC10 代码。
 - **English**：Write Stationeers IC10 programs in a Go-like language and compile them to compact, optimized IC10.
 
+> **语法已冻结**（自 `ic10c 0.8.23`）：`.icg` 的**语法不再变动**——不再新增关键字 / 语法形式，也不做破坏性改动；后续只做实现修复与**不改变语法**的增强（新增内建、枚举、设备表属于实现）。见 [`docs/spec.md`](docs/spec.md)。
+
 ## 项目简介
 
 `ic10go` 是一个把 **Go 风格语言 `.icg`** 编译为 **Stationeers IC10** 机器码的编译器。IC10 的预算只有 **128 行 / 4 KiB / 每行 90 字符**，手写大型脚本极易超限；`ic10go` 提供现代语言特性（`if` / `for` / `switch`、`for range`、`case lo..hi` 区间、`if`/`switch` 初始化、标签 `break`/`continue`、函数内联/外提、设备属性与槽位、设备栈与分拣/打印栈指令构建器、批量 IO、网络通道、枚举），并通过寄存器分配与复用、常量折叠、CSE、循环不变量外提、分支融合、常量查表内联、精确栈失效、寄存器溢出到宿主栈（`get/put db`）等优化把程序压进预算。

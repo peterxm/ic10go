@@ -1,3 +1,8 @@
+// Package parser implements the .icg grammar.
+//
+// The .icg syntax is FROZEN (see docs/spec.md): do not add keywords or grammar
+// forms and do not make breaking changes. Implementation fixes and additions
+// that leave the grammar alone (new builtins, enums, device tables) are fine.
 package parser
 
 import (
