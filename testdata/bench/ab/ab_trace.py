@@ -57,7 +57,7 @@ def symbols(src):
     return al, de
 
 
-def val(tok, al, de, regs):
+def val(tok, al, de, regs, sp=None, ra=None):
     t = tok.strip()
     for _ in range(6):
         if t in al:
@@ -70,9 +70,9 @@ def val(tok, al, de, regs):
     if m:
         i = int(m.group(1))
         return regs[i] if i < len(regs) else None
-    if t == "ra":
-        return regs[16] if len(regs) > 16 else None
     if t == "sp":
+        return regs[16] if len(regs) > 16 else None
+    if t == "ra":
         return regs[17] if len(regs) > 17 else None
     mh = re.match(r'HASH\("([^"]*)"\)', t)
     if mh:
@@ -88,6 +88,8 @@ def val(tok, al, de, regs):
 
 def effect(hit, al, de):
     regs = hit["regs"]
+    sp = hit.get("sp")
+    ra = hit.get("ra")
     parts = hit["text"].split()
     op = parts[0]
     # `s <reg> ...` addresses a device by ReferenceId exactly like `sd`.
@@ -96,17 +98,17 @@ def effect(hit, al, de):
     if op == "clr":
         op = "clrd"
     a = parts[1:]
-    dev = lambda t: val(t, al, de, regs)
+    dev = lambda t: val(t, al, de, regs, sp, ra)
     if op == "sd" and len(a) >= 3:
-        return (op, dev(a[0]), a[1], val(a[2], al, de, regs))
+        return (op, dev(a[0]), a[1], val(a[2], al, de, regs, sp, ra))
     if op == "ss" and len(a) >= 4:
-        return (op, dev(a[0]), a[2], a[1], val(a[3], al, de, regs))
+        return (op, dev(a[0]), a[2], a[1], val(a[3], al, de, regs, sp, ra))
     if op in ("put", "putd") and len(a) >= 3:
-        return (op, dev(a[0]), val(a[1], al, de, regs), val(a[2], al, de, regs))
+        return (op, dev(a[0]), val(a[1], al, de, regs, sp, ra), val(a[2], al, de, regs, sp, ra))
     if op == "clrd" and len(a) >= 1:
         return (op, dev(a[0]))
     if op in ("sb", "sbn", "sbs") and len(a) >= 2:
-        return (op, dev(a[0]), val(a[1], al, de, regs))
+        return (op, dev(a[0]), val(a[1], al, de, regs, sp, ra))
     return (op,) + tuple(a)
 
 

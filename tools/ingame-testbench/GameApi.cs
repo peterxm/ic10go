@@ -594,7 +594,7 @@ namespace Ic10Go.Testbench
             catch (Exception ex) { throw new BenchError("internal", "write " + logic + ": " + ex.Message); }
         }
 
-        /// <summary>The chip's _Registers array (r0..r15, ra, sp), or null.</summary>
+        /// <summary>The chip's _Registers array (r0..r15, sp, ra), or null.</summary>
         public static double[] ReadRegisters(ProgrammableChip chip)
         {
             try { return FRegs?.GetValue(chip) as double[]; } catch { return null; }
@@ -646,7 +646,8 @@ namespace Ic10Go.Testbench
                 {
                     for (int i = 0; i < regs.Length; i++)
                     {
-                        string key = i < 16 ? "r" + i : (i == 16 ? "ra" : i == 17 ? "sp" : "r" + i);
+                        // _Registers is [r0..r15, sp, ra].
+                        string key = i < 16 ? "r" + i : (i == 16 ? "sp" : i == 17 ? "ra" : "r" + i);
                         r[key] = Num(regs[i]);
                     }
                 }
@@ -660,7 +661,7 @@ namespace Ic10Go.Testbench
                 int size = 0;
                 try { size = chip.GetStackSize(); } catch { }
                 if (size <= 0 && FStack != null) { try { size = ((double[])FStack.GetValue(chip))?.Length ?? 0; } catch { } }
-                int spv = spField ?? 0;
+                int spv = (regs != null && regs.Length > 16) ? (int)regs[16] : (spField ?? 0);
                 int limit = allStack ? size : Math.Min(size, Math.Max(spv + 4, 16));
                 double[] stack = null;
                 try { stack = FStack?.GetValue(chip) as double[]; } catch { }

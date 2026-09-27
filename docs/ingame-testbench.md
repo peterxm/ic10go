@@ -94,7 +94,7 @@ VSCode（可选，`sh editors/vscode/install.sh` 后重载窗口）：左侧 **I
 | `SetSourceCode` / `GetSourceCode` | public | 设置 / 读取程序 |
 | `get_LineNumber` | `public double` | 当前 PC / 行号 |
 | `Reset` | `public void` | 复位 |
-| `_Registers` | `private readonly double[]` | r0–r15 / ra / sp（反射读） |
+| `_Registers` | `private readonly double[]` | r0–r15 / sp / ra（反射读；`[16]` 是 sp） |
 | `_Stack` | `private readonly double[]` | 512 槽栈（反射读，或用 `ReadMemory`） |
 | `_StackPointerIndex` / `_ReturnAddressIndex` / `_executeIndex` | private int | sp / ra / PC（反射读） |
 
@@ -235,8 +235,8 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 ```
 
 - 栈默认只回 `0..sp`（外加少量上下文），避免一次传 512 个值；`--all` 可要全量。
-- `registers` 里 `r0..r15`、`ra`、`sp` 分别来自 `_Registers[0..15]`、`_Registers[16]`、
-  `_Registers[17]`（读不到时用 `_ReturnAddressIndex`/`_StackPointerIndex` 兜底）。
+- `registers` 里 `r0..r15` 来自 `_Registers[0..15]`，`sp`/`ra` 是 `_Registers[16]`/`[17]`
+  （数组长度不足时回退到 `_StackPointerIndex`/`_ReturnAddressIndex`）。
 
 ---
 
@@ -463,10 +463,9 @@ Activity Bar「IC10」
   由物理旋钮/按键决定，写入不报错但读回不变。测试输入请用 **Logic Memory**（`Setting` r/w，
   已真机验证）、**Logic Switch**，或芯片间 **bus 通道**（见 `testdata/bench/link.icg`）。
   LED 等输出设备的 `Setting` 写入正常。`set --force` 可跳过 `CanLogicWrite` 校验。
-- `state.registers` 里 `r0..r15` 来自 `_Registers`；`ra`/`sp` 在数组长度恰好 18 时取
-  `_Registers[16]/[17]`，否则回退到 `_ReturnAddressIndex`/`_StackPointerIndex`。
-  真机上 `_Registers` 长度为 18、`_StackPointerIndex` 为栈指针；字段语义已在
-  `GameApi.BuildState` 注释中记录，后续按需修正标签。
+- `state.registers` 里 `r0..r15` 来自 `_Registers[0..15]`；`sp`/`ra` 是 `_Registers[16]/[17]`
+  （真机上 `_Registers` 长度 18；`_Registers[16]` 就是 IC10 `sp`——早先误当成 `ra`，
+  已修正；数组不完整时才回退到 `_StackPointerIndex`/`_ReturnAddressIndex`）。
 - **设备 host**（如空调）：程序用 `db` 控制宿主本身。`state` 会列出 `db` 设备；`set db.On=1`
   等生效。给设备 host 推送带 `data` 表的程序要用 `--data-access stack`。
 - **暂停/恢复**走游戏自己的 `InputSourceCode.PauseGameToggle(bool)`（社区 IC10 编辑器同款），
