@@ -3,6 +3,8 @@ package codegen
 import (
 	"strings"
 	"testing"
+
+	"ic10go/internal/ir"
 )
 
 func TestValidateOK(t *testing.T) {
@@ -68,5 +70,102 @@ func TestLimitsResolveDefaults(t *testing.T) {
 	got := Limits{Lines: 256}.Resolve()
 	if got.Lines != 256 || got.Bytes != MaxBytes || got.LineLen != MaxLineLen {
 		t.Fatalf("Resolve = %+v, want {256 %d %d}", got, MaxBytes, MaxLineLen)
+	}
+}
+
+func TestFoldSpecialArithLoadComputeStore(t *testing.T) {
+	b := ir.NewBuilder("t")
+	sp := b.NewReg("spv")
+	tmp := b.NewReg("tmp")
+	b.Emit(&ir.LoadSpecial{Dst: sp, Name: "sp"})
+	b.Emit(&ir.Bin{Op: ir.Sub, Dst: tmp, A: sp, B: &ir.Const{V: 46}})
+	b.Emit(&ir.StoreSpecial{Name: "sp", Src: tmp})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{sp: 0, tmp: 1})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if code != "sub sp sp 46\n" {
+		t.Fatalf("code = %q, want a single folded line", code)
+	}
+}
+
+func TestFoldSpecialArithComputeStore(t *testing.T) {
+	b := ir.NewBuilder("t")
+	a := b.NewReg("a")
+	tmp := b.NewReg("tmp")
+	b.Emit(&ir.Assign{Dst: a, Src: &ir.Const{V: 100}})
+	b.Emit(&ir.Bin{Op: ir.Add, Dst: tmp, A: a, B: &ir.Const{V: 2}})
+	b.Emit(&ir.StoreSpecial{Name: "sp", Src: tmp})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{a: 0, tmp: 1})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if !strings.Contains(code, "add sp r0 2\n") || strings.Contains(code, "move sp") {
+		t.Fatalf("code = %q, want the store folded into the add", code)
+	}
+}
+
+func TestNoFoldSpecialArithWhenTempIsReused(t *testing.T) {
+	b := ir.NewBuilder("t")
+	a := b.NewReg("a")
+	tmp := b.NewReg("tmp")
+	other := b.NewReg("other")
+	b.Emit(&ir.Assign{Dst: a, Src: &ir.Const{V: 100}})
+	b.Emit(&ir.Bin{Op: ir.Add, Dst: tmp, A: a, B: &ir.Const{V: 2}})
+	b.Emit(&ir.StoreSpecial{Name: "sp", Src: tmp})
+	b.Emit(&ir.Assign{Dst: other, Src: tmp}) // second use: keep the temporary
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{a: 0, tmp: 1, other: 2})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if strings.Contains(code, "add sp") || !strings.Contains(code, "move sp r1") {
+		t.Fatalf("code = %q, want no fold when the temporary is reused", code)
+	}
+}
+
+func TestFoldSpecialArithKeepsLoadWhenReused(t *testing.T) {
+	// The sp load is used twice, so only the compute+store fold is applied and
+	// the load stays: `move r0 sp` then `sub sp r0 46`.
+	b := ir.NewBuilder("t")
+	sp := b.NewReg("spv")
+	tmp := b.NewReg("tmp")
+	other := b.NewReg("other")
+	b.Emit(&ir.LoadSpecial{Dst: sp, Name: "sp"})
+	b.Emit(&ir.Bin{Op: ir.Sub, Dst: tmp, A: sp, B: &ir.Const{V: 46}})
+	b.Emit(&ir.StoreSpecial{Name: "sp", Src: tmp})
+	b.Emit(&ir.Assign{Dst: other, Src: sp}) // second use of the loaded value
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{sp: 0, tmp: 1, other: 2})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	want := "move r0 sp\nsub sp r0 46\nmove r2 r0\n"
+	if code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}
+
+func TestNoFoldSpecialArithWhenStoreSourceDiffers(t *testing.T) {
+	// The temporary is used once and the next instruction stores a *different*
+	// register to sp: the fold must not fire (it would drop the real store).
+	b := ir.NewBuilder("t")
+	other := b.NewReg("other")
+	tmp := b.NewReg("tmp")
+	use := b.NewReg("use")
+	b.Emit(&ir.Assign{Dst: other, Src: &ir.Const{V: 7}})
+	b.Emit(&ir.Bin{Op: ir.Add, Dst: tmp, A: other, B: &ir.Const{V: 1}})
+	b.Emit(&ir.StoreSpecial{Name: "sp", Src: other})
+	b.Emit(&ir.Assign{Dst: use, Src: tmp})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{other: 0, tmp: 1, use: 2})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	want := "move r0 7\nadd r1 r0 1\nmove sp r0\nmove r2 r1\n"
+	if code != want {
+		t.Fatalf("code = %q, want %q", code, want)
 	}
 }

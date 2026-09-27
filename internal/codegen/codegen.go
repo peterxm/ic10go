@@ -221,9 +221,17 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 		lines = append(lines, line{text: text, target: target, fn: f})
 	}
 
+	uses := regUseCounts(fn)
+
 	for i, b := range blocks {
 		start[b] = len(lines)
-		for _, ins := range b.Instrs {
+		for idx := 0; idx < len(b.Instrs); idx++ {
+			ins := b.Instrs[idx]
+			if text, n, ok := foldSpecialArith(b.Instrs, idx, uses, colors); ok {
+				add(text, nil, b.Func)
+				idx += n - 1
+				continue
+			}
 			if ls, ok := ins.(*ir.LoadSpill); ok {
 				dst := regName(ls.Dst, colors)
 				if spillDB {
@@ -366,6 +374,104 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 
 	lines, start = removeRedundantJumps(lines, start)
 	return blocks, lines, start
+}
+
+// regUseCounts counts how many times each register is read across the whole
+// function (instructions and terminators). The special-register folding uses
+// it to prove a foldable temporary has no other use.
+func regUseCounts(fn *ir.Function) map[*ir.Reg]int {
+	uses := map[*ir.Reg]int{}
+	for _, b := range fn.Blocks {
+		for _, ins := range b.Instrs {
+			u, _ := ir.DefUse(ins)
+			for _, r := range u {
+				uses[r]++
+			}
+		}
+		for _, r := range ir.TermUses(b.Term) {
+			uses[r]++
+		}
+	}
+	return uses
+}
+
+// foldSpecialArith folds a computation into a temporary followed by a store to
+// a special register (sp or ra) into one instruction that writes the special
+// register directly. It recognises two shapes:
+//
+//	sp = t            (t = a op b)      ->  <op> sp a b      (2 instructions)
+//	t1 = sp; sp = t2  (t2 = t1 op b)    ->  <op> sp sp b     (3 instructions)
+//
+// IC10 allows sp/ra as an ordinary destination operand, so the temporary and
+// the `move` are unnecessary. The fold only fires when the temporary's sole use
+// is the store (and, for the three-instruction shape, the loaded value's sole
+// use is the computation), which keeps it safe. It returns the folded text and
+// how many instructions it consumed.
+func foldSpecialArith(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[*ir.Reg]int) (string, int, bool) {
+	// Three-instruction shape: load the special, compute from it, store back.
+	if i+2 < len(instrs) {
+		if ls, ok := instrs[i].(*ir.LoadSpecial); ok && uses[ls.Dst] == 1 {
+			if st, ok := instrs[i+2].(*ir.StoreSpecial); ok && st.Name == ls.Name {
+				if text, ok := specialComputeText(instrs[i+1], st, ls.Dst, uses, colors); ok {
+					return text, 3, true
+				}
+			}
+		}
+	}
+	// Two-instruction shape: compute into a temporary, store it.
+	if i+1 < len(instrs) {
+		if st, ok := instrs[i+1].(*ir.StoreSpecial); ok {
+			if text, ok := specialComputeText(instrs[i], st, nil, uses, colors); ok {
+				return text, 2, true
+			}
+		}
+	}
+	return "", 0, false
+}
+
+// specialComputeText renders a Bin/Un whose result is written directly to a
+// special register instead of a temporary. st is the store being folded, which
+// must read that same temporary; loaded, when non-nil, is a register whose value
+// is the special register itself (a folded load) and renders as the special's
+// name.
+func specialComputeText(ins ir.Instr, st *ir.StoreSpecial, loaded *ir.Reg, uses map[*ir.Reg]int, colors map[*ir.Reg]int) (string, bool) {
+	src, ok := st.Src.(*ir.Reg)
+	if !ok {
+		return "", false
+	}
+	// The temporary must be defined by this instruction and used nowhere else,
+	// so the store is its only reader.
+	if uses[src] != 1 {
+		return "", false
+	}
+	operand := func(v ir.Value) string {
+		if loaded != nil {
+			if r, ok := v.(*ir.Reg); ok && r == loaded {
+				return st.Name
+			}
+		}
+		return valueText(v, colors)
+	}
+	switch v := ins.(type) {
+	case *ir.Bin:
+		if v.Dst != src {
+			return "", false
+		}
+		return v.Op.IC10() + " " + st.Name + " " + operand(v.A) + " " + operand(v.B), true
+	case *ir.Un:
+		if v.Dst != src {
+			return "", false
+		}
+		switch v.Op {
+		case ir.Neg:
+			return "sub " + st.Name + " 0 " + operand(v.A), true
+		case ir.BitNot:
+			return "not " + st.Name + " " + operand(v.A), true
+		case ir.Seqz:
+			return "seqz " + st.Name + " " + operand(v.A), true
+		}
+	}
+	return "", false
 }
 
 // Layout returns the codegen block order and each block's 0-based start line.

@@ -373,6 +373,12 @@ VS Code `icg.redundantDeviceWrites`）会删除同块内、中间无读/屏障�
 
 立即数策略：IC10 多数指令允许立即数操作数，常量直接内联，避免额外 `move`。
 
+**特殊寄存器算术折叠**：`sp`/`ra` 可作为算术目标，所以 `sp = sp - 4` 直接发
+`sub sp sp 4`，不经过临时寄存器。`internal/codegen` 在行号回填前把
+`t = a op b; sp = t`（以及带 `sp` 读取的 `t1 = sp; t2 = t1 op b; sp = t2`）折成单条，
+前提是临时寄存器/被读的特殊寄存器**全局只有这一处使用**（见
+[`backlog.md`](backlog.md) D4）。
+
 ---
 
 ## 8. 内建表
