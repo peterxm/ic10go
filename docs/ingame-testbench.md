@@ -6,7 +6,59 @@
 
 ![IC10 Go 测试台：VSCode 视图 + `.icg` 编辑 + Chip State 面板](images/testbench.png)
 
-本文是方案（设计）文档。实现分 M1–M5，见 §9。
+本文既是设计文档，也是使用说明：下面的**快速上手**与**故障排查**面向使用，§1–§9 讲设计，实现分 M1–M6，见 §9。
+
+---
+
+## 快速上手
+
+前置：Stationeers（本机 Proton / Steam）；BepInEx 5 + StationeersLaunchPad（随游戏装好即可）；编译 mod 需要 .NET SDK。
+
+### 1. 装 `ic10c`
+```bash
+./build.sh install          # 或解压 release 里的 ic10c-* 到 PATH
+ic10c -v
+```
+
+### 2. 编译并安装 mod
+```bash
+cd tools/ingame-testbench
+dotnet build -c Release -p:StationeersDir="/path/to/Stationeers"
+# 把 About/ 与 ic10go-testbench.dll 放进游戏 mods 目录：
+#   …/Documents/My Games/Stationeers/mods/ic10go-testbench/
+```
+（Proton 下是 `…/Steam/steamapps/compatdata/544550/pfx/drive_c/users/steamuser/Documents/My Games/Stationeers/mods/`。）
+
+### 3. 配置 `testbench.json`
+`…/Documents/My Games/Stationeers/ic10go/testbench.json`：
+```json
+{ "host": "127.0.0.1", "port": 7800, "autoload": "testbench", "autoloadDelay": 90 }
+```
+`autoload` 填 `saves/` 下的存档名（留空则不自动载入）。载入在**主菜单场景出现后**才做（避免启动崩溃），`autoloadDelay` 只是最早尝试时间。
+
+### 4. 搭测试台存档
+- 一个 IC host（例如 `A CHIP`）+ 一面 **LED**（`d0`，作输出）+ 一个 **Logic Memory**（作可写数值输入）。
+- **不要用旋钮 / 按钮当输入**：物理输入（Dial / Button）的 `Setting` 只读，写不进去。
+- 设备 host（空调等）用 `db` 控制宿主本身。
+
+### 5. 启动游戏
+mod 加载后日志出现 `[ic10go-testbench] listening on 127.0.0.1:7800`；配置了 `autoload` 会在进主菜单后自动载入测试存档，无需手动点。
+
+### 6. 用起来
+CLI：
+```bash
+ic10c testbench ping
+ic10c testbench list
+ic10c testbench push test.icg --chip "A CHIP"
+ic10c testbench set d4.Setting=42 --chip "A CHIP"   # 逻辑内存做输入
+ic10c testbench step 2 --chip "A CHIP"
+ic10c testbench state --chip "A CHIP" --all
+ic10c testbench run testdata/bench/ingame/s1_semantics.json --diff
+```
+VSCode（可选，`sh editors/vscode/install.sh` 后重载窗口）：左侧 **IC10** 视图 → 点 host 选中 → **Chip State** 面板；`.icg` 标题栏上传（`Ctrl+Alt+U`）、跑场景（`Ctrl+Alt+T`）。
+
+### 7. 不接游戏先预跑
+内置 VM：`ic10c run test.icg`；场景加 `--diff` 会同时跑真机与 VM 并对比。
 
 ---
 
@@ -412,6 +464,27 @@ Activity Bar「IC10」
 - **暂停/恢复**走游戏自己的 `InputSourceCode.PauseGameToggle(bool)`（社区 IC10 编辑器同款），
   避免只写 `WorldManager.IsGamePaused` 导致恢复后输入卡死。
 - **多芯片**：`chip.list` 返回全部 host；`push --as` 选编译块；多芯片场景文件尚未实现。
+
+---
+
+## 故障排查 / Troubleshooting
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| `connection refused`（CLI）/ 面板 Not connected | mod 未加载、地址/端口不对、游戏没起 | 看 `Player.log` 是否有 `[ic10go-testbench] listening`；默认 `127.0.0.1:7800`，用 `--addr` / `IC10_BENCH_ADDR` 或 `testbench.json` 对齐；确认 BepInEx + LaunchPad 已启用该 mod |
+| `no-chip` / `selected holder is not a ProgrammableChip` | 选中的 host 没插芯片，或选错 host | `ic10c testbench list` 看 `programmable`；`state --chip NAME`；VSCode 里点正确 host。**游戏重启后 ReferenceId 会变**，新扩展会自动重选 |
+| `Setting is not writable` | 拿物理输入（旋钮 / 按钮）当输入 | 换 **Logic Memory / Logic Switch**，或芯片间 **bus 通道**；必要时 `set --force`（但设备可能仍覆盖） |
+| 写 `Activate`（喷气背包）无反应 | 游戏没把 `Activate` 接到 `JetPackActivate` | 用 `On` 控制使能；飞行状态用只读 `probe` 观察；游戏内 `s d1 Activate` 同样无效 |
+| 自动载入没发生 | `autoload` 名字/路径不对，或还没到主菜单场景 | 看日志 `autoload waiting (scene=Splash)` → 到 `Base` 才载入；`autoloadDelay` 只是最早时间；存档要在 `saves/<name>/` |
+| 自动载入时游戏崩溃 | 太早载入（`GameManager.Start` 期间） | 确认跑的是当前 mod（等 `Base` 场景才载入）；把 `autoloadDelay` 调大 |
+| 场景 case 失败、差一 tick | `run N` 的第一 tick 常被循环开头的 `yield` 吃掉 | 用 `--diff` 对比 VM；按需把 `run` 加 1；参考 `testdata/bench/ingame/` |
+| 设备端口不对（宇航服 / 平板） | 这些 host 是**固定绑定** | `ports` 看 `bindings`/`lookups`；`state` 的 `binding` 字段（`SUIT`/`HELMET`/…） |
+| 树里有 host 但读不到芯片（宇航服 / 平板） | 芯片在槽位里 | 用 0.1.x+ mod（从 `ChipSlot.Occupant` 解析）；更新 mod |
+| 面板 `Not connected` 但侧栏正常 / Watch 关不掉 / 展开状态被刷掉 | 旧版扩展的 webview / 渲染 bug | 装新版扩展（0.7.19+）并重载窗口 |
+| 树刷新失败 `Unable to refresh tree view` | 游戏重启后 pin 的芯片失效 | 新版会自动校验并重选；否则重载窗口 |
+| 设备 host 上跑带 `data` 表的程序异常 | 数据段访问方式 | 推送时加 `--data-access stack` |
+| `pause` 后游戏不可操作 | 旧版直接改 `WorldManager.IsGamePaused` | 更新 mod（改走 `PauseGameToggle`） |
+| 想禁止自动进档 | `autoload` 生效中 | 把 `autoload` 留空 / 删掉，或删 `testbench.json`；自动载入每次启动只做一次 |
 
 ---
 
