@@ -42,3 +42,21 @@ func TestIndirectBankUnknownPointerWarns(t *testing.T) {
 		t.Errorf("unbounded pointer must not reserve a range:\n%s", code)
 	}
 }
+
+// A nested indirect reference translates to nested ireg calls, and the whole
+// pointer chain is reserved because every register on it is touched physically.
+func TestDecompileNestedIndirect(t *testing.T) {
+	src := "move r1 2\nmove r2 3\nmove rrr1 4\ns db Setting r3\n"
+	code, warns, err := Decompile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v\n%s", warns, code)
+	}
+	for _, want := range []string{"reserveRegs(2, 3)", "setIreg(ireg(r1),", "ireg(3)"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("output is missing %q:\n%s", want, code)
+		}
+	}
+}

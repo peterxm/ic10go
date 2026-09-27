@@ -412,3 +412,40 @@ func TestForwardDefineResolution(t *testing.T) {
 		t.Errorf("d0.Setting = %v, want 42", got)
 	}
 }
+
+// An indirect register operand may nest: each extra leading r dereferences
+// again (r1 -> r2 -> r3 in the game's documentation).
+func TestNestedIndirectRegister(t *testing.T) {
+	m := New()
+	if err := m.Load("move r1 2\nmove r2 3\nmove rrr1 4\ns db Setting r3\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(20); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if m.Regs[3] != 4 {
+		t.Fatalf("rrr1 wrote r%v, want r3", m.Regs[3])
+	}
+
+	m = New()
+	if err := m.Load("move r1 2\nmove r2 3\nmove r3 5\nmove rrrr1 7\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(20); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if m.Regs[5] != 7 {
+		t.Fatalf("rrrr1 wrote r%v, want r5", m.Regs[5])
+	}
+}
+
+// A pointer outside 0..15 is an error, as the game documents.
+func TestIndirectRegisterOutOfRange(t *testing.T) {
+	m := New()
+	if err := m.Load("move r0 20\nmove rr0 5\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(20); err == nil {
+		t.Fatal("expected an out-of-range pointer error")
+	}
+}

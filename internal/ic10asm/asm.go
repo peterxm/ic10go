@@ -3,7 +3,10 @@
 // mnemonic parsing.
 package ic10asm
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // StripComment removes a trailing # comment, ignoring # inside strings.
 func StripComment(line string) string {
@@ -118,4 +121,31 @@ func IsBinaryCond(cond string) bool {
 		return true
 	}
 	return false
+}
+
+// IndirectParts splits an IC10 indirect register operand into its dereference
+// count and base register. One extra leading `r` dereferences once more:
+//
+//	rrN   -> 1, "rN"     the register whose index is rN's value
+//	rrrN  -> 2, "rN"     the register whose index is that register's value
+//
+// ok is false when the operand is not an indirect reference: it needs at least
+// two leading r's and the base must be rN with 0 <= N <= 15.
+func IndirectParts(s string) (derefs int, base string, ok bool) {
+	k := 0
+	for k < len(s) && s[k] == 'r' {
+		k++
+	}
+	if k < 2 || k == len(s) {
+		return 0, "", false
+	}
+	if _, err := strconv.Atoi(s[k:]); err != nil {
+		return 0, "", false
+	}
+	base = s[k-1:]
+	n, err := strconv.Atoi(base[1:])
+	if err != nil || n < 0 || n > 15 {
+		return 0, "", false
+	}
+	return k - 1, base, true
 }

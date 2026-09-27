@@ -130,19 +130,29 @@ func (d *decompiler) bankStep(l icLine, regs map[int]int64) ([]int, bool) {
 	var targets []int
 	for _, a := range l.args {
 		s := d.resolve(a)
-		if !isIndirect(s) {
+		derefs, base, ok := ic10asm.IndirectParts(s)
+		if !ok {
 			continue
 		}
-		ptr := strings.TrimPrefix(s, "r") // rrN -> rN
-		idx, ok := bankRegIndex(d.resolve(ptr))
+		// Walk the pointer chain through the known values: rrN names the
+		// register whose index is rN's value, rrrN dereferences once more. Every
+		// register on the chain is read (or written) physically, so the whole
+		// chain must be reserved.
+		idx, ok := bankRegIndex(base)
 		if !ok {
 			return nil, false
 		}
-		v, known := regs[idx]
-		if !known {
-			return nil, false
+		for j := 0; j < derefs; j++ {
+			v, known := regs[idx]
+			if !known {
+				return nil, false
+			}
+			idx = int(v)
+			if idx < 0 || idx > 15 {
+				return nil, false
+			}
+			targets = append(targets, idx)
 		}
-		targets = append(targets, int(v))
 	}
 	// A write through a pointer changes the pointed-to registers' values.
 	for _, t := range targets {

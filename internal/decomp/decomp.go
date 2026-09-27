@@ -239,8 +239,13 @@ func (d *decompiler) resolve(s string) string {
 
 func (d *decompiler) operand(s string) string {
 	s = d.resolve(s)
-	if isIndirect(s) {
-		return "ireg(" + strings.TrimPrefix(s, "r") + ")"
+	if derefs, base, ok := ic10asm.IndirectParts(s); ok {
+		// `rrN` -> ireg(rN); `rrrN` -> ireg(ireg(rN)); each extra r nests once.
+		inner := base
+		for j := 0; j < derefs; j++ {
+			inner = "ireg(" + inner + ")"
+		}
+		return inner
 	}
 	if d.bankReg(s) {
 		// A bank register is physical: read it directly (ireg with a constant
@@ -330,8 +335,11 @@ func isReg(s string) bool {
 	return false
 }
 
+// isIndirect reports whether s is an indirect register operand: `rrN` names the
+// register whose index is rN's value, `rrrN` dereferences once more, and so on.
 func isIndirect(s string) bool {
-	return strings.HasPrefix(s, "rr") && isReg(s[1:])
+	_, _, ok := ic10asm.IndirectParts(s)
+	return ok
 }
 
 func isDirectReg(s string) bool {

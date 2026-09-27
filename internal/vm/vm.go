@@ -705,19 +705,28 @@ func (m *Machine) reg(s string) (int, error) {
 
 // indirectIndex resolves an IC10 indirect register operand (rrN) to a register
 // index. Multi-level indirection is not supported.
+// indirectIndex resolves an IC10 indirect register operand to the register
+// index it names. One extra leading `r` dereferences once more: `rrN` is the
+// register whose index is rN's value, `rrrN` the register whose index is that
+// register's value, and so on. Every index must be 0..15; anything else is an
+// error, which the caller reports as "not a register".
 func (m *Machine) indirectIndex(s string) (int, bool) {
-	if !strings.HasPrefix(s, "rr") {
-		return 0, false
-	}
-	base, ok := regIndex(s[1:])
+	derefs, base, ok := ic10asm.IndirectParts(s)
 	if !ok {
 		return 0, false
 	}
-	idx := int(m.Regs[base])
-	if idx < 0 || idx >= regCount {
+	i, ok := regIndex(base)
+	if !ok {
 		return 0, false
 	}
-	return idx, true
+	for j := 0; j < derefs; j++ {
+		idx := int(m.Regs[i])
+		if idx < 0 || idx >= regCount {
+			return 0, false
+		}
+		i = idx
+	}
+	return i, true
 }
 
 func (m *Machine) target(s string) (int, error) {

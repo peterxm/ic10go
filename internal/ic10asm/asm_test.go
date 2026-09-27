@@ -50,3 +50,28 @@ func TestTargetIndex(t *testing.T) {
 		t.Errorf("unexpected target indices")
 	}
 }
+
+func TestIndirectParts(t *testing.T) {
+	for _, tc := range []struct {
+		in     string
+		derefs int
+		base   string
+		ok     bool
+	}{
+		{"r0", 0, "", false},
+		{"ra", 0, "", false},
+		{"rr0", 1, "r0", true},
+		{"rr15", 1, "r15", true},
+		{"rrr1", 2, "r1", true},
+		{"rrrr7", 3, "r7", true},
+		{"rr16", 0, "", false},
+		{"rrsp", 0, "", false},
+		{"rrr", 0, "", false},
+	} {
+		derefs, base, ok := IndirectParts(tc.in)
+		if derefs != tc.derefs || base != tc.base || ok != tc.ok {
+			t.Errorf("IndirectParts(%q) = %d, %q, %v; want %d, %q, %v",
+				tc.in, derefs, base, ok, tc.derefs, tc.base, tc.ok)
+		}
+	}
+}

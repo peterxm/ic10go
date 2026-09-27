@@ -782,6 +782,10 @@ put(d1, 9, printer.missingRecipeReagent(2, hash("Iron"))) // ceil<<8 | hash<<16 
 | `sla/srl/rol/ror(a,b)` | 移位/旋转 |
 | `ext(src,off,len)` / `ins(field,off,len)` | 位域提取/插入 |
 
+> `ireg`/`setIreg` 的指针可以嵌套，对应 IC10 的多层间接引用（每多一个前导 `r` 多解一层）：
+> `ireg(ireg(rN))` 读 IC10 的 `rrrN`；写入时 `setIreg` 的参数是"目标寄存器号"，所以链少一层
+> （`setIreg(ireg(rN), v)`）。被这样访问的物理寄存器同样需要 `reserveRegs` 覆盖。
+
 > `ins` 是**读改写**：`x = ins(field, off, len)` 把 `field` 的低 `len` 位插到 `x` 的 `off` 处，保留 `x` 的其余位，因此 `x` 必须已有值（IC10 的 `ins dst field off len` 语义）。
 
 > `ins` 在**稳定版**游戏里参数顺序有 bug（实际为 `offset length field`）；用 `ic10c build --stable-ins` 生成稳定版顺序（默认是文档顺序，即 beta 版）。

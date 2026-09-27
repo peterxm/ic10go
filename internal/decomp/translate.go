@@ -46,9 +46,15 @@ func (d *decompiler) a(l icLine, i int) string { return d.operand(l.args[i]) }
 
 func (d *decompiler) assignDst(dstArg, expr string) string {
 	dst := d.resolve(dstArg)
-	if isIndirect(dst) {
+	if derefs, base, ok := ic10asm.IndirectParts(dst); ok {
+		// `setIreg` takes an expression whose value is the target index, so the
+		// pointer chain nests one level less than the read form: `rrN` is
+		// setIreg(rN, v), `rrrN` is setIreg(ireg(rN), v).
 		tmp := d.newTmp()
-		ptr := strings.TrimPrefix(dst, "r")
+		ptr := base
+		for j := 1; j < derefs; j++ {
+			ptr = "ireg(" + ptr + ")"
+		}
 		return fmt.Sprintf("%s := %s; setIreg(%s, %s)", tmp, expr, ptr, tmp)
 	}
 	if d.bankReg(dst) {
