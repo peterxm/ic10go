@@ -254,24 +254,51 @@ var Commands = []Command{
 		},
 	},
 	{
-		Name: "run", Args: "<file.icg> [--steps N] [--set name.logic=v] [--trace] [--stable-ins]",
+		Name: "run", Args: "<file.icg> [--steps N | --ticks N] [--set name.logic=v] [--seed N] [--strict] [--dump] [--json] [--trace] [--stable-ins]",
 		Summary: text{EN: "compile and run in the built-in VM", ZH: "编译并在内置 VM 中运行"},
 		Long: text{
 			EN: "Compile the file and run it in the built-in IC10 VM, then print\n" +
 				"the resulting device values. Useful for testing without the game.\n\n" +
-				"Initialise devices with --set (repeatable); use --trace to print\n" +
-				"every executed instruction.",
+				"Initialise devices with --set (repeatable). --steps runs N instructions;\n" +
+				"--ticks runs N chip ticks instead (a tick ends at yield/sleep, or after\n" +
+				"128 instructions). Use --trace to print every executed instruction,\n" +
+				"--dump for registers/stack/PC/clock, --json for machine-readable state,\n" +
+				"--seed N for a different rand() stream, and --strict to error on\n" +
+				"unconnected devices / unknown ReferenceIds like the game does.",
 			ZH: "编译文件并在内置 IC10 VM 中运行，然后打印设备状态。无需进游戏即可调试。\n\n" +
-				"用 --set 初始化设备（可重复）；--trace 打印每条执行的指令。",
+				"用 --set 初始化设备（可重复）。--steps 跑 N 条指令；--ticks 改跑 N 个芯片\ntick" +
+				"（一 tick 到 yield/sleep 结束，或满 128 条指令）。--trace 打印每条执行的\n" +
+				"指令，--dump 打印寄存器/栈/PC/时钟，--json 输出机器可读状态，--seed N 换\n" +
+				"一组 rand() 序列，--strict 像真机那样对未连接设备/未知 ReferenceId 报错。",
 		},
 		Flags: []Flag{
 			{Long: "--steps", Arg: "N", Desc: text{
 				EN: "instruction budget (default 1000)",
 				ZH: "执行步数上限（默认 1000）",
 			}},
+			{Long: "--ticks", Arg: "N", Desc: text{
+				EN: "run N chip ticks instead of N instructions",
+				ZH: "改跑 N 个芯片 tick（而非 N 条指令）",
+			}},
 			{Long: "--set", Arg: "name.logic=v", Desc: text{
 				EN: "set a device value before running (repeatable)",
 				ZH: "运行前设置设备值（可重复）",
+			}},
+			{Long: "--seed", Arg: "N", Desc: text{
+				EN: "seed for rand() (default 0)",
+				ZH: "rand() 的随机种子（默认 0）",
+			}},
+			{Long: "--strict", Desc: text{
+				EN: "error on unconnected devices / unknown ReferenceIds (like the game)",
+				ZH: "对未连接设备/未知 ReferenceId 报错（同真机）",
+			}},
+			{Long: "--dump", Desc: text{
+				EN: "print registers, stack, PC and clock",
+				ZH: "打印寄存器、栈、PC 与时钟",
+			}},
+			{Long: "--json", Desc: text{
+				EN: "print the run result as JSON",
+				ZH: "以 JSON 输出运行结果",
 			}},
 			{Long: "--trace", Desc: text{
 				EN: "print every executed instruction",

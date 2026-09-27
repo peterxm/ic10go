@@ -274,9 +274,9 @@ func main() {
 
 - private 版会把槽位放进寄存器（本例 4 行 vs shared 6 行）；两版逐 tick 读数
   一致即通过。
-- 注意：`ic10c run --steps N` 按**指令数**而非 tick 计，两版每 tick 的指令数
-  不同，固定步数下读数会不同；真机按 tick 观察，或只在同一步数下比较“是否在
-  递增”。
+- 注意：`ic10c run --steps N` 按**指令数**计，`--ticks N` 按 **chip tick** 计（一 tick 到
+  `yield`/`sleep` 结束，或满 128 条指令）。两版每 tick 的指令数不同，固定步数下读数会不同；
+  真机按 tick 观察，用 `--ticks` 对齐，或只在同一步数下比较“是否在递增”。
 - 设备栈 `d2.stack[...]` 不受 pragma 影响（属于共享设备），可另接 Logic Sorter
   复核。详见 [`spec.md` §4.6](spec.md#46-栈私有-pragma)。
 

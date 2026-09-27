@@ -396,7 +396,7 @@ ECMA-335 解析，无需 .NET SDK、无需启动游戏），`LogicTypes` / `Slot
 | 子命令 | 功能 |
 |--------|------|
 | `ic10c build <file.icg>` | 编译并输出 IC10 到 stdout |
-| `ic10c run <file.icg>` | 编译并在内置 VM 中运行（`--steps`/`--set`/`--trace`） |
+| `ic10c run <file.icg>` | 编译并在内置 VM 中运行（`--steps`/`--ticks`/`--set`/`--seed`/`--strict`/`--dump`/`--json`/`--trace`） |
 | `ic10c stats <file.icg>` | 行/字节/寄存器/栈预算报告 |
 | `ic10c size <file.icg>` | 按函数拆分行预算（体积剖析） |
 | `ic10c fmt [-w] <file.icg>` | 格式化源码（保留注释、`const`/`var` 分组、空行、`data` 表与 `switch ... table`；`-w` 原地写回） |

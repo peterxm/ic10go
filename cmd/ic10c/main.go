@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -540,8 +541,13 @@ func cmdRun(args []string) int {
 		return 2
 	}
 	steps := 1000
+	ticks := 0
+	var seed int64
 	trace := false
 	stableIns := false
+	strict := false
+	dump := false
+	jsonOut := false
 	var sets []string
 	var file string
 	for i := 0; i < len(args); i++ {
@@ -551,6 +557,17 @@ func cmdRun(args []string) int {
 				steps, _ = strconv.Atoi(args[i+1])
 				i++
 			}
+		case "--ticks":
+			// Advance N chip ticks instead of N instructions (see vm.RunTicks).
+			if i+1 < len(args) {
+				ticks, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		case "--seed":
+			if i+1 < len(args) {
+				seed, _ = strconv.ParseInt(args[i+1], 10, 64)
+				i++
+			}
 		case "--set":
 			if i+1 < len(args) {
 				sets = append(sets, args[i+1])
@@ -558,6 +575,12 @@ func cmdRun(args []string) int {
 			}
 		case "--stable-ins":
 			stableIns = true
+		case "--strict":
+			strict = true
+		case "--dump":
+			dump = true
+		case "--json":
+			jsonOut = true
 		case "--trace":
 			trace = true
 		default:
@@ -595,6 +618,7 @@ func cmdRun(args []string) int {
 
 	if !multi {
 		m := vm.New()
+		applyRunOpts(m, seed, strict)
 		// Run the one-time loader first (data segment and/or hoisted setup), so
 		// a program that needs it runs like it would on the chip.
 		for _, chunk := range compiled.Loaders {
@@ -622,11 +646,11 @@ func cmdRun(args []string) int {
 		if trace {
 			m.Trace = os.Stdout
 		}
-		if err := m.Run(steps); err != nil && err != vm.ErrStepLimit {
+		if err := runMachines([]*vm.Machine{m}, steps, ticks); err != nil {
 			fmt.Fprintln(os.Stderr, "ic10c:", err)
 			return 1
 		}
-		printDevices(m)
+		reportRun(jsonOut, dump, []*vm.Machine{m}, []string{""})
 		return 0
 	}
 
@@ -643,6 +667,7 @@ func cmdRun(args []string) int {
 	}
 	for _, ch := range compiled.Chips {
 		m := w.AddChip()
+		applyRunOpts(m, seed, strict)
 		if err := m.Load(ch.Code); err != nil {
 			fmt.Fprintf(os.Stderr, "ic10c: chip %s: %v\n", ch.Name, err)
 			return 1
@@ -663,12 +688,155 @@ func cmdRun(args []string) int {
 	for _, conns := range busAccess {
 		w.Wire(conns...)
 	}
-	if err := w.Run(steps); err != nil && err != vm.ErrStepLimit {
+	if err := runWorld(w, steps, ticks); err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	printDeviceMap(w.Devices)
+	names := make([]string, len(compiled.Chips))
+	for i, ch := range compiled.Chips {
+		names[i] = ch.Name
+	}
+	reportRun(jsonOut, dump, w.Chips, names)
 	return 0
+}
+
+// applyRunOpts applies the shared `run` switches to a chip.
+func applyRunOpts(m *vm.Machine, seed int64, strict bool) {
+	m.SetSeed(seed)
+	m.Strict = strict
+}
+
+// runMachines advances each chip by `ticks` ticks when ticks > 0, else by
+// `steps` instructions. Exhausting the instruction budget is not an error.
+func runMachines(ms []*vm.Machine, steps, ticks int) error {
+	for _, m := range ms {
+		var err error
+		if ticks > 0 {
+			err = m.RunTicks(ticks)
+		} else {
+			err = m.Run(steps)
+		}
+		if err != nil && err != vm.ErrStepLimit {
+			return err
+		}
+	}
+	return nil
+}
+
+// runWorld is runMachines for the lockstep multi-chip world.
+func runWorld(w *vm.World, steps, ticks int) error {
+	var err error
+	if ticks > 0 {
+		err = w.RunTicks(ticks)
+	} else {
+		err = w.Run(steps)
+	}
+	if err != nil && err != vm.ErrStepLimit {
+		return err
+	}
+	return nil
+}
+
+// reportRun prints the run result: JSON when jsonOut, else a register/stack dump
+// when dump, else the device map. All chips in a world share one device map.
+func reportRun(jsonOut, dump bool, machines []*vm.Machine, names []string) {
+	if jsonOut {
+		printRunJSON(machines, names)
+		return
+	}
+	if dump {
+		for i, m := range machines {
+			name := ""
+			if i < len(names) {
+				name = names[i]
+			}
+			printMachine(m, name)
+		}
+	}
+	if len(machines) > 0 {
+		printDeviceMap(machines[0].Devices)
+	}
+}
+
+// printMachine dumps one chip's pc, registers and stack. Regs is
+// [r0..r15, ra, sp].
+func printMachine(m *vm.Machine, name string) {
+	if name == "" {
+		name = "chip"
+	}
+	fmt.Printf("%s: pc=%d halted=%v ticks=%d clock=%g\n", name, m.PC, m.Halted, m.Ticks, m.Clock)
+	fmt.Printf("%s: r0..r15=%v ra=%v sp=%v\n", name, m.Regs[:16], m.Regs[16], m.Regs[17])
+	sp := int(m.Regs[17])
+	if sp > len(m.Stack) {
+		sp = len(m.Stack)
+	}
+	if sp > 0 {
+		fmt.Printf("%s: stack[0..%d]=%v\n", name, sp-1, m.Stack[:sp])
+	}
+}
+
+// jsonNum keeps a float JSON-safe (NaN/Inf are not valid JSON).
+func jsonNum(v float64) any {
+	switch {
+	case math.IsNaN(v):
+		return "NaN"
+	case math.IsInf(v, 1):
+		return "+Inf"
+	case math.IsInf(v, -1):
+		return "-Inf"
+	}
+	return v
+}
+
+// printRunJSON prints a machine-readable run result (chips + devices).
+func printRunJSON(machines []*vm.Machine, names []string) {
+	type chipState struct {
+		Name      string         `json:"name,omitempty"`
+		PC        int            `json:"pc"`
+		Halted    bool           `json:"halted"`
+		Ticks     int            `json:"ticks"`
+		Clock     float64        `json:"clock"`
+		Registers map[string]any `json:"registers"`
+		Stack     map[string]any `json:"stack"`
+	}
+	out := struct {
+		Chips   []chipState    `json:"chips"`
+		Devices map[string]any `json:"devices"`
+	}{}
+	for i, m := range machines {
+		cs := chipState{PC: m.PC, Halted: m.Halted, Ticks: m.Ticks, Clock: m.Clock,
+			Registers: map[string]any{}, Stack: map[string]any{}}
+		if i < len(names) {
+			cs.Name = names[i]
+		}
+		for r := 0; r < 16; r++ {
+			cs.Registers[fmt.Sprintf("r%d", r)] = jsonNum(m.Regs[r])
+		}
+		cs.Registers["ra"] = jsonNum(m.Regs[16])
+		cs.Registers["sp"] = jsonNum(m.Regs[17])
+		for a := 0; a <= int(m.Regs[17]) && a < len(m.Stack); a++ {
+			if m.Stack[a] != 0 {
+				cs.Stack[strconv.Itoa(a)] = jsonNum(m.Stack[a])
+			}
+		}
+		out.Chips = append(out.Chips, cs)
+	}
+	out.Devices = map[string]any{}
+	if len(machines) > 0 {
+		for name, d := range machines[0].Devices {
+			vals := map[string]any{}
+			for logic, v := range d.Values {
+				vals[logic] = jsonNum(v)
+			}
+			out.Devices[name] = vals
+		}
+	}
+	b, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return
+	}
+	fmt.Println(string(b))
 }
 
 // parseSet parses a "name.logic=value" device initialiser.
@@ -688,8 +856,6 @@ func parseSet(s string) (name, logic string, value float64, ok bool) {
 	}
 	return lhs[:dot], lhs[dot+1:], v, true
 }
-
-func printDevices(m *vm.Machine) { printDeviceMap(m.Devices) }
 
 func printDeviceMap(devices map[string]*vm.Device) {
 	names := make([]string, 0, len(devices))

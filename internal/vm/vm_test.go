@@ -3,6 +3,7 @@ package vm
 import (
 	"errors"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -107,6 +108,43 @@ func TestRunTicks(t *testing.T) {
 	}
 	if small.Regs[0] >= 16 {
 		t.Errorf("TickLimit=16 ran %v instructions", small.Regs[0])
+	}
+}
+
+// TestOnRead checks the read hook fires for logic and slot reads.
+func TestOnRead(t *testing.T) {
+	m := New()
+	m.Set("d1", "Setting", 5)
+	m.SetSlot("d1", 0, "Occupied", 1)
+	var reads []string
+	m.OnRead = func(dev, logic string) { reads = append(reads, dev+"."+logic) }
+	if err := m.Load("l r0 d1 Setting\nls r1 d1 0 Occupied"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(10); err != nil && err != ErrStepLimit {
+		t.Fatal(err)
+	}
+	want := "d1.Setting,d1.Occupied"
+	if got := strings.Join(reads, ","); got != want {
+		t.Errorf("reads = %q, want %q", got, want)
+	}
+}
+
+// TestWorldRunTicks checks the lockstep world advances the same number of ticks
+// on every chip.
+func TestWorldRunTicks(t *testing.T) {
+	w := NewWorld()
+	a, b := w.AddChip(), w.AddChip()
+	for _, m := range []*Machine{a, b} {
+		if err := m.Load("L:\nyield\nj L"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.RunTicks(4); err != nil {
+		t.Fatal(err)
+	}
+	if a.Ticks != 4 || b.Ticks != 4 {
+		t.Errorf("ticks = %d/%d, want 4/4", a.Ticks, b.Ticks)
 	}
 }
 

@@ -98,6 +98,9 @@ type Machine struct {
 	Trace io.Writer
 	// OnWrite, when non-nil, is called for every device logic write.
 	OnWrite func(dev, logic string, v float64)
+	// OnRead, when non-nil, is called for every device read (l/ld/ls); a slot
+	// read reports the slot logic name.
+	OnRead func(dev, logic string)
 	// LogicByID maps IC10 logicType enum values to names, used to resolve
 	// runtime (register) logic type operands.
 	LogicByID map[int]string
@@ -360,23 +363,36 @@ func (m *Machine) RunTicks(ticks int) error {
 	if m.Program == nil {
 		return fmt.Errorf("vm: no program loaded")
 	}
+	for t := 0; t < ticks; t++ {
+		done, err := m.runTick()
+		if err != nil {
+			return err
+		}
+		if done {
+			return nil
+		}
+	}
+	return nil
+}
+
+// runTick runs one chip tick: up to TickLimit instructions, ending early at
+// yield/sleep. done reports that the program halted.
+func (m *Machine) runTick() (done bool, err error) {
 	limit := m.TickLimit
 	if limit <= 0 {
 		limit = DefaultTickLimit
 	}
-	for t := 0; t < ticks; t++ {
-		before := m.Ticks
-		for budget := limit; m.Ticks == before && budget > 0; budget-- {
-			done, err := m.Step()
-			if err != nil {
-				return err
-			}
-			if done {
-				return nil
-			}
+	before := m.Ticks
+	for budget := limit; m.Ticks == before && budget > 0; budget-- {
+		done, err = m.Step()
+		if err != nil {
+			return false, err
+		}
+		if done {
+			return true, nil
 		}
 	}
-	return nil
+	return false, nil
 }
 
 // Step executes a single instruction. done is true when the program has halted
@@ -483,6 +499,28 @@ func (w *World) Run(maxTicks int) error {
 		}
 	}
 	return ErrStepLimit
+}
+
+// RunTicks advances every chip by up to `ticks` lockstep ticks, each tick
+// ending at yield/sleep or after the per-chip TickLimit instructions. It stops
+// early once every chip has halted.
+func (w *World) RunTicks(ticks int) error {
+	for t := 0; t < ticks; t++ {
+		allDone := true
+		for _, m := range w.Chips {
+			done, err := m.runTick()
+			if err != nil {
+				return err
+			}
+			if !done {
+				allDone = false
+			}
+		}
+		if allDone {
+			return nil
+		}
+	}
+	return nil
 }
 
 // Device returns the world's device by name (creating it if needed).
@@ -864,6 +902,9 @@ func (m *Machine) execOp(ins *Instr) error {
 			return err
 		}
 		logic := m.logicName(a[2])
+		if m.OnRead != nil {
+			m.OnRead(d.Name, logic)
+		}
 		if logic == "LineNumber" && d.Name == m.SelfDevice {
 			m.Regs[dst] = float64(ins.Line)
 			return nil
@@ -880,6 +921,9 @@ func (m *Machine) execOp(ins *Instr) error {
 			return err
 		}
 		logic := m.logicName(a[2])
+		if m.OnRead != nil {
+			m.OnRead(d.Name, logic)
+		}
 		if logic == "LineNumber" && d.Name == m.SelfDevice {
 			m.Regs[dst] = float64(ins.Line)
 			return nil
@@ -936,6 +980,9 @@ func (m *Machine) execOp(ins *Instr) error {
 			return nil
 		}
 		slot, _ := m.num(a[2])
+		if m.OnRead != nil {
+			m.OnRead(d.Name, a[3])
+		}
 		m.Regs[dst] = m.GetSlot(d.Name, int(slot), a[3])
 		return nil
 	case "ss":

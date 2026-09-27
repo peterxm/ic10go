@@ -82,7 +82,7 @@ ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
             [--redundant-device-writes] [--merge-renamed-tails] <file.icg>
                               # 兼容保留；loader 现在会自动输出（默认 <file>.data.ic）
 ic10c build --data-only [--chip NAME] <file.icg>  # 只输出一次性 loader（数据段 + 外提设置）
-ic10c run    <file.icg>       # 编译并在内置 VM 中运行（自动先跑一次性 loader；多芯片锁步；--steps/--set/--trace）
+ic10c run    <file.icg>       # 编译并在内置 VM 中运行（自动先跑一次性 loader；多芯片锁步；--steps/--ticks/--set/--seed/--strict/--dump/--json/--trace）
 ic10c testbench ping|list|push|state|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--as NAME] [--json]
                               # 驱动游戏内测试台 mod（tools/ingame-testbench）：上传/读寄存器/栈/设备、单步/暂停/载入存档/跑场景；见 docs/ingame-testbench.md
 ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] [--spill db|stack] [--dynamic-stack] [--user-stack N] [--max-lines N] [--max-bytes N] [--max-line N] [--redundant-device-writes] [--merge-renamed-tails] <file.icg>
