@@ -130,8 +130,21 @@ func TestIc10CodePorts(t *testing.T) {
 					t.Fatalf("port load: %v", err)
 				}
 
-				sa := stateSet(a, 8000)
-				sb := stateSet(b, 8000)
+				// Compare only the writes both scripts got through within the
+				// step budget. A port that executes fewer instructions per
+				// iteration reaches more writes in the same number of steps;
+				// charging it for those extra writes would flag a port that is
+				// behaviourally identical, just faster. Truncating to the
+				// common prefix keeps the check about the device writes, not
+				// the instruction count.
+				ta := stateTrace(a, 8000)
+				tb := stateTrace(b, 8000)
+				n := len(ta)
+				if len(tb) < n {
+					n = len(tb)
+				}
+				sa := prefixStateSet(ta, n)
+				sb := prefixStateSet(tb, n)
 				if !sameStateSet(sa, sb) {
 					t.Errorf("seed %d: reachable device states differ\n only original: %s\n only port: %s",
 						seed, diffStates(sa, sb), diffStates(sb, sa))
@@ -175,20 +188,34 @@ func deviceState(m *vm.Machine) string {
 	return b.String()
 }
 
-func stateSet(m *vm.Machine, maxSteps int) map[string]bool {
-	seen := map[string]bool{deviceState(m): true}
-	wrote := false
-	m.OnWrite = func(dev, logic string, v float64) { wrote = true }
+// stateTrace runs the machine for up to maxSteps single steps and returns the
+// device state after the initial load plus after every logic write. Indexing by
+// write rather than by step keeps the trace independent of how many
+// instructions a script spends per iteration.
+func stateTrace(m *vm.Machine, maxSteps int) []string {
+	trace := []string{deviceState(m)}
+	m.OnWrite = func(dev, logic string, v float64) {
+		trace = append(trace, deviceState(m))
+	}
 	for i := 0; i < maxSteps; i++ {
-		wrote = false
 		if err := m.Run(1); err != nil && err != vm.ErrStepLimit {
 			break
 		}
-		if wrote {
-			seen[deviceState(m)] = true
-		}
 	}
-	return seen
+	return trace
+}
+
+// prefixStateSet is the set of distinct states among the first n entries of a
+// trace.
+func prefixStateSet(trace []string, n int) map[string]bool {
+	if n > len(trace) {
+		n = len(trace)
+	}
+	set := make(map[string]bool, n)
+	for _, st := range trace[:n] {
+		set[st] = true
+	}
+	return set
 }
 
 func sameStateSet(a, b map[string]bool) bool {
