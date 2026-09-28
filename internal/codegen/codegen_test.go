@@ -377,3 +377,66 @@ func TestFoldSpecialArithSelect(t *testing.T) {
 		t.Fatalf("code = %q, want %q", code, want)
 	}
 }
+
+func TestFoldAcrossFallthroughBlock(t *testing.T) {
+	// The select and the store that consumes it are in consecutive blocks
+	// joined by a fall-through jump: the fold must span the boundary.
+	b := ir.NewBuilder("t")
+	saved := b.NewReg("saved")
+	dst := b.NewReg("dst")
+	nextB := b.NewBlock()
+	endB := b.NewBlock()
+	b.Emit(&ir.Load{Dst: saved, Dev: "d0", Logic: "Setting"})
+	b.Emit(&ir.Select{Dst: dst, Cond: &ir.Const{V: 1}, Then: saved, Else: &ir.Const{V: 20}})
+	b.SetTerm(&ir.Jmp{Target: nextB})
+
+	b.SetBlock(nextB)
+	b.Emit(&ir.StoreSpecial{Name: "sp", Src: dst})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{saved: 0, dst: 1})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if want := "l r0 d0 Setting\nselect sp 1 r0 20\n"; code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}
+
+func TestNoFoldAcrossSharedBlock(t *testing.T) {
+	// The consuming block is also reached from elsewhere, so its first
+	// instruction must keep its own line and must not be folded into the
+	// predecessor.
+	b := ir.NewBuilder("t")
+	saved := b.NewReg("saved")
+	dst := b.NewReg("dst")
+	cond := b.NewReg("cond")
+	nextB := b.NewBlock()
+	sideB := b.NewBlock()
+	endB := b.NewBlock()
+
+	b.Emit(&ir.Assign{Dst: cond, Src: &ir.Const{V: 1}})
+	b.Emit(&ir.Select{Dst: dst, Cond: cond, Then: saved, Else: &ir.Const{V: 20}})
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: cond, Then: sideB, Else: nextB})
+
+	b.SetBlock(sideB)
+	b.SetTerm(&ir.Jmp{Target: nextB})
+
+	b.SetBlock(nextB)
+	b.Emit(&ir.StoreSpecial{Name: "sp", Src: dst})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{cond: 0, saved: 1, dst: 2})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if strings.Contains(code, "select sp") {
+		t.Fatalf("code = %q, want no fold into a shared block", code)
+	}
+}

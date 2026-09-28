@@ -384,8 +384,10 @@ VS Code `icg.redundantDeviceWrites`）会删除同块内、中间无读/屏障�
 折成 `d = rrP op b`。源折叠同样适用于把单次使用的读直接喂给设备写（`s` / `ss` /
 `sd`）、内建调用（`poke`/`put`/…）和 `select`——`u = sp; s db Setting u` 折成
 `s db Setting sp`，`u = sp; poke u v` 折成 `poke sp v`。前提都是临时寄存器全局单次
-使用、值必须紧邻其消费者（中间没有写）、且消费者确实读它。这是反编译「间接寄存器组」
-与栈机器程序能压进 128 行的关键（见 [`backlog.md`](backlog.md) D6、
+使用、值必须紧邻其消费者（中间没有写）、且消费者确实读它。折叠还跨过被当作
+fall-through 省掉的块边界：块 `b` 无条件跳到布局上的下一个块、且该后继只有 `b` 一个前驱
+时，后继的指令会拼进折叠窗口（`select` 的结果被下一块写进 `sp` 就属于这种）。这是反编译
+「间接寄存器组」与栈机器程序能压进 128 行的关键（见 [`backlog.md`](backlog.md) D6、
 [`special-reg-operands.md`](special-reg-operands.md)）。
 
 **空分支清理**：目标就是下一行的 `j`/条件分支（两支落到同一处）会被删除。跳转表条目

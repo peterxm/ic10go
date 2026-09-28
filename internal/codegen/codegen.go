@@ -185,6 +185,7 @@ func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, e
 // branch targets are resolved to line numbers. It is shared by code generation
 // and by Layout (used for the control-flow graph).
 func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.Block, []line, map[*ir.Block]int) {
+	fn.BuildCFG()
 	blocks := rpo(fn)
 	// Blocks that a call returns to must be laid out right after the call and
 	// therefore stay in place even if they only halt.
@@ -227,21 +228,57 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 
 	uses := regUseCounts(fn)
 
+	consumed := map[*ir.Block]int{}
 	for i, b := range blocks {
-		start[b] = len(lines)
-		for idx := 0; idx < len(b.Instrs); idx++ {
-			ins := b.Instrs[idx]
-			if text, n, ok := foldSpecialArith(b.Instrs, idx, uses, colors); ok {
+		if consumed[b] == 0 {
+			start[b] = len(lines)
+		}
+		var next *ir.Block
+		if i+1 < len(blocks) {
+			next = blocks[i+1]
+		}
+		instrs := b.Instrs[consumed[b]:]
+		// When b unconditionally jumps to the layout successor and that
+		// successor has no other predecessor, the two blocks run as one
+		// straight line (the jump is elided), so let the folds span the
+		// boundary: a select whose result the next block stores to sp folds
+		// into `select sp ...`.
+		var spill *ir.Block
+		if consumed[b] == 0 && next != nil && next != b && consumed[next] == 0 && len(next.Preds) == 1 {
+			if t, ok := b.Term.(*ir.Jmp); ok && t.Target == next {
+				merged := make([]ir.Instr, 0, len(b.Instrs)+len(next.Instrs))
+				merged = append(merged, b.Instrs...)
+				merged = append(merged, next.Instrs...)
+				instrs = merged
+				spill = next
+			}
+		}
+		spillStart := -1
+		for idx := 0; idx < len(instrs); idx++ {
+			if spill != nil && spillStart < 0 && idx >= len(b.Instrs) {
+				spillStart = len(lines)
+			}
+			ins := instrs[idx]
+			if text, n, ok := foldSpecialArith(instrs, idx, uses, colors); ok {
+				if spill != nil && spillStart < 0 && idx+n > len(b.Instrs) {
+					spillStart = len(lines)
+				}
 				add(text, nil, b.Func)
 				idx += n - 1
 				continue
 			}
-			if text, n, ok := foldIndirectDst(b.Instrs, idx, uses, colors); ok {
+			if text, n, ok := foldIndirectDst(instrs, idx, uses, colors); ok {
+				if spill != nil && spillStart < 0 && idx+n > len(b.Instrs) {
+					spillStart = len(lines)
+				}
 				add(text, nil, b.Func)
 				idx += n - 1
 				continue
 			}
-			if text, n, ok := foldLoadOperand(b.Instrs, idx, uses, colors); ok {
+			if text, n, ok := foldLoadOperand(instrs, idx, uses, colors); ok {
+				if spill != nil && spillStart < 0 && idx+n > len(b.Instrs) {
+					spillStart = len(lines)
+				}
 				add(text, nil, b.Func)
 				idx += n - 1
 				continue
@@ -271,9 +308,14 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 				add(text, nil, b.Func)
 			}
 		}
-		var next *ir.Block
-		if i+1 < len(blocks) {
-			next = blocks[i+1]
+		if spill != nil {
+			if spillStart >= 0 {
+				start[spill] = spillStart
+			}
+			// The successor's instructions were emitted above; its own
+			// terminator is still handled when the layout reaches it.
+			consumed[spill] = len(spill.Instrs)
+			continue
 		}
 		if isHaltBlock(b) {
 			// A bare halt emits no line, so branches target 9999 directly. It

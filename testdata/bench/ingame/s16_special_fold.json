@@ -1,0 +1,9 @@
+{
+  "program": "s16_special_fold.icg",
+  "chip": { "name": "A CHIP" },
+  "ports": { "d0": "LED", "d4": "Memory" },
+  "cases": [
+    { "name": "nonzero -> itself", "set": { "d4.Setting": 5 }, "run": 2, "expect": { "d0.Setting": 5 } },
+    { "name": "zero -> 20", "set": { "d4.Setting": 0 }, "run": 2, "expect": { "d0.Setting": 20 } }
+  ]
+}

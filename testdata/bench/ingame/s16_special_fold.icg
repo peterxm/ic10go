@@ -1,0 +1,10 @@
+// Exercises the fall-through special-register fold: the select and the store
+// that reads its result land in consecutive blocks, so the code generator folds
+// them into a single `select sp ...`.
+func main() {
+    for {
+        yield()
+        sp = d4.Setting != 0 ? d4.Setting : 20
+        d0.Setting = sp
+    }
+}

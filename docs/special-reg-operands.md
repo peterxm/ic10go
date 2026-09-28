@@ -65,7 +65,9 @@ sp = t
 
 ## 3. 结果
 
-`reoreotest.ic10` 往返：**92 → 97 → 95**。两处真实的折叠：
+### 3.1 反编译往返（`.ic10` → 反编译 `.icg` → 重编译）
+
+**92 → 97 → 95**。两处真实的折叠：
 
 ```asm
 ; 改动前                 ; 改动后
@@ -81,33 +83,80 @@ poke r1 r0
 
 其余差值只是分支行号随行数 -2 平移。
 
+### 3.2 手写端口 `reoreotest.icg`
+
+```bash
+ic10c build ic10code/reoreotest.icg | wc -l    # 100 → 98 → 97
+```
+
+91 行源码编译成 **97** 行（原始 `.ic10` 是 92 行）。开头两行现在与原始一致：
+
+```asm
+select sp r5 r5 20     ; 原始第 3 行就是 select sp r14 r14 20
+s db Setting sp        ; 原始第 4 行
+```
+
 ---
 
-## 4. 为什么还差 3 行：B 的「同一个基本块」前提
+## 4. 跨块（fall-through）折叠
 
-`sp = savedSP != 0 ? savedSP : 20` 产生的 `select` 落在循环头块，而写 `sp` 的
-`move sp r0` 在下一个块；codegen 逐块折叠，跨块就不触发——尽管两者在最终输出里是相邻两行
-（中间的 `j` 被当作 fall-through 省掉了）。
+B 的前提是 `select` 与写 `sp` 在同一个基本块。手写端口里 `sp = saved != 0 ? saved : 20`
+的 `select` 在循环头块、`move sp r0` 在下一个块——两者在输出里相邻，只因为中间的 `j` 被当作
+fall-through 省掉了。codegen 现在在**渲染阶段**跨过这个边界折叠：当块 `b` 以无条件 `j` 跳到
+布局上的**下一个块**、且该后继只有 `b` 一个前驱时，把后继的指令拼进折叠窗口。跳转被省掉、又
+没有别的分支进入后继，拼接在语义上就是一条直线，于是 `select ...; move sp ...` 折成
+`select sp ...`。
 
-要让 B 在 `reoreotest` 生效，需要在优化器里把「单前驱、以无条件跳转相连」的块合并成一个块
-（`mergeBlocks`）。这个 pass 实现过，但随机差分测试立刻找出 CFG 被破坏的用例（返回块被折进
-调用返回块、跳转目标悬空等），因此**没有启用**。`select sp` 的收益是 1 行，不值得冒这个风险；
-`.ic10` 原版的 `select sp r14 r14 20` 仍是我们想要的形态，等块合并稳妥后再补。
+这是纯渲染折叠（不动 IR/CFG），比在优化器里合并基本块安全得多。`mergeBlocks` 试过：随机差分
+立刻找出 CFG 被破坏的用例（返回块被折进调用返回块、跳转目标悬空），所以没启用。「后继单前驱」
+这条约束也不能省——否则有别的分支跳到后继的第一条指令，拼进去会多执行前一条指令。
 
 ---
 
-## 5. 正确性
+## 5. 位级语义对齐（手写 `.icg` vs 原始 `.ic10`）
+
+手写端口的 `adjust()` 原本写：
+
+```go
+throttle := max(total-110, 0) + (total > 0 ? 10 : 0)
+```
+
+而原始 `.ic10` 是先减 10（作为 CombustionLimiter 写出）、**再**减 100：
+
+```asm
+86: sub r8 r8 10        ; total - 10
+87: s r15 CombustionLimiter r8
+88: sub r8 r8 100       ; (total - 10) - 100
+```
+
+当设备值涨到 ~1.8e16（ULP = 2）时，`(total-10)-100` 与 `total-110` 会差 1 ULP。逐条比对
+写序列（16 个种子）只在 seed 1 的 `db.Throttle` 上暴露一次：
+
+```
+orig=db.Throttle=1.8014398509481982e+16
+port=db.Throttle=1.8014398509481984e+16
+```
+
+修法是让 `.icg` 保留原始的两步减法（`combustionLimiter := total - 10` 写出后再 `- 100`）。
+改完后 16 个种子的写序列**逐字节一致**，剩余 +5 行则来自源码结构（条件调用 `blez; jal; move`
+对比原始 `bgtzal`，以及状态机用重派发 `j` 代替原始的 fall-through）。
+
+---
+
+## 6. 正确性
 
 - 单元测试：`internal/codegen` 的 `TestFoldSpecialIntoDeviceStore` / `…Poke` / `…Select`
-  / `…SlotStore`、`TestFoldSpecialArithSelect`；`internal/opt` 的
+  / `…SlotStore`、`TestFoldSpecialArithSelect`、跨块折叠的 `TestFoldAcrossFallthroughBlock`
+  与反例 `TestNoFoldAcrossSharedBlock`；`internal/opt` 的
   `TestSelectConvertCopyChain` / `…PassthroughBranch` / `…KeepsLiveIntermediate`。
 - 语料往返 `TestIc10CodeRoundTrip*`：设备写序列一致。
 - 差分 `TestDifferential*`：优化产物 vs `IC10C_NO_OPT`，随机程序对照。
-- 真机 `sh testdata/bench/ingame/run.sh`：9/9（真机 + 内置 VM 差分）。
+- 真机 `sh testdata/bench/ingame/run.sh`：**10/10**（真机 + 内置 VM 差分），其中
+  `s16_special_fold.json` 专门走跨块折叠（`sp = ...? ... : ...; d0.Setting = sp`）。
 
 ---
 
-## 6. 端口测试口径的修正
+## 7. 端口测试口径的修正
 
 `pkg/ic10/ports_test.go` 原来把两个脚本各跑固定**步数**再比较「可达设备状态集合」。移除指令
 后端口更快，同样步数里写事件更多，集合就成了超集而误报——但逐条比对**写序列**其实完全一致。
@@ -116,7 +165,7 @@ poke r1 r0
 
 ---
 
-## 7. 复现
+## 8. 复现
 
 `reoreotest.*` 是本地语料，别人 clone 不到；换成任意脚本走同样的往返即可。仓库自带的
 可跟踪语料（如 `ic10code/氧气过滤灌装.ic`）可以直接试：
@@ -125,6 +174,9 @@ poke r1 r0
 # 反编译 → 重编译（用本地 reoreotest 时，实测 106 行 → 95 行；改动前 97 行）
 ic10c decompile <x>.ic > x.icg
 ic10c build x.icg | wc -l
+
+# 手写端口（本地）：100 → 98 → 97 行
+ic10c build ic10code/reoreotest.icg | wc -l
 
 # 用仓库自带的已跟踪语料
 ic10c decompile "ic10code/氧气过滤灌装.ic" > /tmp/x.icg   # 21 行
@@ -135,7 +187,7 @@ go test ./internal/codegen ./internal/opt ./pkg/ic10
 sh testdata/bench/ingame/run.sh
 ```
 
-## 8. 相关
+## 9. 相关
 
 - codegen 折叠总览：[`architecture.md`](architecture.md) §7。
 - 端口 / 差分 / 真机测试：[`ingame-testbench.md`](ingame-testbench.md)。
