@@ -214,7 +214,7 @@ Ret
 | `--fast` 模式 | 优先运行速度而非体积：放宽循环展开门控（允许调用、更大体/次数） |
 | 内联 / 外提 | 按体积决策：内联调用点，或把多次调用的叶子函数编译成 `jal` 子程序；常量实参调用点始终内联以折叠 |
 | 比较-分支融合 | `if a<b` → `bge`，省一条比较 |
-| select 化 | 同左值赋常量的 `if-else` → `select` |
+| select 化 | 同左值赋值的 `if-else` → `select`；每个分支可以是单条赋值、拷贝链（`t = x; dst = t`，解析为 `x`）或空（值原样直通 `dst`） |
 | 逻辑化简 | `&&`→`min`、`||`→`max`、`!`→`seqz`（含无副作用的用户函数调用） |
 
 > **优化不保证更小**：传播/外提可能拉长寄存器活跃区间、逼出溢出。因此优化版接近
@@ -376,14 +376,17 @@ VS Code `icg.redundantDeviceWrites`）会删除同块内、中间无读/屏障�
 **特殊寄存器算术折叠**：`sp`/`ra` 可作为算术目标，所以 `sp = sp - 4` 直接发
 `sub sp sp 4`，不经过临时寄存器。`internal/codegen` 在行号回填前把
 `t = a op b; sp = t`（以及带 `sp` 读取的 `t1 = sp; t2 = t1 op b; sp = t2`）折成单条，
-前提是临时寄存器/被读的特殊寄存器**全局只有这一处使用**（见
-[`backlog.md`](backlog.md) D4）。
+`<op>` 可以是二元、一元（`neg`/`not`/`seqz`）或 `select`，前提是临时寄存器/被读的
+特殊寄存器**全局只有这一处使用**（见 [`backlog.md`](backlog.md) D4）。
 
-**间接寄存器操作数折叠**：`rrN` 既是合法的目标操作数也是合法的源操作数，所以
-`t = a op b; rrP = t` 折成 `a op rrP b`，`u = ireg(rrP); d = u op b` 折成
-`d = rrP op b`（`sp` 同理）。同样只在临时寄存器全局单次使用时折叠，且读必须紧邻其消费者
-（中间没有对目标寄存器的写）。这是反编译「间接寄存器组」程序能压进 128 行的关键
-（见 [`backlog.md`](backlog.md) D6）。
+**间接寄存器/特殊寄存器操作数折叠**：`rrN` 与 `sp`/`ra` 既是合法的目标操作数也是
+合法的源操作数，所以 `t = a op b; rrP = t` 折成 `a op rrP b`，`u = ireg(rrP); d = u op b`
+折成 `d = rrP op b`。源折叠同样适用于把单次使用的读直接喂给设备写（`s` / `ss` /
+`sd`）、内建调用（`poke`/`put`/…）和 `select`——`u = sp; s db Setting u` 折成
+`s db Setting sp`，`u = sp; poke u v` 折成 `poke sp v`。前提都是临时寄存器全局单次
+使用、值必须紧邻其消费者（中间没有写）、且消费者确实读它。这是反编译「间接寄存器组」
+与栈机器程序能压进 128 行的关键（见 [`backlog.md`](backlog.md) D6、
+[`special-reg-operands.md`](special-reg-operands.md)）。
 
 **空分支清理**：目标就是下一行的 `j`/条件分支（两支落到同一处）会被删除。跳转表条目
 （`j <case>`，按索引寻址）和调用（`jal`、`b<cond>al`）不参与该清理；清理会迭代到不动点，

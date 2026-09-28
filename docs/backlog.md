@@ -223,8 +223,9 @@ move sp r0
 - `t = a op b; sp = t` → `op sp a b`（2 行变 1 行）
 - `t1 = sp; t2 = t1 op b; sp = t2` → `op sp sp b`（3 行变 1 行）
 
-只在**临时寄存器/被读的特殊寄存器全局仅此一次使用**时折叠；`Bin`/`Un` 都覆盖。
-减行后跳转目标由现有布局重算。
+只在**临时寄存器/被读的特殊寄存器全局仅此一次使用**时折叠；`Bin`/`Un`/`Select` 都覆盖。
+减行后跳转目标由现有布局重算。（`Select` 只在 `select` 与其 `sp` 存储在同一个基本块时触发，
+见 [`special-reg-operands.md`](special-reg-operands.md)。）
 
 **实测**（122 个语料脚本，反编译→重编译）：共省 **56 行**，8 个脚本变短
 （`roboroutine` 114→101、`Vending_Machine_Controller` 112→100、`baseFriend` 82→71、
@@ -252,6 +253,12 @@ move sp r0
 - `t = <op>; rrP = t` → `<op> rrP ...`（跨过 lowerer 产生的一次拷贝也算）
 - `u = ireg(rrP); d = u op b` → `d = rrP op b`（读必须紧邻消费者）
 - `u = sp; d = u op b` → `d = sp op b`
+
+消费者不限于算术：单次使用的读还可以直接喂给设备写（`s` / `ss` / `sd`）、内建
+（`poke`/`put`/…）和 `select`——`u = sp; s db Setting u` → `s db Setting sp`、
+`u = sp; poke u v` → `poke sp v`。另外 `select` 也支持写 `sp`/`ra`
+（`t = select c a b; sp = t` → `select sp c a b`）。细节与 `reoreotest` 的 92→95 案例见
+[`special-reg-operands.md`](special-reg-operands.md)。
 
 **实测**：语料 5511 → **5490 行**（6 个脚本变短）。其中 `traderSolver` 139 → **126 行**，
 `knownUnsupported` 因此清空；真机逐写 A/B（`solverLarge`，去掉等待分支以便确定）
