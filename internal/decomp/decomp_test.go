@@ -186,6 +186,30 @@ func TestDecompileDynamicLogic(t *testing.T) {
 	}
 }
 
+func TestDecompileLogicTypeQualified(t *testing.T) {
+	// `ld`/`sd` address a device by ReferenceId; readById/writeById expect the
+	// logic type as a LogicType.<name> enum, while a register stays a dynamic
+	// logic value.
+	code, warns, err := Decompile("ld r0 r0 Activate\nsd r0 On r1\nld r2 r1 LogicType.Open\nld r3 r1 r2\nsd r4 r5 r6\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	for _, want := range []string{
+		"readById(r0, LogicType.Activate)", // bare name -> prefixed
+		"writeById(r0, LogicType.On, r1)",  // bare name -> prefixed
+		"readById(r1, LogicType.Open)",     // already prefixed -> kept
+		"readById(r1, r2)",                 // register -> dynamic
+		"writeById(r4, r5, r6)",            // register -> dynamic
+	} {
+		if !strings.Contains(code, want) {
+			t.Errorf("output missing %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestDecompileComputedJump(t *testing.T) {
 	code, warns, err := Decompile("brnez r0 r0\n")
 	if err != nil {

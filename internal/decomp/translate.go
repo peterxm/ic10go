@@ -123,9 +123,9 @@ func (d *decompiler) translate(l icLine) []string {
 		}
 		return []string{d.deviceWrite(l.args[0], l.args[1], d.a(l, 2))}
 	case "ld":
-		return []string{d.assignDst(l.args[0], fmt.Sprintf("readById(%s, %s)", d.a(l, 1), d.a(l, 2)))}
+		return []string{d.assignDst(l.args[0], fmt.Sprintf("readById(%s, %s)", d.a(l, 1), d.logicArg(l, 2)))}
 	case "sd":
-		return []string{fmt.Sprintf("writeById(%s, %s, %s)", d.a(l, 0), d.a(l, 1), d.a(l, 2))}
+		return []string{fmt.Sprintf("writeById(%s, %s, %s)", d.a(l, 0), d.logicArg(l, 1), d.a(l, 2))}
 	case "ls":
 		if reg, ok := d.deviceRegArg(l.args[1]); ok {
 			return []string{d.assignDst(l.args[0], fmt.Sprintf("readDevSlot(%s, %s, %s)", reg, d.a(l, 2), l.args[3]))}
@@ -421,6 +421,22 @@ func (d *decompiler) isDynLogic(s string) bool {
 	}
 	_, err := strconv.Atoi(s)
 	return err == nil
+}
+
+// logicArg renders an `ld`/`sd` logic operand. readById/writeById take the
+// LogicType.<name> enum for a static logic type, while a register or number is
+// a dynamic logic value and is passed through unchanged. The raw operand may
+// already carry the LogicType. prefix (older disassembly) or be a bare name, so
+// normalise both to the prefixed form.
+func (d *decompiler) logicArg(l icLine, i int) string {
+	if d.isDynLogic(l.args[i]) {
+		return d.a(l, i)
+	}
+	arg := d.a(l, i)
+	if strings.HasPrefix(arg, "LogicType.") {
+		return arg
+	}
+	return "LogicType." + arg
 }
 
 // deviceRegArg recognises an IC10 device-register operand (dr15, drr0) and
