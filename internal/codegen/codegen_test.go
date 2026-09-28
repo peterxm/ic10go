@@ -274,3 +274,106 @@ func TestNoFoldIndirectLoadWhenReused(t *testing.T) {
 		t.Fatalf("code = %q, want the indirect load kept", code)
 	}
 }
+
+func TestFoldSpecialIntoDeviceStore(t *testing.T) {
+	// `u = sp; s db Setting u` becomes `s db Setting sp`.
+	b := ir.NewBuilder("t")
+	sp := b.NewReg("spv")
+	b.Emit(&ir.LoadSpecial{Dst: sp, Name: "sp"})
+	b.Emit(&ir.Store{Dev: "db", Logic: "Setting", Src: sp})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{sp: 0})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if want := "s db Setting sp\n"; code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}
+
+func TestFoldSpecialIntoPoke(t *testing.T) {
+	// `u = sp; poke u v` becomes `poke sp v`.
+	b := ir.NewBuilder("t")
+	v := b.NewReg("v")
+	sp := b.NewReg("spv")
+	b.Emit(&ir.Assign{Dst: v, Src: &ir.Const{V: 5}})
+	b.Emit(&ir.LoadSpecial{Dst: sp, Name: "sp"})
+	b.Emit(&ir.Builtin{Name: "poke", Args: []ir.Value{sp, v}})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{v: 0, sp: 1})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if want := "move r0 5\npoke sp r0\n"; code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}
+
+func TestFoldSpecialIntoSelect(t *testing.T) {
+	// `u = sp; d = select c u 20` becomes `select d c sp 20`.
+	b := ir.NewBuilder("t")
+	c := b.NewReg("c")
+	sp := b.NewReg("spv")
+	d := b.NewReg("d")
+	b.Emit(&ir.Assign{Dst: c, Src: &ir.Const{V: 1}})
+	b.Emit(&ir.LoadSpecial{Dst: sp, Name: "sp"})
+	b.Emit(&ir.Select{Dst: d, Cond: c, Then: sp, Else: &ir.Const{V: 20}})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{c: 0, sp: 1, d: 2})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if want := "move r0 1\nselect r2 r0 sp 20\n"; code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}
+
+func TestFoldSpecialIntoSlotStore(t *testing.T) {
+	// `u = sp; ss d0 1 SlotType u` becomes `ss d0 1 SlotType sp`.
+	b := ir.NewBuilder("t")
+	sp := b.NewReg("spv")
+	b.Emit(&ir.LoadSpecial{Dst: sp, Name: "sp"})
+	b.Emit(&ir.StoreSlot{Dev: "d0", Index: &ir.Const{V: 1}, Logic: "SlotType", Src: sp})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{sp: 0})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if want := "ss d0 1 SlotType sp\n"; code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}
+
+func TestNoFoldSpecialIntoStoreWhenReused(t *testing.T) {
+	// The sp load is used twice, so the store keeps the temporary.
+	b := ir.NewBuilder("t")
+	sp := b.NewReg("spv")
+	other := b.NewReg("other")
+	b.Emit(&ir.LoadSpecial{Dst: sp, Name: "sp"})
+	b.Emit(&ir.Store{Dev: "db", Logic: "Setting", Src: sp})
+	b.Emit(&ir.Assign{Dst: other, Src: sp})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{sp: 0, other: 1})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if want := "move r0 sp\ns db Setting r0\nmove r1 r0\n"; code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}
+
+func TestFoldSpecialArithSelect(t *testing.T) {
+	// `t = select c a b; sp = t` becomes `select sp c a b`.
+	b := ir.NewBuilder("t")
+	tmp := b.NewReg("tmp")
+	b.Emit(&ir.Select{Dst: tmp, Cond: &ir.Const{V: 1}, Then: &ir.Const{V: 7}, Else: &ir.Const{V: 20}})
+	b.Emit(&ir.StoreSpecial{Name: "sp", Src: tmp})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{tmp: 0})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if want := "select sp 1 7 20\n"; code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}

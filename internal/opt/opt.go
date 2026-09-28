@@ -1373,6 +1373,7 @@ func valKey(v ir.Value) string {
 func selectConvert(fn *ir.Function) bool {
 	fn.BuildCFG()
 	changed := false
+	uses := frontEndUses(fn)
 	for _, b := range fn.Blocks {
 		br, ok := b.Term.(*ir.Br)
 		if !ok {
@@ -1385,12 +1386,23 @@ func selectConvert(fn *ir.Function) bool {
 		if len(then.Preds) != 1 || len(els.Preds) != 1 {
 			continue
 		}
-		if len(then.Instrs) != 1 || len(els.Instrs) != 1 {
+		td, ok1 := branchDst(then)
+		ed, ok2 := branchDst(els)
+		if !ok1 || !ok2 {
 			continue
 		}
-		ta, ok1 := then.Instrs[0].(*ir.Assign)
-		ea, ok2 := els.Instrs[0].(*ir.Assign)
-		if !ok1 || !ok2 || ta.Dst != ea.Dst {
+		var dst *ir.Reg
+		switch {
+		case td != nil && ed != nil:
+			if td != ed {
+				continue
+			}
+			dst = td
+		case td != nil:
+			dst = td
+		case ed != nil:
+			dst = ed
+		default:
 			continue
 		}
 		tj, ok1 := then.Term.(*ir.Jmp)
@@ -1398,9 +1410,12 @@ func selectConvert(fn *ir.Function) bool {
 		if !ok1 || !ok2 || tj.Target != ej.Target {
 			continue
 		}
-
+		thenSrc, ok1 := branchValue(then, dst, uses)
+		elseSrc, ok2 := branchValue(els, dst, uses)
+		if !ok1 || !ok2 {
+			continue
+		}
 		cond, swap, needCmp := selectCond(br)
-		thenSrc, elseSrc := ta.Src, ea.Src
 		if swap {
 			thenSrc, elseSrc = elseSrc, thenSrc
 		}
@@ -1409,7 +1424,7 @@ func selectConvert(fn *ir.Function) bool {
 			b.Instrs = append(b.Instrs, &ir.Cmp{Cond: br.Cond, Dst: r, A: br.A, B: br.B})
 			cond = r
 		}
-		b.Instrs = append(b.Instrs, &ir.Select{Dst: ta.Dst, Cond: cond, Then: thenSrc, Else: elseSrc})
+		b.Instrs = append(b.Instrs, &ir.Select{Dst: dst, Cond: cond, Then: thenSrc, Else: elseSrc})
 		b.Term = &ir.Jmp{Target: tj.Target}
 		changed = true
 	}
@@ -1419,6 +1434,80 @@ func selectConvert(fn *ir.Function) bool {
 		fn.BuildCFG()
 	}
 	return changed
+}
+
+// frontEndUses counts how often each register is read across the function.
+func frontEndUses(fn *ir.Function) map[*ir.Reg]int {
+	uses := map[*ir.Reg]int{}
+	for _, b := range fn.Blocks {
+		for _, in := range b.Instrs {
+			u, _ := ir.DefUse(in)
+			for _, r := range u {
+				uses[r]++
+			}
+		}
+		for _, r := range ir.TermUses(b.Term) {
+			uses[r]++
+		}
+	}
+	return uses
+}
+
+// branchDst returns the destination of a conditional branch that ends in a
+// register assignment, or nil for an empty branch. It reports false when the
+// branch is neither empty nor a run of plain assignments, so anything with a
+// side effect (device reads/writes, calls, ...) is left alone.
+func branchDst(blk *ir.Block) (*ir.Reg, bool) {
+	if len(blk.Instrs) == 0 {
+		return nil, true
+	}
+	for _, in := range blk.Instrs {
+		if _, ok := in.(*ir.Assign); !ok {
+			return nil, false
+		}
+	}
+	return blk.Instrs[len(blk.Instrs)-1].(*ir.Assign).Dst, true
+}
+
+// branchValue returns the value a branch leaves in dst. An empty branch passes
+// dst through unchanged (its value already lives there). Otherwise the branch
+// must be a chain of register copies ending in dst, which is resolved so that
+// `t = x; dst = t` yields x. Intermediate registers may only be read inside the
+// branch, otherwise dropping the copies would leave their readers undefined.
+func branchValue(blk *ir.Block, dst *ir.Reg, uses map[*ir.Reg]int) (ir.Value, bool) {
+	if len(blk.Instrs) == 0 {
+		return dst, true
+	}
+	local := map[*ir.Reg]ir.Value{}
+	usedHere := map[*ir.Reg]int{}
+	for _, in := range blk.Instrs {
+		a := in.(*ir.Assign)
+		u, _ := ir.DefUse(in)
+		for _, r := range u {
+			usedHere[r]++
+		}
+		local[a.Dst] = a.Src
+	}
+	for _, in := range blk.Instrs {
+		if a := in.(*ir.Assign); a.Dst != dst && uses[a.Dst] != usedHere[a.Dst] {
+			return nil, false
+		}
+	}
+	seen := map[*ir.Reg]bool{}
+	v := local[dst]
+	for {
+		r, ok := v.(*ir.Reg)
+		if !ok || seen[r] {
+			break
+		}
+		nv, ok := local[r]
+		if !ok {
+			break
+		}
+		seen[r] = true
+		v = nv
+	}
+	return v, true
 }
 
 // selectCond maps a branch condition to a value tested against non-zero.

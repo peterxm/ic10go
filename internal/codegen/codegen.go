@@ -415,11 +415,12 @@ func regUseCounts(fn *ir.Function) map[*ir.Reg]int {
 //	sp = t            (t = a op b)      ->  <op> sp a b      (2 instructions)
 //	t1 = sp; sp = t2  (t2 = t1 op b)    ->  <op> sp sp b     (3 instructions)
 //
-// IC10 allows sp/ra as an ordinary destination operand, so the temporary and
-// the `move` are unnecessary. The fold only fires when the temporary's sole use
-// is the store (and, for the three-instruction shape, the loaded value's sole
-// use is the computation), which keeps it safe. It returns the folded text and
-// how many instructions it consumed.
+// where <op> is a binary op, a unary op (neg/not/seqz) or `select`. IC10 allows
+// sp/ra as an ordinary destination operand, so the temporary and the `move` are
+// unnecessary. The fold only fires when the temporary's sole use is the store
+// (and, for the three-instruction shape, the loaded value's sole use is the
+// computation), which keeps it safe. It returns the folded text and how many
+// instructions it consumed.
 func foldSpecialArith(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[*ir.Reg]int) (string, int, bool) {
 	// Three-instruction shape: load the special, compute from it, store back.
 	if i+2 < len(instrs) {
@@ -452,8 +453,10 @@ func specialComputeText(ins ir.Instr, st *ir.StoreSpecial, loaded *ir.Reg, uses 
 	if !ok {
 		return "", false
 	}
-	// The temporary must be defined by this instruction and used nowhere else,
-	// so the store is its only reader.
+	// The temporary must be defined by this instruction and read nowhere else,
+	// so the store is its only reader. (The producer reading its own result,
+	// e.g. `select t t a b`, is rejected: folding would leave that operand
+	// pointing at a register this instruction no longer defines.)
 	if uses[src] != 1 {
 		return "", false
 	}
@@ -483,6 +486,12 @@ func specialComputeText(ins ir.Instr, st *ir.StoreSpecial, loaded *ir.Reg, uses 
 		case ir.Seqz:
 			return "seqz " + st.Name + " " + operand(v.A), true
 		}
+	case *ir.Select:
+		if v.Dst != src {
+			return "", false
+		}
+		return "select " + st.Name + " " + operand(v.Cond) + " " + operand(v.Then) +
+			" " + operand(v.Else), true
 	}
 	return "", false
 }
@@ -550,12 +559,17 @@ func foldIndirectDst(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 	return "", 0, false
 }
 
-// foldLoadOperand folds a single-use load into the arithmetic that consumes it,
+// foldLoadOperand folds a single-use load into the instruction that consumes it,
 // so the load line disappears: `u = ireg(rrP); d = u op b` becomes
 // `d = rrP op b` (the indexed form is an ordinary source operand in IC10). The
-// special registers fold the same way: `u = sp; d = u + k` -> `d = sp + k`. The
-// load must sit immediately before its consumer, so nothing can change the
-// pointed-to register in between.
+// special registers fold the same way: `u = sp; d = u + k` -> `d = sp + k`.
+//
+// Beyond arithmetic it also folds into any consumer that takes the register as
+// an ordinary source operand: device stores (`s` / `ss` / `sd`), builtins
+// (`poke`, `put`, ...) and `select`. The load must sit immediately before its
+// consumer, the loaded value must be used exactly once, and the consumer must
+// actually read it, so nothing can change the register in between and the load
+// is never dropped while still needed.
 func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[*ir.Reg]int) (string, int, bool) {
 	if i+1 >= len(instrs) {
 		return "", 0, false
@@ -579,10 +593,24 @@ func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 		}
 		return valueText(v, colors)
 	}
+	mentions := func(vs ...ir.Value) bool {
+		for _, v := range vs {
+			if r, ok := v.(*ir.Reg); ok && r == loaded {
+				return true
+			}
+		}
+		return false
+	}
 	switch v := instrs[i+1].(type) {
 	case *ir.Bin:
+		if !mentions(v.A, v.B) {
+			return "", 0, false
+		}
 		return v.Op.IC10() + " " + regName(v.Dst, colors) + " " + val(v.A) + " " + val(v.B), 2, true
 	case *ir.Un:
+		if !mentions(v.A) {
+			return "", 0, false
+		}
 		switch v.Op {
 		case ir.Neg:
 			return "sub " + regName(v.Dst, colors) + " 0 " + val(v.A), 2, true
@@ -591,6 +619,49 @@ func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 		case ir.Seqz:
 			return "seqz " + regName(v.Dst, colors) + " " + val(v.A), 2, true
 		}
+	case *ir.Select:
+		if !mentions(v.Cond, v.Then, v.Else) {
+			return "", 0, false
+		}
+		return "select " + regName(v.Dst, colors) + " " + val(v.Cond) + " " + val(v.Then) +
+			" " + val(v.Else), 2, true
+	case *ir.Store:
+		if !mentions(v.Src) {
+			return "", 0, false
+		}
+		return "s " + v.Dev + " " + v.Logic + " " + val(v.Src), 2, true
+	case *ir.StoreSlot:
+		// DynDev renders DevPtr directly, so only fold when DevPtr is not the
+		// loaded register.
+		if mentions(v.DevPtr) || !mentions(v.Src, v.Index) {
+			return "", 0, false
+		}
+		return "ss " + dynDev(v.Dev, v.DevPtr, colors) + " " + val(v.Index) + " " +
+			v.Logic + " " + val(v.Src), 2, true
+	case *ir.StoreDyn:
+		if v.DevID != nil {
+			if !mentions(v.DevID, v.Logic, v.Src) {
+				return "", 0, false
+			}
+			return "sd " + val(v.DevID) + " " + val(v.Logic) + " " + val(v.Src), 2, true
+		}
+		if mentions(v.DevPtr) || !mentions(v.Logic, v.Src) {
+			return "", 0, false
+		}
+		return "s " + dynDev(v.Dev, v.DevPtr, colors) + " " + val(v.Logic) + " " + val(v.Src), 2, true
+	case *ir.Builtin:
+		if !mentions(v.Args...) {
+			return "", 0, false
+		}
+		f := builtin.Funcs[v.Name]
+		parts := []string{f.Mnemonic}
+		if v.Dst != nil {
+			parts = append(parts, regName(v.Dst, colors))
+		}
+		for _, a := range v.Args {
+			parts = append(parts, val(a))
+		}
+		return strings.Join(parts, " "), 2, true
 	}
 	return "", 0, false
 }

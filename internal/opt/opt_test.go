@@ -653,3 +653,127 @@ func TestRedundantDeviceStores(t *testing.T) {
 		t.Fatalf("instrs = %d, want 2", n)
 	}
 }
+
+// findSelect returns the single select in fn, failing the test otherwise.
+func findSelect(t *testing.T, fn *ir.Function) *ir.Select {
+	t.Helper()
+	var found *ir.Select
+	for _, b := range fn.Blocks {
+		for _, in := range b.Instrs {
+			if s, ok := in.(*ir.Select); ok {
+				if found != nil {
+					t.Fatal("more than one select")
+				}
+				found = s
+			}
+		}
+	}
+	if found == nil {
+		t.Fatal("no select produced")
+	}
+	return found
+}
+
+func TestSelectConvertCopyChain(t *testing.T) {
+	// then: t = a; dst = t   else: dst = 20  ->  select dst a 20. The copy
+	// chain must be resolved so the select reads a directly.
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	c := b.NewReg("c")
+	dst := b.NewReg("dst")
+	tmp := b.NewReg("tmp")
+	b.Emit(&ir.Load{Dst: a, Dev: "d1", Logic: "Setting"})
+	b.Emit(&ir.Assign{Dst: c, Src: &ir.Const{V: 1}})
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: c, Then: thenB, Else: elseB})
+
+	b.SetBlock(thenB)
+	b.Emit(&ir.Assign{Dst: tmp, Src: a})
+	b.Emit(&ir.Assign{Dst: dst, Src: tmp})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(elseB)
+	b.Emit(&ir.Assign{Dst: dst, Src: &ir.Const{V: 20}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: dst})
+	b.SetTerm(&ir.Ret{})
+
+	if !selectConvert(b.Fn()) {
+		t.Fatal("selectConvert did not fold the copy chain")
+	}
+	sel := findSelect(t, b.Fn())
+	if sel.Dst != dst || !sameValue(sel.Then, a) || !sameValue(sel.Else, &ir.Const{V: 20}) {
+		t.Fatalf("select = %+v, want dst = a ? a : 20", sel)
+	}
+}
+
+func TestSelectConvertPassthroughBranch(t *testing.T) {
+	// then: (empty)   else: dst = 20  ->  select dst dst 20. An empty branch
+	// passes the merge destination through unchanged.
+	b := ir.NewBuilder("f")
+	c := b.NewReg("c")
+	dst := b.NewReg("dst")
+	b.Emit(&ir.Assign{Dst: c, Src: &ir.Const{V: 1}})
+	b.Emit(&ir.Assign{Dst: dst, Src: &ir.Const{V: 0}})
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: c, Then: thenB, Else: elseB})
+
+	b.SetBlock(thenB)
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(elseB)
+	b.Emit(&ir.Assign{Dst: dst, Src: &ir.Const{V: 20}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: dst})
+	b.SetTerm(&ir.Ret{})
+
+	if !selectConvert(b.Fn()) {
+		t.Fatal("selectConvert did not fold the passthrough branch")
+	}
+	sel := findSelect(t, b.Fn())
+	if !sameValue(sel.Then, dst) || !sameValue(sel.Else, &ir.Const{V: 20}) {
+		t.Fatalf("select = %+v, want dst = dst ? dst : 20", sel)
+	}
+}
+
+func TestSelectConvertKeepsLiveIntermediate(t *testing.T) {
+	// The intermediate t is read after the branch, so dropping the copy chain
+	// would leave that read undefined: the diamond must stay.
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	c := b.NewReg("c")
+	dst := b.NewReg("dst")
+	tmp := b.NewReg("tmp")
+	b.Emit(&ir.Load{Dst: a, Dev: "d1", Logic: "Setting"})
+	b.Emit(&ir.Assign{Dst: c, Src: &ir.Const{V: 1}})
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	endB := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: c, Then: thenB, Else: elseB})
+
+	b.SetBlock(thenB)
+	b.Emit(&ir.Assign{Dst: tmp, Src: a})
+	b.Emit(&ir.Assign{Dst: dst, Src: tmp})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(elseB)
+	b.Emit(&ir.Assign{Dst: dst, Src: &ir.Const{V: 20}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+
+	b.SetBlock(endB)
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: dst})
+	b.Emit(&ir.Store{Dev: "d2", Logic: "Setting", Src: tmp}) // keeps tmp live
+	b.SetTerm(&ir.Ret{})
+
+	if selectConvert(b.Fn()) {
+		t.Fatal("selectConvert must keep a chain whose intermediate is still live")
+	}
+}
