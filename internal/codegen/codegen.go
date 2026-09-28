@@ -595,6 +595,29 @@ func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 	return "", 0, false
 }
 
+// labelLine returns the line a label used as a value stands for: the block's own
+// first line when it has one, otherwise the line its unconditional jumps reach.
+// A label on a line of its own (or on a block the layout dropped) therefore
+// takes the following line, which is what an IC10 label means.
+func labelLine(b *ir.Block, start map[*ir.Block]int, n int) (int, bool) {
+	seen := map[*ir.Block]bool{}
+	for b != nil && !seen[b] {
+		seen[b] = true
+		if line, ok := start[b]; ok && line < n {
+			return line, true
+		}
+		switch t := b.Term.(type) {
+		case *ir.Jmp:
+			b = t.Target
+		case *ir.Goto:
+			b = t.Target
+		default:
+			return 0, false
+		}
+	}
+	return 0, false
+}
+
 // Layout returns the codegen block order and each block's 0-based start line.
 func Layout(fn *ir.Function, colors map[*ir.Reg]int) ([]*ir.Block, map[*ir.Block]int) {
 	blocks, _, start := layoutLines(fn, colors, false)
@@ -646,10 +669,17 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 	code := sb.String()
 
 	// Resolve label-address placeholders (a label used as a value) to the
-	// absolute line number of the label block.
-	for _, b := range blocks {
-		if ref := ir.LabelRef(b.ID); strings.Contains(code, ref) {
-			code = strings.ReplaceAll(code, ref, strconv.Itoa(start[b]))
+	// absolute line number of the label block. A label whose block emits no line
+	// of its own (it is empty and only jumps onward, which happens when the
+	// label sits on its own or its block was left out of the layout) takes the
+	// first line it reaches, exactly as an IC10 label takes the following line.
+	for _, b := range fn.Blocks {
+		ref := ir.LabelRef(b.ID)
+		if !strings.Contains(code, ref) {
+			continue
+		}
+		if line, ok := labelLine(b, start, len(lines)); ok {
+			code = strings.ReplaceAll(code, ref, strconv.Itoa(line))
 		}
 	}
 	// A label reference whose block is not in the layout cannot be resolved;
