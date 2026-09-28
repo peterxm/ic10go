@@ -1455,3 +1455,28 @@ func TestAllReservedFailsFast(t *testing.T) {
 		t.Fatalf("allocation took %v; it should fail fast", d)
 	}
 }
+
+// A store to a shared housing stack must survive optimisation even when this
+// program never reads it back: the chip is interrupted after its instruction
+// budget, so another program can observe any intermediate value.
+func TestSharedStackStoreNotDead(t *testing.T) {
+	src := `// icg: shared-stack
+func main() {
+    var r0 = d0.Setting
+    var r1 = 1
+    label L:
+    if r0 < r1 { goto M }
+    put(db, 0, 2)
+    goto L
+    label M:
+    put(db, 0, 3)
+}
+`
+	res, diags, err := ic10.CompileResult("t.icg", []byte(src), ic10.Options{})
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(res.Code, "put db 0 2") {
+		t.Fatalf("the reachable shared-stack store was dropped:\n%s", res.Code)
+	}
+}

@@ -2266,7 +2266,11 @@ func deadStores(fn *ir.Function) bool {
 			if key, ok := stackStoreKey(ins); ok {
 				// A store is dead when its slot is not live afterwards (the
 				// value is never read before being overwritten, on any path).
-				if !live[key] {
+				// Only a private stack may be dead-stored: a shared one is
+				// observable at every tick boundary (the chip is interrupted
+				// after its instruction budget), whatever this program reads
+				// back, so another program can see any intermediate value.
+				if !live[key] && fn.PrivateStack {
 					dead[idx] = true
 				}
 				delete(live, key)

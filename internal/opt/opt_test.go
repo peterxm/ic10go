@@ -289,11 +289,13 @@ func TestDeadStackStore(t *testing.T) {
 	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 1}}})
 	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 2}}})
 	b.SetTerm(&ir.Ret{})
-	if !deadStores(b.Fn()) {
-		t.Fatal("expected the overwritten put to be removed")
+	// A shared chip stack is observable at every tick boundary, so an
+	// overwritten store may not be dropped.
+	if deadStores(b.Fn()) {
+		t.Fatal("a shared stack must keep its stores")
 	}
-	if n := len(b.Fn().Blocks[0].Instrs); n != 1 {
-		t.Fatalf("instrs = %d, want 1", n)
+	if n := len(b.Fn().Blocks[0].Instrs); n != 2 {
+		t.Fatalf("instrs = %d, want 2", n)
 	}
 }
 
@@ -521,11 +523,13 @@ func TestDeadStackStoreCrossBlock(t *testing.T) {
 	b.SetBlock(joinB)
 	b.Emit(&ir.Builtin{Name: "put", Args: []ir.Value{&ir.Device{Name: "db"}, &ir.Const{V: 5}, &ir.Const{V: 3}}})
 	b.SetTerm(&ir.Ret{})
-	if !deadStores(b.Fn()) {
-		t.Fatal("expected the branch stores to be removed")
+	// A shared chip stack is observable at every tick boundary, so none of
+	// these stores may be dropped even though the join overwrites the slot.
+	if deadStores(b.Fn()) {
+		t.Fatal("a shared stack must keep its stores")
 	}
-	if n := len(b.Fn().Blocks[1].Instrs); n != 0 {
-		t.Fatalf("then block instrs = %d, want 0", n)
+	if n := len(b.Fn().Blocks[1].Instrs); n != 1 {
+		t.Fatalf("then block instrs = %d, want 1", n)
 	}
 	if n := len(b.Fn().Blocks[3].Instrs); n != 1 {
 		t.Fatalf("join block instrs = %d, want 1", n)
