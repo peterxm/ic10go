@@ -157,6 +157,7 @@ go test ./...
 | [`docs/plugin-api.md`](docs/plugin-api.md) | `build --json` 机器接口：字段、诊断 code、桥接流程 |
 | [`docs/ingame-test-plan.md`](docs/ingame-test-plan.md) | 真机测试方案（新内建 / 优化 / `--rel-jump` 验证） |
 | [`docs/ingame-testbench.md`](docs/ingame-testbench.md) | 游戏内测试台：mod + `ic10c testbench` + VSCode 集成（协议、场景、难度与里程碑） |
+| [`docs/signal-invert.md`](docs/signal-invert.md) | 信号反转（0↔1）的编译研究：几种写法的产物与优化取舍 |
 | [`docs/vm-improvements.md`](docs/vm-improvements.md) | 测试用 IC10 虚拟机（`internal/vm`）改进计划（P1–P5） |
 | [`docs/tail-merge.md`](docs/tail-merge.md) | 尾块合并与寄存器颜色：气闸控制案例（`--merge-renamed-tails`，默认关闭） |
 
