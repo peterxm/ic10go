@@ -137,8 +137,8 @@ true   false nan   pinf  ninf
 ```go
 const Pi = 3.14159
 const (
-    MaxTemp = 296.15
-    MinTemp = 283.15
+    MinTemp = 18c // 18°C（单位字面量，编译期换算成开尔文）
+    MaxTemp = 25c // 25°C
 )
 ```
 

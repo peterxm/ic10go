@@ -28,34 +28,64 @@
 ## 示例
 
 ```go
-const MaxTemp = 296.15
-const MinTemp = 283.15
+// 温控器：k 旋钮选档位，1 K 滞回防抖。
+//
+//   Heater = StructureWallHeater（加热器，写 On）
+//   Sensor = StructureGasSensor（温度传感器，读 Temperature）
+//   Dial   = StructureLogicDial（逻辑旋钮，读 Setting：0=低温、1..3=常温、其余=高温）
+const (
+    Heater     = d0
+    Sensor     = d1
+    Dial       = d2
+    Hysteresis = 1.0 // 温差用普通数值；`15c` 这类单位字面量是绝对换算
+)
+
+func target(mode num) num {
+    switch mode {
+    case 0:      return 15c // 低温
+    case 1..3:   return 20c // 常温
+    default:     return 25c // 高温
+    }
+}
 
 func main() {
-    var on = 0
+    var heat = 0
     for {
         yield()
-        t := d1.Temperature
-        if t < MinTemp { on = 1 }
-        if t > MaxTemp { on = 0 }
-        d0.On = on
+        t := target(Dial.Setting)
+        if Sensor.Temperature < t-Hysteresis { heat = 1 }
+        if Sensor.Temperature > t+Hysteresis { heat = 0 }
+        Heater.On = heat
     }
 }
 ```
 
-编译（示意）：
+编译产物（`ic10c stats`：20 行 / 225 字节 / 寄存器 4，滞回与档位都在编译期展开）：
 
 ```
-move r1 0
+move r3 0
 yield
-l r0 d1 Temperature
-bge r0 283.15 5
-move r1 1
-ble r0 296.15 7
-move r1 0
-s d0 On r1
+l r0 d2 Setting
+bnez r0 6
+move r2 288.15
+j 11
+blt r0 1 8
+ble r0 3 10
+move r2 298.15
+j 11
+move r2 293.15
+l r1 d1 Temperature
+sub r0 r2 1
+bge r1 r0 15
+move r3 1
+add r0 r2 1
+ble r1 r0 18
+move r3 0
+s d0 On r3
 j 1
 ```
+
+> 注：示例里的设备型号与用法仅为展示语法；实际基地中这样接不一定有收益，型号、阈值、接法都需按现场调整。
 
 ## 状态
 
