@@ -55,6 +55,7 @@
   "cmd.bench.ports": "IC10 Go: Show Port Wiring",
   "cmd.bench.writes": "IC10 Go: Show Device Writes",
   "cmd.bench.compare": "IC10 Go: Compare Chips",
+  "cmd.bench.exportStack": "IC10 Go: Export Stack as Loader",
   "cmd.bench.loadSave": "IC10 Go: Load Save",
   "cmd.bench.selectChip": "IC10 Go: Select Chip",
   "cmd.bench.setDevice": "IC10 Go: Set Device Value",

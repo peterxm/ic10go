@@ -27,6 +27,15 @@ function t(en, zh) {
 // prefab they refer to.
 const HASH_LOGIC = /^(PrefabHash|NameHash|OccupantHash)$/;
 
+// fmtStackValue renders a stack value as an IC10 numeric literal (integers with
+// no decimal point), matching what a data loader writes.
+function fmtStackValue(v) {
+    const n = Number(v);
+    if (!isFinite(n)) return '0';
+    if (Number.isInteger(n)) return String(n);
+    return String(Number(n.toPrecision(10)));
+}
+
 // ---------------------------------------------------------------------------
 // NDJSON client
 // ---------------------------------------------------------------------------
@@ -413,6 +422,7 @@ class Bench {
         this.lastWrites = [];
         this.store = undefined; // context.workspaceState
         this.restoreWatch = false;
+        this.programData = undefined; // out.data from the last push (range/access)
     }
 
     // chipSel builds the protocol chip selector for the given chip.
@@ -521,6 +531,7 @@ class Bench {
         cmd('icg.bench.ports', () => this.showPorts());
         cmd('icg.bench.writes', () => this.showWrites(false));
         cmd('icg.bench.compare', () => this.showCompare());
+        cmd('icg.bench.exportStack', () => this.exportStack());
         cmd('icg.bench.loadSave', () => this.loadSave());
         cmd('icg.bench.runScenario', () => this.runScenario());
         cmd('icg.bench.openPanel', () => this.openPanel());
@@ -744,6 +755,7 @@ class Bench {
             } else {
                 this.programMap = undefined;
             }
+            this.programData = out.data || undefined;
             try {
                 const r = await conn.call('push', { code: out.code, loaders });
                 const lines = r.lines || (out.stats && out.stats.lines) || 0;
@@ -1294,6 +1306,99 @@ ${note}${diffNote}
   }
 </script>
 </body></html>`;
+    }
+
+    // buildStackLoader renders stack slots as a pasteable loader, mirroring the
+    // compiler's data loader (`put db <slot> <value>`, or `poke` for a chip
+    // whose runtime reads its own stack). It returns chunks that each fit the
+    // editor line limit, to be run in order.
+    buildStackLoader(pairs, access, maxLines) {
+        const write = access === 'stack' ? 'poke' : 'put db';
+        const limit = maxLines > 0 ? maxLines : 128;
+        const lines = pairs.map(([slot, v]) => `${write} ${slot} ${fmtStackValue(v)}`);
+        const chunks = [];
+        for (let i = 0; i < lines.length; i += limit) {
+            chunks.push(lines.slice(i, i + limit).join('\n') + '\n');
+        }
+        return chunks;
+    }
+
+    // exportStack reads the selected chip's stack and writes a loader that
+    // reinstalls the chosen slots, so initialized stack data can be moved to
+    // another chip or saved. Each <=128-line chunk opens in its own editor and
+    // the first is copied to the clipboard.
+    async exportStack() {
+        const c = await this.connect(false);
+        if (!c) return;
+        const args = { include: ['stack'] };
+        if (this.sel) args.chip = this.sel;
+        let st;
+        try {
+            st = await c.call('state', args);
+        } catch (err) {
+            this.client.output.appendLine(`IC10 bench stack failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('IC10: stack export failed. See the "IC10 Go" output.', 'IC10: 导出栈数据失败，详见 "IC10 Go" 输出面板。'));
+            return;
+        }
+        const stack = st && st.stack;
+        if (!stack || !stack.values) {
+            vscode.window.showWarningMessage(t('IC10: the chip has no stack to export.', 'IC10: 芯片没有可导出的栈数据。'));
+            return;
+        }
+        const vals = stack.values;
+        const keys = Object.keys(vals).map(Number).sort((a, b) => a - b);
+        const sp = stack.sp || 0;
+        const data = this.programData && this.programData.needed ? this.programData : undefined;
+        const options = [];
+        if (data && typeof data.start === 'number' && data.start >= 0) {
+            options.push({ label: t('Data segment', '数据段'), description: `[${data.start}..${data.end}]`, kind: 'range' });
+        }
+        options.push({ label: t('Used stack (0..sp)', '已用栈（0..sp）'), description: `0..${sp}`, kind: 'used' });
+        options.push({ label: t('Non-zero slots', '非零槽位'), kind: 'nonzero' });
+        options.push({ label: t('All slots with a value', '全部有值的槽位'), kind: 'all' });
+        const pick = await vscode.window.showQuickPick(options, {
+            placeHolder: t('Export which stack range?', '导出哪一段栈数据？'),
+        });
+        if (!pick) return;
+        let slots;
+        switch (pick.kind) {
+            case 'range':
+                slots = [];
+                for (let i = data.start; i <= data.end; i++) slots.push(i);
+                break;
+            case 'used':
+                slots = keys.filter((k) => k <= sp);
+                break;
+            case 'nonzero':
+                slots = keys.filter((k) => Number(vals[String(k)]) !== 0);
+                break;
+            default:
+                slots = keys;
+        }
+        if (!slots.length) {
+            vscode.window.showWarningMessage(t('IC10: nothing to export in that range.', 'IC10: 该范围内没有可导出的数据。'));
+            return;
+        }
+        const pairs = slots.map((k) => [k, vals[String(k)] === undefined ? 0 : vals[String(k)]]);
+        const access = (this.programData && this.programData.access) || 'get';
+        const maxLines = this.client.config().maxLines > 0 ? this.client.config().maxLines : 128;
+        const chunks = this.buildStackLoader(pairs, access, maxLines);
+        for (const chunk of chunks) {
+            const doc = await vscode.workspace.openTextDocument({ content: chunk, language: 'ic10' });
+            await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside, preview: false });
+        }
+        await vscode.env.clipboard.writeText(chunks[0]);
+        const write = access === 'stack' ? 'poke' : 'put db';
+        this.client.output.appendLine(
+            `=== stack export: ${pairs.length} slots, ${chunks.length} chunk(s), ${write} ===\n${chunks.join('\n')}`
+        );
+        vscode.window.setStatusBarMessage(
+            t(
+                `IC10: exported ${pairs.length} stack slots as ${chunks.length} loader chunk(s) (${write}); first chunk copied`,
+                `IC10: 已导出 ${pairs.length} 个栈槽为 ${chunks.length} 段 loader（${write}），首段已复制`
+            ),
+            6000
+        );
     }
 
     async loadSave() {

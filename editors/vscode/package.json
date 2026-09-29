@@ -350,6 +350,11 @@
         "icon": "$(split-horizontal)"
       },
       {
+        "command": "icg.bench.exportStack",
+        "title": "%cmd.bench.exportStack%",
+        "icon": "$(save-as)"
+      },
+      {
         "command": "icg.bench.loadSave",
         "title": "%cmd.bench.loadSave%",
         "icon": "$(folder-opened)"
@@ -488,6 +493,11 @@
           "command": "icg.bench.compare",
           "when": "view == icg.bench",
           "group": "navigation@14"
+        },
+        {
+          "command": "icg.bench.exportStack",
+          "when": "view == icg.bench",
+          "group": "navigation@15"
         }
       ],
       "commandPalette": [

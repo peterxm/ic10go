@@ -180,6 +180,15 @@ if (!writes.includes('Battery') || !writes.includes('On') || !writes.includes('c
     console.error('writesHtml did not render the write row / baseline diff');
     process.exit(1);
 }
+const chunks = bench.buildStackLoader([[0, 1], [5, 2.5], [509, 79464601]], 'get', 2);
+if (chunks.length !== 2 || !chunks[0].startsWith('put db 0 1') || !chunks[1].includes('put db 509 79464601')) {
+    console.error('buildStackLoader chunking/format wrong: ' + JSON.stringify(chunks));
+    process.exit(1);
+}
+if (bench.buildStackLoader([[3, 0]], 'stack', 0)[0].trim() !== 'poke 3 0') {
+    console.error('buildStackLoader did not use poke for stack access');
+    process.exit(1);
+}
 
 ext.deactivate();
 
@@ -204,6 +213,7 @@ const expected = [
     'icg.bench.ports',
     'icg.bench.writes',
     'icg.bench.compare',
+    'icg.bench.exportStack',
     'icg.bench.loadSave',
     'icg.bench.runScenario',
     'icg.bench.openPanel',

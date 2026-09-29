@@ -142,6 +142,7 @@ func main() {
 | `IC10 Go: Show Port Wiring` | 打开「端口接线」面板：`d0..d5` 两条网络上的设备、预制体与可读逻辑（mod `ports`） |
 | `IC10 Go: Show Device Writes` | 打开「设备写序列」面板：列出程序对设备 logic 的写入（Harmony trace）。可清空后 `Step`/`Run` 再刷新查看单 tick 写入；「设为基线」后可标出与基线的差异并「只看变化」 |
 | `IC10 Go: Compare Chips` | 打开「多芯片对比」面板：所有芯片并排显示行号 / 寄存器 / 栈指针 / 设备；变化的寄存器高亮、「只看差异」、点列头选中该芯片、`sp` 深度条，可开实时刷新 |
+| `IC10 Go: Export Stack as Loader` | 把选中芯片的栈数据导出为 **loader 形式的 IC10**（`put db`，设备 host 用 `poke`），每段 ≤128 行；可选数据段 / `0..sp` / 非零 / 全部。每段开在新编辑器，首段复制到剪贴板，便于搬移/存档 |
 | `IC10 Go: Load Save` | 从存档列表选择并在游戏中载入（`LoadHelper.LoadGame`） |
 | `IC10 Go: Pulse` | 对瞬态逻辑写 0 再写 1（如喷气背包 `Activate`）；在树的逻辑行上右键/内联按钮
 
@@ -159,6 +160,7 @@ func main() {
 - 上传后（`icg.bench.highlightLine` 默认开）会用编译产物的 `lineMap` 在 `.icg` 编辑器里高亮芯片当前执行的行（按指令近似，见 [`docs/plugin-api.md`](../../docs/plugin-api.md)）；`Step` / `Run` 后可看到它移动。
 - **多芯片对比**（`icg.bench.compare`）：一个 Webview 把所有芯片并排列出（行号 / `program.lines` / 寄存器 / `sp` / 设备 logic / 报错），变化的寄存器会高亮，可勾选「只看差异」、点列头选中该芯片；`Live` 可定时刷新——多芯片通过 `bus` 通信时一起看最方便。
 - **状态记忆**：上次选中的芯片与「实时更新」开关存在工作区状态里，重载窗口后自动选回同一块芯片并恢复实时更新。
+- **导出栈数据**（`icg.bench.exportStack`）：把芯片的持久栈按 **loader 形式**（`put db <槽> <值>`；`--data-access stack` 时用 `poke`）导出成每段 ≤128 行的可直接粘贴代码，可选「数据段 / `0..sp` / 非零 / 全部」；每段开一个新编辑器、首段进剪贴板——方便把已初始化的栈数据搬到别的芯片或存下来。
 - `autoload`（见 mod 配置）可让游戏启动后自动进入指定测试存档，无需手动点。
 - 运行场景的结果以表格展示，每个 case 一行 ✓ / ✗ 与期望 / 实际值。
 
