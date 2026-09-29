@@ -124,7 +124,7 @@ j 1
 需要 **Go 1.27+**。
 
 ```bash
-git clone <repo> ic10go
+git clone https://github.com/peterxm/ic10go
 cd ic10go
 go build -o ic10c ./cmd/ic10c
 ```
@@ -151,11 +151,11 @@ cp ic10c ~/.local/bin/
 新建 `blink.icg`：
 
 ```go
-// 每 tick 把电池电量写入芯片宿主显示屏
+// 每 tick 把电池电量写入显示屏
 func main() {
     for {
         yield()
-        db.Setting = d0.Ratio
+        d1.Setting = d0.Ratio
     }
 }
 ```
@@ -171,7 +171,7 @@ func main() {
 ```
 yield
 l r0 d0 Ratio
-s db Setting r0
+s d1 Setting r0
 j 0
 ```
 
@@ -181,16 +181,16 @@ j 0
 |------|------|
 | `yield` | 暂停到下一个 tick |
 | `l r0 d0 Ratio` | 从 `d0` 读取 `Ratio` 到寄存器 `r0` |
-| `s db Setting r0` | 把 `r0` 写到 `db` 的 `Setting` |
+| `s d1 Setting r0` | 把 `r0` 写到 `d1` 的 `Setting` |
 | `j 0` | 无条件跳回第 0 行（循环） |
 
-在游戏里：把这段贴进 IC10 编辑器，把电池接到 `d0`，芯片插到有屏幕的设备上，就能看到电量。
+在游戏里：把这段贴进 IC10 编辑器，把电池接到 `d0`，显示器接到 `d1`，芯片插到设备上，就能看到电量。
 
 **先本地跑一下**，不用进游戏：
 
 ```bash
 ./ic10c run --set d0.Ratio=0.75 blink.icg
-# 输出：db.Setting = 0.75
+# 输出：d1.Setting = 0.75
 ```
 
 ---
