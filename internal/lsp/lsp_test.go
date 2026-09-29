@@ -590,6 +590,17 @@ func TestStatsNotificationManualStackSlot(t *testing.T) {
 	}
 }
 
+func TestPrefabTable(t *testing.T) {
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"ic10/prefabs"}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, `"prefabs"`) || !strings.Contains(out, `"ItemIronOre"`) {
+		t.Errorf("ic10/prefabs should map hashes to prefab names:\n%s", out)
+	}
+}
+
 func TestHoverDeviceAlias(t *testing.T) {
 	out := runServer(t,
 		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),

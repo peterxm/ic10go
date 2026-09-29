@@ -67,7 +67,19 @@ func TestBuildJSONSuccessWithData(t *testing.T) {
 	if len(res.Diagnostics) != 0 {
 		t.Errorf("unexpected diagnostics: %+v", res.Diagnostics)
 	}
-	assertJSONFields(t, res, "apiVersion", "ok", "code", "lines", "data", "chips", "stats", "limits", "diagnostics")
+	assertJSONFields(t, res, "apiVersion", "ok", "code", "lines", "data", "chips", "stats", "limits", "lineMap", "diagnostics")
+	if len(res.LineMap) != res.Stats.Lines+1 {
+		t.Errorf("lineMap length = %d, want %d", len(res.LineMap), res.Stats.Lines+1)
+	}
+	// The map follows instructions: `yield()` maps to line 6, the store to line
+	// 7 (source string coordinates); the data-check prologue is attributed to
+	// main's declaration (line 4).
+	if got := res.LineMap[3]; got != 6 {
+		t.Errorf("lineMap[3] (yield) = %d, want 6", got)
+	}
+	if got := res.LineMap[4]; got != 7 {
+		t.Errorf("lineMap[4] (s d0 On 10) = %d, want 7", got)
+	}
 }
 
 func TestLimitsForOverrides(t *testing.T) {

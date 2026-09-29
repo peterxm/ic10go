@@ -266,6 +266,9 @@ type ChipResult struct {
 	// Setup reports whether Loader includes hoisted one-time device writes
 	// (modes / switches / constant settings) rather than only data-segment writes.
 	Setup bool
+	// LineMap maps a 1-based runtime IC10 line to the 1-based .icg source line
+	// it came from (0 when unknown). It lets an editor follow execution.
+	LineMap []int
 	// BusAccess maps "Bus.slot" to the access points ("dev:conn") this chip
 	// uses for it, used to wire a multi-chip VM run. Nil when the chip uses no
 	// bus.
@@ -291,6 +294,9 @@ type Result struct {
 	Chips []ChipResult
 	// Setup reports whether Loader includes hoisted one-time device writes.
 	Setup bool
+	// LineMap maps a 1-based runtime IC10 line to the 1-based .icg source line
+	// it came from (0 when unknown). Chips[0] mirrors the top-level program's.
+	LineMap []int
 }
 
 // Compile compiles .icg source into IC10 code.
@@ -389,7 +395,7 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 		}
 		res.Loader = dl + res.Loader
 		res.Loaders = SplitLoaderLines(res.Loader, opts.editorLimits().Lines)
-		res.Chips = []ChipResult{{Code: res.Code, Loader: res.Loader, Loaders: res.Loaders, Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, "")}}
+		res.Chips = []ChipResult{{Code: res.Code, LineMap: res.LineMap, Loader: res.Loader, Loaders: res.Loaders, Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, "")}}
 		return res, diags, nil
 	}
 
@@ -431,13 +437,13 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			continue
 		}
 		loader := dl + res.Loader
-		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, Loader: loader, Loaders: SplitLoaderLines(loader, opts.editorLimits().Lines), Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, ch.Name.Name)})
+		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, LineMap: res.LineMap, Loader: loader, Loaders: SplitLoaderLines(loader, opts.editorLimits().Lines), Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, ch.Name.Name)})
 	}
 	checkBusUse(common, busUses, diags)
 	if len(results) == 0 {
 		return Result{}, diags, firstErr
 	}
-	return Result{Code: results[0].Code, Loader: results[0].Loader, Loaders: results[0].Loaders, Chips: results, Setup: results[0].Setup}, diags, firstErr
+	return Result{Code: results[0].Code, LineMap: results[0].LineMap, Loader: results[0].Loader, Loaders: results[0].Loaders, Chips: results, Setup: results[0].Setup}, diags, firstErr
 }
 
 // busUse records which chips read and write one bus slot.
@@ -496,7 +502,7 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 		if fn == nil || diags.HasErrors() {
 			return
 		}
-		code, spills, err := generate(fn, info, o)
+		code, lineMap, spills, err := generate(fn, info, o)
 		if err == nil {
 			// Only look for a smaller unoptimised build when it could matter:
 			// over a limit, or close enough that a few saved lines help.
@@ -513,13 +519,13 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 		// when the program already needs a one-time loader (data segment): in
 		// that case moving setup writes into the existing loader is free.
 		if err == nil && info.DataSize == 0 {
-			consider(Result{Code: code})
+			consider(Result{Code: code, LineMap: lineMap})
 			return
 		}
 		setup := opt.SplitSetup(fn)
 		if setup == nil {
 			if err == nil {
-				consider(Result{Code: code})
+				consider(Result{Code: code, LineMap: lineMap})
 			} else {
 				bestErr = err
 			}
@@ -527,31 +533,31 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 		}
 		if oerr := opt.Optimize(fn); oerr != nil {
 			if err == nil {
-				consider(Result{Code: code})
+				consider(Result{Code: code, LineMap: lineMap})
 			} else {
 				bestErr = err
 			}
 			return
 		}
-		runtime, _, rerr := generate(fn, info, o)
+		runtime, rlineMap, _, rerr := generate(fn, info, o)
 		if rerr != nil {
 			if err == nil {
-				consider(Result{Code: code})
+				consider(Result{Code: code, LineMap: lineMap})
 			} else {
 				bestErr = rerr
 			}
 			return
 		}
-		loader, _, lerr := generate(setup, info, o)
+		loader, _, _, lerr := generate(setup, info, o)
 		if lerr != nil {
 			if err == nil {
-				consider(Result{Code: code})
+				consider(Result{Code: code, LineMap: lineMap})
 			} else {
 				bestErr = rerr
 			}
 			return
 		}
-		consider(Result{Code: runtime, Loader: loader, Setup: true})
+		consider(Result{Code: runtime, LineMap: rlineMap, Loader: loader, Setup: true})
 	}
 	// Try each outline plan with and without constant data-read folding; the
 	// shortest runtime wins (folding is usually shorter, but not always).
@@ -734,15 +740,15 @@ func better(a, b string) bool {
 }
 
 // generate runs register allocation and code generation for a lowered function.
-// It returns the number of register spill slots used.
-func generate(fn *ir.Function, info *sema.Info, opts Options) (string, int, error) {
-	code, _, spills, err := generateColored(fn, info, opts)
-	return code, spills, err
+// It returns the source line map and the number of register spill slots used.
+func generate(fn *ir.Function, info *sema.Info, opts Options) (string, []int, int, error) {
+	code, _, lineMap, spills, err := generateColored(fn, info, opts)
+	return code, lineMap, spills, err
 }
 
 // generateColored is generate plus the register colouring, which the
 // control-flow graph needs to render instruction text.
-func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, map[*ir.Reg]int, int, error) {
+func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, map[*ir.Reg]int, []int, int, error) {
 	reserved := info.DataSize
 	if fixedDataBase(opts) > 0 {
 		reserved = 0
@@ -753,13 +759,13 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 	}
 	colors, spillCount, err := regalloc.AllocateReservedSpillsMode(fn, NumRegs, reserved, spillMode)
 	if err != nil {
-		return "", nil, 0, err
+		return "", nil, nil, 0, err
 	}
 	if spillCount > 0 && fixedDataBase(opts) > 0 {
 		bottom := 511 - reserved - spillCount + 1
 		dataEnd := info.Sentinel + info.DataSize - 1
 		if bottom <= dataEnd {
-			return "", nil, 0, fmt.Errorf("register spills (%d slots, down to %d) overlap the data segment [%d..%d]",
+			return "", nil, nil, 0, fmt.Errorf("register spills (%d slots, down to %d) overlap the data segment [%d..%d]",
 				spillCount, bottom, info.Sentinel, dataEnd)
 		}
 	}
@@ -770,12 +776,15 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 	} else if opt.MergeTailsColored(fn, colors) {
 		fn.BuildCFG()
 	}
-	code, err := codegen.GenerateWithOptions(fn, colors, codegen.Options{
+	code, report, err := codegen.GenerateReportWithOptions(fn, colors, codegen.Options{
 		RelJump: opts.RelJump,
 		SpillDB: !opts.SpillStack,
 		Limits:  opts.editorLimits(),
 	})
-	return code, colors, spillCount, err
+	if err != nil {
+		return code, colors, nil, spillCount, err
+	}
+	return code, colors, report.LineMap, spillCount, err
 }
 
 // checkStackRegion rejects user stack accesses that reach into the compiler's

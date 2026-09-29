@@ -91,6 +91,9 @@ type line struct {
 	// The entries are addressed by index, so a no-op entry must never be
 	// dropped: doing so would renumber the rest of the table.
 	table bool
+	// src is the 1-based .icg source line this line was lowered from, or 0 when
+	// unknown. It feeds the source line map.
+	src int
 }
 
 // haltMarker is the IR-level sentinel a halt block jumps to. It is a marker,
@@ -146,6 +149,10 @@ func fallsThroughTo(prev, b *ir.Block) bool {
 type Report struct {
 	Total  int
 	ByFunc map[string]int
+	// LineMap maps a 1-based generated IC10 line to the 1-based .icg source
+	// line it came from (0 when unknown). It is indexed by line number, so
+	// len(LineMap) is Total+1.
+	LineMap []int
 }
 
 // Options controls code generation.
@@ -222,14 +229,16 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 	blocks = orderCallReturns(blocks)
 	var lines []line
 	start := map[*ir.Block]int{}
+	curSrc := 0
 	add := func(text string, target *ir.Block, f string) {
-		lines = append(lines, line{text: text, target: target, fn: f})
+		lines = append(lines, line{text: text, target: target, fn: f, src: curSrc})
 	}
 
 	uses := regUseCounts(fn)
 
 	consumed := map[*ir.Block]int{}
 	for i, b := range blocks {
+		curSrc = b.SrcLine
 		if consumed[b] == 0 {
 			start[b] = len(lines)
 		}
@@ -259,6 +268,11 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 				spillStart = len(lines)
 			}
 			ins := instrs[idx]
+			if s := fn.SrcLines[ins]; s > 0 {
+				curSrc = s
+			} else {
+				curSrc = b.SrcLine
+			}
 			if text, n, ok := foldSpecialArith(instrs, idx, uses, colors); ok {
 				if spill != nil && spillStart < 0 && idx+n > len(b.Instrs) {
 					spillStart = len(lines)
@@ -325,6 +339,11 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 				continue
 			}
 		}
+		if s := fn.SrcTerms[b.Term]; s > 0 {
+			curSrc = s
+		} else {
+			curSrc = b.SrcLine
+		}
 		switch t := b.Term.(type) {
 		case *ir.Jmp:
 			if t.Target != next {
@@ -346,7 +365,7 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 				add("add "+reg+" "+reg+" 1", nil, b.Func)
 				add("jr "+reg, nil, b.Func)
 				for _, tb := range t.Table {
-					lines = append(lines, line{text: "j ", target: tb, fn: b.Func, table: true})
+					lines = append(lines, line{text: "j ", target: tb, fn: b.Func, table: true, src: curSrc})
 				}
 			} else {
 				add("j "+valueText(t.Target, colors), nil, b.Func)
@@ -754,7 +773,9 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 	}
 
 	var sb strings.Builder
+	srcMap := make([]int, len(lines)+1)
 	for i, ln := range lines {
+		srcMap[i+1] = ln.src
 		text, target := ln.text, ""
 		if ln.imm != "" {
 			target = ln.imm
@@ -800,7 +821,7 @@ func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Opt
 	// This is a compiler bug (see docs/backlog.md), so fail loudly.
 	unresolved := strings.IndexByte(code, '\x01') >= 0
 
-	report := &Report{Total: len(lines), ByFunc: map[string]int{}}
+	report := &Report{Total: len(lines), ByFunc: map[string]int{}, LineMap: srcMap}
 	for _, ln := range lines {
 		report.ByFunc[ln.fn]++
 	}

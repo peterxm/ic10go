@@ -20,6 +20,7 @@ ic10c build --json <file.icg>
   "ok": true,
   "code": "yield\nmove r2 0\n...",
   "lines": ["yield", "move r2 0", "..."],
+  "lineMap": [0, 6, 6, 7, 7],
   "data": {
     "needed": true,
     "setup": true,
@@ -56,6 +57,7 @@ ic10c build --json <file.icg>
 | `ok` | 是否编译成功。`false` 时 `code` 为空，`diagnostics` 必含 error。 |
 | `code` | 编译产物原文。 |
 | `lines` | 产物按行拆分。**直接写芯片请用这个**，避免尾换行 / CRLF 歧义。 |
+| `lineMap` | 1-based 产物行 → 1-based `.icg` 源码行的数组（下标 0 未用，长度 = `stats.lines`+1）；`0` = 未知。按**指令**记录（编译期展开/折叠新生成的指令可能为 0）。多芯片时顶层镜像 `chips[0]`，每个 `chips[]` 也各带 `lineMap`。供编辑器把芯片当前 `line` 回映到源码。 |
 | `data.needed` | 是否需要先运行一次性 loader（数据段和/或外提的设置写入）。 |
 | `data.setup` | loader 里是否包含**外提的一次性设置写入**（`Mode`/`On`/常量 `Setting` 等，见下文）。 |
 | `data.loader` | 一次性 loader 的完整 IC10 代码；`needed=false` 时省略。 |

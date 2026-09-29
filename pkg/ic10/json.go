@@ -91,7 +91,10 @@ type ChipJSON struct {
 	// Loaders splits Loader into chip-sized chunks; run them in order.
 	Loaders []string `json:"loaders,omitempty"`
 	// Setup reports whether Loader carries hoisted one-time device writes.
-	Setup bool `json:"setup,omitempty"`
+	Setup bool     `json:"setup,omitempty"`
+	// LineMap maps a 1-based runtime IC10 line to the 1-based .icg source line
+	// it came from (0 when unknown), so an editor can follow execution.
+	LineMap []int `json:"lineMap,omitempty"`
 }
 
 // BuildResult is the JSON document emitted by `ic10c build --json`. It is a
@@ -106,6 +109,9 @@ type BuildResult struct {
 	Chips       []ChipJSON   `json:"chips"`
 	Stats       Stats        `json:"stats"`
 	Limits      Limits       `json:"limits"`
+	// LineMap maps a 1-based runtime IC10 line to the 1-based .icg source line
+	// it came from (0 when unknown). It mirrors the first chip.
+	LineMap     []int        `json:"lineMap,omitempty"`
 	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
@@ -147,6 +153,7 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 			Loader:  ch.Loader,
 			Loaders: ch.Loaders,
 			Setup:   ch.Setup,
+			LineMap: ch.LineMap,
 		})
 	}
 	if compiled.Loader != "" {
@@ -183,6 +190,7 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 	res.Code = compiled.Code
 	res.Lines = splitLines(compiled.Code)
 	res.Stats = StatsOf(compiled.Code)
+	res.LineMap = compiled.LineMap
 	return res, nil
 }
 

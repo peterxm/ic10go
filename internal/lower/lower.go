@@ -103,6 +103,18 @@ func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 		labeledFuncs: computeLabeledFuncs(info),
 	}
 	l.labelNames = map[string]bool{}
+	l.srcLines = map[ir.Instr]int{}
+	l.srcTerms = map[ir.Term]int{}
+	l.b.OnEmit = func(ins ir.Instr) {
+		if l.srcLine > 0 {
+			l.srcLines[ins] = l.srcLine
+		}
+	}
+	l.b.OnTerm = func(t ir.Term) {
+		if l.srcLine > 0 {
+			l.srcTerms[t] = l.srcLine
+		}
+	}
 	collectLabels(info.Main.Body.List, l.labelNames)
 	for _, fi := range info.Funcs {
 		collectLabels(fi.Decl.Body.List, l.labelNames)
@@ -116,6 +128,9 @@ func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 	}
 	l.scopes = append(l.scopes, scope)
 
+	if info.Main != nil {
+		l.notePos(info.Main.Pos())
+	}
 	end := l.newBlock()
 	l.inline = append(l.inline, inlineCtx{end: end})
 
@@ -142,6 +157,8 @@ func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 	}
 
 	fn := l.b.Fn()
+	fn.SrcLines = l.srcLines
+	fn.SrcTerms = l.srcTerms
 	fn.UserStackManual = l.userStackMax
 	fn.UserStackDynamic = l.userStackDyn
 	fn.UserStackUses = l.userStackUses
@@ -242,6 +259,13 @@ type lowerer struct {
 	// pendingLoopLabel is the label of the loop about to be lowered (a
 	// `label Name:` immediately preceding a for/range/switch).
 	pendingLoopLabel string
+	// srcLine is the .icg source line of the statement currently being lowered;
+	// new blocks are tagged with it for the source line map.
+	srcLine int
+	// srcLines / srcTerms record the source line each instruction and
+	// terminator was emitted from, for the codegen line map.
+	srcLines map[ir.Instr]int
+	srcTerms map[ir.Term]int
 	// outline marks functions emitted once as subroutines instead of inlined.
 	outline  map[string]bool
 	outlined map[string]*outlinedFunc
@@ -289,7 +313,25 @@ func (l *lowerer) funcName() string {
 func (l *lowerer) newBlock() *ir.Block {
 	b := l.b.NewBlock()
 	b.Func = l.funcName()
+	b.SrcLine = l.srcLine
 	return b
+}
+
+// notePos records the source line of the statement being lowered so blocks
+// created while lowering it carry it for the line map.
+func (l *lowerer) notePos(p source.Pos) {
+	if p.IsValid() {
+		l.srcLine = p.Line
+	}
+}
+
+// adoptLine tags the current block with the statement's line when the block is
+// still empty, so a fresh loop/if body maps to its first statement rather than
+// the enclosing for/if line.
+func (l *lowerer) adoptLine() {
+	if b := l.b.Cur(); b != nil && len(b.Instrs) == 0 && b.Term == nil && l.srcLine > 0 {
+		b.SrcLine = l.srcLine
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -355,6 +397,8 @@ func (l *lowerer) noteLoopLabel(list []ast.Stmt, i int) {
 // lowerStmtCont lowers a statement whose fall-through target is cont. Plain
 // statements simply fall through; only control-flow statements need cont.
 func (l *lowerer) lowerStmtCont(s ast.Stmt, cont *ir.Block) {
+	l.notePos(s.Pos())
+	l.adoptLine()
 	switch v := s.(type) {
 	case *ast.BlockStmt:
 		l.pushScope()
@@ -371,6 +415,8 @@ func (l *lowerer) lowerStmtCont(s ast.Stmt, cont *ir.Block) {
 }
 
 func (l *lowerer) lowerStmt(s ast.Stmt) {
+	l.notePos(s.Pos())
+	l.adoptLine()
 	switch s := s.(type) {
 	case *ast.BlockStmt:
 		l.lowerBlock(s)

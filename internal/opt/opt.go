@@ -1996,6 +1996,7 @@ func ensurePreheader(fn *ir.Function, lp *loop, preds map[*ir.Block][]*ir.Block,
 		return nil, nil, false
 	}
 	pre := fn.NewBlock()
+	pre.SrcLine = h.SrcLine
 	pre.Term = &ir.Jmp{Target: h}
 	for _, p := range outside {
 		redirect(p, h, pre)
@@ -2755,6 +2756,7 @@ func tailBetter(saving, weight, firstID, bestSaving, bestWeight, bestID int) boo
 // rewrites each of blocks to jump to it.
 func factorTail(fn *ir.Function, first *ir.Block, blocks []*ir.Block, n int, term ir.Term, funcName string) {
 	shared := fn.NewBlock()
+	shared.SrcLine = first.SrcLine
 	shared.Instrs = append(shared.Instrs, first.Instrs[len(first.Instrs)-n:]...)
 	shared.Term = term
 	shared.Func = funcName

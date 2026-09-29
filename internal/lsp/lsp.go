@@ -204,6 +204,8 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 			s.documentColor(writer, msg.ID, msg.Params)
 		case "textDocument/colorPresentation":
 			s.colorPresentation(writer, msg.ID, msg.Params)
+		case "ic10/prefabs":
+			s.prefabTable(writer, msg.ID)
 		case "workspace/didChangeConfiguration":
 			// Settings are applied at process start (env); nothing to do here.
 		default:
@@ -1338,6 +1340,21 @@ func (s *Server) prefabHoverAt(text string, pos lspPosition) string {
 		}
 	}
 	return ""
+}
+
+// prefabTable replies with every known prefab hash mapped to its name and
+// title. Editors use it to label numeric device logic values (PrefabHash /
+// NameHash / OccupantHash) with the prefab they refer to.
+func (s *Server) prefabTable(w *bufio.Writer, id json.RawMessage) {
+	type entry struct {
+		Name  string `json:"name"`
+		Title string `json:"title"`
+	}
+	out := make(map[string]entry, len(builtin.PrefabByHash))
+	for h, name := range builtin.PrefabByHash {
+		out[strconv.FormatUint(uint64(h), 10)] = entry{Name: name, Title: builtin.Prefabs[name]}
+	}
+	reply(w, id, map[string]any{"prefabs": out})
 }
 
 // busSlotHoverAt describes a bus name or a `Bus.slot` access.

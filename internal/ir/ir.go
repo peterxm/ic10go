@@ -476,6 +476,10 @@ type Block struct {
 	Term   Term
 	Preds  []*Block
 	Succs  []*Block
+	// SrcLine is the 1-based .icg source line the block was lowered from, or 0
+	// when unknown (e.g. a block synthesized after lowering). It is carried
+	// through optimisation and used to map generated IC10 lines back to source.
+	SrcLine int
 }
 
 type Function struct {
@@ -483,6 +487,12 @@ type Function struct {
 	Blocks  []*Block
 	Entry   *Block
 	NumRegs int
+	// SrcLines / SrcTerms record the 1-based .icg source line each instruction
+	// and terminator was lowered from. They are best effort: instructions a
+	// later optimisation pass creates are absent (treated as unknown). Used to
+	// map generated IC10 lines back to source.
+	SrcLines map[Instr]int
+	SrcTerms map[Term]int
 	// Params are registers that are defined before the function runs: function
 	// parameters written at the call site, and values a pass models as
 	// pre-initialised (e.g. mem2reg's promoted-slot initial value).
@@ -604,6 +614,10 @@ func labelRefID(raw string) (int, bool) {
 type Builder struct {
 	fn  *Function
 	cur *Block
+	// OnEmit / OnTerm, when set, are called for each appended instruction and
+	// terminator. The lowerer uses them to record source positions.
+	OnEmit func(Instr)
+	OnTerm func(Term)
 }
 
 func NewBuilder(name string) *Builder {
@@ -636,12 +650,18 @@ func (f *Function) NewReg(name string) *Reg {
 func (b *Builder) Const(v float64) *Const { return &Const{V: v} }
 
 func (b *Builder) Emit(i Instr) {
+	if b.OnEmit != nil {
+		b.OnEmit(i)
+	}
 	b.cur.Instrs = append(b.cur.Instrs, i)
 }
 
 func (b *Builder) SetTerm(t Term) {
 	if b.cur.Term != nil {
 		return
+	}
+	if b.OnTerm != nil {
+		b.OnTerm(t)
 	}
 	b.cur.Term = t
 }
