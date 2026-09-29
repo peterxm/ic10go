@@ -335,6 +335,16 @@
         "icon": "$(debug-restart)"
       },
       {
+        "command": "icg.bench.ports",
+        "title": "%cmd.bench.ports%",
+        "icon": "$(symbol-structure)"
+      },
+      {
+        "command": "icg.bench.writes",
+        "title": "%cmd.bench.writes%",
+        "icon": "$(output)"
+      },
+      {
         "command": "icg.bench.loadSave",
         "title": "%cmd.bench.loadSave%",
         "icon": "$(folder-opened)"
@@ -458,6 +468,16 @@
           "command": "icg.bench.openPanel",
           "when": "view == icg.bench",
           "group": "navigation@11"
+        },
+        {
+          "command": "icg.bench.ports",
+          "when": "view == icg.bench",
+          "group": "navigation@12"
+        },
+        {
+          "command": "icg.bench.writes",
+          "when": "view == icg.bench",
+          "group": "navigation@13"
         }
       ],
       "commandPalette": [

@@ -404,6 +404,8 @@ class Bench {
         this.prefabsLoading = false;
         this.programMap = undefined; // {uri, map: IC10 line -> .icg line} of the last push
         this.runDecor = undefined;
+        this.portsPanel = undefined;
+        this.writesPanel = undefined;
     }
 
     // chipSel builds the protocol chip selector for the given chip.
@@ -500,6 +502,8 @@ class Bench {
         cmd('icg.bench.step', () => this.runTicks(1));
         cmd('icg.bench.runTicks', () => this.runTicks(this.cfg().runTicks));
         cmd('icg.bench.reset', () => this.reset());
+        cmd('icg.bench.ports', () => this.showPorts());
+        cmd('icg.bench.writes', () => this.showWrites(false));
         cmd('icg.bench.loadSave', () => this.loadSave());
         cmd('icg.bench.runScenario', () => this.runScenario());
         cmd('icg.bench.openPanel', () => this.openPanel());
@@ -528,6 +532,8 @@ class Bench {
         this.disconnect();
         if (this.panel) this.panel.dispose();
         if (this.report) this.report.dispose();
+        if (this.portsPanel) this.portsPanel.dispose();
+        if (this.writesPanel) this.writesPanel.dispose();
     }
 
     // -- connection -------------------------------------------------------
@@ -815,6 +821,178 @@ class Bench {
         }
     }
 
+    // showPorts opens a panel describing how the selected chip's ports (d0..d5
+    // over two cable networks) are wired, from the mod's `ports` diagnostic.
+    async showPorts() {
+        const c = await this.connect(false);
+        if (!c) return;
+        const args = {};
+        if (this.sel) args.chip = this.sel;
+        let r;
+        try {
+            r = await c.call('ports', args);
+        } catch (err) {
+            this.client.output.appendLine(`IC10 bench ports failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('IC10: ports failed. See the "IC10 Go" output.', 'IC10: 读取端口失败，详见 "IC10 Go" 输出面板。'));
+            return;
+        }
+        if (this.portsPanel) {
+            this.portsPanel.webview.html = this.portsHtml(r);
+        } else {
+            this.portsPanel = vscode.window.createWebviewPanel(
+                'icg.benchPorts',
+                t('IC10 Port Wiring', 'IC10 端口接线'),
+                vscode.ViewColumn.Beside,
+                { enableScripts: true }
+            );
+            this.portsPanel.webview.html = this.portsHtml(r);
+            this.portsPanel.onDidDispose(() => {
+                this.portsPanel = undefined;
+            });
+            this.portsPanel.webview.onDidReceiveMessage((m) => {
+                if (m && m.type === 'refresh') this.showPorts();
+            });
+        }
+    }
+
+    portsHtml(r) {
+        const nonce = String(Date.now()) + Math.random().toString(36).slice(2);
+        const chip = r.chip || {};
+        const chipName = chip.name || chip.prefab || (chip.index !== undefined ? `chip#${chip.index}` : t('chip', '芯片'));
+        const rows = [];
+        for (const e of r.lookups || []) {
+            if (!e) continue;
+            const logic = e.logic && typeof e.logic === 'object'
+                ? Object.keys(e.logic).map((k) => `${k}=${e.logic[k]}`).join(' ')
+                : '';
+            rows.push({
+                port: 'd' + e.deviceIndex,
+                net: String(e.networkIndex),
+                dev: e.name || e.type || '',
+                prefab: e.prefab || '',
+                logic,
+            });
+        }
+        if (!rows.length) {
+            (r.devices || []).forEach((d, i) => {
+                if (!d) return;
+                rows.push({ port: 'd' + i, net: '0', dev: d.name || d.type || '', prefab: d.prefab || '', logic: '' });
+            });
+        }
+        const body = rows.length
+            ? rows
+                  .map(
+                      (x) =>
+                          `<tr><td class="port">${escapeHtml(x.port)}</td><td>${escapeHtml(x.net)}</td><td>${escapeHtml(x.dev)}</td><td>${escapeHtml(x.prefab)}</td><td class="muted">${escapeHtml(x.logic)}</td></tr>`
+                  )
+                  .join('')
+            : `<tr><td colspan="5" class="muted">${t('no ports bound', '没有绑定端口')}</td></tr>`;
+        const bindings = (r.bindings || []).filter((b) => b != null).join(' · ');
+        const raw = escapeHtml(JSON.stringify(r, null, 1));
+        return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<style>
+  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 14px 16px; }
+  h1 { font-size: 14px; margin: 0 0 2px; }
+  .sub { color: var(--vscode-descriptionForeground); margin-bottom: 12px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 4px 9px; border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.25)); vertical-align: top; }
+  th { color: var(--vscode-descriptionForeground); font-weight: 500; }
+  td.port { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-charts-blue, #3794ff); }
+  .muted { color: var(--vscode-descriptionForeground); }
+  button { font-family: inherit; color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); border-radius: 5px; padding: 3px 10px; cursor: pointer; }
+  pre { background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.08)); padding: 10px; border-radius: 6px; overflow: auto; max-height: 320px; }
+  details { margin-top: 14px; }
+</style></head>
+<body>
+<h1>${escapeHtml(chipName)}</h1>
+<div class="sub">${bindings ? escapeHtml(t('bindings: ', '绑定：') + bindings) : ''} <button id="refresh">${t('Refresh', '刷新')}</button></div>
+<table><thead><tr><th>${t('Port', '端口')}</th><th>${t('Net', '网络')}</th><th>${t('Device', '设备')}</th><th>${t('Prefab', '预制体')}</th><th>${t('Logic', '逻辑')}</th></tr></thead><tbody>${body}</tbody></table>
+<details><summary>${t('Raw report', '原始报告')}</summary><pre>${raw}</pre></details>
+<script nonce="${nonce}">document.getElementById('refresh').addEventListener('click', () => acquireVsCodeApi().postMessage({ type: 'refresh' }));</script>
+</body></html>`;
+    }
+
+    // showWrites opens a panel with the device-logic writes the program has
+    // performed since the last clear (the mod's Harmony write trace). Clear,
+    // then Step/Run, then Refresh to see exactly what one tick writes.
+    async showWrites(clear) {
+        const c = await this.connect(false);
+        if (!c) return;
+        const args = clear ? { clear: true } : {};
+        if (this.sel) args.chip = this.sel;
+        let r;
+        try {
+            r = await c.call('writes', args);
+        } catch (err) {
+            this.client.output.appendLine(`IC10 bench writes failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('IC10: writes failed. See the "IC10 Go" output.', 'IC10: 读取写序列失败，详见 "IC10 Go" 输出面板。'));
+            return;
+        }
+        const html = this.writesHtml(r);
+        if (this.writesPanel) {
+            this.writesPanel.webview.html = html;
+        } else {
+            this.writesPanel = vscode.window.createWebviewPanel(
+                'icg.benchWrites',
+                t('IC10 Device Writes', 'IC10 设备写序列'),
+                vscode.ViewColumn.Beside,
+                { enableScripts: true }
+            );
+            this.writesPanel.webview.html = html;
+            this.writesPanel.onDidDispose(() => {
+                this.writesPanel = undefined;
+            });
+            this.writesPanel.webview.onDidReceiveMessage((m) => {
+                if (!m) return;
+                if (m.type === 'refresh') this.showWrites(false);
+                else if (m.type === 'clear') this.showWrites(true);
+            });
+        }
+    }
+
+    writesHtml(r) {
+        const nonce = String(Date.now()) + Math.random().toString(36).slice(2);
+        const all = r.writes || [];
+        const max = 500;
+        const shown = all.length > max ? all.slice(all.length - max) : all;
+        const rows = shown
+            .map((w) => {
+                const device = w.device || (w.id ? `id:${w.id}` : '');
+                const logic = w.slot !== undefined && w.slot !== null && w.slot >= 0 ? `${w.logic}[${w.slot}]` : w.logic || '';
+                return `<tr><td class="muted">${escapeHtml(String(w.seq))}</td><td>${escapeHtml(device)}</td><td class="port">${escapeHtml(String(logic))}</td><td class="num">${escapeHtml(String(w.value))}</td></tr>`;
+            })
+            .join('');
+        const body = rows || `<tr><td colspan="4" class="muted">${t('no writes recorded', '没有记录到写入')}</td></tr>`;
+        const note = all.length > shown.length ? `<p class="muted">${escapeHtml(t(`showing the last ${shown.length} of ${all.length}`, `显示最近 ${shown.length} / 共 ${all.length} 条`))}</p>` : '';
+        return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<style>
+  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 14px 16px; }
+  h1 { font-size: 14px; margin: 0 0 8px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 3px 9px; border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.25)); }
+  th { color: var(--vscode-descriptionForeground); font-weight: 500; position: sticky; top: 0; background: var(--vscode-editor-background); }
+  td.num { text-align: right; font-family: var(--vscode-editor-font-family, monospace); font-variant-numeric: tabular-nums; }
+  td.port { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-charts-blue, #3794ff); }
+  .muted { color: var(--vscode-descriptionForeground); }
+  button { font-family: inherit; color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); border-radius: 5px; padding: 3px 10px; cursor: pointer; margin-right: 6px; }
+</style></head>
+<body>
+<h1>${t('Device writes since the last clear', '自上次清空以来的设备写入')}</h1>
+<div><button id="refresh">${t('Refresh', '刷新')}</button><button id="clear">${t('Clear', '清空')}</button></div>
+${note}
+<table><thead><tr><th>${t('Seq', '序号')}</th><th>${t('Device', '设备')}</th><th>${t('Logic', '逻辑')}</th><th>${t('Value', '值')}</th></tr></thead><tbody>${body}</tbody></table>
+<script nonce="${nonce}">
+  const vscode = acquireVsCodeApi();
+  document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+  document.getElementById('clear').addEventListener('click', () => vscode.postMessage({ type: 'clear' }));
+</script>
+</body></html>`;
+    }
+
     async loadSave() {
         const c = await this.connect(false);
         if (!c) return;
@@ -963,6 +1141,16 @@ class Bench {
         else if (m.type === 'step') this.runTicks(1);
         else if (m.type === 'run') this.runTicks(this.cfg().runTicks);
         else if (m.type === 'reset') this.reset();
+        else if (m.type === 'copyHash' && m.name) this.copyHash(m.name);
+    }
+
+    // copyHash puts the source form of a prefab hash on the clipboard.
+    copyHash(name) {
+        const text = `hash("${name}")`;
+        vscode.env.clipboard.writeText(text).then(
+            () => vscode.window.setStatusBarMessage(t(`IC10: copied ${text}`, `IC10: 已复制 ${text}`), 3000),
+            () => vscode.window.showErrorMessage(t('IC10: could not copy to the clipboard.', 'IC10: 复制到剪贴板失败。'))
+        );
     }
 
     renderPanel() {
@@ -1051,6 +1239,13 @@ class Bench {
   }
   .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
   .muted { color: var(--vscode-descriptionForeground); }
+  .hashlabel { cursor: pointer; text-decoration: underline dotted; }
+  #filter {
+    font-family: inherit; font-size: inherit;
+    color: var(--vscode-input-foreground); background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border, rgba(128,128,128,.35));
+    border-radius: 5px; padding: 2px 8px; width: 140px;
+  }
   details.dev {
     margin: 0 0 4px; padding: 3px 9px; border-radius: 6px;
     border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.25));
@@ -1084,6 +1279,7 @@ class Bench {
   <span class="dot" id="dot"></span>
   <span class="title" id="chip">IC10</span>
   <span class="pill" id="prog" style="display:none"></span>
+  <input id="filter" type="search" placeholder="filter…" />
   <span style="flex:1"></span>
   <span class="line" id="line"></span>
   <button id="pause">Pause</button>
@@ -1098,6 +1294,12 @@ class Bench {
   const vscode = acquireVsCodeApi();
   let prev = {};
   let prefabs = {};
+  let filter = '';
+  let lastMsg = null;
+  document.getElementById('filter').addEventListener('input', (e) => {
+    filter = (e.target.value || '').trim().toLowerCase();
+    if (lastMsg) render(lastMsg);
+  });
   document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
   document.getElementById('watch').addEventListener('click', () => vscode.postMessage({ type: 'watch' }));
   document.getElementById('pause').addEventListener('click', () => vscode.postMessage({ type: 'pause' }));
@@ -1106,6 +1308,11 @@ class Bench {
   document.getElementById('reset').addEventListener('click', () => vscode.postMessage({ type: 'reset' }));
   const openMap = {};
   document.getElementById('main').addEventListener('click', (e) => {
+    const h = e.target && e.target.closest ? e.target.closest('.hashlabel') : null;
+    if (h) {
+      vscode.postMessage({ type: 'copyHash', name: h.getAttribute('data-name') });
+      return;
+    }
     const s = e.target && e.target.closest ? e.target.closest('summary') : null;
     if (!s) return;
     const det = s.parentElement;
@@ -1134,7 +1341,13 @@ class Bench {
     const e = prefabs[(n >>> 0).toString()];
     if (!e) return '';
     const tip = e.title ? ' title="' + esc(e.title) + '"' : '';
-    return ' <span class="muted"' + tip + '>' + esc(e.name) + '</span>';
+    return ' <span class="muted hashlabel" data-name="' + esc(e.name) + '"' + tip + '>' + esc(e.name) + '</span>';
+  }
+  function devMatches(d, f) {
+    const hay = [d.port, d.binding, d.name, d.prefab].filter(Boolean).join(' ').toLowerCase();
+    if (hay.indexOf(f) >= 0) return true;
+    for (const k of Object.keys(d.logic || {})) if (k.toLowerCase().indexOf(f) >= 0) return true;
+    return false;
   }
   function cell(k, v, special) {
     const changed = prev[k] !== undefined && prev[k] !== v;
@@ -1143,6 +1356,7 @@ class Bench {
   }
   function render(m) {
     const st = m.state;
+    lastMsg = m;
     if (m.prefabs) prefabs = m.prefabs;
     document.getElementById('dot').className = 'dot' + (m.connected ? ' on' : '');
     document.getElementById('watch').className = m.watching ? 'active' : '';
@@ -1190,8 +1404,10 @@ class Bench {
       html += '</div></details></section>';
     }
     if (st.devices && st.devices.length) {
+      const devs = filter ? st.devices.filter((d) => devMatches(d, filter)) : st.devices;
       html += '<section><h2>Devices</h2>';
-      for (const d of st.devices) {
+      if (!devs.length) html += '<p class="muted">no match</p>';
+      for (const d of devs) {
         const keys = Object.keys(d.logic || {}).sort();
         const binding = d.binding ? '<span class="k">' + d.binding + '</span>' : '';
         const present = d.present !== false;
