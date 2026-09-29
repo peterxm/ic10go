@@ -91,7 +91,7 @@ type ChipJSON struct {
 	// Loaders splits Loader into chip-sized chunks; run them in order.
 	Loaders []string `json:"loaders,omitempty"`
 	// Setup reports whether Loader carries hoisted one-time device writes.
-	Setup bool     `json:"setup,omitempty"`
+	Setup bool `json:"setup,omitempty"`
 	// LineMap maps a 1-based runtime IC10 line to the 1-based .icg source line
 	// it came from (0 when unknown), so an editor can follow execution.
 	LineMap []int `json:"lineMap,omitempty"`
@@ -101,14 +101,14 @@ type ChipJSON struct {
 // superset of `ic10c stats` and carries the compiled code, the optional data
 // loader and any diagnostics.
 type BuildResult struct {
-	APIVersion  int          `json:"apiVersion"`
-	OK          bool         `json:"ok"`
-	Code        string       `json:"code"`
-	Lines       []string     `json:"lines"`
-	Data        DataSegment  `json:"data"`
-	Chips       []ChipJSON   `json:"chips"`
-	Stats       Stats        `json:"stats"`
-	Limits      Limits       `json:"limits"`
+	APIVersion int         `json:"apiVersion"`
+	OK         bool        `json:"ok"`
+	Code       string      `json:"code"`
+	Lines      []string    `json:"lines"`
+	Data       DataSegment `json:"data"`
+	Chips      []ChipJSON  `json:"chips"`
+	Stats      Stats       `json:"stats"`
+	Limits     Limits      `json:"limits"`
 	// LineMap maps a 1-based runtime IC10 line to the 1-based .icg source line
 	// it came from (0 when unknown). It mirrors the first chip.
 	LineMap     []int        `json:"lineMap,omitempty"`
