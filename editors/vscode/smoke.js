@@ -35,6 +35,7 @@ const mock = {
         }),
         showOpenDialog: () => Promise.resolve([]),
         showInputBox: () => Promise.resolve(undefined),
+        showQuickPick: () => Promise.resolve(undefined),
         onDidChangeActiveTextEditor: disposable,
         activeTextEditor: undefined,
         showWarningMessage: () => Promise.resolve(undefined),
@@ -190,6 +191,18 @@ if (bench.buildStackLoader([[3, 0]], 'stack', 0)[0].trim() !== 'poke 3 0') {
     process.exit(1);
 }
 
+// The connected tree node must use a Command object: a bare string made VSCode
+// read command "undefined" and fail with "command 'undefined' not found".
+bench.register({ subscriptions: [], workspaceState: { get: () => undefined, update: () => Promise.resolve() } });
+bench.conn = {}; // pretend connected
+bench.chips = [];
+const roots = bench.tree.getChildren(undefined);
+const connItem = roots[0];
+if (!connItem.command || typeof connItem.command !== 'object' || typeof connItem.command.command !== 'string') {
+    console.error('connection tree item must set a Command object, got: ' + JSON.stringify(connItem.command));
+    process.exit(1);
+}
+
 ext.deactivate();
 
 const expected = [
@@ -202,6 +215,7 @@ const expected = [
     'icg.restartServer',
     'icg.bench.connect',
     'icg.bench.disconnect',
+    'icg.bench.connectionMenu',
     'icg.bench.push',
     'icg.bench.pull',
     'icg.bench.refresh',

@@ -229,7 +229,11 @@ class BenchTree {
             b.conn ? 'plug' : 'debug-disconnect',
             b.conn ? new vscode.ThemeColor('testing.iconPassed') : undefined
         );
-        conn.command = b.conn ? 'icg.bench.disconnect' : 'icg.bench.connect';
+        // TreeItem.command must be a Command object, not a bare string: VSCode
+        // reads .command off it, so a string yields "command 'undefined'".
+        conn.command = b.conn
+            ? { command: 'icg.bench.connectionMenu', title: t('Reconnect', '重新连接') }
+            : { command: 'icg.bench.connect', title: t('Connect', '连接') };
         conn.contextValue = 'connection';
         items.push(conn);
 
@@ -520,6 +524,7 @@ class Bench {
         const cmd = (name, fn) => context.subscriptions.push(vscode.commands.registerCommand(name, fn));
         cmd('icg.bench.connect', () => this.connect(false));
         cmd('icg.bench.disconnect', () => this.disconnect());
+        cmd('icg.bench.connectionMenu', () => this.connectionMenu());
         cmd('icg.bench.push', () => this.push());
         cmd('icg.bench.pull', () => this.pull());
         cmd('icg.bench.refresh', () => this.refresh(true));
@@ -636,6 +641,35 @@ class Bench {
         if (this.tree) this.tree.refresh();
         this.renderPanel();
         this.updateRunLine();
+    }
+
+    // connectionMenu is the connected tree node's action: reconnect,
+    // disconnect, open the state panel, or refresh.
+    async connectionMenu() {
+        if (!this.conn) return this.connect(false);
+        const reconnect = t('Reconnect', '重新连接');
+        const disconnect = t('Disconnect', '断开连接');
+        const panel = t('Open Chip State panel', '打开芯片状态面板');
+        const refresh = t('Refresh', '刷新');
+        const pick = await vscode.window.showQuickPick([reconnect, disconnect, panel, refresh], {
+            placeHolder: t(`Connected to ${this.cfg().host}:${this.cfg().port}`, `已连接 ${this.cfg().host}:${this.cfg().port}`),
+        });
+        if (pick === reconnect) return this.reconnect();
+        if (pick === disconnect) return this.disconnect();
+        if (pick === panel) return this.openPanel();
+        if (pick === refresh) return this.refresh(true);
+    }
+
+    // reconnect drops the socket and connects again, keeping the pinned chip and
+    // the live-update toggle.
+    async reconnect() {
+        const sel = this.sel;
+        const watching = this.watching;
+        this.disconnect();
+        this.sel = sel;
+        const c = await this.connect(false);
+        if (c && watching && !this.watching) this.toggleWatch();
+        return c;
     }
 
     setStatus(connected) {
