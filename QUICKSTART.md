@@ -10,7 +10,7 @@
 ## 2. 构建
 
 ```bash
-git clone <repo> ic10go
+git clone https://github.com/peterxm/ic10go
 cd ic10go
 go build -o ic10c ./cmd/ic10c
 ```
@@ -26,11 +26,11 @@ go run ./cmd/ic10c build examples/hello.icg
 新建 `blink.icg`（仓库内已有同样的 [`examples/hello.icg`](examples/hello.icg)）：
 
 ```go
-// 每 tick 把电池电量写入 IC 宿主显示屏
+// 每 tick 把电池电量写入显示屏
 func main() {
     for {
         yield()
-        db.Setting = d0.Ratio
+        d1.Setting = d0.Ratio
     }
 }
 ```
@@ -46,7 +46,7 @@ func main() {
 ```
 yield
 l r0 d0 Ratio
-s db Setting r0
+s d1 Setting r0
 j 0
 ```
 
