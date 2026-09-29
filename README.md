@@ -9,8 +9,10 @@
 
 ![IC10 Go：在 VSCode 里开发与真机调试（测试台视图 + `.icg` 编辑器 + Chip State 面板）](docs/images/testbench.png)
 
-> **游戏内测试台**：用 `ic10c testbench` / VSCode 面板把编译产物推到真机芯片、暂停下单步执行、
-> 实时查看寄存器 / 栈 / 设备，并用场景文件做回归。见 [`docs/ingame-testbench.md`](docs/ingame-testbench.md)。
+> **游戏内测试台**：用 `ic10c testbench` / VSCode 面板把编译产物推到真机芯片、从芯片下载源码、
+> 暂停下**单步 / 运行 N tick / 重置**、实时查看寄存器 / 栈 / 设备、在 `.icg` 里高亮当前执行行、
+> 把 `PrefabHash` 反查成预制体名，并查看**设备写序列（可对比基线）**、**端口接线**与**多芯片并排**；
+> 场景文件做回归。见 [`docs/ingame-testbench.md`](docs/ingame-testbench.md)。
 
 ## 特点
 
@@ -96,6 +98,7 @@ j 1
 **M5 已完成**：测试用最小 IC10 解释器 `internal/vm`（寄存器 / 栈 / 设备 / 槽位 / 通道 / 批量 / 分支 / 标签与绝对行号），配套端到端语义测试与常量折叠差分测试；并经 `ic10c run` 暴露给用户调试。健壮性/保真：操作数与栈越界返回错误（不 panic）、`pi`/`deg2rad` 等游戏常量、`LineNumber`、确定性 `rand`、`rmap`、可选严格设备语义（见 [`docs/vm-improvements.md`](docs/vm-improvements.md)）。
 **M4 已完成**：`ic10c stats`（行/字节/寄存器/栈预算）、`ic10c graph`（源码级控制流图 → Mermaid，`--level ir` 为 IR 基本块）、`ic10c fmt`（格式化，支持 `-w`，保留注释/分组/空行/`data` 表；原生 `.ic`/`.ic10` 重排并对齐列，`--no-align` 关闭）、`ic10c disasm`（旧 IC10 反汇编注释）、`ic10c decompile`（IC10 → `.icg`，支持 `-s` 结构化）、`ic10c minify`（压缩现有 IC10 行数）、`ic10c run`（内置 VM 执行）、`ic10c lsp`（诊断 / 上下文补全 / 格式化 / hover / 定义 / 大纲 / 折叠 / 引用 / 重命名 / 参数提示 / 快速修复（`unknown logic type` / `unknown slot type` / `unknown enum` 的 did-you-mean 建议）/ 语义高亮 / 预算内联 / 预制体 hash 补全（`hash("…")` 内与 hash 型实参，参数位按类型补全）与反查 / Wiki 文档链接；`.ic`/`.ic10` 原生指令补全、说明、未知指令诊断）、VSCode 扩展（`.icg` 与 `.ic`/`.ic10` 支持、片段、编译预览并自动处理数据段安装代码、VM 运行、反编译/压缩/注释命令）。
 **M6 已完成**：**多芯片**——一个 `.icg` 用 `chip 名字 { ... }` 声明多块芯片，各编译成独立程序（各自 128 行 / 4 KiB 预算与 loader；顶层 `const`/`data`/`func` 为公共区，chip 内可遮蔽）；`bus 名字 { 槽位 num ... }`（最多 8 槽，槽位下标即通道号）+ 每 chip `use 名字 on dev:conn` 默认访问点、`Bus.槽位[dev][conn]` 内联覆盖（唯一写者校验，`run` 按槽位自动接线）；CLI 按芯片写文件 / `--chip NAME` / JSON `chips[]` / `stats` 分组；VM `World` 多芯片同 tick 锁步；LSP 按光标所在 chip 隔离补全与签名，VSCode 编译命令弹芯片选择。另：超行数时把一次性设置写入外提到 loader，并支持新气体比例逻辑类型。
+**测试台编辑器已完成**（VSCode）：上传 `.icg` / 从芯片**下载源码**、**单步 / 运行 N tick / 重置**、实时寄存器 / 栈 / 设备、**执行行高亮**（编译产物 `lineMap`，`build --json` 新增字段，见 [`docs/plugin-api.md`](docs/plugin-api.md)）、`PrefabHash` / `NameHash` / `OccupantHash` **反查预制体名**（LSP `ic10/prefabs`，点击复制 `hash("Name")`）、面板内**改值 / 脉冲**与过滤、**设备写序列**（Harmony trace，可设基线对比）、**端口接线**、**多芯片并排对比**；选中芯片与实时开关用 `workspaceState` 持久化。
 
 当前可用：
 
