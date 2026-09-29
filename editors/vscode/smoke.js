@@ -154,13 +154,13 @@ Module._load = function (request, parent, isMain) {
 };
 
 const ext = require(path.join(__dirname, 'extension.js'));
-ext.activate({ subscriptions: [] });
+ext.activate({ subscriptions: [], workspaceState: { get: () => undefined, update: () => Promise.resolve() } });
 
 // Panel HTML builders must render sample payloads without throwing.
 const { Bench } = require(path.join(__dirname, 'bench.js'));
 const bench = new Bench({ output: { appendLine: noop }, execCli: noop, config: () => ({}), buildFlags: () => [], activeICG: () => undefined });
 const compare = bench.compareHtml();
-if (!compare.includes('id="cols"') || !compare.includes('acquireVsCodeApi')) {
+if (!compare.includes('id="cols"') || !compare.includes('id="diffOnly"') || !compare.includes('spbar') || !compare.includes('acquireVsCodeApi')) {
     console.error('compareHtml is missing its render target/script');
     process.exit(1);
 }
@@ -172,9 +172,12 @@ if (!ports.includes('Battery_Wireless_cell') || !ports.includes('d0')) {
     console.error('portsHtml did not render the lookup row');
     process.exit(1);
 }
-const writes = bench.writesHtml({ writes: [{ seq: 1, device: 'Battery', logic: 'On', slot: -1, value: 1 }] });
-if (!writes.includes('Battery') || !writes.includes('On')) {
-    console.error('writesHtml did not render the write row');
+const writes = bench.writesHtml(
+    { writes: [{ seq: 1, device: 'Battery', logic: 'On', slot: -1, value: 1 }] },
+    { 'Battery|On|-1': 0 }
+);
+if (!writes.includes('Battery') || !writes.includes('On') || !writes.includes('class="changed"')) {
+    console.error('writesHtml did not render the write row / baseline diff');
     process.exit(1);
 }
 

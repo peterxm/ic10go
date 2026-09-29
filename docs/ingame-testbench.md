@@ -366,8 +366,8 @@ Activity Bar「IC10」
 | `icg.bench.runTicks` | IC10: Run Ticks | 视图标题、面板按钮（先暂停；tick 数见 `icg.bench.runTicks`） |
 | `icg.bench.reset` | IC10: Reset Chip | 视图标题、面板按钮 |
 | `icg.bench.ports` | IC10: Show Port Wiring | 视图标题（`ports` 诊断 → 接线表） |
-| `icg.bench.writes` | IC10: Show Device Writes | 视图标题（`writes` trace → 写序列表；清空 + 单步 = 单 tick 写入） |
-| `icg.bench.compare` | IC10: Compare Chips | 视图标题（全部芯片并排：行号 / 寄存器 / sp / 设备） |
+| `icg.bench.writes` | IC10: Show Device Writes | 视图标题（`writes` trace → 写序列表；清空 + 单步 = 单 tick 写入；设为基线可比差异） |
+| `icg.bench.compare` | IC10: Compare Chips | 视图标题（全部芯片并排：行号 / 寄存器 / sp / 设备；变化的寄存器高亮、只看差异、点列头选中） |
 | `icg.bench.loadSave` | IC10: Load Save | 视图标题（快速选择存档） |
 | `icg.bench.selectChip` | IC10: Select Chip | 树（点击某块 host） |
 | `icg.bench.setDevice` | IC10: Set Device Value | 树（点击某个 logic 值） |
@@ -382,7 +382,8 @@ Activity Bar「IC10」
 - **Program**：当前行 + `line/total`。
 - **预制体名**：设备的 `PrefabHash` / `NameHash` / `OccupantHash` 值旁标注对应预制体名（反查表由 ic10c 通过 `ic10/prefabs` 请求提供）；点击名字可复制 `hash("Name")`。
 - **执行行高亮**：上传时记住 `build --json` 的 `lineMap`（IC10 行 → `.icg` 源码行），随 `state.line` 在 `.icg` 编辑器里高亮当前行（按指令近似）。可关（`icg.bench.highlightLine`）。
-- **多芯片对比**：`icg.bench.compare` 打开并排面板，每块芯片一列（行号 / `program.lines` / 寄存器 / `sp` / 设备 logic / 报错），`Live` 定时刷新；多芯片走 `bus` 时一起看。
+- **多芯片对比**：`icg.bench.compare` 打开并排面板，每块芯片一列（行号 / `program.lines` / 寄存器 / `sp` / 设备 logic / 报错），变化的寄存器高亮、可「只看差异」、点列头选中该芯片；`Live` 定时刷新；多芯片走 `bus` 时一起看。
+- **状态记忆**：选中的芯片与 `watch` 开关写入 `workspaceState`（`icg.bench.sel` / `icg.bench.watching`），重载窗口后自动恢复。
 - 全部用 `var(--vscode-*)` 变量、`--vscode-editorWidget-border` 描边、`--vscode-textCodeBlock-background`
   底色，无第三方 CSS；禁用内联脚本，`webview.cspSource` 白名单。
 
@@ -406,6 +407,7 @@ Activity Bar「IC10」
 - 所有错误走已有的 `IC10 Go` 输出面板。
 - `Pause` 按钮走游戏自身暂停流程，恢复后输入/光标正常，不用再按 F1。
 - `Step` / `Run` 在未暂停时先 `pause {on:true}`（**保持暂停**便于连续单步），再 `run {ticks}`；`run` 返回当前 `line` 与芯片 `error`。`Reset` 调 `reset`（保留栈）。
+- `writes` 面板「设为基线」记录当前每个目标 `(device,logic,slot)` 的值，之后刷新会标出差异并汇总变化数，可勾「只看变化」。
 - 「Load Save」从 `world.saves` 快速选择并调用 `LoadHelper.LoadGame`；mod 侧 `autoload` 可启动即进存档。
 
 ---

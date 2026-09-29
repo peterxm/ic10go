@@ -409,6 +409,10 @@ class Bench {
         this.comparePanel = undefined;
         this.compareTimer = undefined;
         this.compareLive = false;
+        this.writesBaseline = undefined; // key -> value captured with "Set baseline"
+        this.lastWrites = [];
+        this.store = undefined; // context.workspaceState
+        this.restoreWatch = false;
     }
 
     // chipSel builds the protocol chip selector for the given chip.
@@ -489,6 +493,15 @@ class Bench {
         });
         context.subscriptions.push(this.runDecor);
 
+        // Restore the last selected chip and the live-update toggle, so a reload
+        // comes back to the same chip.
+        this.store = context.workspaceState;
+        if (this.store) {
+            const sel = this.store.get('icg.bench.sel');
+            if (sel && typeof sel === 'object') this.sel = sel;
+            this.restoreWatch = this.store.get('icg.bench.watching') === true;
+        }
+
         this.tree = new BenchTree(this);
         context.subscriptions.push(
             vscode.window.registerTreeDataProvider('icg.bench', this.tree)
@@ -562,6 +575,10 @@ class Bench {
                 );
             }
             await this.refresh(false);
+            if (this.restoreWatch) {
+                this.restoreWatch = false;
+                if (!this.watching) this.toggleWatch();
+            }
             return this.conn;
         } catch (err) {
             this.conn = undefined;
@@ -650,7 +667,10 @@ class Bench {
                 }
             }
             this.state = st;
-            if (!this.sel && st.chip) this.sel = this.chipSel(st.chip);
+            if (!this.sel && st.chip) {
+                this.sel = this.chipSel(st.chip);
+                this.persistSel();
+            }
             if (this.tree) this.tree.refresh();
             this.renderPanel();
             this.setStatus(true);
@@ -666,6 +686,11 @@ class Bench {
         return sel && sel.id !== undefined ? chip.id === sel.id : chip.index === sel.index;
     }
 
+    // persistSel remembers the pinned chip across window reloads.
+    persistSel() {
+        if (this.store) this.store.update('icg.bench.sel', this.sel || null);
+    }
+
     fetchState(c) {
         const args = { include: ['registers', 'stack', 'devices', 'program', 'errors'], all: true };
         if (this.sel) args.chip = this.sel;
@@ -678,6 +703,7 @@ class Bench {
         if (!c) return;
         try {
             this.sel = this.chipSel(chip);
+            this.persistSel();
             await c.call('chip.select', { chip: this.sel });
             await this.refresh(false);
         } catch (err) {
@@ -936,7 +962,8 @@ class Bench {
             vscode.window.showErrorMessage(t('IC10: writes failed. See the "IC10 Go" output.', 'IC10: 读取写序列失败，详见 "IC10 Go" 输出面板。'));
             return;
         }
-        const html = this.writesHtml(r);
+        this.lastWrites = r.writes || [];
+        const html = this.writesHtml(r, this.baselineMap());
         if (this.writesPanel) {
             this.writesPanel.webview.html = html;
         } else {
@@ -949,29 +976,66 @@ class Bench {
             this.writesPanel.webview.html = html;
             this.writesPanel.onDidDispose(() => {
                 this.writesPanel = undefined;
+                this.writesBaseline = undefined;
             });
             this.writesPanel.webview.onDidReceiveMessage((m) => {
                 if (!m) return;
                 if (m.type === 'refresh') this.showWrites(false);
                 else if (m.type === 'clear') this.showWrites(true);
+                else if (m.type === 'baseline') {
+                    this.writesBaseline = this.lastWrites || [];
+                    this.showWrites(false);
+                }
             });
         }
     }
 
-    writesHtml(r) {
+    // writesKey identifies one writable target across snapshots. It mirrors the
+    // device label the panel renders (name, else "id:<ReferenceId>").
+    writesKey(w) {
+        const slot = w.slot !== undefined && w.slot !== null ? w.slot : -1;
+        const device = w.device || (w.id ? `id:${w.id}` : '');
+        return `${device}|${w.logic || ''}|${slot}`;
+    }
+
+    // baselineMap reduces the baseline snapshot to the last value per target.
+    baselineMap() {
+        if (!this.writesBaseline) return undefined;
+        const m = {};
+        for (const w of this.writesBaseline) m[this.writesKey(w)] = w.value;
+        return m;
+    }
+
+    writesHtml(r, baseline) {
         const nonce = String(Date.now()) + Math.random().toString(36).slice(2);
         const all = r.writes || [];
         const max = 500;
         const shown = all.length > max ? all.slice(all.length - max) : all;
+        let changedCount = 0;
         const rows = shown
             .map((w) => {
                 const device = w.device || (w.id ? `id:${w.id}` : '');
                 const logic = w.slot !== undefined && w.slot !== null && w.slot >= 0 ? `${w.logic}[${w.slot}]` : w.logic || '';
-                return `<tr><td class="muted">${escapeHtml(String(w.seq))}</td><td>${escapeHtml(device)}</td><td class="port">${escapeHtml(String(logic))}</td><td class="num">${escapeHtml(String(w.value))}</td></tr>`;
+                let diff = '';
+                let cls = '';
+                if (baseline) {
+                    const key = `${device}|${w.logic || ''}|${w.slot !== undefined && w.slot !== null ? w.slot : -1}`;
+                    const prev = baseline[key];
+                    if (prev === undefined) diff = t('new', '新增');
+                    else if (prev !== w.value) diff = t('was ', '原 ') + prev;
+                    if (diff) {
+                        changedCount++;
+                        cls = ' class="changed"';
+                    }
+                }
+                return `<tr${cls}><td class="muted">${escapeHtml(String(w.seq))}</td><td>${escapeHtml(device)}</td><td class="port">${escapeHtml(String(logic))}</td><td class="num">${escapeHtml(String(w.value))}</td><td class="muted">${escapeHtml(diff)}</td></tr>`;
             })
             .join('');
-        const body = rows || `<tr><td colspan="4" class="muted">${t('no writes recorded', '没有记录到写入')}</td></tr>`;
+        const body = rows || `<tr><td colspan="5" class="muted">${t('no writes recorded', '没有记录到写入')}</td></tr>`;
         const note = all.length > shown.length ? `<p class="muted">${escapeHtml(t(`showing the last ${shown.length} of ${all.length}`, `显示最近 ${shown.length} / 共 ${all.length} 条`))}</p>` : '';
+        const diffNote = baseline
+            ? `<p class="muted">${escapeHtml(t(`${changedCount} changed vs baseline`, `与基线相比 ${changedCount} 处不同`))}</p>`
+            : '';
         return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
@@ -983,18 +1047,25 @@ class Bench {
   th { color: var(--vscode-descriptionForeground); font-weight: 500; position: sticky; top: 0; background: var(--vscode-editor-background); }
   td.num { text-align: right; font-family: var(--vscode-editor-font-family, monospace); font-variant-numeric: tabular-nums; }
   td.port { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-charts-blue, #3794ff); }
+  tr.changed { background: var(--vscode-diffEditor-insertedLineBackground, rgba(63,185,80,.12)); }
   .muted { color: var(--vscode-descriptionForeground); }
   button { font-family: inherit; color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); border-radius: 5px; padding: 3px 10px; cursor: pointer; margin-right: 6px; }
+  label { color: var(--vscode-descriptionForeground); margin-left: 6px; }
+  body.only-changed tr:not(.changed) { display: none; }
 </style></head>
 <body>
 <h1>${t('Device writes since the last clear', '自上次清空以来的设备写入')}</h1>
-<div><button id="refresh">${t('Refresh', '刷新')}</button><button id="clear">${t('Clear', '清空')}</button></div>
-${note}
-<table><thead><tr><th>${t('Seq', '序号')}</th><th>${t('Device', '设备')}</th><th>${t('Logic', '逻辑')}</th><th>${t('Value', '值')}</th></tr></thead><tbody>${body}</tbody></table>
+<div><button id="refresh">${t('Refresh', '刷新')}</button><button id="clear">${t('Clear', '清空')}</button><button id="baseline">${t('Set baseline', '设为基线')}</button><label><input type="checkbox" id="onlyChanged" /> ${t('changed only', '只看变化')}</label></div>
+${note}${diffNote}
+<table><thead><tr><th>${t('Seq', '序号')}</th><th>${t('Device', '设备')}</th><th>${t('Logic', '逻辑')}</th><th>${t('Value', '值')}</th><th>${t('Diff', '差异')}</th></tr></thead><tbody>${body}</tbody></table>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
   document.getElementById('clear').addEventListener('click', () => vscode.postMessage({ type: 'clear' }));
+  document.getElementById('baseline').addEventListener('click', () => vscode.postMessage({ type: 'baseline' }));
+  document.getElementById('onlyChanged').addEventListener('change', (e) => {
+    document.body.className = e.target.checked ? 'only-changed' : '';
+  });
 </script>
 </body></html>`;
     }
@@ -1020,6 +1091,7 @@ ${note}
                 if (!m) return;
                 if (m.type === 'refresh') this.refreshCompare();
                 else if (m.type === 'live') this.toggleCompareLive();
+                else if (m.type === 'select' && m.index !== undefined) this.selectChip({ index: m.index });
             });
         }
         this.refreshCompare();
@@ -1104,19 +1176,36 @@ ${note}
   .pill { font-size: 10px; padding: 1px 7px; border-radius: 999px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
   details { margin-top: 6px; }
   details > summary { cursor: pointer; color: var(--vscode-descriptionForeground); }
+  table.regs tr.changed td { background: var(--vscode-diffEditor-insertedLineBackground, rgba(63,185,80,.18)); }
+  .spbar { height: 5px; border-radius: 3px; background: var(--vscode-editorWidget-border, rgba(128,128,128,.3)); overflow: hidden; margin: 6px 0 2px; }
+  .spbar > div { height: 100%; background: var(--vscode-charts-orange, #d18616); }
+  .chead[data-index] { cursor: pointer; }
+  header label { color: var(--vscode-descriptionForeground); }
 </style></head>
 <body>
 <header>
   <span class="title">${t('Chips', '芯片')}</span>
   <button id="refresh">${t('Refresh', '刷新')}</button>
   <button id="live">${t('Live', '实时')}</button>
+  <label><input type="checkbox" id="diffOnly" /> ${t('diff only', '只看差异')}</label>
 </header>
 <div id="cols"><p class="muted" style="padding:12px">${t('not connected', '未连接')}</p></div>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   let live = false;
+  let diffOnly = false;
+  let prev = {};
+  let lastMsg = null;
   document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
   document.getElementById('live').addEventListener('click', () => vscode.postMessage({ type: 'live' }));
+  document.getElementById('diffOnly').addEventListener('change', (e) => {
+    diffOnly = e.target.checked;
+    if (lastMsg) render(lastMsg);
+  });
+  document.getElementById('cols').addEventListener('click', (e) => {
+    const h = e.target && e.target.closest ? e.target.closest('.chead[data-index]') : null;
+    if (h) vscode.postMessage({ type: 'select', index: Number(h.getAttribute('data-index')) });
+  });
   window.addEventListener('message', (e) => {
     const m = e.data;
     if (!m) return;
@@ -1131,10 +1220,13 @@ ${note}
     if (Number.isInteger(v)) return String(v);
     return String(Number(v.toPrecision(10)));
   }
-  function col(c) {
+  const ORDER = ['r0','r1','r2','r3','r4','r5','r6','r7','r8','r9','r10','r11','r12','r13','r14','r15','ra','sp'];
+  function chipKey(chip) { return chip.id !== undefined && chip.id !== null ? 'id:' + chip.id : 'i:' + chip.index; }
+  function col(c, vary, fresh) {
     const chip = c.chip || {};
+    const key = chipKey(chip);
     const name = chip.name || chip.prefab || ('chip#' + chip.index);
-    let h = '<div class="col"><div class="chead"><span class="cname">' + esc(name) + '</span><span class="pill">' +
+    let h = '<div class="col"><div class="chead" data-index="' + esc(String(chip.index)) + '" title="${t('select this chip', '选中该芯片')}"><span class="cname">' + esc(name) + '</span><span class="pill">' +
       (chip.programmable === false ? '${t('no chip', '无芯片')}' : '#' + esc(String(chip.index))) + '</span></div>';
     if (c.error) return h + '<div class="err">' + esc(c.error) + '</div></div>';
     const st = c.state;
@@ -1145,15 +1237,25 @@ ${note}
       h += '<div class="err">' + esc(st.errors.code || 'error') + ' line ' + st.errors.line + '</div>';
     }
     if (st.registers) {
+      fresh[key] = {};
       h += '<table class="regs">';
-      const order = ['r0','r1','r2','r3','r4','r5','r6','r7','r8','r9','r10','r11','r12','r13','r14','r15','ra','sp'];
-      for (const k of order) {
+      for (const k of ORDER) {
         if (!(k in st.registers)) continue;
-        h += '<tr class="' + (k === 'sp' || k === 'ra' ? 'special' : '') + '"><td>' + k + '</td><td class="num">' + num(st.registers[k]) + '</td></tr>';
+        const v = st.registers[k];
+        fresh[key][k] = v;
+        if (diffOnly && !vary[k]) continue;
+        const was = prev[key] ? prev[key][k] : undefined;
+        const changed = was !== undefined && was !== v;
+        h += '<tr class="' + (k === 'sp' || k === 'ra' ? 'special ' : '') + (changed ? 'changed' : '') + '"><td>' + k + '</td><td class="num">' + num(v) + '</td></tr>';
       }
       h += '</table>';
     }
-    if (st.stack) h += '<div class="line">sp ' + (st.stack.sp || 0) + '</div>';
+    if (st.stack) {
+      const sp = st.stack.sp || 0;
+      const size = st.stack.size || 512;
+      const pct = Math.max(0, Math.min(100, (sp / size) * 100));
+      h += '<div class="spbar" title="sp ' + sp + ' / ' + size + '"><div style="width:' + pct.toFixed(1) + '%"></div></div>';
+    }
     if (st.devices && st.devices.length) {
       const devs = st.devices.filter((d) => d.present !== false);
       h += '<details><summary>' + devs.length + ' devices</summary>';
@@ -1168,10 +1270,27 @@ ${note}
     return h + '</div>';
   }
   function render(m) {
+    lastMsg = m;
     const wrap = document.getElementById('cols');
-    if (!m.connected) { wrap.innerHTML = '<p class="muted" style="padding:12px">not connected</p>'; return; }
+    if (!m.connected) { wrap.innerHTML = '<p class="muted" style="padding:12px">${t('not connected', '未连接')}</p>'; return; }
     const cols = m.chips || [];
-    wrap.innerHTML = cols.length ? cols.map(col).join('') : '<p class="muted" style="padding:12px">no chips</p>';
+    if (!cols.length) { wrap.innerHTML = '<p class="muted" style="padding:12px">${t('no chips', '没有芯片')}</p>'; prev = {}; return; }
+    const vary = {};
+    for (const k of ORDER) {
+      let first;
+      let seen = false;
+      let differs = false;
+      for (const c of cols) {
+        const r = c.state && c.state.registers;
+        if (!r || !(k in r)) continue;
+        if (!seen) { first = r[k]; seen = true; }
+        else if (r[k] !== first) differs = true;
+      }
+      vary[k] = differs;
+    }
+    const fresh = {};
+    wrap.innerHTML = cols.map((c) => col(c, vary, fresh)).join('');
+    prev = fresh;
   }
 </script>
 </body></html>`;
@@ -1210,6 +1329,7 @@ ${note}
         const c = await this.connect(false);
         if (!c) return;
         this.watching = !this.watching;
+        if (this.store) this.store.update('icg.bench.watching', this.watching);
         const interval = this.cfg().refreshInterval > 0 ? this.cfg().refreshInterval : 250;
         try {
             await c.call('watch', { on: this.watching, intervalMs: interval, all: true });
