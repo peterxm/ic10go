@@ -1,0 +1,15 @@
+import "util.icg"
+
+// A shared non-leaf control step: it computes a PI adjustment and clamps it.
+// Several control loops call it, so it is a candidate for outlining.
+const Kp = 2.5
+const Ki = 0.25
+
+func step(error num) num {
+    p := error * Kp
+    i := error * Ki
+    raw := p + i
+    if raw > 50.0 { raw = 50.0 }
+    if raw < -50.0 { raw = -50.0 }
+    return clamp(raw, ClampLo, ClampHi)
+}

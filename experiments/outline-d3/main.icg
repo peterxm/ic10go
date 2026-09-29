@@ -1,0 +1,15 @@
+// Three independent control loops all share lib/control.icg's `step`, which is
+// itself non-leaf (it calls clamp). The main loop calls step three times.
+import "lib/control.icg"
+
+const TargetT = 293.0
+const TargetP = 101.0
+
+func main() {
+    for {
+        yield()
+        d0.Setting = step(TargetT - d1.Temperature)
+        d2.Setting = step(TargetP - d3.Pressure)
+        d4.Setting = step(50.0 - d5.Power)
+    }
+}

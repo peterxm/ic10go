@@ -1,0 +1,24 @@
+// D3a: a non-leaf helper (adjust calls clamp) used twice. The compiler should
+// outline adjust once with clamp inlined, instead of duplicating adjust.
+func clamp(x num, lo num, hi num) num {
+	if x < lo {
+		return lo
+	}
+	if x > hi {
+		return hi
+	}
+	return x
+}
+
+func adjust(x num) num {
+	a := clamp(x*2.0, -100.0, 100.0)
+	return clamp(a+1.5, -100.0, 100.0)
+}
+
+func main() {
+	for {
+		yield()
+		x := d4.Setting
+		d0.Setting = adjust(x+1.0) + adjust(x-1.0)
+	}
+}

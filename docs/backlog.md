@@ -103,7 +103,7 @@
 | **P3** | C3 | 编译期**循环/生成器**（生成 `data`） | 去重 + 省行 | 中 | ✅ |
 | **P3** | A4 | `data` 表可由编译期函数生成 | 省行 | 中 | ✅ |
 | **P4** | D2 | 统一 **size model**，把 opt-in 优化变自动 | 省行 | 中 | 🚧 |
-| **P4** | D3 | 放宽 **outline**（多层/非叶子） | 省行 | 中-大 | ⬜ |
+| **P4** | D3 | 放宽 **outline**（多层/非叶子） | 省行 | 中-大 | ✅ |
 | **P4** | D4 | 特殊寄存器（`sp`/`ra`）算术**两地址折叠** | 省行 | 小 | ✅ |
 | **P4** | D5 | **空分支清理**（目标即下一行） | 省行 | 小 | ✅ |
 | **P4** | D6 | 间接寄存器操作数折叠（`rrN` 目标/源） | 省行 | 小 | ✅ |
@@ -185,23 +185,34 @@ VSCode 为设置 `icg.libDirs`（同时作用于语言服务器与编译/运行�
 - `--redundant-device-writes`：改变可观测的设备写序列。
 - `--merge-renamed-tails`：实验性，会改变寄存器使用。
 
-### D3 放宽 outline ⬜
+### D3 放宽 outline：非叶子（D3a）✅
 
-现在只支持**叶子、单层**（IC10 只有一个 `ra`）。单层内联体积决策已由 D2 的多方案取短
-覆盖。**实测**：仓库 137 个 `.icg` 里，非叶子函数被真实调用 >1 次的为 **0 个**（`step`
-`control`、`greenhouseGasCheck` 等都是"定义 1 次 + 调用 1 次"），所以对现有语料收益为
-**0**；会重复的逻辑作者本来就写成叶子，而叶子外提已支持。
+**已实现 D3a**（2026-09）。`PlanOutlines`/`outlinable` 现在允许**非叶子**函数：外提时其
+函数体内所有调用都**内联**，因此外提体内不含 `jal`，IC10 唯一的 `ra` 依然安全。低层
+`label`/`goto`/`call`/`ret` 改用**传递**的 `computeLabeledFuncs` 排除（只看函数自身会漏掉
+“f 调用含 `call` 的 g”）。实现点：
 
-只有"非叶子 helper 被调用 `k≥2` 次"时才有收益，约为 `(k−1)·body − k·jal`：例如 20 行
-的 `readAll()` 被调 3 次，外提约省 35 行。两种做法：
+- `internal/lower/outline.go`：`outlinable` 去掉 `leaf` 约束，改用传递 `labeled` 集合；非
+  多返回值、语句数 ≥2 不变。
+- `internal/lower/lower.go`：新增 `inOutlineBody`——`lowerOutlined` 期间置位，
+  `lowerCallExpr` 不再走 `outlineCall`，于是体内全部内联。
+- size model 不变（仍含“完全不外提”候选），**行数只减不增**；`IC10C_NO_OUTLINE` 可整体关闭。
 
-- **D3a（无 `ra`）**：外提非叶子函数，但把它调用的函数内联进去，保证外提集合内部不互相
-  调用，无需动 `ra`；低风险，代价是被调函数可能重复内联（交给 size model 取舍）。
-- **D3b（保存 `ra`）**：真正嵌套外提，需预留一个物理寄存器或走持久栈 `push/pop` 保存
-  返回地址；功能最强但寄存器压力可能反增行。
+**实测**：
+- 现有语料仍为 **0** 收益（127 个 `.icg`，非叶子且被调 ≥2 的函数 = 0；叶子且被调 ≥2 = 16）。
+- 合成场景 `experiments/outline-d3/`（`step` 非叶子、调 `clamp`、被调 3 次）：**53 → 28 行**，
+  寄存器 **8 → 2**，VM 写序列一致。
+- 真机场景 `testdata/bench/ingame/s50_nonleaf_outline.json`（A CHIP）：默认 **25 行 / 2 个
+  `jal`** vs `IC10C_NO_OUTLINE=1` **39 行**；两种构建都通过 `testbench run --diff`（真机 +
+  VM，3/3）。
+- 测试：`internal/lower` `TestPlanOutlinesNonLeaf`（叶子候选 + 传递 labeled 排除）、
+  `pkg/ic10` `TestOutlineNonLeaf`（行数下降 + 写序列一致）。
 
-**触发条件**：等 `import`（P2）催生出"分层库 + 非叶子 helper 多处复用"的代码，再做
-**D3a**。两者都可作为候选方案由 size model 取更短者，行数上不会变差。
+D3b（真正嵌套外提、保存 `ra`）未做，也不再需要：D3a 已覆盖“非叶子被多处复用”，且无
+`ra` 风险。
+
+**触发条件**：`import`（P2）催生的“分层库 + 非叶子 helper 多处复用”。两者都可作为候选
+方案由 size model 取更短者，行数上不会变差。
 
 ### D4 特殊寄存器算术两地址折叠 ✅
 

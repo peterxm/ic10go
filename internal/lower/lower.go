@@ -262,6 +262,10 @@ type lowerer struct {
 	// srcLine is the .icg source line of the statement currently being lowered;
 	// new blocks are tagged with it for the source line map.
 	srcLine int
+	// inOutlineBody is set while lowering an outlined function's body: every
+	// call inside must be inlined, so the body holds no `jal` and IC10's single
+	// return-address register stays safe (D3a).
+	inOutlineBody bool
 	// srcLines / srcTerms record the source line each instruction and
 	// terminator was emitted from, for the codegen line map.
 	srcLines map[ir.Instr]int
@@ -2142,7 +2146,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 
 	// User-defined functions take precedence over built-ins.
 	if fi, ok := l.info.Funcs[id.Name]; ok {
-		if l.outline[id.Name] && !l.hasDeviceOrDataArg(call.Args) {
+		if l.outline[id.Name] && !l.inOutlineBody && !l.hasDeviceOrDataArg(call.Args) {
 			return l.outlineCall(id, fi, call.Args, needResult)
 		}
 		return l.inlineCall(id, fi, call.Args, needResult)
@@ -2717,11 +2721,15 @@ func (l *lowerer) lowerOutlined(name string) {
 	l.scopes = append(l.scopes, scope)
 	l.inline = append(l.inline, inlineCtx{end: of.epilogue, result: of.result})
 	l.stack = append(l.stack, name)
+	// Inline every call in the body: an outlined body must not contain a `jal`,
+	// or the inner call would clobber the outer return address (D3a).
+	l.inOutlineBody = true
 
 	l.lowerStmts(of.fi.Decl.Body.List)
 	if l.b.Cur().Term == nil {
 		l.b.SetTerm(&ir.Jmp{Target: of.epilogue})
 	}
+	l.inOutlineBody = false
 
 	l.stack = l.stack[:len(l.stack)-1]
 	l.inline = l.inline[:len(l.inline)-1]

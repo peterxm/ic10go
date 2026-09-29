@@ -1,0 +1,9 @@
+// A tiny shared library: clamp is a leaf helper.
+const ClampLo = -100.0
+const ClampHi = 100.0
+
+func clamp(x num, lo num, hi num) num {
+    if x < lo { return lo }
+    if x > hi { return hi }
+    return x
+}

@@ -21,9 +21,11 @@ type outlinedFunc struct {
 // per call but emits the body once. That trade favours outlining when a
 // function is called several times and has a non-trivial body.
 //
-// Only leaf functions (no calls to other user functions) without low-level
-// labels are eligible: nesting outlined functions would clobber IC10's single
-// return-address register, and labels are global.
+// Non-leaf functions are eligible too (D3a): the body is emitted once with every
+// function it calls inlined into it, so a single return-address register stays
+// safe. Functions with low-level labels/goto/call/ret anywhere in their reachable
+// call graph are excluded: inlining such a callee would put a `jal`/label inside
+// the outlined body.
 func PlanOutlines(info *sema.Info, noOutline bool) map[string]bool {
 	if noOutline {
 		return nil
@@ -41,9 +43,10 @@ func PlanOutlines(info *sema.Info, noOutline bool) map[string]bool {
 		})
 	}
 
+	labeled := computeLabeledFuncs(info)
 	out := map[string]bool{}
 	for name, fi := range info.Funcs {
-		if calls[name] < 2 || !outlinable(info, fi) {
+		if calls[name] < 2 || !outlinable(info, fi, labeled) {
 			continue
 		}
 		out[name] = true
@@ -52,27 +55,18 @@ func PlanOutlines(info *sema.Info, noOutline bool) map[string]bool {
 }
 
 // outlinable reports whether a function can safely be emitted as a subroutine.
-func outlinable(info *sema.Info, fi *sema.FuncInfo) bool {
+// labeled is the transitively-computed set of functions whose reachable body
+// contains a low-level label/goto/call/ret.
+func outlinable(info *sema.Info, fi *sema.FuncInfo, labeled map[string]bool) bool {
 	// A multi-value function is always inlined: IC10's calling convention has a
 	// single result register, so it is emitted at each call site instead.
 	if len(fi.Decl.Results) > 0 {
 		return false
 	}
-	leaf, low := true, false
-	forEachCall(fi.Decl.Body, func(c *ast.CallExpr) {
-		if id, ok := c.Fun.(*ast.Ident); ok {
-			if _, isFunc := info.Funcs[id.Name]; isFunc {
-				leaf = false
-			}
-		}
-	})
-	walkStmt(fi.Decl.Body, func(s ast.Stmt) {
-		switch s.(type) {
-		case *ast.LabelStmt, *ast.GotoStmt, *ast.CallStmt, *ast.RetStmt:
-			low = true
-		}
-	})
-	return leaf && !low && countStatements(fi.Decl.Body) >= 2
+	if labeled[fi.Decl.Name.Name] {
+		return false
+	}
+	return countStatements(fi.Decl.Body) >= 2
 }
 
 // countStatements counts the statements in a function body, depth first.

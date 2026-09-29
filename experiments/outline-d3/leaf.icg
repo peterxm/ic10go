@@ -1,0 +1,30 @@
+// Equivalent to main.icg + lib/control.icg, but with clamp's body written out
+// inside step so step is a leaf. The compiler then outlines leaf `step` once --
+// which is exactly the code shape D3a would produce for the non-leaf version.
+const Kp = 2.5
+const Ki = 0.25
+const ClampLo = -100.0
+const ClampHi = 100.0
+
+const TargetT = 293.0
+const TargetP = 101.0
+
+func step(error num) num {
+    p := error * Kp
+    i := error * Ki
+    raw := p + i
+    if raw > 50.0 { raw = 50.0 }
+    if raw < -50.0 { raw = -50.0 }
+    if raw < ClampLo { return ClampLo }
+    if raw > ClampHi { return ClampHi }
+    return raw
+}
+
+func main() {
+    for {
+        yield()
+        d0.Setting = step(TargetT - d1.Temperature)
+        d2.Setting = step(TargetP - d3.Pressure)
+        d4.Setting = step(50.0 - d5.Power)
+    }
+}
