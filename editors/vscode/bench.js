@@ -1446,6 +1446,8 @@ ${note}${diffNote}
         else if (m.type === 'run') this.runTicks(this.cfg().runTicks);
         else if (m.type === 'reset') this.reset();
         else if (m.type === 'copyHash' && m.name) this.copyHash(m.name);
+        else if (m.type === 'setDevice' && m.port && m.logic) this.setDevice({ port: m.port, logic: m.logic, value: m.value });
+        else if (m.type === 'pulse' && m.port && m.logic) this.pulseDevice({ port: m.port, logic: m.logic });
     }
 
     // copyHash puts the source form of a prefab hash on the clipboard.
@@ -1560,6 +1562,10 @@ ${note}${diffNote}
   }
   details.dev table { margin-top: 4px; }
   details.dev td { padding: 2px 8px; border-bottom: none; }
+  tr.logicrow { cursor: pointer; }
+  tr.logicrow:hover td { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.12)); }
+  td.act { width: 1%; white-space: nowrap; }
+  button.pulse { padding: 0 7px; line-height: 1.4; }
   details.slots {
     margin-top: 6px; padding: 3px 9px; border-radius: 6px;
     border: 1px dashed var(--vscode-editorWidget-border, rgba(128,128,128,.35));
@@ -1612,12 +1618,24 @@ ${note}${diffNote}
   document.getElementById('reset').addEventListener('click', () => vscode.postMessage({ type: 'reset' }));
   const openMap = {};
   document.getElementById('main').addEventListener('click', (e) => {
-    const h = e.target && e.target.closest ? e.target.closest('.hashlabel') : null;
+    const el = e.target;
+    const h = el && el.closest ? el.closest('.hashlabel') : null;
     if (h) {
       vscode.postMessage({ type: 'copyHash', name: h.getAttribute('data-name') });
       return;
     }
-    const s = e.target && e.target.closest ? e.target.closest('summary') : null;
+    const p = el && el.closest ? el.closest('.pulse') : null;
+    if (p) {
+      const row = p.closest('tr.logicrow');
+      if (row) vscode.postMessage({ type: 'pulse', port: row.getAttribute('data-port'), logic: row.getAttribute('data-logic') });
+      return;
+    }
+    const r = el && el.closest ? el.closest('tr.logicrow') : null;
+    if (r) {
+      vscode.postMessage({ type: 'setDevice', port: r.getAttribute('data-port'), logic: r.getAttribute('data-logic'), value: r.getAttribute('data-value') });
+      return;
+    }
+    const s = el && el.closest ? el.closest('summary') : null;
     if (!s) return;
     const det = s.parentElement;
     if (!det || det.tagName !== 'DETAILS') return;
@@ -1726,7 +1744,9 @@ ${note}${diffNote}
           ' <span class="muted">' + desc + '</span> <span class="pill">' + keys.length + ' logic' + (slotCount ? ' · ' + slotCount + ' slots' : '') + '</span></summary><table>';
         for (const k of keys) {
           next[d.port + '.' + k] = d.logic[k];
-          html += '<tr><td>' + k + '</td><td class="num">' + num(d.logic[k]) + hashTag(k, d.logic[k]) + '</td></tr>';
+          html += '<tr class="logicrow" data-port="' + d.port + '" data-logic="' + k + '" data-value="' + num(d.logic[k]) +
+            '" title="${t('click to set', '点击修改')}"><td>' + k + '</td><td class="num">' + num(d.logic[k]) + hashTag(k, d.logic[k]) +
+            '</td><td class="act"><button class="pulse" title="${t('pulse 0 then 1', '脉冲：写 0 再写 1')}">⚡</button></td></tr>';
         }
         html += '</table>';
         if (d.probe && Object.keys(d.probe).length) {

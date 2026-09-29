@@ -378,7 +378,7 @@ Activity Bar「IC10」
 - 顶栏还有**过滤框**：按端口 / 设备名 / 预制体 / 逻辑名筛选设备卡片。
 - **Registers**：网格（r0–r15 / ra / sp），等宽数字；值变化时短暂高亮（绿色淡出）。
 - **Stack**：默认**折叠**（`<details>`），展开后显示全部 512 槽，`sp` 行加色条。
-- **Devices**：每个设备一张**可折叠卡片**（`db` + `d0..d5`，空端口灰显 `empty`），带绑定标签与该设备的 logic 数量；展开看全部 logic，避免 `db` 那种几十条一次铺开。点击树里的 logic 可改输入。
+- **Devices**：每个设备一张**可折叠卡片**（`db` + `d0..d5`，空端口灰显 `empty`），带绑定标签与该设备的 logic 数量；展开看全部 logic，避免 `db` 那种几十条一次铺开。点击树里的 logic 可改输入；**面板里 logic 行同样可点击改值，行末 `⚡` 脉冲（写 0 再写 1）**。
 - **Program**：当前行 + `line/total`。
 - **预制体名**：设备的 `PrefabHash` / `NameHash` / `OccupantHash` 值旁标注对应预制体名（反查表由 ic10c 通过 `ic10/prefabs` 请求提供）；点击名字可复制 `hash("Name")`。
 - **执行行高亮**：上传时记住 `build --json` 的 `lineMap`（IC10 行 → `.icg` 源码行），随 `state.line` 在 `.icg` 编辑器里高亮当前行（按指令近似）。可关（`icg.bench.highlightLine`）。

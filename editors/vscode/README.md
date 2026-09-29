@@ -154,7 +154,7 @@ func main() {
 - 状态栏左侧出现 `$(circuit-board) IC10: <芯片名>`；点击打开「IC10 芯片状态」面板。
 - 侧边栏 **IC10** 活动视图列出连接状态与**全部 host**（点击切换选中）；选中项下是 **寄存器 / 栈 / 设备** 三个分组（**默认折叠**，按需展开），设备列出 `db`+`d0..d5` 全部端口（空端口灰显）并带绑定标签。
 - 编辑器标题栏 `$(cloud-upload)` 一键上传当前 `.icg`、`$(cloud-download)` 从芯片下载源码回编辑器；`$(beaker)` 运行测试台场景。
-- **Chip State** 面板：顶栏 `Pause | Step | Run | Reset | Watch | Refresh`（`Run` 显示当前 `icg.bench.runTicks`）与**过滤框**（按端口 / 设备名 / 逻辑名筛选设备）；寄存器网格、**可折叠**的全量栈（512 槽）、每个设备一张**可折叠卡片**（带绑定标签与只读 `probe`，如喷气背包的 `JetPackActivate`/`PropulsionActive`）；值变化时短暂高亮。`PrefabHash` / `NameHash` / `OccupantHash` 等哈希值旁会标出对应的预制体名（点击即可复制 `hash("Name")`）。全部使用 VS Code 主题变量，浅色 / 深色都好看。
+- **Chip State** 面板：顶栏 `Pause | Step | Run | Reset | Watch | Refresh`（`Run` 显示当前 `icg.bench.runTicks`）与**过滤框**（按端口 / 设备名 / 逻辑名筛选设备）；寄存器网格、**可折叠**的全量栈（512 槽）、每个设备一张**可折叠卡片**（带绑定标签与只读 `probe`，如喷气背包的 `JetPackActivate`/`PropulsionActive`，卡片里的 logic 行**可点击改值**、`⚡` 脉冲）；值变化时短暂高亮。`PrefabHash` / `NameHash` / `OccupantHash` 等哈希值旁会标出对应的预制体名（点击即可复制 `hash("Name")`）。全部使用 VS Code 主题变量，浅色 / 深色都好看。
 - 树的逻辑行支持 **设置值** 与 **⚡Pulse**（写 0→1，触发瞬态逻辑）；`PrefabHash` 等哈希值同样标出预制体名。
 - 上传后（`icg.bench.highlightLine` 默认开）会用编译产物的 `lineMap` 在 `.icg` 编辑器里高亮芯片当前执行的行（按指令近似，见 [`docs/plugin-api.md`](../../docs/plugin-api.md)）；`Step` / `Run` 后可看到它移动。
 - **多芯片对比**（`icg.bench.compare`）：一个 Webview 把所有芯片并排列出（行号 / `program.lines` / 寄存器 / `sp` / 设备 logic / 报错），变化的寄存器会高亮，可勾选「只看差异」、点列头选中该芯片；`Live` 可定时刷新——多芯片通过 `bus` 通信时一起看最方便。
