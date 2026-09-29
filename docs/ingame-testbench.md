@@ -367,6 +367,7 @@ Activity Bar「IC10」
 | `icg.bench.reset` | IC10: Reset Chip | 视图标题、面板按钮 |
 | `icg.bench.ports` | IC10: Show Port Wiring | 视图标题（`ports` 诊断 → 接线表） |
 | `icg.bench.writes` | IC10: Show Device Writes | 视图标题（`writes` trace → 写序列表；清空 + 单步 = 单 tick 写入） |
+| `icg.bench.compare` | IC10: Compare Chips | 视图标题（全部芯片并排：行号 / 寄存器 / sp / 设备） |
 | `icg.bench.loadSave` | IC10: Load Save | 视图标题（快速选择存档） |
 | `icg.bench.selectChip` | IC10: Select Chip | 树（点击某块 host） |
 | `icg.bench.setDevice` | IC10: Set Device Value | 树（点击某个 logic 值） |
@@ -381,6 +382,7 @@ Activity Bar「IC10」
 - **Program**：当前行 + `line/total`。
 - **预制体名**：设备的 `PrefabHash` / `NameHash` / `OccupantHash` 值旁标注对应预制体名（反查表由 ic10c 通过 `ic10/prefabs` 请求提供）；点击名字可复制 `hash("Name")`。
 - **执行行高亮**：上传时记住 `build --json` 的 `lineMap`（IC10 行 → `.icg` 源码行），随 `state.line` 在 `.icg` 编辑器里高亮当前行（按指令近似）。可关（`icg.bench.highlightLine`）。
+- **多芯片对比**：`icg.bench.compare` 打开并排面板，每块芯片一列（行号 / `program.lines` / 寄存器 / `sp` / 设备 logic / 报错），`Live` 定时刷新；多芯片走 `bus` 时一起看。
 - 全部用 `var(--vscode-*)` 变量、`--vscode-editorWidget-border` 描边、`--vscode-textCodeBlock-background`
   底色，无第三方 CSS；禁用内联脚本，`webview.cspSource` 白名单。
 

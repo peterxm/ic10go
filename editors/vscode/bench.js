@@ -406,6 +406,9 @@ class Bench {
         this.runDecor = undefined;
         this.portsPanel = undefined;
         this.writesPanel = undefined;
+        this.comparePanel = undefined;
+        this.compareTimer = undefined;
+        this.compareLive = false;
     }
 
     // chipSel builds the protocol chip selector for the given chip.
@@ -504,6 +507,7 @@ class Bench {
         cmd('icg.bench.reset', () => this.reset());
         cmd('icg.bench.ports', () => this.showPorts());
         cmd('icg.bench.writes', () => this.showWrites(false));
+        cmd('icg.bench.compare', () => this.showCompare());
         cmd('icg.bench.loadSave', () => this.loadSave());
         cmd('icg.bench.runScenario', () => this.runScenario());
         cmd('icg.bench.openPanel', () => this.openPanel());
@@ -534,6 +538,8 @@ class Bench {
         if (this.report) this.report.dispose();
         if (this.portsPanel) this.portsPanel.dispose();
         if (this.writesPanel) this.writesPanel.dispose();
+        this.stopCompare();
+        if (this.comparePanel) this.comparePanel.dispose();
     }
 
     // -- connection -------------------------------------------------------
@@ -989,6 +995,184 @@ ${note}
   const vscode = acquireVsCodeApi();
   document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
   document.getElementById('clear').addEventListener('click', () => vscode.postMessage({ type: 'clear' }));
+</script>
+</body></html>`;
+    }
+
+    // showCompare opens a panel that shows every chip's state side by side, so
+    // a multi-chip program (chips talking over a bus) can be watched at once.
+    showCompare() {
+        if (this.comparePanel) {
+            this.comparePanel.reveal(vscode.ViewColumn.Beside);
+        } else {
+            this.comparePanel = vscode.window.createWebviewPanel(
+                'icg.benchCompare',
+                t('IC10 Chips', 'IC10 多芯片对比'),
+                vscode.ViewColumn.Beside,
+                { enableScripts: true, retainContextWhenHidden: true }
+            );
+            this.comparePanel.webview.html = this.compareHtml();
+            this.comparePanel.onDidDispose(() => {
+                this.comparePanel = undefined;
+                this.stopCompare();
+            });
+            this.comparePanel.webview.onDidReceiveMessage((m) => {
+                if (!m) return;
+                if (m.type === 'refresh') this.refreshCompare();
+                else if (m.type === 'live') this.toggleCompareLive();
+            });
+        }
+        this.refreshCompare();
+    }
+
+    async refreshCompare() {
+        if (!this.comparePanel) return;
+        const c = await this.connect(true);
+        if (!c) {
+            this.comparePanel.webview.postMessage({ type: 'compare', connected: false, chips: [] });
+            return;
+        }
+        let chips = [];
+        try {
+            chips = ((await c.call('chip.list', {})).chips) || [];
+        } catch (err) {
+            this.client.output.appendLine(`IC10 compare chip.list failed: ${err.message}`);
+        }
+        const cols = [];
+        for (const chip of chips) {
+            if (chip.programmable === false) {
+                cols.push({ chip });
+                continue;
+            }
+            const sel = chip.id ? { id: chip.id } : { index: chip.index };
+            try {
+                const st = await c.call('state', {
+                    chip: sel,
+                    include: ['registers', 'stack', 'devices', 'program', 'errors'],
+                });
+                cols.push({ chip, state: st });
+            } catch (err) {
+                cols.push({ chip, error: err.message });
+            }
+        }
+        this.comparePanel.webview.postMessage({ type: 'compare', connected: true, chips: cols });
+    }
+
+    toggleCompareLive() {
+        this.compareLive = !this.compareLive;
+        this.stopCompare();
+        if (this.compareLive) {
+            const interval = this.cfg().refreshInterval > 0 ? this.cfg().refreshInterval : 500;
+            this.compareTimer = setInterval(() => this.refreshCompare(), interval);
+        }
+        if (this.comparePanel) {
+            this.comparePanel.webview.postMessage({ type: 'live', on: this.compareLive });
+        }
+    }
+
+    stopCompare() {
+        if (this.compareTimer) clearInterval(this.compareTimer);
+        this.compareTimer = undefined;
+    }
+
+    compareHtml() {
+        const nonce = String(Date.now()) + Math.random().toString(36).slice(2);
+        return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); margin: 0; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); }
+  header .title { font-weight: 600; }
+  button { font-family: inherit; font-size: inherit; color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); border-radius: 5px; padding: 3px 10px; cursor: pointer; }
+  button.active { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border-color: var(--vscode-button-background); }
+  #cols { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 14px 16px 32px; }
+  .col { flex: 0 0 auto; width: 268px; border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.25)); border-radius: 8px; padding: 10px 12px; }
+  .chead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .cname { font-weight: 600; }
+  .line { color: var(--vscode-descriptionForeground); margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+  .err { color: var(--vscode-errorForeground, #f14c4c); margin-bottom: 6px; }
+  table.regs { width: 100%; border-collapse: collapse; }
+  table.regs td { padding: 1px 6px; }
+  table.regs tr.special td { color: var(--vscode-charts-orange, #d18616); }
+  td.num { text-align: right; font-family: var(--vscode-editor-font-family, monospace); font-variant-numeric: tabular-nums; }
+  .port { color: var(--vscode-charts-blue, #3794ff); font-family: var(--vscode-editor-font-family, monospace); }
+  .dev { margin-top: 6px; }
+  .logic { display: flex; justify-content: space-between; gap: 8px; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .muted { color: var(--vscode-descriptionForeground); }
+  .pill { font-size: 10px; padding: 1px 7px; border-radius: 999px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+  details { margin-top: 6px; }
+  details > summary { cursor: pointer; color: var(--vscode-descriptionForeground); }
+</style></head>
+<body>
+<header>
+  <span class="title">${t('Chips', '芯片')}</span>
+  <button id="refresh">${t('Refresh', '刷新')}</button>
+  <button id="live">${t('Live', '实时')}</button>
+</header>
+<div id="cols"><p class="muted" style="padding:12px">${t('not connected', '未连接')}</p></div>
+<script nonce="${nonce}">
+  const vscode = acquireVsCodeApi();
+  let live = false;
+  document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+  document.getElementById('live').addEventListener('click', () => vscode.postMessage({ type: 'live' }));
+  window.addEventListener('message', (e) => {
+    const m = e.data;
+    if (!m) return;
+    if (m.type === 'live') { live = !!m.on; document.getElementById('live').className = live ? 'active' : ''; return; }
+    if (m.type === 'compare') render(m);
+  });
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function num(v) {
+    if (v === null || v === undefined) return '–';
+    if (Number.isInteger(v)) return String(v);
+    return String(Number(v.toPrecision(10)));
+  }
+  function col(c) {
+    const chip = c.chip || {};
+    const name = chip.name || chip.prefab || ('chip#' + chip.index);
+    let h = '<div class="col"><div class="chead"><span class="cname">' + esc(name) + '</span><span class="pill">' +
+      (chip.programmable === false ? '${t('no chip', '无芯片')}' : '#' + esc(String(chip.index))) + '</span></div>';
+    if (c.error) return h + '<div class="err">' + esc(c.error) + '</div></div>';
+    const st = c.state;
+    if (!st) return h + '</div>';
+    h += '<div class="line">' + (st.line !== undefined ? 'line ' + st.line : '') +
+      (st.program ? ' / ' + st.program.lines : '') + (st.paused ? ' · paused' : '') + '</div>';
+    if (st.errors && (st.errors.code || st.errors.compilation)) {
+      h += '<div class="err">' + esc(st.errors.code || 'error') + ' line ' + st.errors.line + '</div>';
+    }
+    if (st.registers) {
+      h += '<table class="regs">';
+      const order = ['r0','r1','r2','r3','r4','r5','r6','r7','r8','r9','r10','r11','r12','r13','r14','r15','ra','sp'];
+      for (const k of order) {
+        if (!(k in st.registers)) continue;
+        h += '<tr class="' + (k === 'sp' || k === 'ra' ? 'special' : '') + '"><td>' + k + '</td><td class="num">' + num(st.registers[k]) + '</td></tr>';
+      }
+      h += '</table>';
+    }
+    if (st.stack) h += '<div class="line">sp ' + (st.stack.sp || 0) + '</div>';
+    if (st.devices && st.devices.length) {
+      const devs = st.devices.filter((d) => d.present !== false);
+      h += '<details><summary>' + devs.length + ' devices</summary>';
+      for (const d of devs) {
+        h += '<div class="dev"><span class="port">' + esc(d.port) + '</span> <span class="muted">' + esc(d.binding || '') + '</span></div>';
+        for (const k of Object.keys(d.logic || {}).sort()) {
+          h += '<div class="logic"><span>' + esc(k) + '</span><span>' + num(d.logic[k]) + '</span></div>';
+        }
+      }
+      h += '</details>';
+    }
+    return h + '</div>';
+  }
+  function render(m) {
+    const wrap = document.getElementById('cols');
+    if (!m.connected) { wrap.innerHTML = '<p class="muted" style="padding:12px">not connected</p>'; return; }
+    const cols = m.chips || [];
+    wrap.innerHTML = cols.length ? cols.map(col).join('') : '<p class="muted" style="padding:12px">no chips</p>';
+  }
 </script>
 </body></html>`;
     }

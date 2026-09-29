@@ -155,6 +155,29 @@ Module._load = function (request, parent, isMain) {
 
 const ext = require(path.join(__dirname, 'extension.js'));
 ext.activate({ subscriptions: [] });
+
+// Panel HTML builders must render sample payloads without throwing.
+const { Bench } = require(path.join(__dirname, 'bench.js'));
+const bench = new Bench({ output: { appendLine: noop }, execCli: noop, config: () => ({}), buildFlags: () => [], activeICG: () => undefined });
+const compare = bench.compareHtml();
+if (!compare.includes('id="cols"') || !compare.includes('acquireVsCodeApi')) {
+    console.error('compareHtml is missing its render target/script');
+    process.exit(1);
+}
+const ports = bench.portsHtml({
+    chip: { name: 'A' },
+    lookups: [{ deviceIndex: 0, networkIndex: 0, name: 'Battery', prefab: 'Battery_Wireless_cell', logic: { Setting: 1 } }],
+});
+if (!ports.includes('Battery_Wireless_cell') || !ports.includes('d0')) {
+    console.error('portsHtml did not render the lookup row');
+    process.exit(1);
+}
+const writes = bench.writesHtml({ writes: [{ seq: 1, device: 'Battery', logic: 'On', slot: -1, value: 1 }] });
+if (!writes.includes('Battery') || !writes.includes('On')) {
+    console.error('writesHtml did not render the write row');
+    process.exit(1);
+}
+
 ext.deactivate();
 
 const expected = [
@@ -177,6 +200,7 @@ const expected = [
     'icg.bench.reset',
     'icg.bench.ports',
     'icg.bench.writes',
+    'icg.bench.compare',
     'icg.bench.loadSave',
     'icg.bench.runScenario',
     'icg.bench.openPanel',

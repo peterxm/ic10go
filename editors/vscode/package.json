@@ -345,6 +345,11 @@
         "icon": "$(output)"
       },
       {
+        "command": "icg.bench.compare",
+        "title": "%cmd.bench.compare%",
+        "icon": "$(split-horizontal)"
+      },
+      {
         "command": "icg.bench.loadSave",
         "title": "%cmd.bench.loadSave%",
         "icon": "$(folder-opened)"
@@ -478,6 +483,11 @@
           "command": "icg.bench.writes",
           "when": "view == icg.bench",
           "group": "navigation@13"
+        },
+        {
+          "command": "icg.bench.compare",
+          "when": "view == icg.bench",
+          "group": "navigation@14"
         }
       ],
       "commandPalette": [

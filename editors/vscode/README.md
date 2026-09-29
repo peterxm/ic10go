@@ -141,6 +141,7 @@ func main() {
 | `IC10 Go: Reset Chip` | 复位芯片的寄存器 / PC（栈保留） |
 | `IC10 Go: Show Port Wiring` | 打开「端口接线」面板：`d0..d5` 两条网络上的设备、预制体与可读逻辑（mod `ports`） |
 | `IC10 Go: Show Device Writes` | 打开「设备写序列」面板：列出程序对设备 logic 的写入（Harmony trace）。可清空后 `Step`/`Run` 再刷新，查看单 tick 写序列 |
+| `IC10 Go: Compare Chips` | 打开「多芯片对比」面板：所有芯片并排显示行号 / 寄存器 / 栈指针 / 设备，可开实时刷新 |
 | `IC10 Go: Load Save` | 从存档列表选择并在游戏中载入（`LoadHelper.LoadGame`） |
 | `IC10 Go: Pulse` | 对瞬态逻辑写 0 再写 1（如喷气背包 `Activate`）；在树的逻辑行上右键/内联按钮
 
@@ -156,6 +157,7 @@ func main() {
 - **Chip State** 面板：顶栏 `Pause | Step | Run | Reset | Watch | Refresh`（`Run` 显示当前 `icg.bench.runTicks`）与**过滤框**（按端口 / 设备名 / 逻辑名筛选设备）；寄存器网格、**可折叠**的全量栈（512 槽）、每个设备一张**可折叠卡片**（带绑定标签与只读 `probe`，如喷气背包的 `JetPackActivate`/`PropulsionActive`）；值变化时短暂高亮。`PrefabHash` / `NameHash` / `OccupantHash` 等哈希值旁会标出对应的预制体名（点击即可复制 `hash("Name")`）。全部使用 VS Code 主题变量，浅色 / 深色都好看。
 - 树的逻辑行支持 **设置值** 与 **⚡Pulse**（写 0→1，触发瞬态逻辑）；`PrefabHash` 等哈希值同样标出预制体名。
 - 上传后（`icg.bench.highlightLine` 默认开）会用编译产物的 `lineMap` 在 `.icg` 编辑器里高亮芯片当前执行的行（按指令近似，见 [`docs/plugin-api.md`](../../docs/plugin-api.md)）；`Step` / `Run` 后可看到它移动。
+- **多芯片对比**（`icg.bench.compare`）：一个 Webview 把所有芯片并排列出（行号 / `program.lines` / 寄存器 / `sp` / 设备 logic / 报错），`Live` 可定时刷新——多芯片通过 `bus` 通信时一起看最方便。
 - `autoload`（见 mod 配置）可让游戏启动后自动进入指定测试存档，无需手动点。
 - 运行场景的结果以表格展示，每个 case 一行 ✓ / ✗ 与期望 / 实际值。
 
