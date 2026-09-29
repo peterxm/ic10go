@@ -212,6 +212,16 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "%icg.bench.watchOnOpen.desc%"
+        },
+        "icg.bench.runTicks": {
+          "type": "number",
+          "default": 10,
+          "markdownDescription": "%icg.bench.runTicks.desc%"
+        },
+        "icg.bench.highlightLine": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%icg.bench.highlightLine.desc%"
         }
       }
     },
@@ -270,6 +280,11 @@
         "icon": "$(cloud-upload)"
       },
       {
+        "command": "icg.bench.pull",
+        "title": "%cmd.bench.pull%",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "icg.bench.connect",
         "title": "%cmd.bench.connect%",
         "icon": "$(plug)"
@@ -303,6 +318,21 @@
         "command": "icg.bench.pause",
         "title": "%cmd.bench.pause%",
         "icon": "$(debug-pause)"
+      },
+      {
+        "command": "icg.bench.step",
+        "title": "%cmd.bench.step%",
+        "icon": "$(debug-step-over)"
+      },
+      {
+        "command": "icg.bench.runTicks",
+        "title": "%cmd.bench.runTicks%",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "icg.bench.reset",
+        "title": "%cmd.bench.reset%",
+        "icon": "$(debug-restart)"
       },
       {
         "command": "icg.bench.loadSave",
@@ -363,9 +393,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "icg.bench.runScenario",
+          "command": "icg.bench.pull",
           "when": "editorLangId == icg",
           "group": "navigation@2"
+        },
+        {
+          "command": "icg.bench.runScenario",
+          "when": "editorLangId == icg",
+          "group": "navigation@3"
         }
       ],
       "view/title": [
@@ -375,34 +410,54 @@
           "group": "navigation@1"
         },
         {
-          "command": "icg.bench.runScenario",
+          "command": "icg.bench.pull",
           "when": "view == icg.bench",
           "group": "navigation@2"
         },
         {
-          "command": "icg.bench.watch",
+          "command": "icg.bench.runScenario",
           "when": "view == icg.bench",
           "group": "navigation@3"
         },
         {
-          "command": "icg.bench.refresh",
+          "command": "icg.bench.watch",
           "when": "view == icg.bench",
           "group": "navigation@4"
         },
         {
-          "command": "icg.bench.pause",
+          "command": "icg.bench.refresh",
           "when": "view == icg.bench",
           "group": "navigation@5"
         },
         {
-          "command": "icg.bench.loadSave",
+          "command": "icg.bench.pause",
           "when": "view == icg.bench",
           "group": "navigation@6"
         },
         {
-          "command": "icg.bench.openPanel",
+          "command": "icg.bench.step",
           "when": "view == icg.bench",
           "group": "navigation@7"
+        },
+        {
+          "command": "icg.bench.runTicks",
+          "when": "view == icg.bench",
+          "group": "navigation@8"
+        },
+        {
+          "command": "icg.bench.reset",
+          "when": "view == icg.bench",
+          "group": "navigation@9"
+        },
+        {
+          "command": "icg.bench.loadSave",
+          "when": "view == icg.bench",
+          "group": "navigation@10"
+        },
+        {
+          "command": "icg.bench.openPanel",
+          "when": "view == icg.bench",
+          "group": "navigation@11"
         }
       ],
       "commandPalette": [
@@ -444,6 +499,12 @@
         "command": "icg.bench.push",
         "key": "ctrl+alt+u",
         "mac": "cmd+alt+u",
+        "when": "editorLangId == icg"
+      },
+      {
+        "command": "icg.bench.pull",
+        "key": "ctrl+alt+d",
+        "mac": "cmd+alt+d",
         "when": "editorLangId == icg"
       },
       {

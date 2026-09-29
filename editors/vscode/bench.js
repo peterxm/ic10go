@@ -6,8 +6,8 @@
 //   * a status-bar item showing the connection and selected chip,
 //   * an "IC10 Testbench" view (activity bar) with registers, stack and devices,
 //   * a beautiful "IC10 Chip State" webview panel,
-//   * commands to upload the current .icg, refresh state, toggle live updates,
-//     edit a device input and run a testbench scenario.
+//   * commands to upload/download the current .icg, refresh state, toggle live
+//     updates, edit a device input and run a testbench scenario.
 //
 // Written in plain JavaScript with no npm dependencies (Node's built-in `net`),
 // matching the rest of the extension.
@@ -21,6 +21,11 @@ const path = require('path');
 function t(en, zh) {
     return (vscode.env.language || 'en').toLowerCase().startsWith('zh') ? zh : en;
 }
+
+// HASH_LOGIC names the device logic entries whose numeric value is a prefab
+// hash (see the game's LogicType table), so they can be labelled with the
+// prefab they refer to.
+const HASH_LOGIC = /^(PrefabHash|NameHash|OccupantHash)$/;
 
 // ---------------------------------------------------------------------------
 // NDJSON client
@@ -360,7 +365,8 @@ BenchTree.prototype.getChildren = function (el) {
             const out = [];
             for (const k of Object.keys(el._logic || {})) {
                 const item = new vscode.TreeItem(k, vscode.TreeItemCollapsibleState.None);
-                item.description = String(el._logic[k]);
+                const label = this.bench.prefabLabel(k, el._logic[k]);
+                item.description = label ? `${el._logic[k]} · ${label}` : String(el._logic[k]);
                 item.iconPath = new vscode.ThemeIcon('symbol-field');
                 item.contextValue = 'deviceLogic';
                 item.command = {
@@ -394,12 +400,63 @@ class Bench {
         this.panel = undefined;
         this.report = undefined;
         this.status = undefined;
+        this.prefabs = undefined; // hash -> {name,title}, from the language server
+        this.prefabsLoading = false;
+        this.programMap = undefined; // {uri, map: IC10 line -> .icg line} of the last push
+        this.runDecor = undefined;
     }
 
     // chipSel builds the protocol chip selector for the given chip.
     chipSel(chip) {
         if (!chip) return undefined;
         return chip.id ? { id: chip.id } : { index: chip.index };
+    }
+
+    // ensurePrefabs loads the prefab hash -> name table from the language
+    // server once, then refreshes the tree and panel so hash-valued logic
+    // (PrefabHash/NameHash/OccupantHash) shows the prefab it refers to.
+    ensurePrefabs() {
+        if (this.prefabs || this.prefabsLoading) return;
+        this.prefabsLoading = true;
+        this.client
+            .request('ic10/prefabs', {})
+            .then((r) => {
+                this.prefabs = (r && r.prefabs) || {};
+            })
+            .catch(() => {
+                // Older ic10c without ic10/prefabs: stop retrying (labeling off).
+                this.prefabs = {};
+            })
+            .then(() => {
+                this.prefabsLoading = false;
+                if (this.tree) this.tree.refresh();
+                this.renderPanel();
+            });
+    }
+
+    // prefabLabel resolves a device logic value to a prefab name when the logic
+    // key names a prefab hash. Returns '' when unknown or not a hash value.
+    prefabLabel(logic, value) {
+        if (!this.prefabs || !HASH_LOGIC.test(logic)) return '';
+        const v = Number(value);
+        if (!isFinite(v)) return '';
+        const e = this.prefabs[(v >>> 0).toString()];
+        return (e && e.name) || '';
+    }
+
+    // updateRunLine highlights the .icg line the chip is executing, using the
+    // line map recorded on the last upload (instruction-level best effort).
+    updateRunLine() {
+        if (!this.runDecor) return;
+        const editors = vscode.window.visibleTextEditors || [];
+        for (const ed of editors) ed.setDecorations(this.runDecor, []);
+        if (!this.cfg().highlightLine || !this.programMap || !this.state) return;
+        const src = this.programMap.map && this.programMap.map[this.state.line];
+        if (!src) return;
+        const ed = editors.find((e) => e.document.uri.toString() === this.programMap.uri);
+        if (!ed) return;
+        const line = Math.min(Math.max(0, src - 1), Math.max(0, ed.document.lineCount - 1));
+        ed.setDecorations(this.runDecor, [new vscode.Range(line, 0, line, 0)]);
     }
 
     cfg() {
@@ -410,6 +467,8 @@ class Bench {
             autoConnect: c.get('bench.autoConnect') !== false,
             refreshInterval: c.get('bench.refreshInterval') || 0,
             watchOnOpen: c.get('bench.watchOnOpen') === true,
+            runTicks: c.get('bench.runTicks') || 10,
+            highlightLine: c.get('bench.highlightLine') !== false,
         };
     }
 
@@ -418,6 +477,12 @@ class Bench {
         this.status.command = 'icg.bench.openPanel';
         context.subscriptions.push(this.status);
         this.setStatus(false);
+
+        this.runDecor = vscode.window.createTextEditorDecorationType({
+            isWholeLine: true,
+            backgroundColor: new vscode.ThemeColor('editor.rangeHighlightBackground'),
+        });
+        context.subscriptions.push(this.runDecor);
 
         this.tree = new BenchTree(this);
         context.subscriptions.push(
@@ -428,9 +493,13 @@ class Bench {
         cmd('icg.bench.connect', () => this.connect(false));
         cmd('icg.bench.disconnect', () => this.disconnect());
         cmd('icg.bench.push', () => this.push());
+        cmd('icg.bench.pull', () => this.pull());
         cmd('icg.bench.refresh', () => this.refresh(true));
         cmd('icg.bench.watch', () => this.toggleWatch());
         cmd('icg.bench.pause', () => this.togglePause());
+        cmd('icg.bench.step', () => this.runTicks(1));
+        cmd('icg.bench.runTicks', () => this.runTicks(this.cfg().runTicks));
+        cmd('icg.bench.reset', () => this.reset());
         cmd('icg.bench.loadSave', () => this.loadSave());
         cmd('icg.bench.runScenario', () => this.runScenario());
         cmd('icg.bench.openPanel', () => this.openPanel());
@@ -516,6 +585,7 @@ class Bench {
         this.setStatus(false);
         if (this.tree) this.tree.refresh();
         this.renderPanel();
+        this.updateRunLine();
     }
 
     onClose() {
@@ -525,6 +595,7 @@ class Bench {
         this.setStatus(false);
         if (this.tree) this.tree.refresh();
         this.renderPanel();
+        this.updateRunLine();
     }
 
     setStatus(connected) {
@@ -571,6 +642,8 @@ class Bench {
             if (this.tree) this.tree.refresh();
             this.renderPanel();
             this.setStatus(true);
+            this.ensurePrefabs();
+            this.updateRunLine();
         } catch (err) {
             this.client.output.appendLine(`IC10 bench refresh failed: ${err.message}`);
             if (interactive) vscode.window.showErrorMessage(t('IC10: refresh failed. See the "IC10 Go" output.', 'IC10: 刷新失败，详见 "IC10 Go" 输出面板。'));
@@ -628,6 +701,11 @@ class Bench {
                 return;
             }
             const loaders = (out.data && (out.data.loaders || (out.data.loader ? [out.data.loader] : []))) || [];
+            if (Array.isArray(out.lineMap) && out.lineMap.length) {
+                this.programMap = { uri: doc.uri.toString(), map: out.lineMap };
+            } else {
+                this.programMap = undefined;
+            }
             try {
                 const r = await conn.call('push', { code: out.code, loaders });
                 const lines = r.lines || (out.stats && out.stats.lines) || 0;
@@ -644,6 +722,43 @@ class Bench {
         });
     }
 
+    // pull downloads the selected chip's current IC10 source into a new editor,
+    // mirroring push. The user can then decompile it back to .icg or save it.
+    async pull() {
+        const conn = await this.connect(false);
+        if (!conn) return;
+        let r;
+        try {
+            const args = {};
+            if (this.sel) args.chip = this.sel;
+            r = await conn.call('program', args);
+        } catch (err) {
+            this.client.output.appendLine(`IC10 bench pull failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('IC10: download failed. See the "IC10 Go" output.', 'IC10: 下载失败，详见 "IC10 Go" 输出面板。'));
+            return;
+        }
+        const code = r.code || '';
+        if (!code.trim()) {
+            vscode.window.showWarningMessage(t('IC10: the chip has no program to download.', 'IC10: 芯片没有可下载的程序。'));
+            return;
+        }
+        const chip = this.state && this.state.chip;
+        const name = chip ? chip.name || chip.prefab || `chip#${chip.index}` : t('chip', '芯片');
+        const lines = r.lines || code.replace(/\r/g, '').split('\n').length;
+        const doc = await vscode.workspace.openTextDocument({ content: code, language: 'ic10' });
+        await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside, preview: false });
+        this.client.output.appendLine(`=== download: ${name} (${lines} lines) ===\n${code}`);
+        const decompile = t('Decompile to .icg', '反编译为 .icg');
+        const save = t('Save as…', '另存为…');
+        const pick = await vscode.window.showInformationMessage(
+            t(`IC10: downloaded ${lines} lines from ${name}.`, `IC10: 已从 ${name} 下载 ${lines} 行。`),
+            decompile,
+            save
+        );
+        if (pick === decompile) await vscode.commands.executeCommand('icg.decompile');
+        else if (pick === save) await vscode.commands.executeCommand('workbench.action.files.saveAs');
+    }
+
     async togglePause() {
         const c = await this.connect(false);
         if (!c) return;
@@ -653,6 +768,50 @@ class Bench {
             await this.refresh(false);
         } catch (err) {
             vscode.window.showErrorMessage(t('IC10: pause failed: ', 'IC10: 暂停失败：') + err.message);
+        }
+    }
+
+    // runTicks advances the selected chip by n game ticks (128 instructions
+    // each). Stepping is deterministic while the world is paused, so pause it
+    // first when needed.
+    async runTicks(n) {
+        const conn = await this.connect(false);
+        if (!conn) return;
+        if (!(this.state && this.state.paused)) {
+            try {
+                await conn.call('pause', { on: true });
+                vscode.window.setStatusBarMessage(t('IC10: paused for stepping', 'IC10: 已暂停以便单步'), 3000);
+            } catch (err) {
+                // Not fatal: run still advances the chip.
+            }
+        }
+        const args = { ticks: Math.max(1, Math.floor(n) || 1) };
+        if (this.sel) args.chip = this.sel;
+        try {
+            const r = await conn.call('run', args);
+            if (r && r.error) {
+                this.client.output.appendLine(`IC10 bench run: ${JSON.stringify(r.error)}`);
+                vscode.window.showErrorMessage(t('IC10: chip error while running. See the "IC10 Go" output.', 'IC10: 运行中芯片报错，详见 "IC10 Go" 输出面板。'));
+            }
+            await this.refresh(false);
+        } catch (err) {
+            this.client.output.appendLine(`IC10 bench run failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('IC10: run failed. See the "IC10 Go" output.', 'IC10: 运行失败，详见 "IC10 Go" 输出面板。'));
+        }
+    }
+
+    // reset clears the chip's registers, PC and error state (the stack is kept).
+    async reset() {
+        const conn = await this.connect(false);
+        if (!conn) return;
+        const args = {};
+        if (this.sel) args.chip = this.sel;
+        try {
+            await conn.call('reset', args);
+            await this.refresh(false);
+        } catch (err) {
+            this.client.output.appendLine(`IC10 bench reset failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('IC10: reset failed. See the "IC10 Go" output.', 'IC10: 重置失败，详见 "IC10 Go" 输出面板。'));
         }
     }
 
@@ -708,6 +867,7 @@ class Bench {
             if (this.tree) this.tree.refresh();
             this.renderPanel();
             this.setStatus(true);
+            this.updateRunLine();
         }
     }
 
@@ -791,6 +951,7 @@ class Bench {
             this.panel.webview.onDidReceiveMessage((m) => this.onPanelMessage(m));
         }
         if (this.cfg().watchOnOpen && !this.watching) this.toggleWatch();
+        this.ensurePrefabs();
         this.renderPanel();
     }
 
@@ -799,6 +960,9 @@ class Bench {
         if (m.type === 'refresh') this.refresh(true);
         else if (m.type === 'watch') this.toggleWatch();
         else if (m.type === 'pause') this.togglePause();
+        else if (m.type === 'step') this.runTicks(1);
+        else if (m.type === 'run') this.runTicks(this.cfg().runTicks);
+        else if (m.type === 'reset') this.reset();
     }
 
     renderPanel() {
@@ -808,6 +972,8 @@ class Bench {
             state: this.state,
             connected: !!this.conn,
             watching: this.watching,
+            prefabs: this.prefabs || {},
+            runTicks: this.cfg().runTicks,
         });
     }
 
@@ -921,6 +1087,9 @@ class Bench {
   <span style="flex:1"></span>
   <span class="line" id="line"></span>
   <button id="pause">Pause</button>
+  <button id="step">Step</button>
+  <button id="run">Run</button>
+  <button id="reset">Reset</button>
   <button id="watch">Watch</button>
   <button id="refresh">Refresh</button>
 </header>
@@ -928,9 +1097,13 @@ class Bench {
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   let prev = {};
+  let prefabs = {};
   document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
   document.getElementById('watch').addEventListener('click', () => vscode.postMessage({ type: 'watch' }));
   document.getElementById('pause').addEventListener('click', () => vscode.postMessage({ type: 'pause' }));
+  document.getElementById('step').addEventListener('click', () => vscode.postMessage({ type: 'step' }));
+  document.getElementById('run').addEventListener('click', () => vscode.postMessage({ type: 'run' }));
+  document.getElementById('reset').addEventListener('click', () => vscode.postMessage({ type: 'reset' }));
   const openMap = {};
   document.getElementById('main').addEventListener('click', (e) => {
     const s = e.target && e.target.closest ? e.target.closest('summary') : null;
@@ -950,6 +1123,19 @@ class Bench {
     if (Number.isInteger(v)) return String(v);
     return String(Number(v.toPrecision(10)));
   }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  const HASH_LOGIC = /^(PrefabHash|NameHash|OccupantHash)$/;
+  function hashTag(logic, v) {
+    if (!HASH_LOGIC.test(logic)) return '';
+    const n = Number(v);
+    if (!isFinite(n)) return '';
+    const e = prefabs[(n >>> 0).toString()];
+    if (!e) return '';
+    const tip = e.title ? ' title="' + esc(e.title) + '"' : '';
+    return ' <span class="muted"' + tip + '>' + esc(e.name) + '</span>';
+  }
   function cell(k, v, special) {
     const changed = prev[k] !== undefined && prev[k] !== v;
     return '<div class="cell' + (special ? ' special' : '') + (changed ? ' changed' : '') + '">' +
@@ -957,6 +1143,7 @@ class Bench {
   }
   function render(m) {
     const st = m.state;
+    if (m.prefabs) prefabs = m.prefabs;
     document.getElementById('dot').className = 'dot' + (m.connected ? ' on' : '');
     document.getElementById('watch').className = m.watching ? 'active' : '';
     const pauseBtn = document.getElementById('pause');
@@ -965,6 +1152,8 @@ class Bench {
       pauseBtn.textContent = paused ? 'Resume' : 'Pause';
       pauseBtn.className = paused ? 'active' : '';
     }
+    const runBtn = document.getElementById('run');
+    if (runBtn && m.runTicks) runBtn.textContent = 'Run ' + m.runTicks;
     const main = document.getElementById('main');
     if (!st || !st.chip) {
       document.getElementById('chip').textContent = 'IC10';
@@ -1017,7 +1206,7 @@ class Bench {
           ' <span class="muted">' + desc + '</span> <span class="pill">' + keys.length + ' logic' + (slotCount ? ' · ' + slotCount + ' slots' : '') + '</span></summary><table>';
         for (const k of keys) {
           next[d.port + '.' + k] = d.logic[k];
-          html += '<tr><td>' + k + '</td><td class="num">' + num(d.logic[k]) + '</td></tr>';
+          html += '<tr><td>' + k + '</td><td class="num">' + num(d.logic[k]) + hashTag(k, d.logic[k]) + '</td></tr>';
         }
         html += '</table>';
         if (d.probe && Object.keys(d.probe).length) {
@@ -1041,7 +1230,7 @@ class Bench {
             html += '<details class="slot"' + (openMap[key] ? ' open' : '') + ' data-key="' + key +
               '"><summary>slot ' + s.index + (bits.length ? ' <span class="muted">' + bits.join('  ') + '</span>' : '') + '</summary><table>';
             for (const k of lk) {
-              html += '<tr><td>' + k + '</td><td class="num">' + num(s.logic[k]) + '</td></tr>';
+              html += '<tr><td>' + k + '</td><td class="num">' + num(s.logic[k]) + hashTag(k, s.logic[k]) + '</td></tr>';
             }
             html += '</table></details>';
           }

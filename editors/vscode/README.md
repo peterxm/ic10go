@@ -128,6 +128,7 @@ func main() {
 | `IC10 Go: Show CFG (Mermaid)` | 在 Markdown 预览中显示 `.icg` 的**源码级控制流图**（Mermaid，按函数分组；条件/分支/循环/break/continue 一目了然） |
 | `IC10 Go: Restart Language Server` | 重启语言服务器 |
 | `IC10 Go: Upload to Game` | 编译当前 `.icg` 并上传到游戏内的芯片（`Ctrl+Alt+U`；有安装代码会先自动运行） |
+| `IC10 Go: Download from Game` | 从选中芯片下载当前 IC10 源码到新编辑器，可一键反编译为 `.icg` 或另存为文件（`Ctrl+Alt+D`） |
 | `IC10 Go: Connect to Game Testbench` | 连接游戏内测试台 mod（默认 `127.0.0.1:7800`） |
 | `IC10 Go: Disconnect from Testbench` | 断开连接 |
 | `IC10 Go: Refresh Chip State` | 读取一次寄存器 / 栈 / 设备状态 |
@@ -135,6 +136,9 @@ func main() {
 | `IC10 Go: Run Testbench Scenario` | 选择场景 JSON 运行 `ic10c testbench run`，以 ✓/✗ 表格展示结果（`Ctrl+Alt+T`） |
 | `IC10 Go: Open Chip State Panel` | 打开「IC10 芯片状态」Webview 面板 |
 | `IC10 Go: Pause / Resume Game` | 暂停 / 恢复游戏（走游戏自身暂停流程，恢复后输入正常） |
+| `IC10 Go: Step One Tick` | 暂停游戏并推进选中芯片 **1 tick**（128 条指令），便于单步调试 |
+| `IC10 Go: Run Ticks` | 暂停游戏并推进 `icg.bench.runTicks`（默认 10）个 tick |
+| `IC10 Go: Reset Chip` | 复位芯片的寄存器 / PC（栈保留） |
 | `IC10 Go: Load Save` | 从存档列表选择并在游戏中载入（`LoadHelper.LoadGame`） |
 | `IC10 Go: Pulse` | 对瞬态逻辑写 0 再写 1（如喷气背包 `Activate`）；在树的逻辑行上右键/内联按钮
 
@@ -146,9 +150,10 @@ func main() {
 
 - 状态栏左侧出现 `$(circuit-board) IC10: <芯片名>`；点击打开「IC10 芯片状态」面板。
 - 侧边栏 **IC10** 活动视图列出连接状态与**全部 host**（点击切换选中）；选中项下是 **寄存器 / 栈 / 设备** 三个分组（**默认折叠**，按需展开），设备列出 `db`+`d0..d5` 全部端口（空端口灰显）并带绑定标签。
-- 编辑器标题栏 `$(cloud-upload)` 一键上传当前 `.icg`；`$(beaker)` 运行测试台场景。
-- **Chip State** 面板：顶栏 `Pause | Watch | Refresh`；寄存器网格、**可折叠**的全量栈（512 槽）、每个设备一张**可折叠卡片**（带绑定标签与只读 `probe`，如喷气背包的 `JetPackActivate`/`PropulsionActive`）；值变化时短暂高亮。全部使用 VS Code 主题变量，浅色 / 深色都好看。
-- 树的逻辑行支持 **设置值** 与 **⚡Pulse**（写 0→1，触发瞬态逻辑）。
+- 编辑器标题栏 `$(cloud-upload)` 一键上传当前 `.icg`、`$(cloud-download)` 从芯片下载源码回编辑器；`$(beaker)` 运行测试台场景。
+- **Chip State** 面板：顶栏 `Pause | Step | Run | Reset | Watch | Refresh`（`Run` 显示当前 `icg.bench.runTicks`）；寄存器网格、**可折叠**的全量栈（512 槽）、每个设备一张**可折叠卡片**（带绑定标签与只读 `probe`，如喷气背包的 `JetPackActivate`/`PropulsionActive`）；值变化时短暂高亮。`PrefabHash` / `NameHash` / `OccupantHash` 等哈希值旁会标出对应的预制体名。全部使用 VS Code 主题变量，浅色 / 深色都好看。
+- 树的逻辑行支持 **设置值** 与 **⚡Pulse**（写 0→1，触发瞬态逻辑）；`PrefabHash` 等哈希值同样标出预制体名。
+- 上传后（`icg.bench.highlightLine` 默认开）会用编译产物的 `lineMap` 在 `.icg` 编辑器里高亮芯片当前执行的行（按指令近似，见 [`docs/plugin-api.md`](../../docs/plugin-api.md)）；`Step` / `Run` 后可看到它移动。
 - `autoload`（见 mod 配置）可让游戏启动后自动进入指定测试存档，无需手动点。
 - 运行场景的结果以表格展示，每个 case 一行 ✓ / ✗ 与期望 / 实际值。
 
@@ -188,6 +193,8 @@ func main() {
 | `icg.bench.autoConnect` | `true` | 扩展激活时自动连接测试台 |
 | `icg.bench.refreshInterval` | `0` | 自动刷新状态的间隔（毫秒，`0` 仅手动） |
 | `icg.bench.watchOnOpen` | `false` | 打开 Chip State 面板时自动开启实时更新 |
+| `icg.bench.runTicks` | `10` | `Run Ticks` / 面板 `Run` 按钮推进的 tick 数（每 tick 128 条指令） |
+| `icg.bench.highlightLine` | `true` | 上传后用 `lineMap` 在 `.icg` 里高亮芯片当前执行行（按指令近似） |
 
 ## 七、文件类型
 

@@ -345,7 +345,7 @@ Activity Bar「IC10」
 
 - 状态栏项（右下）：`$(circuit-board) IC10: TestChip`，已连接绿色；点击弹 QuickPick
   （Connect / Push / Open Panel / Refresh）。
-- 编辑器标题栏（`.icg`）：`$(cloud-upload)` 上传、`$(beaker)` 跑测试台。
+- 编辑器标题栏（`.icg`）：`$(cloud-upload)` 上传、`$(cloud-download)` 下载芯片源码、`$(beaker)` 跑测试台。
 - 图标统一用 codicon（`$(circuit-board)`/`$(symbol-number)`/`$(database)`/`$(server-process)`），
   颜色用 `ThemeIcon` + `ThemeColor`（`testing.iconPassed` / `charts.orange` / `descriptionForeground`）。
 
@@ -356,22 +356,28 @@ Activity Bar「IC10」
 | `icg.bench.connect` | IC10: Connect to Game | 视图 / 状态栏 |
 | `icg.bench.disconnect` | IC10: Disconnect | 视图 |
 | `icg.bench.push` | IC10: Upload to Game | 标题栏、`Ctrl+Alt+U` |
+| `icg.bench.pull` | IC10: Download from Game | 标题栏、`Ctrl+Alt+D`（读 `program`，可反编译为 `.icg`） |
 | `icg.bench.refresh` | IC10: Refresh State | 视图标题 |
 | `icg.bench.watch` | IC10: Toggle Live Updates | 视图标题 |
 | `icg.bench.runScenario` | IC10: Run Testbench | 标题栏、`Ctrl+Alt+T` |
 | `icg.bench.openPanel` | IC10: Open Chip Panel | 状态栏 / 命令面板 |
 | `icg.bench.pause` | IC10: Pause / Resume Game | 视图标题、面板按钮 |
+| `icg.bench.step` | IC10: Step One Tick | 视图标题、面板按钮（先暂停） |
+| `icg.bench.runTicks` | IC10: Run Ticks | 视图标题、面板按钮（先暂停；tick 数见 `icg.bench.runTicks`） |
+| `icg.bench.reset` | IC10: Reset Chip | 视图标题、面板按钮 |
 | `icg.bench.loadSave` | IC10: Load Save | 视图标题（快速选择存档） |
 | `icg.bench.selectChip` | IC10: Select Chip | 树（点击某块 host） |
 | `icg.bench.setDevice` | IC10: Set Device Value | 树（点击某个 logic 值） |
 
 ### 7.3 Webview「Chip State」面板
 
-- 顶栏：芯片名 + 连接圆点 + `Pause | Watch | Refresh`（`Pause` 在实时更新旁，暂停时变 `Resume` 并高亮）。
+- 顶栏：芯片名 + 连接圆点 + `Pause | Step | Run | Reset | Watch | Refresh`（`Pause` 在实时更新旁，暂停时变 `Resume` 并高亮；`Run` 显示 `icg.bench.runTicks`）。`Step` / `Run` 会先暂停世界，保证单步确定性。
 - **Registers**：网格（r0–r15 / ra / sp），等宽数字；值变化时短暂高亮（绿色淡出）。
 - **Stack**：默认**折叠**（`<details>`），展开后显示全部 512 槽，`sp` 行加色条。
 - **Devices**：每个设备一张**可折叠卡片**（`db` + `d0..d5`，空端口灰显 `empty`），带绑定标签与该设备的 logic 数量；展开看全部 logic，避免 `db` 那种几十条一次铺开。点击树里的 logic 可改输入。
 - **Program**：当前行 + `line/total`。
+- **预制体名**：设备的 `PrefabHash` / `NameHash` / `OccupantHash` 值旁标注对应预制体名（反查表由 ic10c 通过 `ic10/prefabs` 请求提供）。
+- **执行行高亮**：上传时记住 `build --json` 的 `lineMap`（IC10 行 → `.icg` 源码行），随 `state.line` 在 `.icg` 编辑器里高亮当前行（按指令近似）。可关（`icg.bench.highlightLine`）。
 - 全部用 `var(--vscode-*)` 变量、`--vscode-editorWidget-border` 描边、`--vscode-textCodeBlock-background`
   底色，无第三方 CSS；禁用内联脚本，`webview.cspSource` 白名单。
 
@@ -384,6 +390,8 @@ Activity Bar「IC10」
 | `icg.bench.autoConnect` | `true` | 激活时自动连 |
 | `icg.bench.refreshInterval` | `0` | 自动刷新毫秒（0=手动） |
 | `icg.bench.watchOnOpen` | `false` | 打开面板即开实时 |
+| `icg.bench.runTicks` | `10` | `Step`/`Run` 之外的 tick 步进数（每 tick 128 条指令） |
+| `icg.bench.highlightLine` | `true` | 上传后在 `.icg` 里高亮芯片当前执行行（按指令近似，用 `lineMap`） |
 
 ### 7.5 交互细节（易用性）
 
@@ -392,6 +400,7 @@ Activity Bar「IC10」
 - `runScenario` 结果用 Webview 报告（每 case ✓/✗ + 期望/实际）。
 - 所有错误走已有的 `IC10 Go` 输出面板。
 - `Pause` 按钮走游戏自身暂停流程，恢复后输入/光标正常，不用再按 F1。
+- `Step` / `Run` 在未暂停时先 `pause {on:true}`（**保持暂停**便于连续单步），再 `run {ticks}`；`run` 返回当前 `line` 与芯片 `error`。`Reset` 调 `reset`（保留栈）。
 - 「Load Save」从 `world.saves` 快速选择并调用 `LoadHelper.LoadGame`；mod 侧 `autoload` 可启动即进存档。
 
 ---

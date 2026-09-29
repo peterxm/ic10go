@@ -11,11 +11,16 @@ function disposable() {
 
 const noop = () => {};
 
+// Commands the extension registers; a missing one fails the smoke test.
+const registeredCommands = [];
+
 const mock = {
     StatusBarAlignment: { Left: 1, Right: 2 },
     window: {
         createOutputChannel: () => ({ appendLine: noop, append: noop, show: noop, dispose: noop }),
         createStatusBarItem: () => ({ show: noop, hide: noop, dispose: noop }),
+        createTextEditorDecorationType: () => disposable(),
+        visibleTextEditors: [],
         registerTreeDataProvider: () => disposable(),
         createWebviewPanel: () => ({
             reveal: noop,
@@ -74,7 +79,13 @@ const mock = {
         textDocuments: [],
         openTextDocument: () => Promise.resolve({}),
     },
-    commands: { registerCommand: () => disposable(), executeCommand: noop },
+    commands: {
+        registerCommand: (name) => {
+            registeredCommands.push(name);
+            return disposable();
+        },
+        executeCommand: noop,
+    },
     env: { language: 'zh-cn' },
     Uri: { parse: (s) => s },
     Range: class {},
@@ -145,4 +156,35 @@ Module._load = function (request, parent, isMain) {
 const ext = require(path.join(__dirname, 'extension.js'));
 ext.activate({ subscriptions: [] });
 ext.deactivate();
+
+const expected = [
+    'icg.compile',
+    'icg.run',
+    'icg.decompile',
+    'icg.minify',
+    'icg.disasm',
+    'icg.graph',
+    'icg.restartServer',
+    'icg.bench.connect',
+    'icg.bench.disconnect',
+    'icg.bench.push',
+    'icg.bench.pull',
+    'icg.bench.refresh',
+    'icg.bench.watch',
+    'icg.bench.pause',
+    'icg.bench.step',
+    'icg.bench.runTicks',
+    'icg.bench.reset',
+    'icg.bench.loadSave',
+    'icg.bench.runScenario',
+    'icg.bench.openPanel',
+    'icg.bench.selectChip',
+    'icg.bench.setDevice',
+    'icg.bench.pulseDevice',
+];
+const missing = expected.filter((c) => !registeredCommands.includes(c));
+if (missing.length) {
+    console.error('missing commands: ' + missing.join(', '));
+    process.exit(1);
+}
 console.log('extension activate/deactivate OK');
