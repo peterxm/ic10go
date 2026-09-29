@@ -23,6 +23,19 @@ jobs:
       - name: differential (extra seeds)
         run: go test ./pkg/ic10 -run 'TestDifferential' -count=1
 
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache: false
+      - name: build ic10c
+        run: go build -o ic10c ./cmd/ic10c
+      - name: end-to-end assertions
+        run: sh testdata/cli/run.sh
+
   extension:
     runs-on: ubuntu-latest
     steps:

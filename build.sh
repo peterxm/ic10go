@@ -7,6 +7,7 @@
 # Commands:
 #   build      (default) build ic10c for the host into ./ic10c
 #   test       run the Go test suite
+#   assert     build ic10c and run the CLI assertion suite (testdata/cli)
 #   release    cross-compile release binaries into dist/
 #   install    build ic10c and install it to ~/.local/bin
 #   vsix       package the VSCode extension into dist/ (needs npx)
@@ -50,6 +51,12 @@ build() {
 test() {
     info "running go test ./..."
     go test ./...
+}
+
+assert() {
+    build
+    info "running CLI assertions (testdata/cli/run.sh)"
+    IC10C="$PWD/$BIN" sh testdata/cli/run.sh
 }
 
 release() {
@@ -102,6 +109,7 @@ usage() {
 case "${1:-build}" in
     build)   build ;;
     test)    test ;;
+    assert)  assert ;;
     release) release ;;
     install) install ;;
     vsix)    vsix ;;

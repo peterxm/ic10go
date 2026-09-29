@@ -162,6 +162,14 @@ sh editors/vscode/install.sh   # 优先用 code CLI 安装 .vsix，回退到复�
 go test ./...
 ```
 
+或一次跑「Go 单测 + 二进制端到端断言」：
+
+```bash
+./build.sh assert
+```
+
+端到端断言（[`testdata/cli/run.sh`](testdata/cli/run.sh)，20 用例 / 58 条断言）**黑盒校验实际二进制**：退出码、诊断码、关键指令、行数、VM 设备值；并做**优化前后**（`IC10C_NO_OPT` / `IC10C_NO_OUTLINE`，VM 设备快照必须一致）与 **D3a 非叶子外提**（产物含 `jal`、比全内联短、语义一致）的差分。任一失败即非零退出；CI 的 `cli` job 会运行它。
+
 - golden：`testdata/programs/*.icg` → `testdata/golden/*.ic`（用 `go test ./pkg/ic10 -update` 更新）
 - VM 端到端：编译后在 `internal/vm` 中执行并断言设备状态
 - 差分/随机：`TestDifferentialRandom` 随机生成 2000 个 `.icg`（含 `const`、函数、`if/else`、`for`/`range`、`switch`（含区间 case）、`break/continue`（含标签）、`label`/`goto`/`call`/`ret`、栈（含 `push`/`pop` 之后的 `sp` 读）、批量、槽位、网络通道、动态 `read/write`、`ins/ext`、近似比较），分别用优化与 `IC10C_NO_OPT` 编译（并覆盖 `--stable-ins`/`--jump-table`/`--fast`/`--rel-jump` 与 `data` 表的 `--data-access`/`--data-layout`），在 VM 中运行并对比设备写入序列（优化的回归安全网）；`TestDifferentialMultiChip` 对随机双芯片 `bus` 程序做同样的优化/未优化对拍（每个芯片只访问自己的槽位，避免锁步时序差异）
