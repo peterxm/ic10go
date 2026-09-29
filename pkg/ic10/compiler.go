@@ -827,6 +827,12 @@ func parseAndCheck(name string, src []byte, opts Options) (*sema.Info, *diag.Bag
 	if diags.HasErrors() {
 		return nil, diags, false
 	}
+	if opts.Imports {
+		expandImports(tree, name, opts.LibDirs, diags)
+		if diags.HasErrors() {
+			return nil, diags, false
+		}
+	}
 	common, chips := splitChips(tree)
 	private := resolvePrivateStack(src, len(chips) > 0)
 	target := tree

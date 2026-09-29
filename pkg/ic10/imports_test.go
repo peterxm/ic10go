@@ -42,6 +42,25 @@ func TestImportMergesAndFolds(t *testing.T) {
 	}
 }
 
+// Size (and the other tools built on parseAndCheck) must expand imports too;
+// before this they failed with "compile failed" on any file with an import.
+func TestSizeWithImport(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "lib.icg"), "func triple(x num) num { return x * 3 }\n")
+	main := filepath.Join(dir, "main.icg")
+	src := "import \"lib.icg\"\nfunc main() { d0.Setting = triple(4) }\n"
+	rep, err := ic10.Size(main, []byte(src), ic10.Options{Imports: true})
+	if err != nil {
+		t.Fatalf("size with import: %v", err)
+	}
+	if rep == nil || rep.Total == 0 {
+		t.Fatalf("size report is empty: %+v", rep)
+	}
+	if _, _, err := ic10.Graph(main, []byte(src), ic10.Options{Imports: true}); err != nil {
+		t.Fatalf("graph with import: %v", err)
+	}
+}
+
 func TestImportMissingReportsError(t *testing.T) {
 	dir := t.TempDir()
 	main := filepath.Join(dir, "main.icg")
