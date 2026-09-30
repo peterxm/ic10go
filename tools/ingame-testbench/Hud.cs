@@ -116,11 +116,12 @@ namespace Ic10Go.Testbench
             if (!Player(out p, out yaw, out pitch)) return;
             Ensure();
 
-            string pose = string.Format("X {0,7:0.0}   Y {1,7:0.0}   Z {2,7:0.0}", p.x, p.y, p.z);
-            string look = string.Format("朝向 {0,4:0}°   俯仰 {1,4:0}°", yaw, pitch);
+            string pose = string.Format("X {0:0.0}   Y {1:0.0}   Z {2:0.0}", p.x, p.y, p.z);
+            string look = string.Format("朝向 {0:0}°   俯仰 {1:0}°", yaw, pitch);
 
-            float width = 236f;
-            float height = HasTarget ? 104f : 56f;
+            float width = 226f;
+            float height = 54f;               // position + heading
+            if (HasTarget) height += 74f;     // target lines + a compass row
             var rect = new Rect(10f, 10f, width, height);
             GUI.DrawTexture(rect, _bg);
 
@@ -139,10 +140,13 @@ namespace Ic10Go.Testbench
                 float rel = Mathf.DeltaAngle(yaw, bearing);          // signed, right positive
 
                 string name = string.IsNullOrEmpty(TargetLabel) ? "目标" : TargetLabel;
-                Label(x, ref y, 18f, string.Format("{0}   {1:0.0} m   {2}", name, dist, Direction(rel)));
+                Label(x, ref y, 18f, string.Format("{0}  {1:0.0} m  {2}", name, dist, Direction(rel)));
                 Label(x, ref y, 16f, string.Format("高差 {0:+0.0;-0.0;0.0} m", dy));
 
-                DrawArrow(new Rect(rect.x + width - 52f, rect.y + 30f, 44f, 44f), rel);
+                // The compass lives on its own centred row so it never covers
+                // the text above it.
+                var box = new Rect(rect.x + (width - 40f) / 2f, y + 3f, 40f, 40f);
+                DrawArrow(box, rel);
             }
         }
 
