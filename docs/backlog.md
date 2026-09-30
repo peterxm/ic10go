@@ -12,6 +12,29 @@
 
 优先级：**P1 > P2 > P3 > P4 > P5 > P6**。状态用 ✅ 已实现 / 🚧 进行中 / ⬜ 待做。
 
+> ✅ **反编译：未知值操作数不再丢行；运行期 id+logic（已修，2026-10）**。真机脚本暴露两处：
+> ① 不认识的**值操作数**（游戏特殊寄存器 `rgas`、试剂名等）会让**整行被丢**（改行为）；现在改
+> `raw("...")` 原样保留并告警，寄存器照常参与分配。② `l rN rM` / `s rN rM v`（设备 id 在寄存器、
+> 逻辑类型也在寄存器）被译成 `read`/`write`（要求编译期设备）而重编译报错；现在用
+> `readById`/`writeById`（发 `ld`/`sd`）。回归：`TestDecompileUnknownValuePreserved` /
+> `TestDecompileDynamicLogicOnIDRegister`。间接寄存器组的 bank 分析起始状态改为按 IC10 语义
+> 取**全 0**（见下文「间接寄存器组」），`indirectRegsHousing` 得以正确还原。
+
+> ✅ **测试台定位 / 显示 / 筛选（2026-10，mod 0.3.x · 扩展 0.7.33）**。在社区存档里找一块芯片
+> 原来很痛苦（`id` 重启会变、名字大量重复），于是：
+> - `chip.list` 每条带 **世界坐标 `pos`**、**程序指纹 `fp`**（源码归一化后 SHA‑1 前 4 字节，重启不变）
+>   与 **通电 `powered`/`power`**；
+> - `ic10c testbench locate` 支持**按源码**（`--program FILE`，指纹匹配）、**按坐标**
+>   （`--at X Y Z [--range N]`：精确=三轴四舍五入忽略小数，大致=N 格内按距离排序）、按名字/索引；
+> - 游戏内 **HUD 罗盘**（`hud` / 右键 **Track in Game**）：自身 `X/Y/Z` + 朝向/俯仰、追踪目标的
+>   距离/方向词/箭头；`F8` 开关、`F9` 清目标、`hud --offset N` 校准。朝向对齐 StationeersUIMod 的
+>   `HeadingDeg = CameraController.CurrentCamera.eulerAngles.y + 180`（用错相机会差 180°）。
+>   修了 HUD 一处格式符 bug（`{0,+0.0;…}` 逗号当了对齐符）——它每帧抛 `FormatException`，一次会话刷了
+>   2.6 万行日志并拖住主线程，正是「下不了代码 / 定位报错」的元凶；现在出错只记一条、连续 30 次自动关 HUD。
+> - VSCode：树按「**有芯片·有代码 / 有芯片·无代码 / 无芯片**」分三组、组内名字降序；标题栏
+>   **按坐标找**与**只看身边 ±4**；右键 host **Track in Game**。
+> - 另修 CLI：`--chip 26` 现在按**索引**解析（原来当名字 → `no chip named "26"`）。
+
 > ✅ **寄存器分配：几乎保留全部寄存器时的指数爆炸（已修，2026-09）**。`reserveRegs(0, 15)`
 > 配稍大程序（例：`solverLarge` 改写版 2.4 KB）原来会让编译 **>120s 不返回**。
 >

@@ -13,7 +13,7 @@ const { Bench } = require('./bench');
 
 // Oldest ic10c the extension is known to work with (build --json, current
 // enum/logic-type tables). Older servers are reported after initialize.
-const MIN_SERVER_VERSION = '0.6.4';
+const MIN_SERVER_VERSION = '0.8.32';
 
 /** @type {LspClient|undefined} */
 let client;

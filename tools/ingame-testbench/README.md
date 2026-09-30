@@ -7,11 +7,14 @@ JSON (NDJSON) over TCP; `ic10c testbench` and the VSCode extension drive it.
 It lets you:
 
 - **upload** a compiled program to a chip (running any one-time loader first),
+- **download** a chip's source (`program`, so it can be decompiled back to `.icg`),
 - **set / read** device inputs and outputs by port (`d0`…`d5`),
 - **step** the chip deterministically while the world is paused,
 - **read back** registers, stack, program counter and device values,
-- **locate a chip** — `chip.list` reports each host's world position and a
-  restart-stable program fingerprint, and `ic10c testbench hud --chip N` draws
+- **locate a chip** — `chip.list` reports each host's world position (`pos`), a
+  restart-stable program fingerprint (`fp`) and its `powered` state; `ic10c
+  testbench locate` finds by source (`--program`) or by coordinates (`--at X Y Z
+  [--range N]`), and `hud --chip N` / the VSCode **Track in Game** action draws
   an on-screen compass arrow (your X/Y/Z + heading, distance/direction to the
   target; `F8` toggles the overlay, `F9` clears the target).
 
@@ -25,9 +28,10 @@ game's terms of service — do not enable or use it there. It does not modify th
 game or send anything beyond `127.0.0.1`. Unofficial; not affiliated with
 RocketWerkz / Stationeers. Use at your own risk.
 
-There are **no Harmony patches and no gameplay changes**: everything goes through
-the game's public API, with reflection only for the chip's private register/stack
-arrays. It does nothing until a client connects.
+It uses **one Harmony patch** (`WriteTrace`): a prefix on `ILogicable.SetLogicValue`
+that records device writes so a script's write-only logic can be compared. Everything
+else goes through the game's public API, with reflection only for the chip's private
+register/stack arrays. It does nothing until a client connects.
 
 ## Test-bench save
 
