@@ -61,6 +61,8 @@
   "cmd.bench.selectChip": "IC10 Go: 选择芯片",
   "cmd.bench.track": "IC10 Go: 游戏中追踪（HUD 罗盘）",
   "cmd.bench.findAt": "IC10 Go: 按坐标找芯片",
+  "cmd.bench.filterNear": "IC10 Go: 只看身边的芯片（±4）",
+  "cmd.bench.clearNear": "IC10 Go: 显示全部芯片",
   "cmd.bench.setDevice": "IC10 Go: 设置设备值",
   "cmd.bench.pulseDevice": "IC10 Go: 脉冲（写 0 再写 1，触发瞬态逻辑）"
 }

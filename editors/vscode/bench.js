@@ -491,6 +491,8 @@ class Bench {
         this.state = undefined;
         this.chips = [];
         this.sel = undefined; // chip selector pinned for state/set
+        this.nearOnly = false; // show only hosts within ±4 of the player
+        this.playerPos = undefined;
         this.watching = false;
         this.tree = undefined;
         this.panel = undefined;
@@ -626,6 +628,9 @@ class Bench {
         cmd('icg.bench.selectChip', (chip) => this.selectChip(chip));
         cmd('icg.bench.track', (arg) => this.trackChip(arg));
         cmd('icg.bench.findAt', () => this.findByPos());
+        cmd('icg.bench.filterNear', () => this.setNear(true));
+        cmd('icg.bench.clearNear', () => this.setNear(false));
+        vscode.commands.executeCommand('setContext', 'icg.bench.nearOnly', this.nearOnly);
         cmd('icg.bench.setDevice', (arg) => this.setDevice(arg));
         cmd('icg.bench.pulseDevice', (arg) => this.pulseDevice(arg));
 
@@ -783,15 +788,16 @@ class Bench {
         try {
             this.noChip = false;
             const list = await c.call('chip.list', {}).catch(() => ({ chips: [] }));
-            this.chips = list.chips || [];
-            // Drop a stale pinned selection (the game restarted and the id may
-            // now belong to a different holder).
-            if (this.sel && !this.chips.some((ch) => this.sameSel(ch, this.sel))) {
+            const all = list.chips || [];
+            // Drop a stale pinned selection against the full list (the game
+            // restarted and the id may now belong to a different holder).
+            if (this.sel && !all.some((ch) => this.sameSel(ch, this.sel))) {
                 this.sel = undefined;
             }
-            if (this.chips.length === 0) {
+            if (all.length === 0) {
                 // No programmable chip in this world: a normal state, not an
                 // error. Clear the panel, show it in the tree, and say so once.
+                this.chips = all;
                 this.noChip = true;
                 this.sel = undefined;
                 this.state = undefined;
@@ -806,6 +812,7 @@ class Bench {
                 }
                 return;
             }
+            this.chips = this.nearOnly ? await this.filterNear(c, all) : all;
             let st;
             try {
                 st = await this.fetchState(c);
@@ -1688,6 +1695,35 @@ ${note}${diffNote}
         vscode.window.setStatusBarMessage(
             t(`IC10: tracking ${name} in game (F8 toggles the HUD)`,
               `IC10: 游戏中追踪 ${name}（F8 开关 HUD）`), 6000);
+    }
+
+    // setNear turns the "only hosts within ±4 of me" filter on/off and refreshes.
+    async setNear(on) {
+        this.nearOnly = !!on;
+        vscode.commands.executeCommand('setContext', 'icg.bench.nearOnly', this.nearOnly);
+        if (this.nearOnly) {
+            vscode.window.setStatusBarMessage(
+                t('IC10: showing hosts within ±4 of you', 'IC10: 只显示你 ±4 格内的 host'), 4000);
+        }
+        await this.refresh(false);
+    }
+
+    // filterNear keeps hosts within ±4 blocks of the player on every axis.
+    async filterNear(c, all) {
+        try {
+            const h = await c.call('hud', {});
+            this.playerPos = h && h.player ? h.player : undefined;
+        } catch (err) {
+            // keep the last known position
+        }
+        const p = this.playerPos;
+        if (!p) return all;
+        const R = 4;
+        return all.filter((ch) =>
+            ch.pos &&
+            Math.abs(ch.pos.x - p.x) <= R &&
+            Math.abs(ch.pos.y - p.y) <= R &&
+            Math.abs(ch.pos.z - p.z) <= R);
     }
 
     // findByPos asks for a coordinate and an optional approximate range, then

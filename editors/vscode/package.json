@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.32",
+  "version": "0.7.33",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -37,7 +37,9 @@
     "onCommand:icg.bench.loadSave",
     "onCommand:icg.bench.pulseDevice",
     "onCommand:icg.bench.track",
-    "onCommand:icg.bench.findAt"
+    "onCommand:icg.bench.findAt",
+    "onCommand:icg.bench.filterNear",
+    "onCommand:icg.bench.clearNear"
   ],
   "contributes": {
     "languages": [
@@ -381,6 +383,16 @@
         "icon": "$(search)"
       },
       {
+        "command": "icg.bench.filterNear",
+        "title": "%cmd.bench.filterNear%",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "icg.bench.clearNear",
+        "title": "%cmd.bench.clearNear%",
+        "icon": "$(filter-filled)"
+      },
+      {
         "command": "icg.bench.setDevice",
         "title": "%cmd.bench.setDevice%"
       },
@@ -445,6 +457,16 @@
           "command": "icg.bench.findAt",
           "when": "view == icg.bench",
           "group": "navigation@0"
+        },
+        {
+          "command": "icg.bench.filterNear",
+          "when": "view == icg.bench && !icg.bench.nearOnly",
+          "group": "navigation@4.5"
+        },
+        {
+          "command": "icg.bench.clearNear",
+          "when": "view == icg.bench && icg.bench.nearOnly",
+          "group": "navigation@4.5"
         },
         {
           "command": "icg.bench.push",

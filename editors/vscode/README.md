@@ -157,6 +157,7 @@ func main() {
 - 悬停 host 显示 **世界坐标**（`x, y, z` + `yaw`）与程序指纹 `fp`（源码短哈希，**重启不变**）；配合 `ic10c testbench locate --program FILE` 可查出“跑这份程序的芯片在哪”（mod ≥ 0.2.0）。**未通电**的 host 会标「未通电」——它的程序读出来是空的，不是拉取失败。
 - 右键 host → **Track in Game**：游戏内 HUD 会用罗盘箭头指向这块 host，并显示你的坐标与距离（mod ≥ 0.3.0；`F8` 开关 HUD、`F9` 清目标）。
 - 标题栏 **Find Hosts by Position**（🔍）：输入 `X Y Z`（可选半径），按坐标找 host——**精确**匹配忽略小数（四舍五入），**大致**位置列出半径内的 host 并按距离排序；选中即切到该芯片。
+- 标题栏 **Only Hosts Near Me (±4)**（漏斗）：只显示你坐标 **±4 格**内的 host；再点一次（实心漏斗 **Show All Hosts**）恢复全部。
 - 编辑器标题栏 `$(cloud-upload)` 一键上传当前 `.icg`、`$(cloud-download)` 从芯片下载源码回编辑器；`$(beaker)` 运行测试台场景。
 - **Chip State** 面板：顶栏 `Pause | Step | Run | Reset | Watch | Refresh`（`Run` 显示当前 `icg.bench.runTicks`）与**过滤框**（按端口 / 设备名 / 逻辑名筛选设备）；寄存器网格、**可折叠**的全量栈（512 槽）、每个设备一张**可折叠卡片**（带绑定标签与只读 `probe`，如喷气背包的 `JetPackActivate`/`PropulsionActive`，卡片里的 logic 行**可点击改值**、`⚡` 脉冲）；值变化时短暂高亮。`PrefabHash` / `NameHash` / `OccupantHash` 等哈希值旁会标出对应的预制体名（点击即可复制 `hash("Name")`）。全部使用 VS Code 主题变量，浅色 / 深色都好看。
 - 树的逻辑行支持 **设置值** 与 **⚡Pulse**（写 0→1，触发瞬态逻辑）；`PrefabHash` 等哈希值同样标出预制体名。
