@@ -79,6 +79,9 @@
 > 报一条 warning，而不是静默产出可能错的代码。起始状态按 IC10 语义取**全 0**
 > （`r0..r15` 与 `sp` 都是 0），所以只靠初值 0 当索引的寄存器表也能定界——例如
 > `indirectRegsHousing`（寄存器里放 4 个太阳能板 prefab hash，`list` 从不赋初值直接用）
+> 现在会还原成 `reserveRegs(0, 3)` + `setIreg(0..3, hash(...))`。间接寄存器 / 寄存器组的
+> 完整分析（编译期折叠、能否自动降级、端口测试盲区）见
+> [`register-banks.md`](register-banks.md)。
 >
 > 配套的**代码生成折叠**（`internal/codegen`）把这种寄存器访问压回一行：
 > `t = <op>; rrP = t` → `<op> rrP ...`（间接目标本来就是合法目标操作数），
