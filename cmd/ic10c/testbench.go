@@ -120,6 +120,8 @@ func cmdTestbench(args []string) int {
 		return benchPush(addr, file, chip, asName, stableIns, dataAccessStack, libDirs, lim, asJSON)
 	case "state":
 		return benchState(addr, chip, all, asJSON)
+	case "program":
+		return benchProgram(addr, chip, asJSON)
 	case "set":
 		return benchSet(addr, chip, rest, force, pulse, asJSON)
 	case "step":
@@ -563,6 +565,42 @@ func chipNameOf(chip any) string {
 		}
 	}
 	return ""
+}
+
+func benchProgram(addr string, chip any, asJSON bool) int {
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	args := map[string]any{}
+	if chip != nil {
+		args["chip"] = chip
+	}
+	raw, err := c.Call("program", args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if asJSON {
+		fmt.Println(string(raw))
+		return 0
+	}
+	var res struct {
+		Lines int    `json:"lines"`
+		Code  string `json:"code"`
+	}
+	if json.Unmarshal(raw, &res) != nil {
+		fmt.Println(string(raw))
+		return 0
+	}
+	// Print the source verbatim so it can be redirected to a file; add a final
+	// newline only when the chip's source has none (shells dislike that).
+	fmt.Print(res.Code)
+	if res.Code != "" && !strings.HasSuffix(res.Code, "\n") {
+		fmt.Println()
+	}
+	return 0
 }
 
 func benchState(addr string, chip any, all, asJSON bool) int {

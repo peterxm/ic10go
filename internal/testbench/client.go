@@ -243,7 +243,7 @@ func (p *ChipPos) String() string {
 	}
 	s := fmt.Sprintf("%.1f, %.1f, %.1f", p.X, p.Y, p.Z)
 	if p.Yaw != 0 {
-		s += fmt.Sprintf(" (yaw %.0f)", p.Yaw)
+		s += fmt.Sprintf(", yaw %.0f", p.Yaw)
 	}
 	return s
 }

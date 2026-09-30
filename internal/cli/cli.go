@@ -498,7 +498,7 @@ var Commands = []Command{
 		},
 	},
 	{
-		Name: "testbench", Args: "ping|list|locate|push|state|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
+		Name: "testbench", Args: "ping|list|locate|push|state|program|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
 		Summary: text{EN: "drive the in-game testbench mod", ZH: "驱动游戏内测试台 mod"},
 		Long: text{
 			EN: "Talk to the ic10go-testbench mod running in Stationeers over NDJSON/TCP\n" +
@@ -512,6 +512,7 @@ var Commands = []Command{
 				"                            --program FILE: find the chip(s) running it\n" +
 				"  push <file.icg>           compile and upload (runs any loader first)\n" +
 				"  state                     registers / stack / devices\n" +
+				"  program                   print the chip's current IC10 source\n" +
 				"  set d1.Setting=10 ...     set device input values\n" +
 				"  step [N]                  advance the chip N game ticks (paused)\n" +
 				"  ports                     dump how ports/devices are wired (diagnostic)\n" +
@@ -537,6 +538,7 @@ var Commands = []Command{
 				"                            --program FILE：按源码找出跑该程序的芯片\n" +
 				"  push <file.icg>           编译并上传（必要时先跑 loader）\n" +
 				"  state                     寄存器 / 栈 / 设备\n" +
+				"  program                   打印芯片当前 IC10 源码\n" +
 				"  set d1.Setting=10 ...     设置设备输入值\n" +
 				"  step [N]                  推进芯片 N 个游戏 tick（暂停下）\n" +
 				"  ports                     诊断：打印端口/设备接线映射\n" +
