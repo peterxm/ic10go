@@ -364,12 +364,10 @@ lr r6 r7 0 5
 }
 
 func TestDecompileInvalidOperand(t *testing.T) {
-	// Operands the compiler cannot express (undefined device names, reagents,
+	// Operands the compiler cannot express at all (undefined device names,
 	// out-of-range registers, illegal tokens) become warnings, not invalid .icg.
 	cases := []string{
 		"s areaLight On r4\n",       // undefined device name
-		"lr r0 dr9 Contents Iron\n", // undefined reagent hash
-		"move r0 start\n",           // undefined value
 		"move r17 1\n",              // register out of range
 		"sb <CTRLICH> Setting r0\n", // illegal token
 	}
@@ -383,6 +381,48 @@ func TestDecompileInvalidOperand(t *testing.T) {
 		}
 		if !strings.Contains(code, "// unsupported:") {
 			t.Errorf("expected the instruction to be commented out for %q:\n%s", src, code)
+		}
+	}
+}
+
+func TestDecompileDynamicLogicOnIDRegister(t *testing.T) {
+	// `l r1 rN rM` (device id in rN, logic type in rM) and its store form must
+	// become readById/writeById: `read(id, ...)` needs a compile-time device.
+	code, warns, err := Decompile("l r1 r12 r14\ns r2 r13 r15\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	for _, want := range []string{"readById(r12, r14)", "writeById(r2, r13, r15)"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("missing %q:\n%s", want, code)
+		}
+	}
+}
+
+func TestDecompileUnknownValuePreserved(t *testing.T) {
+	// A bare value operand the compiler does not know (a game special register
+	// such as `rgas`, or a reagent name) is emitted verbatim through raw(), with
+	// a warning, instead of dropping the whole instruction.
+	for _, tc := range []struct{ src, want string }{
+		{"mul r0 r0 rgas\n", `raw("rgas")`},
+		{"lr r0 dr9 Contents Iron\n", `raw("Iron")`},
+		{"move r0 start\n", `raw("start")`},
+	} {
+		code, warns, err := Decompile(tc.src)
+		if err != nil {
+			t.Fatalf("decompile %q: %v", tc.src, err)
+		}
+		if len(warns) == 0 {
+			t.Errorf("expected a warning for %q", tc.src)
+		}
+		if !strings.Contains(code, tc.want) {
+			t.Errorf("expected %q in output for %q:\n%s", tc.want, tc.src, code)
+		}
+		if strings.Contains(code, "// unsupported:") {
+			t.Errorf("instruction should be preserved, not dropped, for %q:\n%s", tc.src, code)
 		}
 	}
 }

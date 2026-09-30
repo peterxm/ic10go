@@ -1497,7 +1497,7 @@ func cmdDecompile(args []string) int {
 		return 1
 	}
 	for _, w := range warns {
-		fmt.Fprintf(os.Stderr, "ic10c: %s:%d: unsupported instruction: %s\n", in, w.Line+1, w.Text)
+		fmt.Fprintf(os.Stderr, "ic10c: %s:%d: %s\n", in, w.Line+1, w.Text)
 	}
 	if out != "" {
 		if err := os.WriteFile(out, []byte(code), 0o644); err != nil {

@@ -263,8 +263,17 @@ func (d *decompiler) operand(s string) string {
 		!isPortName(s) && !isCallLike(s) && !isStringLiteral(s) {
 		return d.labelOf(line)
 	}
+	// A bare identifier the compiler does not know (a game special register such
+	// as `rgas`, a reagent name, ...) is emitted verbatim through raw(), so the
+	// instruction is preserved instead of being dropped.
+	if isBareIdent(s) && !d.valueOperandOK(s) {
+		return "raw(" + strconv.Quote(s) + ")"
+	}
 	return normalizeCall(normalizeHash(normalizeNumber(s)))
 }
+
+// isBareIdent reports whether s is a plain identifier (letters, digits and
+// underscores, not starting with a digit).
 
 // normalizeHash rewrites a numeric prefab hash back to hash("Name") when the
 // value is a known prefab. It is semantically identical but far more readable.
@@ -315,6 +324,22 @@ func normalizeNumber(s string) string {
 }
 
 func isDigitByte(c byte) bool { return c >= '0' && c <= '9' }
+
+func isBareIdent(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'):
+		case c >= '0' && c <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 // normalizeCall lower-cases the IC10 HASH()/STR() functions to the .icg names.
 func normalizeCall(s string) string {

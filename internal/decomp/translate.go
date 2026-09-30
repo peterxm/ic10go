@@ -81,6 +81,11 @@ func (d *decompiler) translate(l icLine) []string {
 	if !d.validOperands(l) {
 		return d.invalid(l)
 	}
+	// A value operand the compiler does not know is emitted through raw(); warn
+	// so a typo is still visible.
+	for range d.unknownValueOperands(l) {
+		d.warnings = append(d.warnings, Warning{Line: l.num, Text: "unknown operand (emitted via raw): " + l.raw})
+	}
 	switch l.op {
 	case "move":
 		// A constant stored into the return-address register is a manual
@@ -100,6 +105,9 @@ func (d *decompiler) translate(l icLine) []string {
 			if reg, ok := d.deviceRegArg(l.args[1]); ok {
 				return []string{d.assignDst(l.args[0], fmt.Sprintf("readDev(%s, %s)", reg, d.a(l, 2)))}
 			}
+			if reg, ok := d.deviceIDArg(l.args[1]); ok {
+				return []string{d.assignDst(l.args[0], fmt.Sprintf("readById(%s, %s)", reg, d.a(l, 2)))}
+			}
 			return []string{d.assignDst(l.args[0], fmt.Sprintf("read(%s, %s)", d.resolve(l.args[1]), d.a(l, 2)))}
 		}
 		return []string{d.assignDst(l.args[0], d.deviceRead(l.args[1], l.args[2]))}
@@ -118,6 +126,9 @@ func (d *decompiler) translate(l icLine) []string {
 		if d.isDynLogic(l.args[1]) {
 			if reg, ok := d.deviceRegArg(l.args[0]); ok {
 				return []string{fmt.Sprintf("writeDev(%s, %s, %s)", reg, d.a(l, 1), d.a(l, 2))}
+			}
+			if reg, ok := d.deviceIDArg(l.args[0]); ok {
+				return []string{fmt.Sprintf("writeById(%s, %s, %s)", reg, d.a(l, 1), d.a(l, 2))}
 			}
 			return []string{fmt.Sprintf("write(%s, %s, %s)", d.resolve(l.args[0]), d.a(l, 1), d.a(l, 2))}
 		}
@@ -531,21 +542,21 @@ func (d *decompiler) batchStore(l icLine) string {
 }
 
 func (d *decompiler) unsupported(l icLine) []string {
-	d.warnings = append(d.warnings, Warning{Line: l.num, Text: l.raw})
+	d.warnings = append(d.warnings, Warning{Line: l.num, Text: "unsupported instruction: " + l.raw})
 	return []string{"// unsupported: " + l.raw}
 }
 
 // malformed reports an instruction whose operand count does not match the
 // native signature; it is emitted as a comment rather than translated.
 func (d *decompiler) malformed(l icLine) []string {
-	d.warnings = append(d.warnings, Warning{Line: l.num, Text: l.raw})
+	d.warnings = append(d.warnings, Warning{Line: l.num, Text: "malformed instruction: " + l.raw})
 	return []string{"// malformed: " + l.raw}
 }
 
 // invalid reports an instruction with an operand the compiler cannot express
 // (an undefined device name, reagent, register, etc.), emitted as a comment.
 func (d *decompiler) invalid(l icLine) []string {
-	d.warnings = append(d.warnings, Warning{Line: l.num, Text: l.raw})
+	d.warnings = append(d.warnings, Warning{Line: l.num, Text: "unsupported instruction: " + l.raw})
 	return []string{"// unsupported: " + l.raw}
 }
 

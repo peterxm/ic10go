@@ -157,7 +157,7 @@ func (d *decompiler) operandOK(kind, raw string) bool {
 	case "BATCH_MODE", "REAGENT_MODE":
 		return isNumberOperand(s) || isStringLiteral(s) || isReg(s) || isIndirect(s) || knownOperandNames[s]
 	default: // VALUE
-		return d.valueOperandOK(s)
+		return d.valueOperandOK(s) || isBareIdent(s)
 	}
 }
 
@@ -221,4 +221,32 @@ func (d *decompiler) dropped(l icLine) bool {
 		return true
 	}
 	return !d.validOperands(l)
+}
+
+// unknownValueOperands returns the bare value operands the compiler does not
+// know. translate() emits them verbatim through raw().
+func (d *decompiler) unknownValueOperands(l icLine) []string {
+	kinds, ok := operandKinds(l.op)
+	if !ok {
+		return nil
+	}
+	target := jumpTargetIndex(l.op)
+	var out []string
+	for i, a := range l.args {
+		if i == target {
+			continue
+		}
+		kind := "VALUE"
+		if i < len(kinds) {
+			kind = kinds[i]
+		}
+		if kind != "VALUE" {
+			continue
+		}
+		s := d.resolve(a)
+		if isBareIdent(s) && !d.valueOperandOK(s) {
+			out = append(out, a)
+		}
+	}
+	return out
 }
