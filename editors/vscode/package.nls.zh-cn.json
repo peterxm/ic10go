@@ -59,6 +59,7 @@
   "cmd.bench.exportStack": "IC10 Go: 导出栈数据（loader）",
   "cmd.bench.loadSave": "IC10 Go: 载入存档",
   "cmd.bench.selectChip": "IC10 Go: 选择芯片",
+  "cmd.bench.track": "IC10 Go: 游戏中追踪（HUD 罗盘）",
   "cmd.bench.setDevice": "IC10 Go: 设置设备值",
   "cmd.bench.pulseDevice": "IC10 Go: 脉冲（写 0 再写 1，触发瞬态逻辑）"
 }

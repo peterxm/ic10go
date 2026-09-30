@@ -367,6 +367,7 @@ function chipNode(chip, selected) {
     );
     item._kind = selected ? 'chip' : 'chipLeaf';
     item._chip = chip;
+    item.contextValue = 'chip';
     item.iconPath = new vscode.ThemeIcon(
         'circuit-board',
         selected ? new vscode.ThemeColor('charts.blue') : undefined
@@ -567,6 +568,7 @@ class Bench {
         cmd('icg.bench.runScenario', () => this.runScenario());
         cmd('icg.bench.openPanel', () => this.openPanel());
         cmd('icg.bench.selectChip', (chip) => this.selectChip(chip));
+        cmd('icg.bench.track', (arg) => this.trackChip(arg));
         cmd('icg.bench.setDevice', (arg) => this.setDevice(arg));
         cmd('icg.bench.pulseDevice', (arg) => this.pulseDevice(arg));
 
@@ -1612,6 +1614,23 @@ ${note}${diffNote}
         } catch (err) {
             vscode.window.showErrorMessage(t('IC10: pulse failed: ', 'IC10: 脉冲失败：') + err.message);
         }
+    }
+
+    // trackChip points the in-game HUD at a host so the player can follow the
+    // compass arrow to the chip (mod >= 0.3.0; F8 toggles the overlay).
+    async trackChip(arg) {
+        const chip = (arg && arg._chip) ? arg._chip : arg;
+        if (!chip || chip.index === undefined) return;
+        const name = chip.name || chip.prefab || `chip#${chip.index}`;
+        const res = await this.client.execCli(['testbench', 'hud', '--chip', String(chip.index)]);
+        if (res.code !== 0) {
+            const msg = (res.stderr || res.stdout || '').trim();
+            vscode.window.showErrorMessage(t('IC10: track failed: ', 'IC10: 追踪失败：') + msg);
+            return;
+        }
+        vscode.window.setStatusBarMessage(
+            t(`IC10: tracking ${name} in game (F8 toggles the HUD)`,
+              `IC10: 游戏中追踪 ${name}（F8 开关 HUD）`), 6000);
     }
 
     async runScenario() {

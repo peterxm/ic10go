@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.27",
+  "version": "0.7.28",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -35,7 +35,8 @@
     "onCommand:icg.bench.openPanel",
     "onCommand:icg.bench.pause",
     "onCommand:icg.bench.loadSave",
-    "onCommand:icg.bench.pulseDevice"
+    "onCommand:icg.bench.pulseDevice",
+    "onCommand:icg.bench.track"
   ],
   "contributes": {
     "languages": [
@@ -369,6 +370,11 @@
         "title": "%cmd.bench.selectChip%"
       },
       {
+        "command": "icg.bench.track",
+        "title": "%cmd.bench.track%",
+        "icon": "$(location)"
+      },
+      {
         "command": "icg.bench.setDevice",
         "title": "%cmd.bench.setDevice%"
       },
@@ -520,6 +526,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "icg.bench.track",
+          "when": "view == icg.bench && viewItem == chip",
+          "group": "inline@1"
+        },
         {
           "command": "icg.bench.pulseDevice",
           "when": "view == icg.bench && viewItem == deviceLogic",
