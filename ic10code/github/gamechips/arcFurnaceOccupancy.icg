@@ -1,0 +1,18 @@
+// 电弧炉占用控制——游戏内存档里的真实脚本（芯片未命名）。
+//
+// 功能：两台电弧炉输入槽（slot 0）有料时开 On/Activate，空则关。
+// 说明：本端口由 `ic10c decompile -s` 从原 IC10 反编译后整理，行为与原脚本一致。
+// icg: shared-stack
+func main() {
+    var r0 = 0
+    for {
+        r0 = d0.slot[0].Occupied
+        r0 = (r0 >= 1)
+        d0.On = r0
+        d0.Activate = r0
+        r0 = d1.slot[0].Occupied
+        r0 = (r0 >= 1)
+        d1.On = r0
+        d1.Activate = r0
+    }
+}

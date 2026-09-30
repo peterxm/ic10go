@@ -1,0 +1,96 @@
+// 太阳能追踪（含子程序与相对跳转）——游戏内存档里的真实脚本（芯片未命名）。
+//
+// 功能：水平/垂直双轴追踪太阳，并输出夜间信号；子程序用 jal/j ra，
+//       fCalcHorizontal 又调用 fDialSettings（非叶子），用 r10 暂存 ra。
+// 说明：本端口由 `ic10c decompile -s` 从原 IC10 反编译后整理，行为与原脚本一致。
+// icg: shared-stack
+func main() {
+    var r0 = 0
+    var r1 = 0
+    var r10 = 0
+    var r14 = 0
+    var r15 = 0
+    for {
+        call fCalcVertical
+        call fCalcHorizontal
+        call fNightSignal
+        yield()
+    }
+    label fCalcHorizontal:
+    r10 = ra
+    call fDialSettings
+    r14 = pop()
+    if r14 < 0 { goto L21 }
+    r14 = (90 * r14)
+    goto L22
+    label L21:
+    r14 = (90 * 0)
+    label L22:
+    if isSet(d0) { goto L25 }
+    r15 = batch.read(hash("StructureDaylightSensor"), "Horizontal", "Average")
+    goto L26
+    label L25:
+    r15 = d0.Horizontal
+    label L26:
+    r15 = (r15 + r14)
+    if r0 != 0 {
+        r15 = (r14 + 270)
+    }
+    batch.write(hash("StructureSolarPanel"), "Horizontal", r15)
+    batch.write(hash("StructureSolarPanelDual"), "Horizontal", r15)
+    batch.write(hash("StructureSolarPanelReinforced"), "Horizontal", r15)
+    batch.write(hash("StructureSolarPanelDualReinforced"), "Horizontal", r15)
+    ra = r10
+    ret
+    label fCalcVertical:
+    if isSet(d0) { goto L40 }
+    r15 = batch.read(hash("StructureDaylightSensor"), "Vertical", "Average")
+    goto L41
+    label L40:
+    r15 = d0.Vertical
+    label L41:
+    r1 = (r15 > 85)
+    if r15 > 95 { goto L45 }
+    r0 = 0
+    goto L46
+    label L45:
+    r0 = 1
+    label L46:
+    if r15 > 75 { goto L50 }
+    r15 = (r15 - 90)
+    r15 = abs(r15)
+    goto L51
+    label L50:
+    r15 = 15
+    label L51:
+    batch.write(hash("StructureSolarPanel"), "Vertical", r15)
+    batch.write(hash("StructureSolarPanelDual"), "Vertical", r15)
+    batch.write(hash("StructureSolarPanelReinforced"), "Vertical", r15)
+    batch.write(hash("StructureSolarPanelDualReinforced"), "Vertical", r15)
+    ret
+    label fDialSettings:
+    if isUnset(d1) {
+        push(-1)
+        ret
+    }
+    r15 = d1.PrefabHash
+    if r15 != hash("StructureLogicDial") {
+        push(-1)
+        ret
+    }
+    d1.Mode = 3
+    r15 = d1.Setting
+    push(r15)
+    ret
+    label fNightSignal:
+    if isUnset(d2) {
+        ret
+    }
+    r15 = d2.PrefabHash
+    if r15 == hash("StructureLogicMemory") {
+        d2.Setting = r1
+        ret
+    }
+    d2.On = r1
+    ret
+}
