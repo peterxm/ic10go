@@ -275,6 +275,55 @@ move sp r0
 `knownUnsupported` 因此清空；真机逐写 A/B（`solverLarge`，去掉等待分支以便确定）
 **0 差异**。
 
+### D7 设备参数外提（drN）🚧
+
+**问题**：带设备实参的调用**强制内联**（`hasDeviceOrDataArg`），设备 helper 被调 K 次就
+复制 K 遍。对照 [sicc](https://github.com/Alan-Chen99/sicc) 的温控示例：同样语义 17 行 vs
+本项目 20 行，差距主要来自「设备端口走运行期寄存器 + 子程序只发一次」。
+分析见 [`sicc-comparison.md`](sicc-comparison.md)。
+
+**已实现（Round 1，2026-09）**：运行期设备端口。`dev.Prop` / `dev.slot[i].Prop` 在 `dev`
+是运行期值（局部变量 / 参数 / 数值常量）时下沉为 IC10 的寄存器选择设备操作数 `drN`
+（复用 `readDev`/`writeDev` 的 `LoadDyn`/`StoreDyn`、`readDevSlot`/`writeDevSlot` 的
+`LoadSlot`/`StoreSlot`）。编译期端口仍走 `dN`，零开销。**顺带修复**：以前把运行期值传给
+设备参数会静默输出非法的 `dev.Setting`（仅警告），现在输出合法 `drN`。
+
+真机验证：`testdata/bench/ingame/s60_dyndev`（真机 + VM 差分 4/4）。
+
+**已实现（Round 2，2026-09）**：设备 helper 外提 + 动态设备读去重。
+
+- **外提决策**：去掉 `hasDeviceOrDataArg` 对设备实参的一票否决。外提时设备实参按端口号
+  写进参数寄存器，函数体用 `drN`；`data` 表实参仍强制内联，`db` 实参也回退内联（无数
+  值端口）。常量实参调用点有两种候选——**保持内联折叠**（旧行为）与**一起外提**（常量
+  在共享体里经全局常量传播折叠）——由大小模型取更短者（`lower.Options.InlineConstArgs`
+  + 编译器候选循环）。
+- **`drN` 冗余读消除**：`loadKey` 覆盖 `LoadDyn`（属性读）与带 `DevPtr` 的 `LoadSlot`
+  （运行期槽位读）。运行期端口注册到伪设备 `"*"`，任何设备写都使其失效（保守但正确）。
+- **候选诊断隔离**：一个候选变体内部的 `ir.Verify` 失败不再污染整次编译；大小模型丢弃
+  它并保留可用的候选（顺带让随机差分里此前被掩盖的 mem2reg + 外提组合不再让编译失败）。
+
+**实测**：目标例（sicc 温控）**20 → 18 行 / 249 → 190 字节**（sicc 17 行 / 190 字节，
+只差尾调用）；语料 `testdata/programs`+`ic10code`+`examples` 共 134 个 `.icg`，
+**5320 → 5270 行（−50，8 个脚本变短，0 个变长）**。真机 + VM：新增
+`testdata/bench/ingame/s61_dyndev_outline` 4/4，全部 ingame 场景 13/13。全量
+`go test ./...`、`./build.sh assert`（58/58）绿；`TestFunctionSpecialization` 仍保留
+「常量调用折叠 + 变量调用外提」的语义。
+
+**已实现（Round 3，2026-09）**：尾调用 / `ra` 复用。返回块只做一次跳转的 `Call` 在
+`internal/opt` 的 `tailCall` pass 里改写为「`ra = <目的地>` + `Jmp <被调体>」；被调体的
+`j ra` 直接回到目的地。被调体紧邻布局时跳转被消掉，每处省 1 行。IR/CFG 早已支持
+`ra = <label>; goto sub` 手写调用（`BuildCFG` 会把该 label 作为所有 `JmpRA` 的后继），
+所以无需新增 IR 节点。安全性：外提体已内联其全部调用，体内无第二个 `jal`；且只有
+返回块为空的 `Call` 才改写（有返回值的调用返回块含拷贝，天然排除）。
+
+**实测**：目标例 **18 → 17 行 / 190 字节**，与 sicc **完全持平**。语料累计
+`5320 → 5268 行`（−52；气闸控制 92→79、气闸双门 78→72）。真机 + VM：
+`testdata/bench/ingame/s62_tailcall`（真机 + VM 差分 4/4），全部 ingame 场景 **14/14**。
+测试 `TestTailCall`（断言 `move ra` 存在、`jal` 恰 1 个、写序列与 `IC10C_NO_OPT=1` 一致）。
+全量 `go test ./...`、`./build.sh assert`（58/58）绿。
+
+**现状**：D7（运行期设备端口、设备 helper 外提、`drN` 冗余读消除、尾调用）已全部实现。
+
 ---
 
 ## P5 — 小记录多返回值（非容器）✅

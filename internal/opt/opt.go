@@ -38,6 +38,7 @@ var pipeline = []pass{
 	{"foldBranches", foldBranches},
 	{"fuseBranches", fuseBranches},
 	{"licm", licm},
+	{"tailCall", tailCall},
 	{"dce", dce},
 	{"removeUnreachable", removeUnreachable},
 	{"deadStores", deadStores},
@@ -1597,6 +1598,65 @@ func selectCond(br *ir.Br) (val ir.Value, swap, needCmp bool) {
 		}
 	}
 	return nil, false, true
+}
+
+// tailCall rewrites a call whose return block only jumps onward into a tail
+// call: set `ra` to the continuation and jump to the callee, so the callee's
+// `j ra` returns straight to the continuation. When the callee happens to be
+// laid out next, the jump is elided and a line is saved.
+//
+// The return block of such a call holds no instructions (a value-returning
+// outlined call copies its result there, so it is excluded), which means the
+// caller does not need `ra` back. An outlined body inlines all of its own calls,
+// so it contains no other `jal` that could clobber the return address; the
+// single `ra` stays safe.
+func tailCall(fn *ir.Function) bool {
+	changed := false
+	for _, b := range fn.Blocks {
+		call, ok := b.Term.(*ir.Call)
+		if !ok || call.Target == nil || call.Return == nil {
+			continue
+		}
+		ret := call.Return
+		if len(ret.Instrs) != 0 {
+			continue
+		}
+		jmp, ok := ret.Term.(*ir.Jmp)
+		if !ok || jmp.Target == nil {
+			continue
+		}
+		// The continuation must emit a line, or the label cannot resolve.
+		if !blockEmitsLine(jmp.Target) {
+			continue
+		}
+		b.Instrs = append(b.Instrs, &ir.StoreSpecial{Name: "ra", Src: &ir.Const{Raw: ir.LabelRef(jmp.Target.ID)}})
+		b.Term = &ir.Jmp{Target: call.Target}
+		changed = true
+	}
+	return changed
+}
+
+// blockEmitsLine reports whether b (or the first block its unconditional jumps
+// reach) emits at least one IC10 line, so a label referring to it resolves.
+func blockEmitsLine(b *ir.Block) bool {
+	seen := map[*ir.Block]bool{}
+	for b != nil && !seen[b] {
+		seen[b] = true
+		if len(b.Instrs) > 0 {
+			return true
+		}
+		switch t := b.Term.(type) {
+		case *ir.Jmp:
+			b = t.Target
+		case *ir.Goto:
+			b = t.Target
+		case *ir.Ret:
+			return false
+		default:
+			return b.Term != nil
+		}
+	}
+	return false
 }
 
 // dce removes pure instructions whose result is not live, including dead stores
