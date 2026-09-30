@@ -142,7 +142,7 @@ namespace Ic10Go.Testbench
 
                 string name = string.IsNullOrEmpty(TargetLabel) ? "目标" : TargetLabel;
                 Label(x, ref y, 18f, string.Format("{0}   {1:0.0} m   {2}", name, dist, Direction(rel)));
-                Label(x, ref y, 16f, string.Format("高差 {0,+0.0;-0.0;0.0} m", dy));
+                Label(x, ref y, 16f, string.Format("高差 {0:+0.0;-0.0;0.0} m", dy));
 
                 DrawArrow(new Rect(rect.x + width - 52f, rect.y + 30f, 44f, 44f), rel);
             }

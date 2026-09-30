@@ -96,14 +96,22 @@ namespace Ic10Go.Testbench
                 {
                     try { result = _plugin.Dispatch(cmd, args); }
                     catch (BenchError e) { error = e; }
-                    catch (Exception e) { error = new BenchError("internal", e.Message); }
+                    catch (Exception e)
+                    {
+                        error = new BenchError("internal", e.Message);
+                        Debug.LogError("[" + TestbenchPlugin.ModId + "] " + cmd + " threw: " + e);
+                    }
                     finally { done.Set(); }
                 });
                 if (!done.Wait(TimeSpan.FromSeconds(60)))
                     return Error(id, "timeout", "command timed out on the main thread");
             }
 
-            if (error != null) return Error(id, error.Code, error.Message);
+            if (error != null)
+            {
+                Debug.LogWarning("[" + TestbenchPlugin.ModId + "] " + cmd + " failed: " + error.Code + ": " + error.Message);
+                return Error(id, error.Code, error.Message);
+            }
             return new JObject
             {
                 ["id"] = id ?? JValue.CreateNull(),

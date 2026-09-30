@@ -112,7 +112,7 @@ func cmdTestbench(args []string) int {
 
 	var chip any
 	if chipName != "" {
-		chip = map[string]any{"name": chipName}
+		chip = chipSelector(chipName)
 	}
 
 	switch sub {

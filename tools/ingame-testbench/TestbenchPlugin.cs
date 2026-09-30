@@ -39,7 +39,7 @@ namespace Ic10Go.Testbench
     {
         public const string ModId = "ic10go-testbench";
         public const string ModName = "ic10go testbench";
-        public const string ModVersion = "0.3.1";
+        public const string ModVersion = "0.3.2";
 
         private static bool _initialized;
 
@@ -48,6 +48,7 @@ namespace Ic10Go.Testbench
         private TestbenchConfig _config;
         private float _watchNext;
         private bool _pausedByUs;
+        private int _hudErrors;
         private bool _autoloadDone;
         private float _autoloadNext = 3f;
 
@@ -174,8 +175,22 @@ namespace Ic10Go.Testbench
 
         private void OnGUI()
         {
-            try { Hud.Draw(); }
-            catch (Exception ex) { Debug.LogError("[" + ModId + "] hud: " + ex); }
+            try
+            {
+                Hud.Draw();
+                _hudErrors = 0;
+            }
+            catch (Exception ex)
+            {
+                // A drawing bug must never flood the log or break the frame
+                // (a bad format string once produced 26k lines/session).
+                if (++_hudErrors == 1) Debug.LogError("[" + ModId + "] hud error: " + ex);
+                if (_hudErrors >= 30)
+                {
+                    Hud.Enabled = false;
+                    Debug.LogError("[" + ModId + "] hud disabled after repeated errors");
+                }
+            }
         }
     }
 
