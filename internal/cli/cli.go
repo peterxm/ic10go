@@ -136,8 +136,8 @@ var spillFlag = Flag{Long: "--spill", Arg: "db|stack", Desc: text{
 }}
 
 var redundantDeviceWritesFlag = Flag{Long: "--redundant-device-writes", Desc: text{
-	EN: "drop constant device writes that repeat the previous value (shorter, but changes the write sequence)",
-	ZH: "删除重复的常量设备写（更短，但会改变写序列）",
+	EN: "drop constant device writes that repeat the previous value in the same straight-line run (shorter, but changes the write sequence)",
+	ZH: "删除同一段直落代码（含内联展开的连续调用）内重复的同值常量设备写（更短，但会改变写序列）",
 }}
 
 var mergeRenamedTailsFlag = Flag{Long: "--merge-renamed-tails", Desc: text{

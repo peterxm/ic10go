@@ -208,7 +208,7 @@ Ret
 | 常量查表内联 | `T[const]` 直接内联为字面量；与不折叠的产物比较取 runtime 更短者（`--unsafe`/`--no-data-check` 下不折叠） |
 | 用户栈提升（mem2reg） | 仅 `private-stack`：常量用户槽提升为虚拟寄存器，删除其 `get`/`put`/`poke`；寄存器与栈一样跨 tick 保留 |
 | push/pop 消除 | 仅 `private-stack`：同块内成对 `push`/`pop` 删除并把被压值转发给 `pop` 目标（块内不得有 `peek`/动态栈访问） |
-| 重复设备写消除 | `--redundant-device-writes`（默认关闭）：删除同块内重复的同值常量设备写；改变可观测写序列 |
+| 重复设备写消除 | `--redundant-device-writes`（默认关闭）：删除同一段直落代码内重复的同值常量设备写；改变可观测写序列 |
 | 小循环展开 | 常量次数、无调用、体小的 `for` 循环展开，使 `Table[i]` 等常量下标折叠为单条 `get` |
 | 跳转表派发 | `--jump-table`（默认关闭）：稠密整数 `switch`（≥8 case、简单 case 体）降为 `jr` 计算跳转 + `j` 表，约每 case 省 1 行 |
 | `--fast` 模式 | 优先运行速度而非体积：放宽循环展开门控（允许调用、更大体/次数） |
@@ -339,9 +339,11 @@ stack comp   9 @ [503..511] (data 9 + spills 0)
 ### 6.9 可选：重复设备写消除
 
 `--redundant-device-writes`（环境变量 `IC10C_REDUNDANT_DEVICE_WRITES=1`，
-VS Code `icg.redundantDeviceWrites`）会删除同块内、中间无读/屏障的**同值常量
-设备写**。它省行，但会改变可观测的**写序列**，与差分测试
-`TestDifferentialRandom` 的“写序列完全一致”契约冲突，因此**默认关闭**。
+VS Code `icg.redundantDeviceWrites`）会删除**同一段直落代码**内、中间无读/屏障的**同值常量
+设备写**。直落代码沿「无条件跳转、且目标块只有一个前驱」的块链展开，所以**内联展开的
+连续函数调用**（每个调用会被内联器放进各自的块）之间的重复写也会被删；遇到分支、汇合、
+`yield`/`sleep`、设备读或非常量设备写即重置。它省行，但会改变可观测的**写序列**，与差分
+测试 `TestDifferentialRandom` 的“写序列完全一致”契约冲突，因此**默认关闭**。
 设备可能对重复写有边沿行为，启用前请确认对目标设备安全。
 
 ---

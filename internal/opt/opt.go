@@ -1895,37 +1895,77 @@ func blockHasRelativeStackAccess(b *ir.Block) bool {
 	return false
 }
 
-// redundantDeviceStores removes a constant device write that repeats the
-// previous write to the same device+logic within a block, with no read or
-// barrier in between. The device's final value is unchanged, but the write
-// sequence is not, so this is opt-in (fn.RedundantDeviceWrites) and off by
-// default; the differential tests require the exact write sequence.
+// redundantDeviceStores removes a constant device write whose device+logic
+// already holds that same constant, with no read or barrier in between. The
+// device's final value is unchanged, but the write sequence is not, so this is
+// opt-in (fn.RedundantDeviceWrites) and off by default; the differential tests
+// require the exact write sequence.
+//
+// The scan follows straight-line block chains (an unconditional jump whose
+// target's only predecessor is the current block), so a repeated write is seen
+// across the separate blocks a function inliner leaves behind for each call,
+// not just within one basic block.
 func redundantDeviceStores(fn *ir.Function) bool {
 	if !fn.RedundantDeviceWrites {
 		return false
 	}
+	fn.BuildCFG()
 	changed := false
-	for _, b := range fn.Blocks {
-		last := map[string]*ir.Const{}
-		out := b.Instrs[:0]
-		for _, ins := range b.Instrs {
-			if key, c, ok := constDeviceStore(ins); ok {
-				if prev, seen := last[key]; seen && sameConst(prev, c) {
-					changed = true
-					continue
-				}
-				last[key] = c
-				out = append(out, ins)
-				continue
-			}
-			if mayChangeDeviceState(ins) {
-				clear(last)
-			}
-			out = append(out, ins)
+	done := map[*ir.Block]bool{}
+	for _, start := range fn.Blocks {
+		if done[start] {
+			continue
 		}
-		b.Instrs = out
+		last := map[string]*ir.Const{}
+		for b := start; b != nil && !done[b]; {
+			done[b] = true
+			b.Instrs = redundantStoresInRegion(b.Instrs, last, &changed)
+			b = nextStraightLine(b)
+		}
 	}
 	return changed
+}
+
+// redundantStoresInRegion scans one straight-line region, dropping a constant
+// device write whose key already holds the same constant.
+func redundantStoresInRegion(instrs []ir.Instr, last map[string]*ir.Const, changed *bool) []ir.Instr {
+	out := instrs[:0]
+	for _, ins := range instrs {
+		if key, c, ok := constDeviceStore(ins); ok {
+			if prev, seen := last[key]; seen && sameConst(prev, c) {
+				*changed = true
+				continue
+			}
+			last[key] = c
+			out = append(out, ins)
+			continue
+		}
+		if mayChangeDeviceState(ins) {
+			clear(last)
+		}
+		out = append(out, ins)
+	}
+	return out
+}
+
+// nextStraightLine returns the block a straight-line region continues into: an
+// unconditional jump whose target's only predecessor is b (so every path that
+// reaches it came through b). A join, a branch or a loop header (more than one
+// predecessor) ends the region.
+func nextStraightLine(b *ir.Block) *ir.Block {
+	var t *ir.Block
+	switch v := b.Term.(type) {
+	case *ir.Jmp:
+		t = v.Target
+	case *ir.Goto:
+		t = v.Target
+	default:
+		return nil
+	}
+	if t == nil || len(t.Preds) != 1 || t.Preds[0] != b {
+		return nil
+	}
+	return t
 }
 
 // constDeviceStore keys a device write with a constant value (and, for a slot,

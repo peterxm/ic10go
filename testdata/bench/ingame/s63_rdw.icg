@@ -1,0 +1,24 @@
+// Round 4 (--redundant-device-writes): a small helper is called twice in a row
+// (inlined, so the repeats live in separate straight-line blocks) and then the
+// LED is set from the Logic Memory. The flag should drop the second call's
+// writes; the final device state must be unchanged.
+//   d0 LED (Setting/On r/w), d3 ElectronicsPrinter (On r/w), d4 LogicMemory.
+const (
+	LED = d0
+	PRN = d3
+	MEM = d4
+)
+
+func bump() {
+	LED.Setting = 0
+	PRN.On = 0
+}
+
+func main() {
+	for {
+		yield()
+		bump()
+		bump()
+		LED.Setting = MEM.Setting
+	}
+}

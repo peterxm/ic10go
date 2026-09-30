@@ -28,6 +28,51 @@ func runProgram(t *testing.T, src string, steps int, setup func(m *vm.Machine)) 
 	return m
 }
 
+// TestVMRedundantDeviceWrites checks the opt-in dedupe keeps the final device
+// state identical, including across inlined helper calls (separate blocks).
+func TestVMRedundantDeviceWrites(t *testing.T) {
+	src := "func Idle() {\n" +
+		"    d0.On = 0\n" +
+		"    d1.On = 0\n" +
+		"    d2.Setting = 7\n" +
+		"}\n" +
+		"func main() {\n" +
+		"    d3.Setting = 1\n" +
+		"    Idle()\n" +
+		"    d0.On = 1\n" + // changes d0 between the calls, so its rewrite stays
+		"    Idle()\n" +
+		"}\n"
+	plain := mustCompile(t, src)
+	on, diags, err := ic10.CompileWithOptions("t.icg", []byte(src), ic10.Options{RedundantDeviceWrites: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if n := strings.Count(on, "s d0 On 0"); n != 2 {
+		t.Errorf("d0.On=0 rewritten between calls must stay twice, got %d:\n%s", n, on)
+	}
+	if n := strings.Count(on, "s d1 On 0"); n != 1 {
+		t.Errorf("cross-call d1.On write not deduped, got %d:\n%s", n, on)
+	}
+	if n := strings.Count(on, "s d2 Setting 7"); n != 1 {
+		t.Errorf("cross-call d2.Setting write not deduped, got %d:\n%s", n, on)
+	}
+
+	run := func(code string) string {
+		m := vm.New()
+		if err := m.Load(code); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.Run(500); err != nil && err != vm.ErrStepLimit {
+			t.Fatal(err)
+		}
+		return fmt.Sprintf("d0.On=%v d1.On=%v d2.Setting=%v d3.Setting=%v",
+			m.Get("d0", "On"), m.Get("d1", "On"), m.Get("d2", "Setting"), m.Get("d3", "Setting"))
+	}
+	if got, want := run(on), run(plain); got != want {
+		t.Fatalf("dedupe changed the final state:\n got %s\nwant %s\n--- code ---\n%s", got, want, on)
+	}
+}
+
 // TestVMDynamicDeviceParam exercises a runtime-selected device port: `dev.Setting`
 // reads the port held in `dev` (IC10 drN).
 func TestVMDynamicDeviceParam(t *testing.T) {

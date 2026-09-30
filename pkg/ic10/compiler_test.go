@@ -1456,6 +1456,24 @@ func TestRedundantDeviceWritesOption(t *testing.T) {
 	if strings.Count(on, "\n") >= strings.Count(off, "\n") {
 		t.Errorf("option should not add lines:\n%s", on)
 	}
+
+	// Cross-call: an inlined helper leaves one block per call, so the repeat is
+	// not in a single basic block; the scan must follow the straight-line chain.
+	helper := []byte("func Idle() {\n  d0.On = 0\n  d1.On = 0\n}\nfunc main() {\n  Idle()\n  Idle()\n}\n")
+	hOff := mustCompile(t, string(helper))
+	if n := strings.Count(hOff, "s d0 On 0"); n != 2 {
+		t.Fatalf("helper default should keep both writes, got %d:\n%s", n, hOff)
+	}
+	hOn, diags, err := ic10.CompileWithOptions("t.icg", helper, ic10.Options{RedundantDeviceWrites: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if n := strings.Count(hOn, "s d0 On 0"); n != 1 {
+		t.Errorf("option should dedupe across inlined calls, got %d:\n%s", n, hOn)
+	}
+	if n := strings.Count(hOn, "s d1 On 0"); n != 1 {
+		t.Errorf("option should dedupe across inlined calls, got %d:\n%s", n, hOn)
+	}
 }
 
 func TestRelJumpPicksShorterForm(t *testing.T) {

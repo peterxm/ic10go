@@ -1,0 +1,10 @@
+{
+  "program": "s63_rdw.icg",
+  "args": ["--redundant-device-writes"],
+  "chip": { "name": "A CHIP" },
+  "ports": { "d0": "LED", "d3": "ElectronicsPrinter", "d4": "Memory" },
+  "cases": [
+    { "name": "mem 42 -> LED 42, printer off", "set": { "d0.Setting": 0, "d4.Setting": 42 }, "run": 2, "expect": { "d0.Setting": 42, "d3.On": 0 } },
+    { "name": "mem 7 -> LED 7", "set": { "d0.Setting": 0, "d4.Setting": 7 }, "run": 2, "expect": { "d0.Setting": 7, "d3.On": 0 } }
+  ]
+}
