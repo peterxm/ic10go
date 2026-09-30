@@ -55,8 +55,12 @@ type notification struct {
 // Server is a single-connection LSP server.
 type Server struct {
 	docs map[string]string
-	zh   bool   // documentation language
-	root string // workspace root (filesystem path), for workspace symbols
+	// langs maps a document URI to the language id the client reported, so a
+	// native IC10 document opened without a .ic/.ic10 path (e.g. an untitled
+	// buffer) is still classified as native.
+	langs map[string]string
+	zh    bool   // documentation language
+	root  string // workspace root (filesystem path), for workspace symbols
 	// libDirs are extra search roots for imports, from initializationOptions.
 	libDirs []string
 	// importDiags maps a document URI to the imported-file URIs it last
@@ -66,7 +70,7 @@ type Server struct {
 
 // New returns a Server.
 func New() *Server {
-	return &Server{docs: map[string]string{}, importDiags: map[string]map[string]bool{}}
+	return &Server{docs: map[string]string{}, langs: map[string]string{}, importDiags: map[string]map[string]bool{}}
 }
 
 // Run serves the connection until EOF or an exit notification.
@@ -218,8 +222,9 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 
 type didOpenParams struct {
 	TextDocument struct {
-		URI  string `json:"uri"`
-		Text string `json:"text"`
+		URI        string `json:"uri"`
+		LanguageID string `json:"languageId"`
+		Text       string `json:"text"`
 	} `json:"textDocument"`
 }
 
@@ -247,6 +252,9 @@ func (s *Server) didOpen(w *bufio.Writer, params json.RawMessage) {
 		return
 	}
 	s.docs[p.TextDocument.URI] = p.TextDocument.Text
+	if p.TextDocument.LanguageID != "" {
+		s.langs[p.TextDocument.URI] = p.TextDocument.LanguageID
+	}
 	s.publish(w, p.TextDocument.URI)
 }
 
@@ -274,6 +282,7 @@ func (s *Server) didClose(w *bufio.Writer, params json.RawMessage) {
 		return
 	}
 	delete(s.docs, p.TextDocument.URI)
+	delete(s.langs, p.TextDocument.URI)
 	notify(w, "textDocument/publishDiagnostics", map[string]any{
 		"uri":         p.TextDocument.URI,
 		"diagnostics": []any{},
@@ -381,12 +390,22 @@ func isIC10URI(uri string) bool {
 	return strings.HasSuffix(uri, ".ic") || strings.HasSuffix(uri, ".ic10")
 }
 
+// native reports whether a document is native IC10. The client's language id is
+// authoritative (an untitled buffer has no .ic/.ic10 suffix); the URI suffix is
+// the fallback for clients that do not report one.
+func (s *Server) native(uri string) bool {
+	if lang, ok := s.langs[uri]; ok {
+		return lang == "ic10"
+	}
+	return isIC10URI(uri)
+}
+
 func (s *Server) publish(w *bufio.Writer, uri string) {
 	text, ok := s.docs[uri]
 	if !ok {
 		return
 	}
-	if isIC10URI(uri) {
+	if s.native(uri) {
 		notify(w, "textDocument/publishDiagnostics", map[string]any{
 			"uri":         uri,
 			"diagnostics": ic10Diagnostics(text),
@@ -618,7 +637,7 @@ func (s *Server) completion(w *bufio.Writer, id json.RawMessage, params json.Raw
 		return
 	}
 	text := s.docs[p.TextDocument.URI]
-	if isIC10URI(p.TextDocument.URI) {
+	if s.native(p.TextDocument.URI) {
 		reply(w, id, attachDetail(ic10CompletionItems(text, p.Position)))
 		return
 	}
@@ -1525,7 +1544,7 @@ func (s *Server) formatting(w *bufio.Writer, id json.RawMessage, params json.Raw
 		return
 	}
 	var out string
-	if isIC10URI(p.TextDocument.URI) {
+	if s.native(p.TextDocument.URI) {
 		out = ic10asm.FormatAligned(text)
 	} else {
 		formatted, diags, err := ic10.Format(p.TextDocument.URI, []byte(text))
@@ -1548,7 +1567,7 @@ func (s *Server) hover(w *bufio.Writer, id json.RawMessage, params json.RawMessa
 		return
 	}
 	text := s.docs[p.TextDocument.URI]
-	if isIC10URI(p.TextDocument.URI) {
+	if s.native(p.TextDocument.URI) {
 		if content := s.ic10Hover(text, p.Position); content != "" {
 			reply(w, id, map[string]any{
 				"contents": map[string]any{"kind": "markdown", "value": content},

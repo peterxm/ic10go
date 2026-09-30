@@ -40,6 +40,24 @@ func TestDiagnostics(t *testing.T) {
 	}
 }
 
+// A native IC10 buffer opened without a .ic/.ic10 path (e.g. the untitled
+// document `icg.bench.pull` creates) must be classified by its language id, not
+// compiled as .icg.
+func TestNativeUntitledUsesLanguageID(t *testing.T) {
+	src := "define STACKER HASH(\"StructureStackerReverse\")\n" +
+		"setup:\n" +
+		"lb r0 HASH(\"StructureAutolathe\") ReferenceId Average\n" +
+		"yield\n"
+	out := runServer(t,
+		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"untitled:Untitled-1","languageId":"ic10","text":`+jsonString(src)+`}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`),
+	)
+	if strings.Contains(out, "expected declaration") {
+		t.Errorf("native untitled document was parsed as .icg:\n%s", out)
+	}
+}
+
 func TestDiagnosticCode(t *testing.T) {
 	out := runServer(t,
 		frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`),
