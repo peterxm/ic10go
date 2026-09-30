@@ -105,15 +105,16 @@ ss dr12 1 On r4
 }
 
 func TestDecompileIndirect(t *testing.T) {
-	src := `trunc rr5 r0
+	// r5 is loaded from a device, so its value (and therefore the register the
+	// pointer names) is unknown: the translator reports that it cannot bound it.
+	src := `l r5 db Setting
+trunc rr5 r0
 mod r0 r0 rr5
 `
 	code, warns, err := Decompile(src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// r5 is never assigned here, so its value (and therefore the register the
-	// pointer names) is unknown: the translator reports that it cannot bound it.
 	if len(warns) != 1 {
 		t.Fatalf("expected an unbounded-pointer warning, got %v", warns)
 	}
@@ -122,6 +123,24 @@ mod r0 r0 rr5
 	}
 	if !strings.Contains(code, "ireg(r5)") {
 		t.Errorf("indirect read not translated:\n%s", code)
+	}
+}
+
+func TestDecompileIndirectZeroInit(t *testing.T) {
+	// r5 is never written, so it is 0 (registers start at 0) and the pointer
+	// names r0. The range is bounded and the accesses are pinned: the initial
+	// index of a hash table in registers often comes from this.
+	code, warns, err := Decompile("trunc rr5 r0\nmod r0 r0 rr5\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	for _, want := range []string{"reserveRegs(0, 0)", "setIreg(0,", "setIreg(r5,", "ireg(0)", "ireg(r5)"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("missing %q:\n%s", want, code)
+		}
 	}
 }
 

@@ -2,10 +2,8 @@
 // 由 `ic10c decompile -s` 反编译后整理为端口，行为与原脚本一致。
 // icg: shared-stack
 func main() {
-    var r0 = 0
-    var r1 = 0
-    var r2 = 0
-    var r3 = 0
+    // registers written through a runtime pointer stay physical
+    reserveRegs(0, 3)
     var r4 = 0
     var r5 = 0
     var r6 = 0
@@ -14,10 +12,10 @@ func main() {
     var r9 = 0
     var r10 = 0
     var r11 = 0
-    r0 = hash("StructureSolarPanel")
-    r1 = hash("StructureSolarPanelDual")
-    r2 = hash("StructureSolarPanelReinforced")
-    r3 = hash("StructureSolarPanelDualReinforced")
+    setIreg(0, hash("StructureSolarPanel"))
+    setIreg(1, hash("StructureSolarPanelDual"))
+    setIreg(2, hash("StructureSolarPanelReinforced"))
+    setIreg(3, hash("StructureSolarPanelDualReinforced"))
     label reset:
     r8 = 999
     r10 = 0

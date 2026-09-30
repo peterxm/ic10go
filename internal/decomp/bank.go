@@ -21,6 +21,13 @@ import (
 // whose condition is unknown explores both successors. Every dynamic indirect
 // access must have a known pointer, otherwise the range cannot be bounded and
 // the caller falls back to the variable translation (unchanged behaviour).
+//
+// The exploration starts from the in-game initial state: every r0..r15 is 0
+// and sp is 0. A chip that assumes a register starts at 0 (e.g. an index it
+// never assigns before its first indirect access) is therefore still bounded,
+// which matters for the common "hash table in registers, index in a variable"
+// idiom (see indirectRegsHousing). A register whose value is later overwritten
+// from a device or a computed expression becomes unknown and is reported.
 const (
 	bankStepBudget  = 50000
 	bankStateBudget = 20000
@@ -69,7 +76,12 @@ func (d *decompiler) indirectBank(lines []icLine) (int, int, bool) {
 	}
 	lo, hi := 1<<30, -1
 	seen := map[string]bool{}
-	queue := []state{{pc: 0, regs: map[int]int64{bankSp: 0}}}
+	// Every register reads as 0 before it is written.
+	seed := map[int]int64{bankSp: 0}
+	for i := 0; i < 16; i++ {
+		seed[i] = 0
+	}
+	queue := []state{{pc: 0, regs: seed}}
 	steps := 0
 	for len(queue) > 0 {
 		st := queue[0]
