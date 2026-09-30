@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.28",
+  "version": "0.7.29",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {

@@ -204,6 +204,8 @@ class BenchTree {
                     return this.deviceItems();
                 case 'chip':
                     return this.chipItems();
+                case 'chipGroup':
+                    return this.chipGroupItems(el);
                 case 'chipLeaf':
                     return [];
                 default:
@@ -253,13 +255,37 @@ class BenchTree {
             );
             items.push(none);
         } else if (chips.length) {
-            for (const chip of chips) {
-                items.push(chipNode(chip, sameChip(chip, sel)));
+            // Group hosts into "with a chip" and "without", each sorted by name
+            // descending. The empty hosts are collapsed by default (there are
+            // usually far more of them).
+            const installed = chips.filter((c) => c.programmable !== false);
+            const empty = chips.filter((c) => c.programmable === false);
+            const groups = [
+                { key: 'with', label: t('With chip', '有芯片'), list: installed, open: true, icon: 'circuit-board' },
+                { key: 'without', label: t('No chip', '无芯片'), list: empty, open: false, icon: 'circle-slash' },
+            ];
+            for (const g of groups) {
+                if (!g.list.length) continue;
+                g.list.sort(chipByNameDesc);
+                const item = new vscode.TreeItem(
+                    `${g.label} (${g.list.length})`,
+                    g.open ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed
+                );
+                item._kind = 'chipGroup';
+                item._chips = g.list;
+                item.contextValue = 'chipGroup';
+                item.iconPath = new vscode.ThemeIcon(g.icon);
+                items.push(item);
             }
         } else if (sel) {
             items.push(chipNode(sel, true));
         }
         return items;
+    }
+
+    chipGroupItems(el) {
+        const sel = this.bench.state && this.bench.state.chip;
+        return (el._chips || []).map((chip) => chipNode(chip, sameChip(chip, sel)));
     }
 
     chipItems() {
@@ -348,6 +374,13 @@ function sameChip(a, b) {
     if (!a || !b) return false;
     if (a.id && b.id) return a.id === b.id;
     return (a.name || a.prefab) === (b.name || b.prefab);
+}
+
+// chipByNameDesc sorts chips by name (falling back to prefab) descending.
+function chipByNameDesc(a, b) {
+    const an = String(a.name || a.prefab || '');
+    const bn = String(b.name || b.prefab || '');
+    return bn.localeCompare(an, 'zh');
 }
 
 // isNoChip reports whether an error means the selected holder has no chip (or
