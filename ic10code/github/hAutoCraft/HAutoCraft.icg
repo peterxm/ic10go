@@ -1,0 +1,72 @@
+// 打印机产量控制器（端口）。
+//
+// 原脚本：游戏内芯片 "IC HAuto-Craft"（74 行，作者 CowsAreEvil）。
+// 功能：把多台「打印机 + 堆叠机」配对，在堆叠机 Setting 上设定目标数量；
+//       打印机的 Active 置位时按 ExportCount 增量统计，达到目标即清除
+//       Activate 停机；空闲时刷新基线并把打印机 On 镜像给堆叠机。
+// 说明：本端口由 `ic10c decompile -s` 从原 IC10 反编译后整理，行为与原脚本一致。
+// icg: shared-stack
+func main() {
+    var r0 = 0
+    var r1 = 0
+    var r10 = 0
+    var r13 = 0
+    var r14 = 0
+    var r15 = 0
+    r0 = batch.read(hash("StructureAutolathe"), "ReferenceId", "Average")
+    push(r0)
+    r0 = batch.readName(hash("StructureStackerReverse"), hash("Autolathe Stacker"), "ReferenceId", "Average")
+    push(r0)
+    push(0)
+    r0 = batch.read(hash("StructureElectronicsPrinter"), "ReferenceId", "Average")
+    push(r0)
+    r0 = batch.readName(hash("StructureStackerReverse"), hash("Electronics Stacker"), "ReferenceId", "Average")
+    push(r0)
+    push(0)
+    r0 = batch.read(hash("StructureHydraulicPipeBender"), "ReferenceId", "Average")
+    push(r0)
+    r0 = batch.readName(hash("StructureStackerReverse"), hash("Pipe Stacker"), "ReferenceId", "Average")
+    push(r0)
+    push(0)
+    r0 = batch.read(hash("StructureRocketManufactory"), "ReferenceId", "Average")
+    push(r0)
+    r0 = batch.readName(hash("StructureStackerReverse"), hash("Rocket Stacker"), "ReferenceId", "Average")
+    push(r0)
+    push(0)
+    r0 = batch.read(hash("StructureToolManufactory"), "ReferenceId", "Average")
+    push(r0)
+    r0 = batch.readName(hash("StructureStackerReverse"), hash("Tool Stacker"), "ReferenceId", "Average")
+    push(r0)
+    push(0)
+    r0 = batch.read(hash("StructureSecurityPrinter"), "ReferenceId", "Average")
+    push(r0)
+    r0 = batch.readName(hash("StructureStackerReverse"), hash("Security Stacker"), "ReferenceId", "Average")
+    push(r0)
+    push(0)
+    r10 = sp
+    label reset:
+    sp = r10
+    yield()
+    for {
+        if sp == 0 { goto reset }
+        r13 = pop()
+        r15 = pop()
+        r14 = pop()
+        if isNaN(r14) { continue }
+        if isNaN(r15) { continue }
+        r0 = readById(r14, LogicType.Activate)
+        if r0 != 0 { goto countprints }
+        r13 = readById(r14, LogicType.ExportCount)
+        r0 = (sp + 2)
+        poke(r0, r13)
+        r0 = readById(r14, LogicType.On)
+        writeById(r15, LogicType.On, r0)
+        continue
+        label countprints:
+        r0 = readById(r14, LogicType.ExportCount)
+        r0 = (r0 - r13)
+        r1 = readById(r15, LogicType.Setting)
+        if r0 < r1 { continue }
+        writeById(r14, LogicType.Activate, 0)
+    }
+}
