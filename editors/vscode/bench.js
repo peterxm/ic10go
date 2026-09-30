@@ -239,7 +239,20 @@ class BenchTree {
 
         const chips = b.chips || [];
         const sel = b.state && b.state.chip;
-        if (chips.length) {
+        if (b.noChip) {
+            // Connected, but no usable programmable chip (an empty world, or
+            // hosts without a chip inserted): a normal state, not an error.
+            const none = new vscode.TreeItem(
+                t('no programmable chip in this world', '当前世界没有可编程芯片'),
+                vscode.TreeItemCollapsibleState.None
+            );
+            none.iconPath = new vscode.ThemeIcon('info');
+            none.tooltip = t(
+                'Place an IC10 chip, or load a save that has one, then refresh.',
+                '放一个 IC10 芯片，或载入带芯片的存档，然后刷新。'
+            );
+            items.push(none);
+        } else if (chips.length) {
             for (const chip of chips) {
                 items.push(chipNode(chip, sameChip(chip, sel)));
             }
@@ -335,6 +348,13 @@ function sameChip(a, b) {
     if (!a || !b) return false;
     if (a.id && b.id) return a.id === b.id;
     return (a.name || a.prefab) === (b.name || b.prefab);
+}
+
+// isNoChip reports whether an error means the selected holder has no chip (or
+// the world has no programmable chip), which the UI treats as a normal state.
+function isNoChip(err) {
+    const msg = (err && (err.message || err.code)) || '';
+    return /no-chip|no chip|not a ProgrammableChip/i.test(msg);
 }
 
 // chipNode renders one host/chip in the tree. The selected chip expands into
@@ -675,7 +695,10 @@ class Bench {
     setStatus(connected) {
         if (!this.status) return;
         const chip = this.state && this.state.chip;
-        const name = chip ? chip.name || chip.prefab || `chip#${chip.index}` : '';
+        let name = chip ? chip.name || chip.prefab || `chip#${chip.index}` : '';
+        if (!name && this.noChip) {
+            name = t('no chip', '无芯片');
+        }
         this.status.text = connected ? `$(circuit-board) IC10: ${name || t('game', '游戏')}` : '$(circuit-board) IC10';
         this.status.tooltip = connected
             ? t('IC10 testbench connected — click to open the panel', 'IC10 测试台已连接——点击打开面板')
@@ -693,6 +716,7 @@ class Bench {
             return;
         }
         try {
+            this.noChip = false;
             const list = await c.call('chip.list', {}).catch(() => ({ chips: [] }));
             this.chips = list.chips || [];
             // Drop a stale pinned selection (the game restarted and the id may
@@ -700,19 +724,46 @@ class Bench {
             if (this.sel && !this.chips.some((ch) => this.sameSel(ch, this.sel))) {
                 this.sel = undefined;
             }
+            if (this.chips.length === 0) {
+                // No programmable chip in this world: a normal state, not an
+                // error. Clear the panel, show it in the tree, and say so once.
+                this.noChip = true;
+                this.sel = undefined;
+                this.state = undefined;
+                if (this.tree) this.tree.refresh();
+                this.renderPanel();
+                this.setStatus(true);
+                if (interactive) {
+                    vscode.window.showInformationMessage(t(
+                        'IC10: connected, but this world has no programmable chip.',
+                        'IC10: 已连接，但当前世界没有可编程芯片。'
+                    ));
+                }
+                return;
+            }
             let st;
             try {
                 st = await this.fetchState(c);
             } catch (err) {
                 if (this.sel) {
                     this.sel = undefined;
-                    st = await this.fetchState(c);
+                    st = await this.fetchState(c).catch((err2) => {
+                        if (isNoChip(err2)) {
+                            this.noChip = true;
+                            return undefined;
+                        }
+                        throw err2;
+                    });
+                } else if (isNoChip(err)) {
+                    // The default holder has no chip inserted.
+                    this.noChip = true;
+                    st = undefined;
                 } else {
                     throw err;
                 }
             }
             this.state = st;
-            if (!this.sel && st.chip) {
+            if (st && !this.sel && st.chip) {
                 this.sel = this.chipSel(st.chip);
                 this.persistSel();
             }
