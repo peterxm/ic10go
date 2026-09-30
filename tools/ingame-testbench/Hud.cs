@@ -1,0 +1,199 @@
+// Hud draws a small on-screen overlay with the local player's position and view
+// angles, plus the distance/direction to an optional target. It exists so a
+// player can walk to a chip the testbench located, e.g.
+//   ic10c testbench hud --chip 118
+// then follow the compass arrow.
+//
+// Enabled by default; F8 toggles it, F9 clears the target (see TestbenchPlugin).
+// State is process-local and set through the `hud` protocol command. Nothing is
+// drawn until a world is loaded (Player() returns false at the menu).
+
+using System;
+using Assets.Scripts.Objects.Entities;
+using Newtonsoft.Json.Linq;
+using UnityEngine;
+
+namespace Ic10Go.Testbench
+{
+    internal static class Hud
+    {
+        public static bool Enabled = true;
+        public static bool HasTarget;
+        public static Vector3 Target;
+        public static string TargetLabel = "";
+
+        private static Camera _cam;
+        private static Texture2D _bg;
+        private static Texture2D _arrow;
+        private static GUIStyle _label;
+
+        public static void SetTarget(Vector3 p, string label)
+        {
+            Target = p;
+            TargetLabel = label ?? "";
+            HasTarget = true;
+            Enabled = true;
+        }
+
+        public static void Clear()
+        {
+            HasTarget = false;
+            TargetLabel = "";
+        }
+
+        public static void Toggle() => Enabled = !Enabled;
+
+        /// <summary>Reads the local player. False when no world/player is loaded.</summary>
+        public static bool Player(out Vector3 pos, out float yaw, out float pitch)
+        {
+            pos = Vector3.zero;
+            yaw = 0f;
+            pitch = 0f;
+            try
+            {
+                var human = Human.LocalHuman;
+                if (human == null) return false;
+                pos = human.transform.position;
+                if (_cam == null) _cam = Camera.main;
+                if (_cam != null)
+                {
+                    var e = _cam.transform.eulerAngles;
+                    yaw = e.y;
+                    pitch = e.x > 180f ? e.x - 360f : e.x;
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static JObject State()
+        {
+            var o = new JObject { ["on"] = Enabled };
+            Vector3 p;
+            float yaw, pitch;
+            if (Player(out p, out yaw, out pitch))
+            {
+                o["player"] = new JObject
+                {
+                    ["x"] = Math.Round(p.x, 2),
+                    ["y"] = Math.Round(p.y, 2),
+                    ["z"] = Math.Round(p.z, 2),
+                    ["yaw"] = Math.Round(yaw, 1),
+                    ["pitch"] = Math.Round(pitch, 1),
+                };
+            }
+            if (HasTarget)
+            {
+                var t = new JObject { ["x"] = Math.Round(Target.x, 2), ["y"] = Math.Round(Target.y, 2), ["z"] = Math.Round(Target.z, 2) };
+                if (!string.IsNullOrEmpty(TargetLabel)) t["label"] = TargetLabel;
+                o["target"] = t;
+            }
+            return o;
+        }
+
+        public static void Draw()
+        {
+            if (!Enabled) return;
+            Vector3 p;
+            float yaw, pitch;
+            if (!Player(out p, out yaw, out pitch)) return;
+            Ensure();
+
+            string pose = string.Format("X {0,7:0.0}   Y {1,7:0.0}   Z {2,7:0.0}", p.x, p.y, p.z);
+            string look = string.Format("朝向 {0,4:0}°   俯仰 {1,4:0}°", yaw, pitch);
+
+            float width = 236f;
+            float height = HasTarget ? 104f : 56f;
+            var rect = new Rect(10f, 10f, width, height);
+            GUI.DrawTexture(rect, _bg);
+
+            float x = rect.x + 10f;
+            float y = rect.y + 8f;
+            Label(x, ref y, 18f, pose);
+            Label(x, ref y, 18f, look);
+
+            if (HasTarget)
+            {
+                float dx = Target.x - p.x;
+                float dy = Target.y - p.y;
+                float dz = Target.z - p.z;
+                float dist = Mathf.Sqrt(dx * dx + dy * dy + dz * dz);
+                float bearing = Mathf.Atan2(dx, dz) * Mathf.Rad2Deg; // 0 = +Z
+                float rel = Mathf.DeltaAngle(yaw, bearing);          // signed, right positive
+
+                string name = string.IsNullOrEmpty(TargetLabel) ? "目标" : TargetLabel;
+                Label(x, ref y, 18f, string.Format("{0}   {1:0.0} m   {2}", name, dist, Direction(rel)));
+                Label(x, ref y, 16f, string.Format("高差 {0,+0.0;-0.0;0.0} m", dy));
+
+                DrawArrow(new Rect(rect.x + width - 52f, rect.y + 30f, 44f, 44f), rel);
+            }
+        }
+
+        private static void Label(float x, ref float y, float line, string text)
+        {
+            GUI.Label(new Rect(x, y, 220f, line), text, _label);
+            y += line;
+        }
+
+        /// <summary>Draws the up-pointing arrow rotated to the target's relative bearing.</summary>
+        private static void DrawArrow(Rect r, float rel)
+        {
+            var pivot = new Vector2(r.x + r.width / 2f, r.y + r.height / 2f);
+            var prev = GUI.matrix;
+            GUIUtility.RotateAroundPivot(rel, pivot);
+            GUI.DrawTexture(r, _arrow);
+            GUI.matrix = prev;
+        }
+
+        private static string Direction(float rel)
+        {
+            float a = Mathf.Abs(rel);
+            if (a < 15f) return "正前";
+            if (a < 60f) return rel > 0 ? "右前" : "左前";
+            if (a < 120f) return rel > 0 ? "右侧" : "左侧";
+            if (a < 165f) return rel > 0 ? "右后" : "左后";
+            return "正后";
+        }
+
+        private static void Ensure()
+        {
+            if (_label != null) return;
+            _bg = Solid(new Color(0f, 0f, 0f, 0.62f));
+            _arrow = Arrow(22);
+            _label = new GUIStyle(GUI.skin.label) { fontSize = 13, alignment = TextAnchor.UpperLeft };
+            _label.normal.textColor = Color.white;
+        }
+
+        private static Texture2D Solid(Color c)
+        {
+            var t = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+            t.SetPixel(0, 0, c);
+            t.Apply();
+            return t;
+        }
+
+        /// <summary>An n-by-n white triangle pointing up (tip at the last row).</summary>
+        private static Texture2D Arrow(int n)
+        {
+            var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
+            var clear = new Color(0f, 0f, 0f, 0f);
+            var white = new Color(1f, 1f, 1f, 0.95f);
+            for (int y = 0; y < n; y++)
+            {
+                // Texture y grows upward: wide at the bottom, tip at the top.
+                float half = (n - y) / (float)n * (n / 2f);
+                for (int x = 0; x < n; x++)
+                {
+                    float cx = x - (n - 1) / 2f;
+                    bool on = Mathf.Abs(cx) <= half;
+                    t.SetPixel(x, y, on ? white : clear);
+                }
+            }
+            t.Apply();
+            return t;
+        }
+    }
+}

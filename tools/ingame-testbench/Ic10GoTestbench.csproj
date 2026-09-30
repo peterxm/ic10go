@@ -39,6 +39,20 @@
       <HintPath>$(StationeersManaged)/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- IMGUI (OnGUI) + text, for the HUD overlay. -->
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(StationeersManaged)/UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(StationeersManaged)/UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Legacy Input for the HUD hotkeys. -->
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(StationeersManaged)/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Newtonsoft.Json">
       <HintPath>$(StationeersManaged)/Newtonsoft.Json.dll</HintPath>
       <Private>false</Private>

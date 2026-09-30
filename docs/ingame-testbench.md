@@ -198,6 +198,7 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `writes` | `{clear?:bool, from?:int}` | `{writes:[{seq,id,device,logic,slot,value}], count}` |
 | `trace` | `{n:int}` | `{steps, hitCount, hits:[{pc,text,regs}]}`（逐条 `Execute(1)`，只回存储指令） |
 | `program` | `{}` | `{lines, code}`（芯片当前 IC10 源码） |
+| `hud` | `{on?, clear?, target?:{x,y,z,label?}|{chip}}` | `{on, player?{x,y,z,yaw,pitch}, target?{x,y,z,label}}` |
 | `run` | `{ticks:n, mode?:"step"|"realtime"}` | `{ticks, line}` |
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
 | `ports` | `{chip?}` | diagnostic: `Devices[]`, ids, labels, lookups |
@@ -283,6 +284,7 @@ ic10c testbench list                       # 列出芯片（含位置 pos 与程
 ic10c testbench ping                        # 连接自检
 ic10c testbench locate [--chip NAME]        # 这块芯片在哪（世界坐标）
 ic10c testbench locate --program <file.ic>  # 哪块芯片在跑这份程序（按源码指纹匹配）
+ic10c testbench hud [on|off|clear|X Y Z]    # 游戏内 HUD：自身坐标/朝向 + 追踪目标（--chip 追踪芯片）
 ic10c testbench push <file.icg> [--chip N] [--as NAME]  # 编译 + 上传（多芯片用 --as 选块；自动先跑 loader）
 ic10c testbench state [--chip N] [--all] [--json]
 ic10c testbench set d1.Setting=10 [...]      # 设置输入（--force 跳过只读校验；--pulse 先写 0 再写值，触发瞬态逻辑）
@@ -297,6 +299,15 @@ ic10c testbench watch [--json]               # 持续打印 state 事件
 ```
 
 连接地址：`--addr 127.0.0.1:7800` 或环境变量 `IC10_BENCH_ADDR`。
+
+### 6.0 游戏内 HUD（定位）
+
+mod ≥ 0.3.0 在屏幕左上角画一个小面板：自身 **X / Y / Z** 与 **朝向 / 俯仰**；设了目标时再显示**距离、方向词（正前/右前/…）和一个指向目标的罗盘箭头**。它就是为“跟着箭头走到刚 `locate` 出来的那块芯片”准备的：
+
+- 开关 `F8`，清目标 `F9`。
+- 设目标：`ic10c testbench hud --chip 118`（用该 host 的世界坐标）或 `ic10c testbench hud 669 192 -627`（直接给坐标）；`hud off` / `hud clear` / `hud`（查状态）。
+- VSCode：在「IC10 测试台」树里**右键一块 host → Track in Game**，等价于 `hud --chip`。
+- 只画在**运行 mod 的那个进程**上，且仅在进入世界后出现（主菜单不画）。若 mod 跑在无头服务端，客户端看不到这个面板。
 
 ### 6.1 场景文件（JSON）
 

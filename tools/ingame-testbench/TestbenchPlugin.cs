@@ -39,7 +39,7 @@ namespace Ic10Go.Testbench
     {
         public const string ModId = "ic10go-testbench";
         public const string ModName = "ic10go testbench";
-        public const string ModVersion = "0.2.0";
+        public const string ModVersion = "0.3.0";
 
         private static bool _initialized;
 
@@ -117,6 +117,10 @@ namespace Ic10Go.Testbench
                 catch (Exception ex) { Debug.LogError("[" + ModId + "] main-thread action failed: " + ex); }
             }
 
+            // HUD keys (process-local; see Hud.cs): F8 toggles, F9 clears target.
+            if (Input.GetKeyDown(KeyCode.F8)) Hud.Toggle();
+            if (Input.GetKeyDown(KeyCode.F9)) Hud.Clear();
+
             // Live state push for `watch`.
             if (_server != null && BenchCommands.Watching)
             {
@@ -166,6 +170,12 @@ namespace Ic10Go.Testbench
         private void OnDestroy()
         {
             if (_server != null) _server.Stop();
+        }
+
+        private void OnGUI()
+        {
+            try { Hud.Draw(); }
+            catch (Exception ex) { Debug.LogError("[" + ModId + "] hud: " + ex); }
         }
     }
 

@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using Assets.Scripts;
 using Newtonsoft.Json.Linq;
+using UnityEngine;
 
 namespace Ic10Go.Testbench
 {
@@ -33,6 +34,7 @@ namespace Ic10Go.Testbench
                 case "ports": return Ports(args);
                 case "push": return Push(args);
                 case "state": return State(args);
+                case "hud": return HudCmd(args);
                 case "set": return Set(args);
                 case "get": return Get(args);
                 case "device": return Device(args);
@@ -149,6 +151,35 @@ namespace Ic10Go.Testbench
             var h = ResolveChip(args["chip"]);
             bool all = args["all"] != null && (bool)args["all"];
             return GameApi.BuildState(h, args["include"], all);
+        }
+
+        /// <summary>hud {on?, clear?, target?:{x,y,z}|{chip}} drives the on-screen overlay.</summary>
+        private static JObject HudCmd(JObject args)
+        {
+            if (args["on"] != null) Hud.Enabled = (bool)args["on"];
+            if (args["clear"] != null && (bool)args["clear"]) Hud.Clear();
+            var t = args["target"];
+            if (t != null && t.Type != JTokenType.Null)
+            {
+                if (t["x"] != null)
+                {
+                    var p = new Vector3((float)(double)t["x"], (float)(double)t["y"], (float)(double)t["z"]);
+                    Hud.SetTarget(p, (string)t["label"]);
+                }
+                else if (t["chip"] != null)
+                {
+                    var h = GameApi.Resolve(t["chip"]);
+                    Vector3 p;
+                    if (!GameApi.TryChipPosition(h, out p))
+                        throw new BenchError("no-chip", "tracked host has no world position");
+                    Hud.SetTarget(p, string.IsNullOrEmpty(h.Name) ? h.Prefab : h.Name);
+                }
+                else
+                {
+                    throw new BenchError("bad-request", "hud target needs {x,y,z} or {chip}");
+                }
+            }
+            return Hud.State();
         }
 
         private static JObject Set(JObject args)

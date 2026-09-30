@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -112,6 +113,8 @@ func cmdTestbench(args []string) int {
 		return benchList(addr, asJSON)
 	case "locate":
 		return benchLocate(addr, chipName, programFile, asJSON)
+	case "hud":
+		return benchHud(addr, chipName, rest, asJSON)
 	case "push":
 		var file string
 		if len(rest) > 0 {
@@ -313,6 +316,90 @@ func locateMatches(chips []testbench.Chip, chipName string) []testbench.Chip {
 		return append(matches, chips[0])
 	}
 	return matches
+}
+
+// benchHud drives the in-game overlay: `hud` prints its state, `hud on|off`
+// toggles it, `hud clear` drops the target, `hud X Y Z` tracks a point and
+// `hud --chip NAME|INDEX` tracks a chip's host.
+func benchHud(addr, chipName string, args []string, asJSON bool) int {
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+
+	req := map[string]any{}
+	if chipName != "" {
+		req["target"] = map[string]any{"chip": chipSelector(chipName)}
+	}
+	if len(args) > 0 && chipName == "" {
+		switch strings.ToLower(args[0]) {
+		case "on", "true", "1":
+			req["on"] = true
+		case "off", "false", "0":
+			req["on"] = false
+		case "clear", "none":
+			req["clear"] = true
+		default:
+			if len(args) < 3 {
+				fmt.Fprintln(os.Stderr, "ic10c: usage: ic10c testbench hud [on|off|clear|X Y Z] [--chip NAME|INDEX]")
+				return 2
+			}
+			x, e1 := strconv.ParseFloat(args[0], 64)
+			y, e2 := strconv.ParseFloat(args[1], 64)
+			z, e3 := strconv.ParseFloat(args[2], 64)
+			if e1 != nil || e2 != nil || e3 != nil {
+				fmt.Fprintf(os.Stderr, "ic10c: bad coordinates %q %q %q\n", args[0], args[1], args[2])
+				return 2
+			}
+			req["target"] = map[string]any{"x": x, "y": y, "z": z}
+		}
+	}
+
+	st, err := c.Hud(req)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if asJSON {
+		return printJSON(st)
+	}
+	fmt.Printf("HUD   %s\n", onOff(st.On))
+	if st.Player != nil {
+		fmt.Printf("玩家  X %7.1f  Y %7.1f  Z %7.1f    朝向 %.0f°  俯仰 %.0f°\n",
+			st.Player.X, st.Player.Y, st.Player.Z, st.Player.Yaw, st.Player.Pitch)
+	}
+	if st.Target != nil {
+		label := ""
+		if st.Target.Label != "" {
+			label = "  " + st.Target.Label
+		}
+		fmt.Printf("目标  X %7.1f  Y %7.1f  Z %7.1f%s\n", st.Target.X, st.Target.Y, st.Target.Z, label)
+		if st.Player != nil {
+			dx, dy, dz := st.Target.X-st.Player.X, st.Target.Y-st.Player.Y, st.Target.Z-st.Player.Z
+			dist := math.Sqrt(dx*dx + dy*dy + dz*dz)
+			fmt.Printf("      距离 %.1f m\n", dist)
+		}
+	} else {
+		fmt.Println("目标  未设置（hud X Y Z / hud --chip NAME）")
+	}
+	return 0
+}
+
+// chipSelector maps a CLI chip argument to a protocol selector: a plain number
+// is an index, anything else a name.
+func chipSelector(s string) any {
+	if n, err := strconv.Atoi(s); err == nil {
+		return map[string]any{"index": n}
+	}
+	return map[string]any{"name": s}
+}
+
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
 }
 
 func printChipLocation(ch testbench.Chip) {

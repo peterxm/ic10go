@@ -498,7 +498,7 @@ var Commands = []Command{
 		},
 	},
 	{
-		Name: "testbench", Args: "ping|list|locate|push|state|program|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
+		Name: "testbench", Args: "ping|list|locate|hud|push|state|program|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
 		Summary: text{EN: "drive the in-game testbench mod", ZH: "驱动游戏内测试台 mod"},
 		Long: text{
 			EN: "Talk to the ic10go-testbench mod running in Stationeers over NDJSON/TCP\n" +
@@ -510,6 +510,8 @@ var Commands = []Command{
 				"  list                      list programmable chips\n" +
 				"  locate [--chip NAME]      where a chip is (world position)\n" +
 				"                            --program FILE: find the chip(s) running it\n" +
+				"  hud [on|off|clear|X Y Z]  in-game overlay: your position/heading and a\n" +
+				"                            tracked target (--chip NAME to track a chip)\n" +
 				"  push <file.icg>           compile and upload (runs any loader first)\n" +
 				"  state                     registers / stack / devices\n" +
 				"  program                   print the chip's current IC10 source\n" +
@@ -536,6 +538,8 @@ var Commands = []Command{
 				"  list                      列出可编程芯片\n" +
 				"  locate [--chip NAME]      芯片位置（世界坐标）\n" +
 				"                            --program FILE：按源码找出跑该程序的芯片\n" +
+				"  hud [on|off|clear|X Y Z]  游戏内罗盘：自身坐标/朝向 + 追踪目标坐标\n" +
+				"                            （--chip NAME 追踪某块芯片；F8 开关、F9 清目标）\n" +
 				"  push <file.icg>           编译并上传（必要时先跑 loader）\n" +
 				"  state                     寄存器 / 栈 / 设备\n" +
 				"  program                   打印芯片当前 IC10 源码\n" +
@@ -571,6 +575,7 @@ var Commands = []Command{
 		Examples: []string{
 			"ic10c testbench ping",
 			"ic10c testbench locate --program rel.ic",
+			"ic10c testbench hud --chip 118",
 			"ic10c testbench push rel.icg --stable-ins",
 			"ic10c testbench set d1.Setting=10 && ic10c testbench state",
 			"ic10c testbench run testdata/bench/rel.json --diff",

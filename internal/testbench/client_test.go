@@ -134,6 +134,17 @@ func (f *fakeServer) serve(conn net.Conn) {
 				"chip":      map[string]any{"name": "TestChip"},
 				"registers": map[string]any{"r0": 105, "sp": 4},
 			}})
+		case "hud":
+			var a map[string]any
+			json.Unmarshal(req.Args, &a)
+			res := map[string]any{
+				"on":     true,
+				"player": map[string]any{"x": 1.0, "y": 2.0, "z": 3.0, "yaw": 90.0, "pitch": -5.0},
+			}
+			if a["target"] != nil {
+				res["target"] = map[string]any{"x": 669.0, "y": 192.0, "z": -627.0, "label": "118"}
+			}
+			send(map[string]any{"id": req.ID, "ok": true, "result": res})
 		default:
 			send(map[string]any{"id": req.ID, "ok": false, "error": map[string]any{"code": "bad-request", "message": "unknown " + req.Cmd}})
 		}
@@ -174,6 +185,24 @@ func TestClientPingAndChips(t *testing.T) {
 	}
 	if chips[0].Pos == nil || chips[0].Pos.X != 12.5 || chips[0].Pos.Z != -7.25 {
 		t.Errorf("pos = %+v, want {12.5 3 -7.25}", chips[0].Pos)
+	}
+}
+
+func TestClientHud(t *testing.T) {
+	c, _ := dialFake(t)
+	st, err := c.Hud(nil)
+	if err != nil {
+		t.Fatalf("hud: %v", err)
+	}
+	if !st.On || st.Player == nil || st.Player.Yaw != 90 || st.Player.Pitch != -5 {
+		t.Fatalf("hud state: %+v", st)
+	}
+	st, err = c.Hud(map[string]any{"target": map[string]any{"x": 669.0, "y": 192.0, "z": -627.0}})
+	if err != nil {
+		t.Fatalf("hud target: %v", err)
+	}
+	if st.Target == nil || st.Target.X != 669 || st.Target.Label != "118" {
+		t.Fatalf("hud target: %+v", st.Target)
 	}
 }
 

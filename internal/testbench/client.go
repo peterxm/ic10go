@@ -270,6 +270,36 @@ func (c *Client) ListChips() ([]Chip, error) {
 	return res.Chips, nil
 }
 
+// HudPos is a position (and, for the player, view angles) in the HUD state.
+type HudPos struct {
+	X     float64 `json:"x"`
+	Y     float64 `json:"y"`
+	Z     float64 `json:"z"`
+	Yaw   float64 `json:"yaw,omitempty"`
+	Pitch float64 `json:"pitch,omitempty"`
+	Label string  `json:"label,omitempty"`
+}
+
+// HudState is the in-game overlay state.
+type HudState struct {
+	On     bool    `json:"on"`
+	Player *HudPos `json:"player,omitempty"`
+	Target *HudPos `json:"target,omitempty"`
+}
+
+// Hud reads or updates the overlay: args may carry "on", "clear", or a
+// "target" of {x,y,z} or {chip:<selector>}. A nil args just reads the state.
+func (c *Client) Hud(args map[string]any) (*HudState, error) {
+	if args == nil {
+		args = map[string]any{}
+	}
+	var st HudState
+	if err := c.CallInto("hud", args, &st); err != nil {
+		return nil, err
+	}
+	return &st, nil
+}
+
 // Push uploads compiled IC10 (optionally running loader chunks first).
 func (c *Client) Push(code string, loaders []string, chip any) (*PushResult, error) {
 	args := map[string]any{"code": code}

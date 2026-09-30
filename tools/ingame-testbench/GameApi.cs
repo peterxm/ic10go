@@ -321,6 +321,16 @@ namespace Ic10Go.Testbench
             }
         }
 
+        /// <summary>The world position of a chip host, for the HUD target.</summary>
+        public static bool TryChipPosition(ChipHandle handle, out Vector3 pos)
+        {
+            pos = Vector3.zero;
+            var thing = handle != null ? handle.Holder as Thing : null;
+            if (thing == null) return false;
+            try { pos = thing.transform.position; return true; }
+            catch { return false; }
+        }
+
         /// <summary>
         /// Uploads `code` (running each loader chunk once first, so data segments
         /// and hoisted setup writes land before the runtime starts).

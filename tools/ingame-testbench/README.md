@@ -9,7 +9,11 @@ It lets you:
 - **upload** a compiled program to a chip (running any one-time loader first),
 - **set / read** device inputs and outputs by port (`d0`…`d5`),
 - **step** the chip deterministically while the world is paused,
-- **read back** registers, stack, program counter and device values.
+- **read back** registers, stack, program counter and device values,
+- **locate a chip** — `chip.list` reports each host's world position and a
+  restart-stable program fingerprint, and `ic10c testbench hud --chip N` draws
+  an on-screen compass arrow (your X/Y/Z + heading, distance/direction to the
+  target; `F8` toggles the overlay, `F9` clears the target).
 
 ## Disclaimer
 
