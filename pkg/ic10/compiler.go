@@ -93,8 +93,10 @@ type Options struct {
 	RedundantDeviceWrites bool
 	// MergeRenamedTails additionally merges structurally-identical tails whose
 	// registers were allocated differently, when the renaming is safe. Off by
-	// default: it is experimental and can change register usage. See
-	// docs/tail-merge.md. IC10C_MERGE_RENAMED_TAILS=1 also turns it on.
+	// default: it is experimental, changes register usage, and is currently
+	// output-neutral (on every bundled program the emitted code is byte-identical
+	// to the default coloured merge). See docs/tail-merge.md.
+	// IC10C_MERGE_RENAMED_TAILS=1 also turns it on.
 	MergeRenamedTails bool
 
 	// MaxLines, MaxBytes and MaxLineLen override the IC10 editor limits the

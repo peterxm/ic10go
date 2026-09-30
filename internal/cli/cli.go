@@ -141,8 +141,8 @@ var redundantDeviceWritesFlag = Flag{Long: "--redundant-device-writes", Desc: te
 }}
 
 var mergeRenamedTailsFlag = Flag{Long: "--merge-renamed-tails", Desc: text{
-	EN: "also merge structurally-identical tails whose registers differ, when safe (experimental)",
-	ZH: "在安全时额外合并寄存器不同但结构相同的尾块（实验性）",
+	EN: "also merge structurally-identical tails whose registers differ, when safe (experimental; currently output-neutral)",
+	ZH: "在安全时额外合并寄存器不同但结构相同的尾块（实验性；当前实现在产物上与默认逐字节一致）",
 }}
 
 var dynamicStackFlag = Flag{Long: "--dynamic-stack", Desc: text{

@@ -4,6 +4,11 @@
 > `IC10C_MERGE_RENAMED_TAILS` / VS Code `icg.mergeRenamedTails`），见 §7。
 > 相关代码：`internal/opt/opt.go` 的 `MergeTailsColored` / `mergeOneTail` /
 > `MergeTailsRenamed` / `mergeOneTailRenamed` / `renamingSafe`。
+>
+> **实测（2026-10，149 个 `.icg`）**：开关确实会合并 IR 块（其中 **18 个文件**
+> 触发 `merged=true`），但**最终产物与默认（`MergeTailsColored`）逐字节一致**——
+> codegen 的布局已经通过 fall-through 复用了相同尾段。因此该开关当前**没有可观测
+> 效果**，保留供实验；详见 §7 末尾。
 
 ## 1. 现象
 
@@ -140,6 +145,14 @@ b2: r1 = load d0 Setting; store d3 Setting r1; jmp end     // r1 死后缀，但
 > 经验：在本仓库的示例上，该 pass 大多**不改变最终行数**——因为 codegen 的布局
 > 已经通过 fall-through 复用了相同的尾块；它改变的是 IR。也就是说 §1 的 88→78
 > 差异主要来自重复的常量存储，而不是 `syncButtons` 尾段。因此默认关闭，按需开启。
+>
+> **2026-10 复核（临时探针 `IC10C_DEBUG_TAILMERGE`）**：全语料 149 个 `.icg`、
+> 编译器候选共 268 次 `mergeOneTailRenamed` 调用中，71 次存在「多做块」组、62 次
+> 满足 `renamingSafe` 并合并；落到文件上 **18 个文件**出现 `merged=true`。但这 18 个
+> 文件的**最终 .ic 与默认（`MergeTailsColored`）逐字节相同**。结论：pass 不是不可达，
+> 但被 codegen 布局完全抵消，**对产物零收益**；`--merge-renamed-tails` 目前是
+> output-neutral 的实验开关。若要它产生实际收益，需要让 codegen 不再自行复用尾段，
+> 或改为影响布局/行号的策略——收益与风险都需重新评估。
 
 ## 8. 代码索引
 
