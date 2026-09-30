@@ -152,8 +152,29 @@ func TestDecompileStructuredSplitsAtTarget(t *testing.T) {
 	if len(warns) != 0 {
 		t.Fatalf("unexpected warnings: %v", warns)
 	}
-	if !strings.Contains(code, "label L3:") {
-		t.Errorf("branch target label was not emitted:\n%s", code)
+	if !strings.Contains(code, "if ") {
+		t.Errorf("branch not structured into an if:\n%s", code)
+	}
+	// Structuring consumed the branch, so the target label is not referenced
+	// and must not be left behind.
+	if strings.Contains(code, "label L3:") {
+		t.Errorf("unused branch-target label should be dropped:\n%s", code)
+	}
+}
+
+func TestDecompileStructuredDropsLoopHeaderLabel(t *testing.T) {
+	// A backward goto becomes a `for`, so the loop header's label is unused
+	// (this is the shape of a real in-game chip).
+	src := "main:\nl r1 d0 Pressure\nslt r2 r1 7000\ns d1 On r2\nyield\nj main\n"
+	code, _, err := DecompileStructured(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(code, "for {") {
+		t.Errorf("back-edge not structured into a loop:\n%s", code)
+	}
+	if strings.Contains(code, "label main:") {
+		t.Errorf("unused loop-header label should be dropped:\n%s", code)
 	}
 }
 

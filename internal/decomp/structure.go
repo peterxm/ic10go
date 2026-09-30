@@ -56,7 +56,61 @@ func (d *decompiler) structure(lines []icLine) string {
 	if !st.complete() {
 		return ""
 	}
-	return st.out.String()
+	return dropUnusedLabels(st.out.String())
+}
+
+// dropUnusedLabels removes `label X:` lines whose name is not referenced
+// anywhere else in the structured output. Structuring consumes some references
+// (a loop back-edge `goto` becomes a `for`), which otherwise leaves the loop
+// header's label behind unreferenced.
+func dropUnusedLabels(code string) string {
+	lines := strings.Split(code, "\n")
+	labelName := func(s string) (string, bool) {
+		t := strings.TrimSpace(s)
+		if strings.HasPrefix(t, "label ") && strings.HasSuffix(t, ":") {
+			return strings.TrimSuffix(strings.TrimPrefix(t, "label "), ":"), true
+		}
+		return "", false
+	}
+	used := map[string]bool{}
+	for _, ln := range lines {
+		if _, ok := labelName(ln); ok {
+			continue // a definition is not a use
+		}
+		for _, tok := range identTokens(ln) {
+			used[tok] = true
+		}
+	}
+	keep := lines[:0]
+	for _, ln := range lines {
+		if n, ok := labelName(ln); ok && !used[n] {
+			continue
+		}
+		keep = append(keep, ln)
+	}
+	return strings.Join(keep, "\n")
+}
+
+// identTokens returns the identifier-like tokens in a line.
+func identTokens(s string) []string {
+	var out []string
+	isIdent := func(c byte) bool {
+		return c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+	}
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+			j := i + 1
+			for j < len(s) && isIdent(s[j]) {
+				j++
+			}
+			out = append(out, s[i:j])
+			i = j
+			continue
+		}
+		i++
+	}
+	return out
 }
 
 // visit records that a basic block was emitted.

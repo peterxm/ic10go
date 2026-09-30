@@ -190,7 +190,9 @@ func decompile(src string, structured bool) (string, []Warning, error) {
 			d.flat(&b, lines)
 		}
 	} else {
-		d.flat(&b, lines)
+		var fb strings.Builder
+		d.flat(&fb, lines)
+		b.WriteString(dropUnusedLabels(fb.String()))
 	}
 	for _, n := range d.endLabels {
 		fmt.Fprintf(&b, "    label %s:\n", n)
