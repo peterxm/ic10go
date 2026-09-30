@@ -218,9 +218,13 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 > 用同一算法匹配，便于把本地 `.ic` 对到服务器上正在跑它的芯片。`pos` 需要 mod 能读到
 > host 的 `Transform`；读不到就不输出该字段。
 >
-> `powered` / `power` 是 host 的 `Thing.Powered` / `PoweredValue`：**没通电的 housing 里，
-> 芯片程序读出来是空的**（`lines: 0`、`code: ""`），不是“下载不了”。`list` / `locate` /
-> 悬停都会标出「未通电」，避免误判。
+> `powered` / `power` 是 host 的 `Thing.Powered` / `PoweredValue`，仅作提示：**「未通电」和
+> 「程序为空」是两回事**（实测有未通电但仍有 25 行程序的芯片）。芯片读出来 `lines: 0`、
+> `code: ""` 时就是游戏对象本身没有源码（`ISourceCode.SourceCode` 为空），不是下载失败。
+>
+> 注：游戏在**加入世界时**会把 `SourceCode` 随对象下发给客户端（`ProgrammableChip.SerializeOnJoin`），
+> 之后靠 `NetworkUpdateFlags |= 256` 推送。若某些芯片客户端始终读不到源码，先确认在游戏里
+> 用 IC 编辑器打开它是否也显示为空。
 
 > 端口设备用 `CircuitHousing.Devices[portIndex]`（已确认）；`ICircuitHolder.GetLogicableFromIndex`
 > 返回的是 `CableNetwork`，不是物理设备。`set` 默认校验 `CanLogicWrite`，`force:true` 跳过。
