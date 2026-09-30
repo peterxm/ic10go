@@ -49,7 +49,7 @@
         "id": "ic10",
         "aliases": ["IC10", "ic10"],
         "extensions": [".ic", ".ic10"],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration-ic10.json"
       }
     ],
     "grammars": [
