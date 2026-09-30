@@ -55,3 +55,35 @@ func TestLiveness(t *testing.T) {
 		t.Errorf("b is defined before use, live-in = %v", in[entry])
 	}
 }
+
+func TestDominatorsIgnoreUnreachablePreds(t *testing.T) {
+	fn := &Function{Name: "f"}
+	entry := fn.NewBlock()
+	a := fn.NewBlock()
+	b := fn.NewBlock()
+	dead := fn.NewBlock()
+	entry.Term = &Jmp{Target: a}
+	a.Term = &Jmp{Target: b}
+	b.Term = &Ret{}
+	// dead -> b is an unreachable predecessor. Its dominator set is just
+	// itself, so intersecting it in would erase a's and entry's dominators of
+	// b and (via dominatesAllUses) block a sound LICM.
+	dead.Term = &Jmp{Target: b}
+	fn.Entry = entry
+
+	dom := Dominators(fn)
+	if !dom[b][entry] || !dom[b][a] {
+		t.Fatalf("dom[b] = %v, want entry and a", dom[b])
+	}
+}
+
+func TestNewBlockUniqueIDs(t *testing.T) {
+	fn := &Function{Name: "f"}
+	a := fn.NewBlock()
+	b := fn.NewBlock()
+	fn.RemoveBlock(a)
+	c := fn.NewBlock()
+	if b.ID == c.ID {
+		t.Fatalf("block IDs collide after removal: b=%d c=%d", b.ID, c.ID)
+	}
+}

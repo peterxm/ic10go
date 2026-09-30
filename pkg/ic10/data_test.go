@@ -19,6 +19,32 @@ func main() {
 }
 `
 
+func TestDataTableIndexInLoopWithContinue(t *testing.T) {
+	// A data-table read indexed by a loop variable, with a `continue`, must
+	// compile. An unreachable predecessor used to erase the real dominators of
+	// the body block; LICM then hoisted the index definition past one of its
+	// uses and DCE deleted it, failing with an internal IR error.
+	src := `data T = [10, 20, 30, 40]
+
+func main() {
+    for {
+        i := d0.Setting
+        if i < 0 || i >= 4 {
+            continue
+        }
+        d1.Setting = T[i]
+    }
+}
+`
+	code, diags, err := ic10.Compile("t.icg", []byte(src))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(code, "get ") {
+		t.Errorf("runtime does not read the data segment:\n%s", code)
+	}
+}
+
 func TestDataTableCompile(t *testing.T) {
 	code, diags, err := ic10.Compile("t.icg", []byte(dataTableSrc))
 	if err != nil || diags.HasErrors() {

@@ -191,16 +191,42 @@ func Preds(fn *Function) map[*Block][]*Block {
 	return preds
 }
 
+// reachableBlocks returns the set of blocks reachable from fn.Entry.
+func reachableBlocks(fn *Function) map[*Block]bool {
+	seen := map[*Block]bool{}
+	if fn.Entry == nil {
+		return seen
+	}
+	stack := []*Block{fn.Entry}
+	for len(stack) > 0 {
+		b := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if seen[b] {
+			continue
+		}
+		seen[b] = true
+		if b.Term != nil {
+			for _, s := range b.Term.Successors() {
+				if s != nil {
+					stack = append(stack, s)
+				}
+			}
+		}
+	}
+	return seen
+}
+
 // Dominators returns the dominator set of every block.
 func Dominators(fn *Function) map[*Block]map[*Block]bool {
 	preds := Preds(fn)
+	reach := reachableBlocks(fn)
 	all := map[*Block]bool{}
 	for _, b := range fn.Blocks {
 		all[b] = true
 	}
 	dom := map[*Block]map[*Block]bool{}
 	for _, b := range fn.Blocks {
-		if b == fn.Entry {
+		if b == fn.Entry || !reach[b] {
 			dom[b] = map[*Block]bool{b: true}
 		} else {
 			dom[b] = copySet(all)
@@ -209,10 +235,18 @@ func Dominators(fn *Function) map[*Block]map[*Block]bool {
 	for changed := true; changed; {
 		changed = false
 		for _, b := range fn.Blocks {
-			if b == fn.Entry {
+			if b == fn.Entry || !reach[b] {
 				continue
 			}
-			ps := preds[b]
+			// Ignore predecessors that are themselves unreachable: a dead
+			// block's dominator set is just itself, and intersecting it in
+			// would erase the real dominators of a reachable block.
+			var ps []*Block
+			for _, p := range preds[b] {
+				if reach[p] {
+					ps = append(ps, p)
+				}
+			}
 			var nd map[*Block]bool
 			if len(ps) == 0 {
 				nd = map[*Block]bool{}

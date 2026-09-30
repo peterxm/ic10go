@@ -25,6 +25,19 @@
 > 小规模翻倍（1→2、2→5）是正常的，不触发。修后该用例 **0.03s** 报错。
 > 反编译器侧另有 `bankMaxRange = 12`，保证自身产物不会落入这段。
 
+> ✅ **不可达前驱污染支配集（已修，2026-10）**。`ir.Dominators` 把**不可达块**也当成前驱
+> 求交，而不可达块的支配集只有自身，于是可达块的真实支配者被抹掉。后果之一：`licm` 里
+> 判断「定义块是否支配其所有使用」的 `dominatesAllUses` 误判，把一个定义提升到某个使用点
+> 之前，随后 `dce` 按活跃性把它删掉，产出内部错误「块 N 使用寄存器 R，但它从未被定义」。
+> 触发样例（`data` 表用循环变量索引 + 循环内 `continue` + 无 `yield`）：
+> `for { i := d0.Setting; if i < 0 || i >= 3 { continue }; d1.Setting = T[i] }`。
+> 修法：`Dominators` 先算 Entry 可达集，求交时跳过不可达前驱（不可达块支配集取自身）。
+> 回归：`TestDominatorsIgnoreUnreachablePreds`、`TestDataTableIndexInLoopWithContinue`。
+>
+> 同轮修：`Function.NewBlock` 原来用 `len(Blocks)` 当块 ID，块被删除后再新建会**复用 ID**；
+> 而终结符 `Key()` 用块 ID，两个不同块会被当成同一个（CSE / 合并类 pass 的隐患）。改为
+> 单调计数器分配。回归：`TestNewBlockUniqueIDs`。
+
 > ✅ **标签当值（已修，2026-09）**。标签用作值应取它的行号（游戏与 VM 都已验证：注释行、
 > 空行都计数）。原来在**分支条件**里会失败——生成的 IC10 留着占位符（控制字符
 > `\x01L5\x01`）。根因：标签的块在布局时没有自己的行（它只是个跳转到下一块的空块），

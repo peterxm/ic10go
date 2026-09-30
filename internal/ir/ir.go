@@ -487,6 +487,10 @@ type Function struct {
 	Blocks  []*Block
 	Entry   *Block
 	NumRegs int
+	// numBlocks hands out unique block IDs. It is not len(Blocks): blocks can
+	// be removed and created again (LICM preheaders), and terminator Key() uses
+	// the ID, so reusing one would make two distinct blocks look identical.
+	numBlocks int
 	// SrcLines / SrcTerms record the 1-based .icg source line each instruction
 	// and terminator was lowered from. They are best effort: instructions a
 	// later optimisation pass creates are absent (treated as unknown). Used to
@@ -668,7 +672,8 @@ func (b *Builder) SetTerm(t Term) {
 
 // NewFunctionBlock appends a block to the function.
 func (f *Function) NewBlock() *Block {
-	b := &Block{ID: len(f.Blocks)}
+	b := &Block{ID: f.numBlocks}
+	f.numBlocks++
 	f.Blocks = append(f.Blocks, b)
 	if f.Entry == nil {
 		f.Entry = b
