@@ -160,6 +160,11 @@
           "default": false,
           "markdownDescription": "%icg.mergeRenamedTails.desc%"
         },
+        "icg.extractSetup": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%icg.extractSetup.desc%"
+        },
         "icg.libDirs": {
           "type": "array",
           "items": { "type": "string" },

@@ -783,19 +783,43 @@ class Bench {
                 vscode.window.showErrorMessage(t('IC10: cannot upload, the program has errors.', 'IC10: 程序有错误，无法上传。'));
                 return;
             }
-            const loaders = (out.data && (out.data.loaders || (out.data.loader ? [out.data.loader] : []))) || [];
-            if (Array.isArray(out.lineMap) && out.lineMap.length) {
-                this.programMap = { uri: doc.uri.toString(), map: out.lineMap };
+            // A source with several `chip` blocks returns one entry per block;
+            // ask which block to upload (the CLI equivalent is `push --as NAME`).
+            let code = out.code;
+            let lineMap = out.lineMap;
+            let data = out.data;
+            let chipLabel = '';
+            if (Array.isArray(out.chips) && out.chips.length > 1) {
+                const item = await vscode.window.showQuickPick(
+                    out.chips.map((c, i) => ({
+                        label: c.name || `chip ${i + 1}`,
+                        description: t(`${(c.lines || []).length} lines`, `${(c.lines || []).length} 行`),
+                        index: i,
+                    })),
+                    { placeHolder: t('Choose a chip block to upload', '选择要上传的芯片块') }
+                );
+                if (!item) return;
+                const c = out.chips[item.index];
+                code = c.code;
+                lineMap = c.lineMap;
+                data = { needed: !!(c.loader || (c.loaders && c.loaders.length)), loader: c.loader, loaders: c.loaders, setup: c.setup };
+                chipLabel = c.name || '';
+            }
+            const loaders = (data && (data.loaders || (data.loader ? [data.loader] : []))) || [];
+            if (Array.isArray(lineMap) && lineMap.length) {
+                this.programMap = { uri: doc.uri.toString(), map: lineMap };
             } else {
                 this.programMap = undefined;
             }
-            this.programData = out.data || undefined;
+            this.programData = data || undefined;
             try {
-                const r = await conn.call('push', { code: out.code, loaders });
-                const lines = r.lines || (out.stats && out.stats.lines) || 0;
+                const r = await conn.call('push', { code, loaders });
+                const lines = r.lines || 0;
+                const tail = chipLabel ? ` [${chipLabel}]` : '';
+                const loaderNote = loaders.length ? ` (+${loaders.length} loader)` : '';
                 vscode.window.setStatusBarMessage(
-                    t(`IC10: uploaded ${lines} lines${loaders.length ? ` (+${loaders.length} loader)` : ''}`,
-                        `IC10: 已上传 ${lines} 行${loaders.length ? `（+${loaders.length} 段 loader）` : ''}`),
+                    t(`IC10: uploaded ${lines} lines${tail}${loaderNote}`,
+                        `IC10: 已上传 ${lines} 行${tail}${loaders.length ? `（+${loaders.length} 段 loader）` : ''}`),
                     4000
                 );
                 await this.refresh(false);

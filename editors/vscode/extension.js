@@ -363,6 +363,7 @@ class LspClient {
             userStack: c.get('userStack'),
             redundantDeviceWrites: c.get('redundantDeviceWrites'),
             mergeRenamedTails: c.get('mergeRenamedTails'),
+            extractSetup: c.get('extractSetup'),
             autoTable: c.get('autoTable'),
             jumpTable: c.get('jumpTable'),
             relJump: c.get('relJump'),
@@ -394,6 +395,7 @@ class LspClient {
         }
         if (cfg.redundantDeviceWrites === true) env.IC10C_REDUNDANT_DEVICE_WRITES = '1';
         if (cfg.mergeRenamedTails === true) env.IC10C_MERGE_RENAMED_TAILS = '1';
+        if (cfg.extractSetup === true) env.IC10C_EXTRACT_SETUP = '1';
         if (cfg.maxLines > 0) env.IC10C_MAX_LINES = String(cfg.maxLines);
         if (cfg.maxBytes > 0) env.IC10C_MAX_BYTES = String(cfg.maxBytes);
         if (cfg.maxLine > 0) env.IC10C_MAX_LINE = String(cfg.maxLine);

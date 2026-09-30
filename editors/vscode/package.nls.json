@@ -19,6 +19,7 @@
   "icg.userStack.desc": "Fixed user stack size (default 128). User slots at or above it are rejected at compile time.",
   "icg.redundantDeviceWrites.desc": "Drop constant device writes that repeat the previous value. Saves lines but changes the observable write sequence; off by default.",
   "icg.mergeRenamedTails.desc": "Also merge structurally-identical tails whose registers were allocated differently, when provably safe. Experimental; off by default.",
+  "icg.extractSetup.desc": "Hoist one-time constant device writes into a one-time loader (shorter runtime; run the loader once). A data segment already reuses the loader automatically; this forces it under the line limit too.",
   "icg.libDirs.desc": "Extra directories to search for `import` files, after the importing file's directory. Relative paths resolve against the first workspace folder.",
   "icg.trace.server.desc": "Trace the messages exchanged with the language server in the IC10 Go output channel.",
   "icg.runSteps.desc": "Instruction budget for `IC10 Go: Run in VM` (`--steps`). 0 uses the compiler default (1000).",
