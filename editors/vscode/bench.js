@@ -255,14 +255,16 @@ class BenchTree {
             );
             items.push(none);
         } else if (chips.length) {
-            // Group hosts into "with a chip" and "without", each sorted by name
-            // descending. The empty hosts are collapsed by default (there are
-            // usually far more of them).
-            const installed = chips.filter((c) => c.programmable !== false);
-            const empty = chips.filter((c) => c.programmable === false);
+            // Group hosts: with code, with a chip but no code, and no chip at
+            // all. Each sorted by name descending. The last two are collapsed by
+            // default (there are usually many of them).
+            const withCode = chips.filter((c) => c.programmable !== false && c.lines > 0);
+            const noCode = chips.filter((c) => c.programmable !== false && !c.lines);
+            const noChip = chips.filter((c) => c.programmable === false);
             const groups = [
-                { key: 'with', label: t('With chip', '有芯片'), list: installed, open: true, icon: 'circuit-board' },
-                { key: 'without', label: t('No chip', '无芯片'), list: empty, open: false, icon: 'circle-slash' },
+                { label: t('Chip · code', '有芯片 · 有代码'), list: withCode, open: true, icon: 'circuit-board' },
+                { label: t('Chip · no code', '有芯片 · 无代码'), list: noCode, open: false, icon: 'warning' },
+                { label: t('No chip', '无芯片'), list: noChip, open: false, icon: 'circle-slash' },
             ];
             for (const g of groups) {
                 if (!g.list.length) continue;
@@ -407,15 +409,17 @@ function chipNode(chip, selected) {
     );
     const tags = [];
     if (chip.programmable === false) tags.push(t('no chip', '无芯片'));
-    else if (chip.powered === false) tags.push(t('no power', '未通电'));
+    else if (!chip.lines) tags.push(t('no code', '无代码'));
+    if (chip.powered === false) tags.push(t('no power', '未通电'));
     if (chip.lines) tags.push(`${chip.lines} ${t('lines', '行')}`);
     item.description = tags.join(' · ');
     let tip = `**${name}**\n\n`;
     if (chip.prefab) tip += `\`${chip.prefab}\`\n\n`;
     if (chip.chipPrefab) tip += t('chip: ', '芯片：') + `\`${chip.chipPrefab}\`\n\n`;
-    if (chip.powered === false) {
-        tip += t('not powered — the program is hidden', '未通电——看不到程序') + '\n\n';
+    if (chip.programmable !== false && !chip.lines) {
+        tip += t('no program on this chip', '这块 host 的芯片没有程序') + '\n\n';
     }
+    if (chip.powered === false) tip += t('not powered', '未通电') + '\n\n';
     if (chip.pos) {
         const { x, y, z, yaw } = chip.pos;
         const yawPart = yaw ? ` · yaw ${Math.round(yaw)}°` : '';
