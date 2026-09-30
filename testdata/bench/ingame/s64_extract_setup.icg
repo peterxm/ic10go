@@ -1,0 +1,18 @@
+// --extract-setup: the prologue's constant device writes go into a one-time
+// loader, which the testbench runs before the runtime. The LED follows the
+// Logic Memory, so the runtime behaviour is easy to observe.
+//   d0 LED (Setting/On r/w), d3 ElectronicsPrinter (On r/w), d4 LogicMemory.
+const (
+	LED = d0
+	PRN = d3
+	MEM = d4
+)
+
+func main() {
+	LED.Setting = 0
+	PRN.On = 0
+	for {
+		yield()
+		LED.On = MEM.Setting > 5
+	}
+}

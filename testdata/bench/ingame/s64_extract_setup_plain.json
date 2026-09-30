@@ -1,0 +1,9 @@
+{
+  "program": "s64_extract_setup.icg",
+  "chip": { "name": "A CHIP" },
+  "ports": { "d0": "LED", "d3": "ElectronicsPrinter", "d4": "Memory" },
+  "cases": [
+    { "name": "plain; mem 10 -> LED on", "set": { "d4.Setting": 10 }, "run": 2, "expect": { "d0.On": 1, "d0.Setting": 0, "d3.On": 0 } },
+    { "name": "plain; mem 0 -> LED off", "set": { "d4.Setting": 0 }, "run": 2, "expect": { "d0.On": 0, "d0.Setting": 0, "d3.On": 0 } }
+  ]
+}

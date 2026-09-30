@@ -19,7 +19,7 @@
 - **寄存器复用**：活跃性分析 + 图着色（Chaitin-Briggs）+ 拷贝合并；寄存器不足时自动溢出到宿主栈（`get/put db`，每次加载 1 行；`--spill stack` 回退为 `peek/poke`）。
 - **面向 128 行 / 4 KiB 约束**：不生成 `alias` / `define` / 注释 / 空行 / 标签，跳转默认用绝对行号（`--rel-jump` 在相对形式更短时才改用 `jr`/`br*`）。
 - **现代语法**：`:=`、`if/for/switch`、`for range`（含遍历 `data` 表）、`case lo..hi` 区间、`if/switch` 初始化语句、带标签的 `break/continue`、函数（编译期内联 / 外提 / 尾调用，按体积决策；设备参数可外提为运行期端口 `drN`）、设备属性 `d0.On`、槽位 `d0.slot[i].X`、设备栈 `d0.stack[i]`、批量 IO、通道、`sorter.*` / `printer.*` 栈指令构建器、`raw("...")` 逃生口。
-- **持久栈数据段**：`data` 表把大块常量 / 查表放进芯片持久栈，`switch ... table` 自动表化，突破 128 行预算。编译器还会把序言里的一次性设备写入（`Mode` / `On` / 常量 `Setting`，操作数全为常量）自动外提到一次性 loader：**超 128 行时**用来塞进预算，**程序本来就需要 loader（有 `data` 表）时**顺带复用、让 runtime 更小。loader 超 128 行会自动拆成多块（按序运行）。
+- **持久栈数据段**：`data` 表把大块常量 / 查表放进芯片持久栈，`switch ... table` 自动表化，突破 128 行预算。编译器还会把序言里的一次性设备写入（`Mode` / `On` / 常量 `Setting`，操作数全为常量）自动外提到一次性 loader：**超 128 行时**用来塞进预算，**程序本来就需要 loader（有 `data` 表）时**顺带复用、让 runtime 更小；也可用 **`--extract-setup`** 在 128 行以内主动外提（runtime 更短，但需先运行一次 loader）。loader 超 128 行会自动拆成多块（按序运行）。
 - **省行优化**：分支融合（`Cmp`+分支 → `beq`/`bne`）、常量查表内联（`T[const]` → 字面量）、精确栈失效；**单芯片默认栈私有**（`// icg: private-stack`）时还可把常量用户栈槽提升为寄存器、消除成对 `push`/`pop`。多芯片或 `// icg: shared-stack` 保持保守。这些优化只在 runtime 行数不增时才采用；优化版接近/超出 128 行或存在溢出时，编译器还会与**整体未优化**版比对取更短者。
 - **可选 `--redundant-device-writes`**：删除同一段直落代码（无分支/汇合/屏障，含内联展开的连续调用）内重复的同值常量设备写（更短，但改变可观测写序列，默认关闭）。
 - **可选 `--merge-renamed-tails`**：按结构合并「寄存器分配不同但结构相同」的尾块，仅当重命名的寄存器在后缀后死亡且 live-in 读同色时（实验性，默认关闭；见 [`docs/tail-merge.md`](docs/tail-merge.md)）。**当前实测在全部 149 个示例/语料上与默认产物逐字节一致**（pass 会合并 IR 块，但 codegen 的布局已通过 fall-through 复用相同尾段，最终无可观测效果）。
@@ -112,13 +112,14 @@ ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
             [--data-layout top|middle] [--unsafe] [--auto-table] [--jump-table] \
             [--fast] [--rel-jump] [--spill db|stack] [--dynamic-stack] [--user-stack N] \
             [--max-lines N] [--max-bytes N] [--max-line N] \
-            [--redundant-device-writes] [--merge-renamed-tails] <file.icg>
+            [--redundant-device-writes] [--merge-renamed-tails] [--extract-setup] <file.icg>
                               # 兼容保留；loader 现在会自动输出（默认 <file>.data.ic）
+                              # --extract-setup：把序言里的一次性常量设备写外提到 loader（需先运行一次）
 ic10c build --data-only [--chip NAME] <file.icg>  # 只输出一次性 loader（数据段 + 外提设置）
 ic10c run    <file.icg>       # 编译并在内置 VM 中运行（自动先跑一次性 loader；多芯片锁步；--steps/--ticks/--set/--seed/--strict/--dump/--json/--trace）
 ic10c testbench ping|list|push|state|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--as NAME] [--json]
                               # 驱动游戏内测试台 mod（tools/ingame-testbench）：上传/读寄存器/栈/设备、单步/暂停/载入存档/跑场景；见 docs/ingame-testbench.md
-ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] [--spill db|stack] [--dynamic-stack] [--user-stack N] [--max-lines N] [--max-bytes N] [--max-line N] [--redundant-device-writes] [--merge-renamed-tails] <file.icg>
+ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] [--spill db|stack] [--dynamic-stack] [--user-stack N] [--max-lines N] [--max-bytes N] [--max-line N] [--redundant-device-writes] [--merge-renamed-tails] [--extract-setup] <file.icg>
                               # 行 / 字节 / 寄存器预算 + 峰值活跃 / 溢出槽（多芯片按芯片分组；含 loader 预算）+ 栈预算（stack user 个数/上限，默认固定 128；--dynamic-stack 动态边界，越界报错；--redundant-device-writes 删除重复设备写）
 ic10c size   <file.icg>       # 按函数拆分行预算（找最占行数的函数）
 ic10c graph  [--level source|ir] [--func NAME] [--no-lines] [-o FILE] <file.icg>

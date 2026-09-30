@@ -260,6 +260,7 @@ func cmdBuild(args []string) int {
 	userStack := 0
 	redundantWrites := false
 	mergeRenamedTails := false
+	extractSetup := false
 	dataLayout := ""
 	dataOut := ""
 	chipName := ""
@@ -285,6 +286,8 @@ func cmdBuild(args []string) int {
 			redundantWrites = true
 		case "--merge-renamed-tails":
 			mergeRenamedTails = true
+		case "--extract-setup":
+			extractSetup = true
 		case "--user-stack":
 			if i+1 < len(args) {
 				n, err := strconv.Atoi(args[i+1])
@@ -370,6 +373,7 @@ func cmdBuild(args []string) int {
 		UserStackLimit:        userStack,
 		RedundantDeviceWrites: redundantWrites,
 		MergeRenamedTails:     mergeRenamedTails,
+		ExtractSetup:          extractSetup,
 		MaxLines:              lim.lines,
 		MaxBytes:              lim.bytes,
 		MaxLineLen:            lim.line,
@@ -545,6 +549,7 @@ func cmdRun(args []string) int {
 	var seed int64
 	trace := false
 	stableIns := false
+	extractSetup := false
 	strict := false
 	dump := false
 	jsonOut := false
@@ -581,6 +586,8 @@ func cmdRun(args []string) int {
 			}
 		case "--stable-ins":
 			stableIns = true
+		case "--extract-setup":
+			extractSetup = true
 		case "--strict":
 			strict = true
 		case "--dump":
@@ -604,7 +611,8 @@ func cmdRun(args []string) int {
 	}
 	ic10Hint(file)
 	compiled, diags, err := ic10.CompileResult(file, data, ic10.Options{
-		StableInsOrder: stableIns, MaxLines: lim.lines, MaxBytes: lim.bytes, MaxLineLen: lim.line,
+		StableInsOrder: stableIns, ExtractSetup: extractSetup,
+		MaxLines: lim.lines, MaxBytes: lim.bytes, MaxLineLen: lim.line,
 		Imports: true, LibDirs: libDirs,
 	})
 	if rc := report(source.NewFile(file, data), diags); rc != 0 {
@@ -1043,6 +1051,7 @@ func cmdStats(args []string) int {
 	userStack := 0
 	redundantWrites := false
 	mergeRenamedTails := false
+	extractSetup := false
 	var files []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -1061,6 +1070,8 @@ func cmdStats(args []string) int {
 			redundantWrites = true
 		case "--merge-renamed-tails":
 			mergeRenamedTails = true
+		case "--extract-setup":
+			extractSetup = true
 		case "--user-stack":
 			if i+1 < len(args) {
 				n, err := strconv.Atoi(args[i+1])
@@ -1091,7 +1102,7 @@ func cmdStats(args []string) int {
 	}
 	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, SpillStack: spillStack,
 		DynamicStack: dynamicStack, UserStackLimit: userStack, RedundantDeviceWrites: redundantWrites,
-		MergeRenamedTails: mergeRenamedTails, MaxLines: lim.lines, MaxBytes: lim.bytes, MaxLineLen: lim.line,
+		MergeRenamedTails: mergeRenamedTails, ExtractSetup: extractSetup, MaxLines: lim.lines, MaxBytes: lim.bytes, MaxLineLen: lim.line,
 		Imports: true, LibDirs: libDirs}
 	limits := ic10.LimitsFor(opts)
 	data, err := os.ReadFile(files[0])

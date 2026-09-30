@@ -48,6 +48,12 @@ type Options struct {
 	// needing the `table` marker. Off by default; the runtime then needs the
 	// data loader installed.
 	AutoTable bool
+	// ExtractSetup moves the one-time constant device writes of the prologue
+	// (blocks that dominate the loop) into a one-time loader, shortening the
+	// runtime at the cost of running the loader once. Off by default; it also
+	// happens automatically when the runtime would not fit or when a data
+	// segment already needs a loader. IC10C_EXTRACT_SETUP=1 also turns it on.
+	ExtractSetup bool
 	// JumpTable lowers dense integer switches (>=8 cases) to a computed jump
 	// through a table of `j` instructions, saving about one line per case.
 	// Off by default.
@@ -212,6 +218,9 @@ func stackEnv(opts Options) Options {
 	}
 	if !opts.MergeRenamedTails && os.Getenv("IC10C_MERGE_RENAMED_TAILS") != "" {
 		opts.MergeRenamedTails = true
+	}
+	if !opts.ExtractSetup && os.Getenv("IC10C_EXTRACT_SETUP") != "" {
+		opts.ExtractSetup = true
 	}
 	if opts.MaxLines == 0 {
 		opts.MaxLines = positiveEnv("IC10C_MAX_LINES")
@@ -524,12 +533,18 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			// fit, so try it as a fallback.
 			sawSpill = true
 		}
-		// Split out one-time setup writes when the runtime is over a limit, or
-		// when the program already needs a one-time loader (data segment): in
-		// that case moving setup writes into the existing loader is free.
-		if err == nil && info.DataSize == 0 {
+		// Hoist one-time setup writes into a loader when the runtime is over a
+		// limit (the extracted runtime may then fit), when the program already
+		// needs a loader (data segment: reusing it is free), or when explicitly
+		// asked (--extract-setup).
+		if err == nil && info.DataSize == 0 && !o.ExtractSetup {
 			consider(Result{Code: code, LineMap: lineMap})
 			return
+		}
+		if err == nil {
+			// Extraction is not required (data segment, or --extract-setup): keep
+			// the plain runtime as a candidate so the shorter one wins.
+			consider(Result{Code: code, LineMap: lineMap})
 		}
 		setup := opt.SplitSetup(fn)
 		if setup == nil {

@@ -442,6 +442,52 @@ func TestNoLoaderWhenUnderLimit(t *testing.T) {
 	}
 }
 
+func TestExtractSetupUnderLimit(t *testing.T) {
+	src := []byte("func main() { d0.Mode = 1; d0.On = 1; d0.Lock = 1; for { yield(); d1.On = d2.On } }\n")
+	plain, diags, err := ic10.CompileResult("e.icg", src, ic10.Options{})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("plain compile: %v %v", diags.Diags, err)
+	}
+	if plain.Loader != "" {
+		t.Fatalf("default must not create a loader:\n%s", plain.Loader)
+	}
+	ex, diags, err := ic10.CompileResult("e.icg", src, ic10.Options{ExtractSetup: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("extract compile: %v %v", diags.Diags, err)
+	}
+	if ex.Loader == "" {
+		t.Fatal("--extract-setup should produce a loader")
+	}
+	if strings.Count(ex.Code, "\n") >= strings.Count(plain.Code, "\n") {
+		t.Errorf("extraction should shrink the runtime: %d >= %d\n%s",
+			strings.Count(ex.Code, "\n"), strings.Count(plain.Code, "\n"), ex.Code)
+	}
+	for _, want := range []string{"s d0 Mode 1", "s d0 On 1", "s d0 Lock 1"} {
+		if !strings.Contains(ex.Loader, want) {
+			t.Errorf("loader missing %q:\n%s", want, ex.Loader)
+		}
+		if strings.Contains(ex.Code, want) {
+			t.Errorf("setup write %q was not removed from the runtime:\n%s", want, ex.Code)
+		}
+	}
+}
+
+func TestExtractSetupEnv(t *testing.T) {
+	src := []byte("func main() { d0.Mode = 1; for { yield() } }\n")
+	t.Setenv("IC10C_EXTRACT_SETUP", "1")
+	env, diags, err := ic10.CompileResult("e.icg", src, ic10.Options{})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("env compile: %v %v", diags.Diags, err)
+	}
+	explicit, diags, err := ic10.CompileResult("e.icg", src, ic10.Options{ExtractSetup: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("explicit compile: %v %v", diags.Diags, err)
+	}
+	if env.Code != explicit.Code || env.Loader != explicit.Loader {
+		t.Fatalf("IC10C_EXTRACT_SETUP did not match the explicit option")
+	}
+}
+
 func mustCompile(t *testing.T, src string) string {
 	t.Helper()
 	code, diags, err := ic10.Compile("test.icg", []byte(src))

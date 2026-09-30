@@ -743,6 +743,8 @@ func benchOptions(flags []string, lim limitArgs, libDirs []string) (ic10.Options
 			opts.RedundantDeviceWrites = true
 		case a == "--merge-renamed-tails":
 			opts.MergeRenamedTails = true
+		case a == "--extract-setup":
+			opts.ExtractSetup = true
 		case a == "--data-layout" && i+1 < len(flags):
 			opts.DataLayout = flags[i+1]
 			i++

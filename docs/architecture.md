@@ -435,7 +435,7 @@ ECMA-335 解析，无需 .NET SDK、无需启动游戏），`LogicTypes` / `Slot
 | `ic10c lsp` | 启动 LSP（stdio） |
 | `ic10c help [command]` | 帮助（中英双语） |
 
-环境变量：`IC10C_LANG`（输出语言）、`IC10C_NO_CHECK`（关闭 logic type 校验）、`IC10C_NO_OPT`（关闭优化，调试用）、`IC10C_NO_OUTLINE`（关闭函数外提）、`IC10C_MAX_LINES` / `IC10C_MAX_BYTES` / `IC10C_MAX_LINE`（覆盖 IC10 编辑器上限，默认 128 / 4096 / 90；也可用 `--max-lines` / `--max-bytes` / `--max-line`，VSCode `icg.maxLines` / `icg.maxBytes` / `icg.maxLine`）。
+环境变量：`IC10C_LANG`（输出语言）、`IC10C_NO_CHECK`（关闭 logic type 校验）、`IC10C_NO_OPT`（关闭优化，调试用）、`IC10C_NO_OUTLINE`（关闭函数外提）、`IC10C_EXTRACT_SETUP`（外提一次性设置写入，同 `--extract-setup`）、`IC10C_MAX_LINES` / `IC10C_MAX_BYTES` / `IC10C_MAX_LINE`（覆盖 IC10 编辑器上限，默认 128 / 4096 / 90；也可用 `--max-lines` / `--max-bytes` / `--max-line`，VSCode `icg.maxLines` / `icg.maxBytes` / `icg.maxLine`）。
 
 配套：
 
@@ -551,7 +551,7 @@ ic10go/
 - `Bus.槽位` → `l/s <dev>:<conn> ChannelN`；唯一写者 / 被读却无写者 / 未绑定 / 超通道校验
 - CLI 按芯片写文件、`--chip`、JSON `chips[]`、`stats` 分组；VM `World` 多芯片锁步并按 bus 自动接线
 - LSP 按光标所在 chip 隔离补全/签名；VSCode 编译命令弹芯片选择
-- 另：超预算时把一次性设置写入外提到 loader（`internal/opt/setup.go`）；同步新气体比例逻辑类型
+- 另：超预算时、程序本就需要 loader（`data` 段）时、或 `--extract-setup` 时，把一次性设置写入外提到 loader（`internal/opt/setup.go`）；同步新气体比例逻辑类型
 - 详见 [`multichip.md`](multichip.md)
 
 ---
