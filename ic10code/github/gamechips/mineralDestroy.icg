@@ -1,0 +1,118 @@
+// 游戏内社区服务器存档里的真实脚本（芯片名：矿物销毁控制IC）。
+// 由 `ic10c decompile -s` 反编译后整理为端口，行为与原脚本一致。
+// icg: shared-stack
+func main() {
+    var r0 = 0
+    var r1 = 0
+    var r2 = 0
+    var r3 = 0
+    var r5 = 0
+    var r6 = 0
+    var r7 = 0
+    var r8 = 0
+    var r9 = 0
+    var r10 = 0
+    var r11 = 0
+    var r12 = 0
+    var r13 = 0
+    var r14 = 0
+    var r15 = 0
+    clr(db)
+    push(hash("Iron Logic Sorter"))
+    push(hash("Iron Silo"))
+    push(hash("Copper Logic Sorter"))
+    push(hash("Copper Silo"))
+    push(hash("Silicon Logic Sorter"))
+    push(hash("Silicon Silo"))
+    sp = (sp + 2)
+    push(hash("ICS Quantity Memory"))
+    push(3)
+    push(480)
+    push(hash("Gold Logic Sorter"))
+    push(hash("Gold Silo"))
+    sp = (sp + 2)
+    push(hash("Gold Quantity Memory"))
+    push(1)
+    push(600)
+    push(hash("Silver Logic Sorter"))
+    push(hash("Silver Silo"))
+    push(hash("Nickel Logic Sorter"))
+    push(hash("Nickel Silo"))
+    push(hash("Lead Logic Sorter"))
+    push(hash("Lead Silo"))
+    sp = (sp + 2)
+    push(hash("SNL Quantity Memory"))
+    push(3)
+    push(480)
+    r15 = sp
+    sp = r15
+    for {
+        sp = (sp - 1)
+        r14 = pop()
+        r11 = pop()
+        r11 = batch.readName(hash("StructureLogicMemory"), r11, "ReferenceId", "Maximum")
+        push(r11)
+        sp = (sp - 1)
+        sp = (sp - 2)
+        label L56:
+        r13 = pop()
+        r12 = pop()
+        r13 = batch.readName(hash("StructureSDBSilo"), r13, "ReferenceId", "Maximum")
+        r12 = batch.readName(hash("StructureLogicSorter"), r12, "ReferenceId", "Maximum")
+        push(r12)
+        push(r13)
+        sp = (sp - 2)
+        r14 = (r14 - 1)
+        if r14 > 0 { goto L56 }
+        if sp <= 0 { break }
+    }
+    sp = r15
+    for {
+        yield()
+        r10 = pop()
+        r14 = pop()
+        r11 = pop()
+        r9 = pop()
+        r8 = pop()
+        r5 = r14
+        r7 = 600
+        r6 = 0
+        label L78:
+        r13 = pop()
+        r12 = pop()
+        r1 = readById(r13, LogicType.Quantity)
+        r7 = min(r7, r1)
+        r6 = max(r6, r1)
+        r5 = (r5 - 1)
+        if r5 > 0 { goto L78 }
+        if r6 != r8 { goto L88 }
+        if r7 != r9 { goto L88 }
+        goto L100
+        label L88:
+        writeById(r11, LogicType.Setting, r7)
+        r3 = (r14 * 2)
+        sp = (sp + r3)
+        push(r6)
+        push(r7)
+        sp = (sp - 2)
+        r5 = r14
+        label L95:
+        r13 = pop()
+        r12 = pop()
+        call setcount
+        r5 = (r5 - 1)
+        if r5 > 0 { goto L95 }
+        label L100:
+        if sp <= 0 {
+            sp = r15
+        }
+    }
+    label setcount:
+    r1 = (r7 < r10)
+    r2 = (r1 != 0 ? r10 : 590)
+    r0 = readById(r13, LogicType.Quantity)
+    r0 = (r0 >= r2)
+    r0 = (r0 != 0 ? 8 : 0)
+    putd(r12, 2, r0)
+    ret
+}

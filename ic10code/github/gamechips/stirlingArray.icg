@@ -1,0 +1,146 @@
+// 游戏内社区服务器存档里的真实脚本（芯片名：IC封装(紧凑型)-斯特林发电机机组）。
+// 由 `ic10c decompile -s` 反编译后整理为端口，行为与原脚本一致。
+// icg: shared-stack
+func main() {
+    var r0 = 0
+    var r1 = 0
+    var r2 = 0
+    var r3 = 0
+    var r6 = 0
+    var r7 = 0
+    var r8 = 0
+    var r9 = 0
+    var r10 = 0
+    var r11 = 0
+    var r12 = 0
+    var r13 = 0
+    var r14 = 0
+    var r15 = 0
+    label S:
+    r9 = batch.readName(hash("StructurePipeAnalysizer"), hash("A"), "ReferenceId", "Maximum")
+    r10 = batch.readName(hash("StructurePressureRegulator"), hash("YLF1"), "ReferenceId", "Maximum")
+    r11 = batch.readName(hash("StructurePressureRegulator"), hash("YLF2"), "ReferenceId", "Maximum")
+    r12 = batch.readName(hash("StructurePressureRegulator"), hash("YLF3"), "ReferenceId", "Maximum")
+    r13 = batch.readName(hash("StructureVolumePump"), hash("GDB1"), "ReferenceId", "Maximum")
+    r14 = batch.readName(hash("StructureVolumePump"), hash("GDB2"), "ReferenceId", "Maximum")
+    r15 = batch.readName(hash("StructureVolumePump"), hash("GDB3"), "ReferenceId", "Maximum")
+    r6 = 2000
+    r7 = 2000
+    r8 = 2000
+    writeById(r10, LogicType.Setting, 2000)
+    writeById(r11, LogicType.Setting, 2000)
+    writeById(r12, LogicType.Setting, 2000)
+    for {
+        writeById(r9, LogicType.On, 1)
+        d1.On = 1
+        d2.On = 1
+        d3.On = 1
+        yield()
+        r0 = d0.PowerPotential
+        if r0 >= 44000000 { goto E }
+        r0 = readById(r9, LogicType.Pressure)
+        if r0 <= 5000 { goto E }
+        writeById(r10, LogicType.On, 1)
+        writeById(r11, LogicType.On, 1)
+        writeById(r12, LogicType.On, 1)
+        writeById(r13, LogicType.On, 1)
+        writeById(r14, LogicType.On, 1)
+        writeById(r15, LogicType.On, 1)
+        writeById(r13, LogicType.Setting, 10)
+        writeById(r14, LogicType.Setting, 10)
+        writeById(r15, LogicType.Setting, 10)
+        r1 = d1.Pressure
+        if r1 >= 10000 { call B4 }
+        r2 = d2.Pressure
+        if r2 >= 10000 { call B4 }
+        r3 = d3.Pressure
+        if r3 >= 10000 { call B4 }
+        r1 = d1.PowerGeneration
+        if r1 < 7500 { goto B1 }
+        if r1 <= 7950 { goto B2 }
+        if r1 >= 7990 { goto B3 }
+        if r1 >= 7970 { goto B4 }
+        label A2:
+        r2 = d2.PowerGeneration
+        if r2 < 7500 { goto C1 }
+        if r2 <= 7950 { goto C2 }
+        if r2 >= 7990 { goto C3 }
+        if r2 >= 7970 { goto C4 }
+        label A3:
+        r3 = d3.PowerGeneration
+        if r3 < 7500 { goto D1 }
+        if r3 <= 7950 { goto D2 }
+        if r3 >= 7990 { goto D3 }
+        if r3 >= 7970 { goto D4 }
+        continue
+        label E:
+        writeById(r9, LogicType.On, 0)
+        writeById(r10, LogicType.On, 0)
+        writeById(r11, LogicType.On, 0)
+        writeById(r12, LogicType.On, 0)
+        yield()
+        r1 = d1.PowerGeneration
+        if r1 >= 1 { goto E }
+        r2 = d2.PowerGeneration
+        if r2 >= 1 { goto E }
+        r3 = d3.PowerGeneration
+        if r3 >= 1 { goto E }
+        batch.write(hash("StructureStirlingEngine"), "On", 0)
+        sleep(1)
+        writeById(r13, LogicType.On, 0)
+        writeById(r14, LogicType.On, 0)
+        writeById(r15, LogicType.On, 0)
+        d4.On = 1
+        sleep(1)
+        db.On = 0
+        sleep(3)
+        goto S
+        label B1:
+        r6 = (r6 + 5)
+        goto B12
+        label B2:
+        r6 = (r6 + 1)
+        label B12:
+        writeById(r10, LogicType.Setting, r6)
+        goto A2
+        label B3:
+        r6 = (r6 - 20)
+        goto B34
+        label B4:
+        r6 = (r6 - 1)
+        label B34:
+        writeById(r10, LogicType.Setting, r6)
+        goto A2
+        label C1:
+        r7 = (r7 + 5)
+        goto C12
+        label C2:
+        r7 = (r7 + 1)
+        label C12:
+        writeById(r11, LogicType.Setting, r7)
+        goto A3
+        label C3:
+        r7 = (r7 - 20)
+        goto C34
+        label C4:
+        r7 = (r7 - 1)
+        label C34:
+        writeById(r11, LogicType.Setting, r7)
+        goto A3
+        label D1:
+        r8 = (r8 + 5)
+        goto D12
+        label D2:
+        r8 = (r8 + 1)
+        label D12:
+        writeById(r12, LogicType.Setting, r8)
+        continue
+        label D3:
+        r8 = (r8 - 20)
+        goto D34
+        label D4:
+        r8 = (r8 - 1)
+        label D34:
+        writeById(r12, LogicType.Setting, r8)
+    }
+}

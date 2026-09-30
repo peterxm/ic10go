@@ -1,0 +1,96 @@
+// 游戏内社区服务器存档里的真实脚本（芯片名：过滤机调度IC）。
+// 由 `ic10c decompile -s` 反编译后整理为端口，行为与原脚本一致。
+// icg: shared-stack
+func main() {
+    var r0 = 0
+    var r1 = 0
+    var r2 = 0
+    var r9 = 0
+    var r10 = 0
+    var r11 = 0
+    var r12 = 0
+    var r13 = 0
+    var r14 = 0
+    var r15 = 0
+    clr(db)
+    push(hash("Pollutant Filter"))
+    push(hash("Pollutant Pump"))
+    push(LogicType.RatioPollutantOutput2)
+    push(LogicType.RatioLiquidPollutantOutput2)
+    push(hash("NitrousOxide Filter"))
+    push(hash("NitrousOxide Pump"))
+    push(LogicType.RatioNitrousOxideOutput2)
+    push(LogicType.RatioLiquidNitrousOxideOutput2)
+    push(hash("Nitrogen Filter"))
+    push(hash("Nitrogen Pump"))
+    push(LogicType.RatioNitrogenOutput2)
+    push(LogicType.RatioLiquidNitrogenOutput2)
+    push(hash("CarbonDioxide Filter"))
+    push(hash("CarbonDioxide Pump"))
+    push(LogicType.RatioCarbonDioxideOutput2)
+    push(LogicType.RatioLiquidCarbonDioxideOutput2)
+    push(hash("Oxygen Filter"))
+    push(hash("Oxygen Pump"))
+    push(LogicType.RatioOxygenOutput2)
+    push(LogicType.RatioLiquidOxygenOutput2)
+    push(hash("Methane Filter"))
+    push(hash("Methane Pump"))
+    push(LogicType.RatioMethaneOutput2)
+    push(LogicType.RatioLiquidMethaneOutput2)
+    push(hash("Hydrogen Filter"))
+    push(hash("Hydrogen Pump"))
+    push(LogicType.RatioHydrogenOutput2)
+    push(LogicType.RatioLiquidHydrogenOutput2)
+    r15 = sp
+    for {
+        r13 = pop()
+        r14 = pop()
+        r11 = pop()
+        r12 = pop()
+        r12 = batch.readName(hash("StructureFiltration"), r12, "ReferenceId", "Maximum")
+        r11 = batch.readName(hash("StructureVolumePump"), r11, "ReferenceId", "Maximum")
+        push(r12)
+        push(r11)
+        writeById(r11, LogicType.Setting, 10)
+        sp = (sp - 2)
+        if sp <= 0 { break }
+    }
+    sp = r15
+    for {
+        yield()
+        r13 = pop()
+        r14 = pop()
+        r11 = pop()
+        r12 = pop()
+        r0 = readById(r12, LogicType.PressureOutput2)
+        r1 = readById(r12, r14)
+        r2 = readById(r12, r13)
+        r10 = (r1 + r2)
+        r1 = readByIdSlot(r12, 0, Occupied)
+        if r1 > 0 {
+            r1 = readByIdSlot(r12, 0, Quantity)
+        }
+        r2 = readByIdSlot(r12, 1, Occupied)
+        if r2 > 0 {
+            r2 = readByIdSlot(r12, 1, Quantity)
+        }
+        r9 = (r1 + r2)
+        if r0 <= 0 { goto L86 }
+        if r10 <= 0.05 { goto L86 }
+        if r9 < 1 { goto L86 }
+        writeById(r12, LogicType.On, 1)
+        writeById(r12, LogicType.Mode, 1)
+        writeById(r11, LogicType.On, 1)
+        goto L88
+        label L86:
+        writeById(r12, LogicType.On, 0)
+        writeById(r12, LogicType.Mode, 0)
+        label L88:
+        r0 = readById(r12, LogicType.PressureOutput)
+        r0 = (r0 > 0)
+        writeById(r11, LogicType.On, r0)
+        if sp <= 0 {
+            sp = r15
+        }
+    }
+}

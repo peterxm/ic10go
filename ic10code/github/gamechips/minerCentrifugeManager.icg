@@ -1,0 +1,156 @@
+// 游戏内社区服务器存档里的真实脚本（芯片名：矿机离心机管理IC）。
+// 由 `ic10c decompile -s` 反编译后整理为端口，行为与原脚本一致。
+// icg: shared-stack
+func main() {
+    var r0 = 0
+    var r1 = 0
+    var r2 = 0
+    var r3 = 0
+    var r4 = 0
+    var r5 = 0
+    var r6 = 0
+    var r7 = 0
+    var r8 = 0
+    var r9 = 0
+    var r10 = 0
+    var r11 = 0
+    var r12 = 0
+    var r13 = 0
+    var r14 = 0
+    var r15 = 0
+    r15 = db.Setting
+    sp = r15
+    r7 = (32 / r15)
+    for {
+        r14 = pop()
+        r13 = pop()
+        r12 = pop()
+        r11 = pop()
+        r0 = readById(r13, LogicType.Rpm)
+        r1 = readById(r13, LogicType.Pressure)
+        r2 = readById(r13, LogicType.Stress)
+        if r12 == 2 { goto L59 }
+        if r12 == 1 { goto L46 }
+        writeById(r13, LogicType.On, 0)
+        writeById(r13, LogicType.Throttle, 0)
+        writeById(r13, LogicType.CombustionLimiter, 0)
+        if r14 != 0 {
+            r3 = (r0 <= 0)
+            writeById(r13, LogicType.Open, r3)
+        }
+        if r1 > 0 { goto end }
+        if r2 > 0 { goto end }
+        if r14 == 0 { goto L42 }
+        r3 = readById(r13, LogicType.Reagents)
+        if r3 > 10 { goto end }
+        r4 = readById(r14, LogicType.Setting)
+        r4 = (r4 > 500)
+        r12 = (r4 != 0 ? 2 : 1)
+        goto end
+        label L42:
+        r10 = (sp + 5)
+        r3 = get(db, r10)
+        if r3 == 2 { goto end }
+        r12 = 1
+        label L46:
+        if r14 != 0 {
+            writeById(r13, LogicType.Open, 0)
+        }
+        if r2 >= 100 { goto L57 }
+        if r14 == 0 { goto L53 }
+        r3 = readById(r13, LogicType.Reagents)
+        if r3 >= 3000 { goto L57 }
+        goto L56
+        label L53:
+        r10 = (sp + 5)
+        r3 = get(db, r10)
+        if r3 == 2 { goto L57 }
+        label L56:
+        goto acc
+        label L57:
+        r12 = 0
+        goto end
+        label L59:
+        r4 = readById(r14, LogicType.Setting)
+        if r4 <= 500 {
+            r12 = 1
+        }
+        goto end
+        label acc:
+        r6 = (r14 != 0 ? 60 : 100)
+        r3 = readById(r13, LogicType.TotalMolesInput)
+        r3 = (r3 > 0)
+        writeById(r13, LogicType.On, r3)
+        r11 = (r11 - 1)
+        if r11 <= 0 { goto L71 }
+        goto end
+        label L71:
+        if r0 > 220 { goto L86 }
+        writeById(r13, LogicType.CombustionLimiter, 0)
+        r3 = readById(r13, LogicType.RatioOxygen)
+        r4 = readById(r13, LogicType.RatioNitrousOxide)
+        r3 = (r3 + r4)
+        r4 = readById(r13, LogicType.RatioOzone)
+        r3 = (r3 + r4)
+        r4 = readById(r13, LogicType.TotalMoles)
+        r3 = (r4 * r3)
+        r3 = (r3 < 0.0005)
+        r4 = (r3 != 0 ? 10 : 0)
+        writeById(r13, LogicType.Throttle, r4)
+        r4 = (r3 != 0 ? 2 : 0)
+        r11 = (r4 * r7)
+        goto end
+        label L86:
+        r1 = readById(r13, LogicType.Temperature)
+        r0 = (r0 + 100)
+        r0 = (r0 * 4.21)
+        r4 = (r0 * 0.9)
+        if r1 > r4 { goto L94 }
+        if r2 >= 80 { goto L95 }
+        r5 = 10
+        goto L100
+        label L94:
+        if r1 > r0 { goto L97 }
+        label L95:
+        r5 = 0
+        goto L100
+        label L97:
+        if r2 <= 0 { goto L95 }
+        r5 = -10
+        r11 = (r11 / 2)
+        label L100:
+        r9 = readById(r13, LogicType.Throttle)
+        r8 = readById(r13, LogicType.CombustionLimiter)
+        if r5 <= 0 { goto L114 }
+        r11 = (4 * r7)
+        if r8 >= 100 { goto L110 }
+        if r9 <= 0 { goto L110 }
+        r11 = r7
+        label L107:
+        r8 = (r8 + r5)
+        writeById(r13, LogicType.CombustionLimiter, r8)
+        goto L113
+        label L110:
+        r9 = (r9 + r5)
+        r9 = clamp(r9, 10, r6)
+        writeById(r13, LogicType.Throttle, r9)
+        label L113:
+        goto end
+        label L114:
+        r11 = (2 * r7)
+        if r9 > 10 { goto L110 }
+        if r8 <= 0 { goto L110 }
+        r11 = r7
+        goto L107
+        label end:
+        push(r11)
+        push(r12)
+        sp = (sp - 2)
+        if sp <= 0 {
+            sp = r15
+        }
+        if r14 == 0 {
+            yield()
+        }
+    }
+}
