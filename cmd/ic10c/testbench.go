@@ -31,6 +31,7 @@ func cmdTestbench(args []string) int {
 	dataAccessStack := false
 	chipName := ""
 	asName := ""
+	programFile := ""
 	interval := 250
 	count := 0
 	sub := ""
@@ -54,6 +55,11 @@ func cmdTestbench(args []string) int {
 			i++
 		case strings.HasPrefix(a, "--as="):
 			asName = strings.TrimPrefix(a, "--as=")
+		case a == "--program" && i+1 < len(args):
+			programFile = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--program="):
+			programFile = strings.TrimPrefix(a, "--program=")
 		case a == "--interval" && i+1 < len(args):
 			interval, _ = strconv.Atoi(args[i+1])
 			i++
@@ -104,6 +110,8 @@ func cmdTestbench(args []string) int {
 		return benchPing(addr, asJSON)
 	case "list":
 		return benchList(addr, asJSON)
+	case "locate":
+		return benchLocate(addr, chipName, programFile, asJSON)
 	case "push":
 		var file string
 		if len(rest) > 0 {
@@ -203,9 +211,124 @@ func benchList(addr string, asJSON bool) int {
 		if ch.Lines > 0 {
 			line += fmt.Sprintf("  %d lines", ch.Lines)
 		}
+		if ch.Fingerprint != "" {
+			line += "  fp=" + ch.Fingerprint
+		}
+		if ch.Pos != nil {
+			line += fmt.Sprintf("  @(%s)", ch.Pos.String())
+		}
 		fmt.Println(line)
 	}
 	return 0
+}
+
+// benchLocate reports where a chip is. With --program FILE it finds the chip(s)
+// running that program (matching the source fingerprint the mod reports);
+// otherwise it prints the position of the chip selected by --chip (name, prefab
+// or index).
+func benchLocate(addr, chipName, programFile string, asJSON bool) int {
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	chips, err := c.ListChips()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+
+	if programFile != "" {
+		data, err := os.ReadFile(programFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 2
+		}
+		fp := testbench.Fingerprint(string(data))
+		var hits []testbench.Chip
+		for _, ch := range chips {
+			if ch.Fingerprint != "" && ch.Fingerprint == fp {
+				hits = append(hits, ch)
+			}
+		}
+		if asJSON {
+			return printJSON(map[string]any{"fp": fp, "program": programFile, "chips": hits})
+		}
+		if len(hits) == 0 {
+			fmt.Printf("no chip runs %s (fp %s)\n", programFile, fp)
+			return 1
+		}
+		fmt.Printf("%d chip(s) run %s (fp %s):\n", len(hits), programFile, fp)
+		for _, ch := range hits {
+			printChipLocation(ch)
+		}
+		return 0
+	}
+
+	matches := locateMatches(chips, chipName)
+	if asJSON {
+		return printJSON(map[string]any{"chips": matches})
+	}
+	if len(matches) == 0 {
+		fmt.Fprintln(os.Stderr, "ic10c: no matching chip")
+		return 1
+	}
+	for _, ch := range matches {
+		printChipLocation(ch)
+	}
+	return 0
+}
+
+// locateMatches selects the chips to report: by index or loose name/prefab match
+// when one is given, else the first chip that has a program.
+func locateMatches(chips []testbench.Chip, chipName string) []testbench.Chip {
+	var matches []testbench.Chip
+	if chipName != "" {
+		if n, err := strconv.Atoi(chipName); err == nil {
+			for _, ch := range chips {
+				if ch.Index == n {
+					matches = append(matches, ch)
+				}
+			}
+			return matches
+		}
+		norm := normalizeName(chipName)
+		for _, ch := range chips {
+			n := normalizeName(ch.Name)
+			p := normalizeName(ch.Prefab)
+			if n == norm || p == norm || strings.Contains(n, norm) || strings.Contains(p, norm) {
+				matches = append(matches, ch)
+			}
+		}
+		return matches
+	}
+	for _, ch := range chips {
+		if ch.Programmable == nil || *ch.Programmable {
+			return append(matches, ch)
+		}
+	}
+	if len(chips) > 0 {
+		return append(matches, chips[0])
+	}
+	return matches
+}
+
+func printChipLocation(ch testbench.Chip) {
+	name := ch.Name
+	if name == "" {
+		name = ch.Prefab
+	}
+	fmt.Printf("[%d] %s  %s", ch.Index, name, ch.Prefab)
+	if ch.Lines > 0 {
+		fmt.Printf("  %d lines", ch.Lines)
+	}
+	if ch.Fingerprint != "" {
+		fmt.Printf("  fp=%s", ch.Fingerprint)
+	}
+	fmt.Println()
+	if ch.Pos != nil {
+		fmt.Printf("     at (%s)\n", ch.Pos.String())
+	}
 }
 
 func benchStep(addr string, chip any, ticks int, asJSON bool) int {

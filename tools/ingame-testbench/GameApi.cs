@@ -20,6 +20,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using Assets.Scripts;
 using Assets.Scripts.Objects;
 using Assets.Scripts.Objects.Electrical;
@@ -64,7 +66,14 @@ namespace Ic10Go.Testbench
                 try { o["chipPrefab"] = Chip.PrefabName; } catch { }
                 try { o["line"] = Chip.LineNumber; } catch { }
                 try { o["lines"] = GameApi.LineCount(GameApi.SourceOf(Chip)); } catch { }
+                // Stable across restarts, unlike the ReferenceId: lets a client
+                // match a local program to the in-game chip running it.
+                try { o["fp"] = GameApi.Fingerprint(GameApi.SourceOf(Chip)); } catch { }
             }
+            // World position of the host, so a client can tell you which one to
+            // go look at. Present whenever the holder is a placed Thing.
+            var loc = GameApi.LocationOf(Holder);
+            if (loc != null) o["pos"] = loc;
             return o;
         }
     }
@@ -264,6 +273,52 @@ namespace Ic10Go.Testbench
             int n = 1;
             foreach (char c in code) if (c == '\n') n++;
             return n;
+        }
+
+        /// <summary>
+        /// The host's world position and yaw (degrees), or null when the holder is
+        /// not a placed object. Reported by chip.list so a client can tell the user
+        /// where a chip physically is.
+        /// </summary>
+        public static JObject LocationOf(ICircuitHolder holder)
+        {
+            var thing = holder as Thing;
+            if (thing == null) return null;
+            try
+            {
+                var t = thing.transform;
+                if (t == null) return null;
+                var p = t.position;
+                if (float.IsNaN(p.x) || float.IsNaN(p.y) || float.IsNaN(p.z)) return null;
+                if (float.IsInfinity(p.x) || float.IsInfinity(p.y) || float.IsInfinity(p.z)) return null;
+                return new JObject
+                {
+                    ["x"] = Math.Round(p.x, 2),
+                    ["y"] = Math.Round(p.y, 2),
+                    ["z"] = Math.Round(p.z, 2),
+                    ["yaw"] = Math.Round(t.eulerAngles.y, 1),
+                };
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// A short hash of a program's normalized source (CRLF -> LF, trailing
+        /// whitespace trimmed). The Go client computes the same value so a local
+        /// file can be matched to the chip running it, independent of the
+        /// ReferenceId (which changes on restart).
+        /// </summary>
+        public static string Fingerprint(string code)
+        {
+            if (string.IsNullOrEmpty(code)) return "";
+            string norm = code.Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd();
+            using (var sha = SHA1.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(norm));
+                var sb = new StringBuilder(8);
+                for (int i = 0; i < 4; i++) sb.Append(hash[i].ToString("x2"));
+                return sb.ToString();
+            }
         }
 
         /// <summary>

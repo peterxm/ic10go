@@ -93,7 +93,11 @@ func (f *fakeServer) serve(conn net.Conn) {
 			}})
 		case "chip.list":
 			send(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{
-				"chips": []map[string]any{{"id": 1, "index": 0, "name": "TestChip"}},
+				"chips": []map[string]any{{
+					"id": 1, "index": 0, "name": "TestChip",
+					"fp":  "1a2b3c4d",
+					"pos": map[string]any{"x": 12.5, "y": 3.0, "z": -7.25, "yaw": 90.0},
+				}},
 			}})
 		case "push":
 			send(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{
@@ -164,6 +168,34 @@ func TestClientPingAndChips(t *testing.T) {
 	}
 	if len(chips) != 1 || chips[0].Name != "TestChip" {
 		t.Fatalf("unexpected chips: %+v", chips)
+	}
+	if chips[0].Fingerprint != "1a2b3c4d" {
+		t.Errorf("fingerprint = %q, want 1a2b3c4d", chips[0].Fingerprint)
+	}
+	if chips[0].Pos == nil || chips[0].Pos.X != 12.5 || chips[0].Pos.Z != -7.25 {
+		t.Errorf("pos = %+v, want {12.5 3 -7.25}", chips[0].Pos)
+	}
+}
+
+func TestFingerprint(t *testing.T) {
+	// CRLF and trailing whitespace must not change the fingerprint, and the
+	// value must be stable across the mod/client (locked to the sha1 prefix).
+	base := "move r0 1\nmove r1 2"
+	fp := Fingerprint(base)
+	if fp != "2092a44b" {
+		t.Fatalf("fingerprint = %q, want 2092a44b", fp)
+	}
+	for _, variant := range []string{
+		base + "\n",
+		"move r0 1\r\nmove r1 2\r\n",
+		base + "\n\n  ",
+	} {
+		if got := Fingerprint(variant); got != fp {
+			t.Errorf("fingerprint(%q) = %q, want %q", variant, got, fp)
+		}
+	}
+	if Fingerprint("move r0 1") == Fingerprint("move r0 2") {
+		t.Error("different sources share a fingerprint")
 	}
 }
 

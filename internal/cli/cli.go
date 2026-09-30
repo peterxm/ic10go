@@ -498,7 +498,7 @@ var Commands = []Command{
 		},
 	},
 	{
-		Name: "testbench", Args: "ping|list|push|state|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
+		Name: "testbench", Args: "ping|list|locate|push|state|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
 		Summary: text{EN: "drive the in-game testbench mod", ZH: "驱动游戏内测试台 mod"},
 		Long: text{
 			EN: "Talk to the ic10go-testbench mod running in Stationeers over NDJSON/TCP\n" +
@@ -508,6 +508,8 @@ var Commands = []Command{
 				"Subcommands:\n" +
 				"  ping                      connection / version check\n" +
 				"  list                      list programmable chips\n" +
+				"  locate [--chip NAME]      where a chip is (world position)\n" +
+				"                            --program FILE: find the chip(s) running it\n" +
 				"  push <file.icg>           compile and upload (runs any loader first)\n" +
 				"  state                     registers / stack / devices\n" +
 				"  set d1.Setting=10 ...     set device input values\n" +
@@ -531,6 +533,8 @@ var Commands = []Command{
 				"子命令：\n" +
 				"  ping                      连接/版本自检\n" +
 				"  list                      列出可编程芯片\n" +
+				"  locate [--chip NAME]      芯片位置（世界坐标）\n" +
+				"                            --program FILE：按源码找出跑该程序的芯片\n" +
 				"  push <file.icg>           编译并上传（必要时先跑 loader）\n" +
 				"  state                     寄存器 / 栈 / 设备\n" +
 				"  set d1.Setting=10 ...     设置设备输入值\n" +
@@ -551,6 +555,7 @@ var Commands = []Command{
 		Flags: []Flag{
 			{Long: "--addr", Arg: "H:P", Desc: text{EN: "testbench address (env IC10_BENCH_ADDR)", ZH: "测试台地址（环境变量 IC10_BENCH_ADDR）"}},
 			{Long: "--chip", Arg: "NAME", Desc: text{EN: "select a chip by name or prefab", ZH: "按名字或预制体选择芯片"}},
+			{Long: "--program", Arg: "FILE", Desc: text{EN: "locate: find the chip(s) running this program", ZH: "locate：找出跑该程序的芯片"}},
 			{Long: "--as", Arg: "NAME", Desc: text{EN: "push: which `chip` block to upload (multi-chip sources)", ZH: "push：多芯片源码中上传哪个 `chip` 块"}},
 			{Long: "--data-access", Arg: "get|stack", Desc: text{EN: "push: data-segment access; use `stack` on a device host (e.g. air conditioner)", ZH: "push：数据段访问方式；设备 host（如空调）用 `stack`"}},
 			{Long: "--all", Desc: text{EN: "state: include the whole stack", ZH: "state：返回整段栈"}},
@@ -563,6 +568,7 @@ var Commands = []Command{
 		},
 		Examples: []string{
 			"ic10c testbench ping",
+			"ic10c testbench locate --program rel.ic",
 			"ic10c testbench push rel.icg --stable-ins",
 			"ic10c testbench set d1.Setting=10 && ic10c testbench state",
 			"ic10c testbench run testdata/bench/rel.json --diff",

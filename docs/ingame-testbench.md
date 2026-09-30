@@ -188,7 +188,7 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | cmd | args | result |
 |---|---|---|
 | `ping` | `{}` | `{version, gameVersion, paused, chips}` |
-| `chip.list` | `{}` | `[{id, name, prefab, line, lines, registers}]` |
+| `chip.list` | `{}` | `[{id, name, prefab, line, lines, programmable, fp?, pos?{x,y,z,yaw}}]` |
 | `chip.select` | `{target:{id?|name?|index?}}` | `{chip}` |
 | `push` | `{code, loaders?:[string], reset?:bool}` | `{chip, lines, loaders, compileError?}` |
 | `state` | `{include?:["registers","stack","devices","program","errors"]}` | `state`（见 §4.3） |
@@ -210,6 +210,12 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 
 > `state` also carries `paused` so a UI can show Pause/Resume. Save loading uses the
 > game's own `loadgame` console command (`Util.Commands.CommandLine`).
+
+> `chip.list` 每个芯片还带 `pos`（host 的世界坐标 + `yaw`，供“去现场找这块芯片”）
+> 和 `fp`（程序源码的短哈希，**重启不变**）。`fp` 归一化规则：CRLF/CR→LF、去掉末尾空白，
+> 再取 SHA‑1 前 4 字节（8 位十六进制）。client 端 `ic10c testbench locate --program FILE`
+> 用同一算法匹配，便于把本地 `.ic` 对到服务器上正在跑它的芯片。`pos` 需要 mod 能读到
+> host 的 `Transform`；读不到就不输出该字段。
 
 > 端口设备用 `CircuitHousing.Devices[portIndex]`（已确认）；`ICircuitHolder.GetLogicableFromIndex`
 > 返回的是 `CableNetwork`，不是物理设备。`set` 默认校验 `CanLogicWrite`，`force:true` 跳过。
@@ -273,8 +279,10 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 ## 6. Go harness 设计（`ic10c testbench`）
 
 ```text
-ic10c testbench list                       # 列出芯片
+ic10c testbench list                       # 列出芯片（含位置 pos 与程序指纹 fp）
 ic10c testbench ping                        # 连接自检
+ic10c testbench locate [--chip NAME]        # 这块芯片在哪（世界坐标）
+ic10c testbench locate --program <file.ic>  # 哪块芯片在跑这份程序（按源码指纹匹配）
 ic10c testbench push <file.icg> [--chip N] [--as NAME]  # 编译 + 上传（多芯片用 --as 选块；自动先跑 loader）
 ic10c testbench state [--chip N] [--all] [--json]
 ic10c testbench set d1.Setting=10 [...]      # 设置输入（--force 跳过只读校验；--pulse 先写 0 再写值，触发瞬态逻辑）

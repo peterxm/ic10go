@@ -378,6 +378,12 @@ function chipNode(chip, selected) {
     let tip = `**${name}**\n\n`;
     if (chip.prefab) tip += `\`${chip.prefab}\`\n\n`;
     if (chip.chipPrefab) tip += t('chip: ', '芯片：') + `\`${chip.chipPrefab}\`\n\n`;
+    if (chip.pos) {
+        const { x, y, z, yaw } = chip.pos;
+        const yawPart = yaw ? ` · yaw ${Math.round(yaw)}°` : '';
+        tip += t('at ', '位置：') + `(${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})${yawPart}\n\n`;
+    }
+    if (chip.fp) tip += `fp \`${chip.fp}\`\n\n`;
     item.tooltip = new vscode.MarkdownString(tip);
     if (!selected && chip.programmable !== false) {
         item.command = {

@@ -8,12 +8,16 @@
 package testbench
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // DefaultAddr is the address the mod binds to unless configured otherwise.
@@ -211,13 +215,48 @@ type Hello struct {
 
 // Chip is one programmable chip as reported by chip.list.
 type Chip struct {
-	ID       int64   `json:"id"`
-	Index    int     `json:"index"`
-	Name     string  `json:"name"`
-	Prefab   string  `json:"prefab"`
-	Line     float64 `json:"line"`
-	Lines    int     `json:"lines"`
-	Selected bool    `json:"selected"`
+	ID           int64    `json:"id"`
+	Index        int      `json:"index"`
+	Name         string   `json:"name"`
+	Prefab       string   `json:"prefab"`
+	Line         float64  `json:"line"`
+	Lines        int      `json:"lines"`
+	Programmable *bool    `json:"programmable,omitempty"`
+	Pos          *ChipPos `json:"pos,omitempty"`
+	Fingerprint  string   `json:"fp,omitempty"`
+	Selected     bool     `json:"selected"`
+}
+
+// ChipPos is a host's world position (and yaw in degrees), reported by chip.list
+// when the mod can read the host's transform.
+type ChipPos struct {
+	X   float64 `json:"x"`
+	Y   float64 `json:"y"`
+	Z   float64 `json:"z"`
+	Yaw float64 `json:"yaw,omitempty"`
+}
+
+// String renders a position compactly, e.g. "12.3, 45.6, -7.8 (yaw 90)".
+func (p *ChipPos) String() string {
+	if p == nil {
+		return "?"
+	}
+	s := fmt.Sprintf("%.1f, %.1f, %.1f", p.X, p.Y, p.Z)
+	if p.Yaw != 0 {
+		s += fmt.Sprintf(" (yaw %.0f)", p.Yaw)
+	}
+	return s
+}
+
+// Fingerprint returns the short hash the mod reports for a program's source: a
+// SHA-1 of the source with CRLF/CR normalized to LF and trailing whitespace
+// trimmed. Keep this in sync with GameApi.Fingerprint in the mod.
+func Fingerprint(src string) string {
+	norm := strings.ReplaceAll(src, "\r\n", "\n")
+	norm = strings.ReplaceAll(norm, "\r", "\n")
+	norm = strings.TrimRightFunc(norm, unicode.IsSpace)
+	sum := sha1.Sum([]byte(norm))
+	return hex.EncodeToString(sum[:4])
 }
 
 // ListChips returns the chips in the running world.
