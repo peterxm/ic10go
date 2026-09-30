@@ -225,6 +225,9 @@ func benchList(addr string, asJSON bool) int {
 		if ch.Lines > 0 {
 			line += fmt.Sprintf("  %d lines", ch.Lines)
 		}
+		if ch.Powered != nil && !*ch.Powered {
+			line += "  " + powerText(ch.Powered, ch.Lines)
+		}
 		if ch.Fingerprint != "" {
 			line += "  fp=" + ch.Fingerprint
 		}
@@ -234,6 +237,18 @@ func benchList(addr string, asJSON bool) int {
 		fmt.Println(line)
 	}
 	return 0
+}
+
+// powerText labels a host that is not powered; an unpowered host reads as an
+// empty program, which otherwise looks like "the code can't be downloaded".
+func powerText(powered *bool, lines int) string {
+	if powered != nil && !*powered {
+		if lang == cli.ZH {
+			return "未通电（看不到程序）"
+		}
+		return "no power (program hidden)"
+	}
+	return ""
 }
 
 // benchLocate reports where a chip is. With --program FILE it finds the chip(s)
@@ -427,6 +442,9 @@ func printChipLocation(ch testbench.Chip) {
 		fmt.Printf("  fp=%s", ch.Fingerprint)
 	}
 	fmt.Println()
+	if ch.Powered != nil && !*ch.Powered {
+		fmt.Printf("     %s\n", powerText(ch.Powered, ch.Lines))
+	}
 	if ch.Pos != nil {
 		fmt.Printf("     at (%s)\n", ch.Pos.String())
 	}

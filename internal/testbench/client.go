@@ -222,6 +222,8 @@ type Chip struct {
 	Line         float64  `json:"line"`
 	Lines        int      `json:"lines"`
 	Programmable *bool    `json:"programmable,omitempty"`
+	Powered      *bool    `json:"powered,omitempty"`
+	Power        *float64 `json:"power,omitempty"`
 	Pos          *ChipPos `json:"pos,omitempty"`
 	Fingerprint  string   `json:"fp,omitempty"`
 	Selected     bool     `json:"selected"`

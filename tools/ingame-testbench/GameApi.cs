@@ -74,6 +74,13 @@ namespace Ic10Go.Testbench
             // go look at. Present whenever the holder is a placed Thing.
             var loc = GameApi.LocationOf(Holder);
             if (loc != null) o["pos"] = loc;
+            // Powered state: an unpowered host reports an empty program, which
+            // otherwise looks like "can't download the code".
+            if (Holder is Thing host)
+            {
+                try { o["powered"] = host.Powered; } catch { }
+                try { o["power"] = Math.Round((double)host.PoweredValue, 2); } catch { }
+            }
             return o;
         }
     }

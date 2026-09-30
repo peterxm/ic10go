@@ -154,7 +154,7 @@ func main() {
 
 - 状态栏左侧出现 `$(circuit-board) IC10: <芯片名>`；点击打开「IC10 芯片状态」面板。
 - 侧边栏 **IC10** 活动视图列出连接状态与**全部 host**（按名字**降序**排列，并分「**有芯片 / 无芯片**」两组，无芯片组默认折叠；点击可切换选中）；选中项下是 **寄存器 / 栈 / 设备** 三个分组（**默认折叠**，按需展开），设备列出 `db`+`d0..d5` 全部端口（空端口灰显）并带绑定标签。
-- 悬停 host 显示 **世界坐标**（`x, y, z` + `yaw`）与程序指纹 `fp`（源码短哈希，**重启不变**）；配合 `ic10c testbench locate --program FILE` 可查出“跑这份程序的芯片在哪”（mod ≥ 0.2.0）。
+- 悬停 host 显示 **世界坐标**（`x, y, z` + `yaw`）与程序指纹 `fp`（源码短哈希，**重启不变**）；配合 `ic10c testbench locate --program FILE` 可查出“跑这份程序的芯片在哪”（mod ≥ 0.2.0）。**未通电**的 host 会标「未通电」——它的程序读出来是空的，不是拉取失败。
 - 右键 host → **Track in Game**：游戏内 HUD 会用罗盘箭头指向这块 host，并显示你的坐标与距离（mod ≥ 0.3.0；`F8` 开关 HUD、`F9` 清目标）。
 - 编辑器标题栏 `$(cloud-upload)` 一键上传当前 `.icg`、`$(cloud-download)` 从芯片下载源码回编辑器；`$(beaker)` 运行测试台场景。
 - **Chip State** 面板：顶栏 `Pause | Step | Run | Reset | Watch | Refresh`（`Run` 显示当前 `icg.bench.runTicks`）与**过滤框**（按端口 / 设备名 / 逻辑名筛选设备）；寄存器网格、**可折叠**的全量栈（512 槽）、每个设备一张**可折叠卡片**（带绑定标签与只读 `probe`，如喷气背包的 `JetPackActivate`/`PropulsionActive`，卡片里的 logic 行**可点击改值**、`⚡` 脉冲）；值变化时短暂高亮。`PrefabHash` / `NameHash` / `OccupantHash` 等哈希值旁会标出对应的预制体名（点击即可复制 `hash("Name")`）。全部使用 VS Code 主题变量，浅色 / 深色都好看。

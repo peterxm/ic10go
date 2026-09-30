@@ -188,7 +188,7 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | cmd | args | result |
 |---|---|---|
 | `ping` | `{}` | `{version, gameVersion, paused, chips}` |
-| `chip.list` | `{}` | `[{id, name, prefab, line, lines, programmable, fp?, pos?{x,y,z,yaw}}]` |
+| `chip.list` | `{}` | `[{id, name, prefab, line, lines, programmable, fp?, powered?, power?, pos?{x,y,z,yaw}}]` |
 | `chip.select` | `{target:{id?|name?|index?}}` | `{chip}` |
 | `push` | `{code, loaders?:[string], reset?:bool}` | `{chip, lines, loaders, compileError?}` |
 | `state` | `{include?:["registers","stack","devices","program","errors"]}` | `state`（见 §4.3） |
@@ -217,6 +217,10 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 > 再取 SHA‑1 前 4 字节（8 位十六进制）。client 端 `ic10c testbench locate --program FILE`
 > 用同一算法匹配，便于把本地 `.ic` 对到服务器上正在跑它的芯片。`pos` 需要 mod 能读到
 > host 的 `Transform`；读不到就不输出该字段。
+>
+> `powered` / `power` 是 host 的 `Thing.Powered` / `PoweredValue`：**没通电的 housing 里，
+> 芯片程序读出来是空的**（`lines: 0`、`code: ""`），不是“下载不了”。`list` / `locate` /
+> 悬停都会标出「未通电」，避免误判。
 
 > 端口设备用 `CircuitHousing.Devices[portIndex]`（已确认）；`ICircuitHolder.GetLogicableFromIndex`
 > 返回的是 `CableNetwork`，不是物理设备。`set` 默认校验 `CanLogicWrite`，`force:true` 跳过。

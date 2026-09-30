@@ -407,11 +407,15 @@ function chipNode(chip, selected) {
     );
     const tags = [];
     if (chip.programmable === false) tags.push(t('no chip', '无芯片'));
+    else if (chip.powered === false) tags.push(t('no power', '未通电'));
     if (chip.lines) tags.push(`${chip.lines} ${t('lines', '行')}`);
     item.description = tags.join(' · ');
     let tip = `**${name}**\n\n`;
     if (chip.prefab) tip += `\`${chip.prefab}\`\n\n`;
     if (chip.chipPrefab) tip += t('chip: ', '芯片：') + `\`${chip.chipPrefab}\`\n\n`;
+    if (chip.powered === false) {
+        tip += t('not powered — the program is hidden', '未通电——看不到程序') + '\n\n';
+    }
     if (chip.pos) {
         const { x, y, z, yaw } = chip.pos;
         const yawPart = yaw ? ` · yaw ${Math.round(yaw)}°` : '';
