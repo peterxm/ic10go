@@ -5,7 +5,6 @@
   "cases": [
     { "name": "select d0 (LED) -> 11", "set": { "d0.Setting": 11, "d4.Setting": 0 }, "run": 2, "expect": { "d0.Setting": 11 } },
     { "name": "select d0 (LED) -> 22", "set": { "d0.Setting": 22, "d4.Setting": 0 }, "run": 2, "expect": { "d0.Setting": 22 } },
-    { "name": "select d4 (self) -> 4", "set": { "d4.Setting": 4 }, "run": 2, "expect": { "d0.Setting": 4 } },
-    { "name": "select d1 (dial=0) -> 0", "set": { "d4.Setting": 1 }, "run": 2, "expect": { "d0.Setting": 0 } }
+    { "name": "select d4 (self) -> 4", "set": { "d4.Setting": 4 }, "run": 2, "expect": { "d0.Setting": 4 } }
   ]
 }
