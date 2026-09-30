@@ -306,6 +306,7 @@ mod ≥ 0.3.0 在屏幕左上角画一个小面板：自身 **X / Y / Z** 与 **
 
 - 开关 `F8`，清目标 `F9`。
 - 设目标：`ic10c testbench hud --chip 118`（用该 host 的世界坐标）或 `ic10c testbench hud 669 192 -627`（直接给坐标）；`hud off` / `hud clear` / `hud`（查状态）。
+- 朝向取自**玩家相机**的 forward（不是 `Camera.main`——Stationeers 还有一个对着角色脸的人像相机，用错会正好差 180°）。若你的 HUD 罗盘用了别的零度，用 `ic10c testbench hud --offset 180` 现场校准（立即生效，无需重启）。
 - VSCode：在「IC10 测试台」树里**右键一块 host → Track in Game**，等价于 `hud --chip`。
 - 只画在**运行 mod 的那个进程**上，且仅在进入世界后出现（主菜单不画）。若 mod 跑在无头服务端，客户端看不到这个面板。
 

@@ -9,6 +9,7 @@
 // drawn until a world is loaded (Player() returns false at the menu).
 
 using System;
+using Assets.Scripts;
 using Assets.Scripts.Objects.Entities;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
@@ -21,6 +22,9 @@ namespace Ic10Go.Testbench
         public static bool HasTarget;
         public static Vector3 Target;
         public static string TargetLabel = "";
+        /// <summary>Degrees added to the view heading, if a client's compass uses
+        /// a different zero. Tunable at runtime with `hud --offset N`.</summary>
+        public static float HeadingOffset;
 
         private static Camera _cam;
         private static Texture2D _bg;
@@ -54,12 +58,24 @@ namespace Ic10Go.Testbench
                 var human = Human.LocalHuman;
                 if (human == null) return false;
                 pos = human.transform.position;
-                if (_cam == null) _cam = Camera.main;
-                if (_cam != null)
+                // Use the player's camera, not Camera.main: Stationeers also has
+                // a portrait camera, and Camera.main can resolve to it (looking
+                // at the player, ~180° off the view heading).
+                Transform view = null;
+                try { var cc = CameraController.Instance; if (cc != null) view = cc.MainCameraTransform; } catch { }
+                if (view == null)
                 {
-                    var e = _cam.transform.eulerAngles;
-                    yaw = e.y;
-                    pitch = e.x > 180f ? e.x - 360f : e.x;
+                    if (_cam == null) _cam = Camera.main;
+                    if (_cam != null) view = _cam.transform;
+                }
+                if (view != null)
+                {
+                    var f = view.forward;
+                    yaw = Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg;
+                    if (yaw < 0f) yaw += 360f;
+                    yaw = Mathf.Repeat(yaw + HeadingOffset, 360f);
+                    float e = view.eulerAngles.x;
+                    pitch = e > 180f ? e - 360f : e;
                 }
                 return true;
             }
@@ -71,7 +87,7 @@ namespace Ic10Go.Testbench
 
         public static JObject State()
         {
-            var o = new JObject { ["on"] = Enabled };
+            var o = new JObject { ["on"] = Enabled, ["offset"] = HeadingOffset };
             Vector3 p;
             float yaw, pitch;
             if (Player(out p, out yaw, out pitch))

@@ -157,6 +157,7 @@ namespace Ic10Go.Testbench
         private static JObject HudCmd(JObject args)
         {
             if (args["on"] != null) Hud.Enabled = (bool)args["on"];
+            if (args["offset"] != null) Hud.HeadingOffset = (float)(double)args["offset"];
             if (args["clear"] != null && (bool)args["clear"]) Hud.Clear();
             var t = args["target"];
             if (t != null && t.Type != JTokenType.Null)

@@ -283,6 +283,7 @@ type HudPos struct {
 // HudState is the in-game overlay state.
 type HudState struct {
 	On     bool    `json:"on"`
+	Offset float64 `json:"offset,omitempty"`
 	Player *HudPos `json:"player,omitempty"`
 	Target *HudPos `json:"target,omitempty"`
 }

@@ -33,6 +33,8 @@ func cmdTestbench(args []string) int {
 	chipName := ""
 	asName := ""
 	programFile := ""
+	offset := 0.0
+	offsetSet := false
 	interval := 250
 	count := 0
 	sub := ""
@@ -61,6 +63,13 @@ func cmdTestbench(args []string) int {
 			i++
 		case strings.HasPrefix(a, "--program="):
 			programFile = strings.TrimPrefix(a, "--program=")
+		case a == "--offset" && i+1 < len(args):
+			offset, _ = strconv.ParseFloat(args[i+1], 64)
+			offsetSet = true
+			i++
+		case strings.HasPrefix(a, "--offset="):
+			offset, _ = strconv.ParseFloat(strings.TrimPrefix(a, "--offset="), 64)
+			offsetSet = true
 		case a == "--interval" && i+1 < len(args):
 			interval, _ = strconv.Atoi(args[i+1])
 			i++
@@ -114,7 +123,7 @@ func cmdTestbench(args []string) int {
 	case "locate":
 		return benchLocate(addr, chipName, programFile, asJSON)
 	case "hud":
-		return benchHud(addr, chipName, rest, asJSON)
+		return benchHud(addr, chipName, rest, offset, offsetSet, asJSON)
 	case "push":
 		var file string
 		if len(rest) > 0 {
@@ -321,7 +330,7 @@ func locateMatches(chips []testbench.Chip, chipName string) []testbench.Chip {
 // benchHud drives the in-game overlay: `hud` prints its state, `hud on|off`
 // toggles it, `hud clear` drops the target, `hud X Y Z` tracks a point and
 // `hud --chip NAME|INDEX` tracks a chip's host.
-func benchHud(addr, chipName string, args []string, asJSON bool) int {
+func benchHud(addr, chipName string, args []string, offset float64, offsetSet, asJSON bool) int {
 	c, rc := benchDial(addr)
 	if c == nil {
 		return rc
@@ -329,6 +338,9 @@ func benchHud(addr, chipName string, args []string, asJSON bool) int {
 	defer c.Close()
 
 	req := map[string]any{}
+	if offsetSet {
+		req["offset"] = offset
+	}
 	if chipName != "" {
 		req["target"] = map[string]any{"chip": chipSelector(chipName)}
 	}
@@ -364,7 +376,7 @@ func benchHud(addr, chipName string, args []string, asJSON bool) int {
 	if asJSON {
 		return printJSON(st)
 	}
-	fmt.Printf("HUD   %s\n", onOff(st.On))
+	fmt.Printf("HUD   %s   朝向偏移 %.0f°\n", onOff(st.On), st.Offset)
 	if st.Player != nil {
 		fmt.Printf("玩家  X %7.1f  Y %7.1f  Z %7.1f    朝向 %.0f°  俯仰 %.0f°\n",
 			st.Player.X, st.Player.Y, st.Player.Z, st.Player.Yaw, st.Player.Pitch)

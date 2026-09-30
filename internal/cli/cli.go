@@ -562,6 +562,7 @@ var Commands = []Command{
 			{Long: "--addr", Arg: "H:P", Desc: text{EN: "testbench address (env IC10_BENCH_ADDR)", ZH: "测试台地址（环境变量 IC10_BENCH_ADDR）"}},
 			{Long: "--chip", Arg: "NAME", Desc: text{EN: "select a chip by name or prefab", ZH: "按名字或预制体选择芯片"}},
 			{Long: "--program", Arg: "FILE", Desc: text{EN: "locate: find the chip(s) running this program", ZH: "locate：找出跑该程序的芯片"}},
+			{Long: "--offset", Arg: "DEG", Desc: text{EN: "hud: add this many degrees to the view heading (if it differs from your HUD compass)", ZH: "hud：给朝向加上这个角度（若与你的 HUD 罗盘不一致）"}},
 			{Long: "--as", Arg: "NAME", Desc: text{EN: "push: which `chip` block to upload (multi-chip sources)", ZH: "push：多芯片源码中上传哪个 `chip` 块"}},
 			{Long: "--data-access", Arg: "get|stack", Desc: text{EN: "push: data-segment access; use `stack` on a device host (e.g. air conditioner)", ZH: "push：数据段访问方式；设备 host（如空调）用 `stack`"}},
 			{Long: "--all", Desc: text{EN: "state: include the whole stack", ZH: "state：返回整段栈"}},
