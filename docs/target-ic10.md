@@ -115,6 +115,8 @@
 | `d.X = v` | `s d X v` |
 | `d.slot[i].X`（读） | `ls r d i X` |
 | `d.slot[i].X = v` | `ss d i X v` |
+| `x.X` / `x.X = v`（`x` 为运行期端口） | `l r drN X` / `s drN X v`（同 `readDev` / `writeDev`） |
+| `x.slot[i].X`（`x` 为运行期端口） | `ls r drN i X` / `ss drN i X v` |
 | `d.channel[c][n]`（读） | `l r d:c Channel<n>` |
 | `d.channel[c][n] = v` | `s d:c Channel<n> v` |
 | `read(d, lt)` | `l r d (r_lt)` |

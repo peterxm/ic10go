@@ -604,6 +604,50 @@ func TestDeviceAliasRedeclared(t *testing.T) {
 	}
 }
 
+// TestDynamicDeviceOperand verifies that a device parameter bound to a runtime
+// value is lowered to IC10's register-selected device operand (drN) instead of
+// emitting the selector verbatim.
+func TestDynamicDeviceOperand(t *testing.T) {
+	src := []byte("const mem = d4\nconst led = d0\n" +
+		"func mirror(dev, dst) {\n" +
+		"    dst.Setting = dev.Setting\n" +
+		"    dst.slot[0].Occupied = dev.slot[1].Quantity\n" +
+		"}\n" +
+		"func main() {\n" +
+		"    for {\n" +
+		"        yield()\n" +
+		"        p := mem.Setting\n" +
+		"        mirror(p, led)\n" +
+		"    }\n" +
+		"}\n")
+	code, diags, err := ic10.Compile("test.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("compile: diags=%v err=%v", diags.Diags, err)
+	}
+	// The dynamic device must surface as drN for both logic and slot access.
+	if !strings.Contains(code, "dr") {
+		t.Errorf("no drN operand in:\n%s", code)
+	}
+	if !strings.Contains(code, "ls r") {
+		t.Errorf("no dynamic slot load in:\n%s", code)
+	}
+	// The selector must never leak verbatim into the output.
+	for _, bad := range []string{".Setting", ".Quantity", ".Occupied", "p."} {
+		if strings.Contains(code, bad) {
+			t.Errorf("verbatim selector %q leaked:\n%s", bad, code)
+		}
+	}
+}
+
+// TestDynamicDeviceNumericConst confirms a numeric constant used as a port
+// index folds to the fixed port.
+func TestDynamicDeviceNumericConst(t *testing.T) {
+	code := mustCompile(t, "const p = 2\nfunc main() { d0.Setting = p.Temperature }\n")
+	if !strings.Contains(code, "l r0 d2 Temperature") {
+		t.Errorf("numeric const port not folded to d2:\n%s", code)
+	}
+}
+
 func TestSizeReport(t *testing.T) {
 	src := []byte(`func helper(a num, b num) num {
     x := a + b

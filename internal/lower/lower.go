@@ -787,6 +787,17 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 			l.b.Emit(&ir.StoreSlot{Dev: dev, Index: l.lowerExpr(idx), Logic: t.Sel.Name, Src: val})
 			return
 		}
+		// Runtime-selected device: `x.Prop = v` where x holds a port index.
+		if ptr, idx, ok := l.dynamicSlotOf(t.X); ok {
+			l.checkSlot(t.Sel.Pos(), t.Sel.Name)
+			l.b.Emit(&ir.StoreSlot{DevPtr: ptr, Index: l.lowerExpr(idx), Logic: t.Sel.Name, Src: val})
+			return
+		}
+		if ptr, ok := l.dynamicDevice(t.X); ok {
+			l.checkLogic(t.Sel.Pos(), t.Sel.Name)
+			l.b.Emit(&ir.StoreDyn{DevPtr: ptr, Logic: &ir.Const{Raw: t.Sel.Name}, Src: val})
+			return
+		}
 		l.diags.Errorf(t.Pos(), "unsupported assignment target")
 	case *ast.IndexExpr:
 		if dev, conn, ch, ok := l.channelOf(t); ok {
@@ -1743,6 +1754,22 @@ func (l *lowerer) lowerDeviceRead(e *ast.SelectorExpr) ir.Value {
 		l.checkSlot(e.Sel.Pos(), e.Sel.Name)
 		r := l.b.NewReg(e.Sel.Name)
 		l.b.Emit(&ir.LoadSlot{Dst: r, Dev: dev, Index: l.lowerExpr(idx), Logic: e.Sel.Name})
+		return r
+	}
+	// Runtime-selected device: `x.Prop` where x holds a port index. Lowered to
+	// IC10's register-selected device operand (drN), the same mechanism as
+	// readDev/writeDev; this is what lets a device-parameter helper work when
+	// its argument is not a compile-time port.
+	if ptr, idx, ok := l.dynamicSlotOf(e.X); ok {
+		l.checkSlot(e.Sel.Pos(), e.Sel.Name)
+		r := l.b.NewReg(e.Sel.Name)
+		l.b.Emit(&ir.LoadSlot{Dst: r, DevPtr: ptr, Index: l.lowerExpr(idx), Logic: e.Sel.Name})
+		return r
+	}
+	if ptr, ok := l.dynamicDevice(e.X); ok {
+		l.checkLogic(e.Sel.Pos(), e.Sel.Name)
+		r := l.b.NewReg(e.Sel.Name)
+		l.b.Emit(&ir.LoadDyn{Dst: r, DevPtr: ptr, Logic: &ir.Const{Raw: e.Sel.Name}})
 		return r
 	}
 	// Game enum constants such as SorterInstruction.FilterPrefabHashEquals.
@@ -2850,6 +2877,44 @@ func (l *lowerer) deviceName(e ast.Expr) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// dynamicDevice resolves an expression that holds a device port index only at
+// run time: a local variable, a function parameter, or a numeric constant.
+// Compile-time device aliases (dN/db or a const device) are handled by
+// deviceName first, so this only fires for values the compiler cannot fold.
+// Such an operand is lowered as IC10's register-selected device (drN), the same
+// mechanism readDev/writeDev use.
+func (l *lowerer) dynamicDevice(e ast.Expr) (ir.Value, bool) {
+	if _, ok := l.deviceName(e); ok {
+		return nil, false
+	}
+	id, ok := e.(*ast.Ident)
+	if !ok {
+		return nil, false
+	}
+	v, ok := l.lookup(id.Name)
+	if !ok {
+		return nil, false
+	}
+	return v, true
+}
+
+// dynamicSlotOf recognises `dev.slot[i]` where dev is a runtime device operand.
+func (l *lowerer) dynamicSlotOf(e ast.Expr) (ir.Value, ast.Expr, bool) {
+	idx, isIdx := e.(*ast.IndexExpr)
+	if !isIdx {
+		return nil, nil, false
+	}
+	sel, isSel := idx.X.(*ast.SelectorExpr)
+	if !isSel || sel.Sel.Name != "slot" {
+		return nil, nil, false
+	}
+	ptr, ok := l.dynamicDevice(sel.X)
+	if !ok {
+		return nil, nil, false
+	}
+	return ptr, idx.Index, true
 }
 
 // hasDeviceOrDataArg reports whether any call argument is a device port or a

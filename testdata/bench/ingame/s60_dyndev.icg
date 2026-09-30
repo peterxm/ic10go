@@ -1,0 +1,20 @@
+// Runtime-selected device port: reads the port index held in the Logic Memory
+// (d4) and mirrors that device's Setting onto the LED (d0). Exercises the
+// register-selected device operand (IC10 drN) via the `dev.Prop` sugar, which
+// before this port emitted the selector verbatim.
+const (
+	LED = d0
+	MEM = d4
+)
+
+func mirror(dev, dst) {
+	dst.Setting = dev.Setting
+}
+
+func main() {
+	for {
+		yield()
+		p := MEM.Setting
+		mirror(p, LED)
+	}
+}

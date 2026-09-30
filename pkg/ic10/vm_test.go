@@ -28,6 +28,25 @@ func runProgram(t *testing.T, src string, steps int, setup func(m *vm.Machine)) 
 	return m
 }
 
+// TestVMDynamicDeviceParam exercises a runtime-selected device port: `dev.Setting`
+// reads the port held in `dev` (IC10 drN).
+func TestVMDynamicDeviceParam(t *testing.T) {
+	src := "func main() {\n" +
+		"    for {\n" +
+		"        yield()\n" +
+		"        dev := d4.Setting\n" +
+		"        d0.Setting = dev.Setting\n" +
+		"    }\n" +
+		"}\n"
+	m := runProgram(t, src, 5, func(m *vm.Machine) {
+		m.Set("d4", "Setting", 1) // select port d1
+		m.Set("d1", "Setting", 77)
+	})
+	if got := m.Get("d0", "Setting"); got != 77 {
+		t.Errorf("dynamic read: d0.Setting = %v, want 77", got)
+	}
+}
+
 func TestVMTemperatureControl(t *testing.T) {
 	src := "func main() { d0.On = d1.Temperature > 300 }\n"
 	m := runProgram(t, src, 50, func(m *vm.Machine) { m.Set("d1", "Temperature", 350) })
