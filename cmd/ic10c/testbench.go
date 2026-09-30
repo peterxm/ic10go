@@ -33,6 +33,8 @@ func cmdTestbench(args []string) int {
 	chipName := ""
 	asName := ""
 	programFile := ""
+	atArg := ""
+	radius := 0.0
 	offset := 0.0
 	offsetSet := false
 	interval := 250
@@ -63,6 +65,16 @@ func cmdTestbench(args []string) int {
 			i++
 		case strings.HasPrefix(a, "--program="):
 			programFile = strings.TrimPrefix(a, "--program=")
+		case a == "--at" && i+3 < len(args):
+			atArg = args[i+1] + "," + args[i+2] + "," + args[i+3]
+			i += 3
+		case strings.HasPrefix(a, "--at="):
+			atArg = strings.TrimPrefix(a, "--at=")
+		case a == "--range" && i+1 < len(args):
+			radius, _ = strconv.ParseFloat(args[i+1], 64)
+			i++
+		case strings.HasPrefix(a, "--range="):
+			radius, _ = strconv.ParseFloat(strings.TrimPrefix(a, "--range="), 64)
 		case a == "--offset" && i+1 < len(args):
 			offset, _ = strconv.ParseFloat(args[i+1], 64)
 			offsetSet = true
@@ -121,7 +133,7 @@ func cmdTestbench(args []string) int {
 	case "list":
 		return benchList(addr, asJSON)
 	case "locate":
-		return benchLocate(addr, chipName, programFile, asJSON)
+		return benchLocate(addr, chipName, programFile, atArg, radius, asJSON)
 	case "hud":
 		return benchHud(addr, chipName, rest, offset, offsetSet, asJSON)
 	case "push":
@@ -255,7 +267,7 @@ func powerText(powered *bool, lines int) string {
 // running that program (matching the source fingerprint the mod reports);
 // otherwise it prints the position of the chip selected by --chip (name, prefab
 // or index).
-func benchLocate(addr, chipName, programFile string, asJSON bool) int {
+func benchLocate(addr, chipName, programFile, atArg string, radius float64, asJSON bool) int {
 	c, rc := benchDial(addr)
 	if c == nil {
 		return rc
@@ -265,6 +277,15 @@ func benchLocate(addr, chipName, programFile string, asJSON bool) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
+	}
+
+	if atArg != "" {
+		p, ok := parseXYZ(atArg)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "ic10c: bad --at %q (want X Y Z)\n", atArg)
+			return 2
+		}
+		return locateByPos(chips, p, radius, asJSON)
 	}
 
 	if programFile != "" {
@@ -306,6 +327,112 @@ func benchLocate(addr, chipName, programFile string, asJSON bool) int {
 		printChipLocation(ch)
 	}
 	return 0
+}
+
+// parseXYZ parses "x,y,z" or "x y z" into three numbers.
+func parseXYZ(s string) ([3]float64, bool) {
+	fields := strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
+	if len(fields) != 3 {
+		return [3]float64{}, false
+	}
+	var p [3]float64
+	for i, f := range fields {
+		v, err := strconv.ParseFloat(f, 64)
+		if err != nil {
+			return [3]float64{}, false
+		}
+		p[i] = v
+	}
+	return p, true
+}
+
+// posHit is a chip found by position, with its distance from the query point.
+type posHit struct {
+	chip testbench.Chip
+	dist float64
+}
+
+// locateByPos finds hosts at a coordinate: an exact match (coordinates rounded
+// to whole numbers, so decimals are ignored) and, when radius > 0, everything
+// within that distance.
+func locateByPos(chips []testbench.Chip, p [3]float64, radius float64, asJSON bool) int {
+	var exact, near []posHit
+	for _, ch := range chips {
+		if ch.Pos == nil {
+			continue
+		}
+		dx := ch.Pos.X - p[0]
+		dy := ch.Pos.Y - p[1]
+		dz := ch.Pos.Z - p[2]
+		d := math.Sqrt(dx*dx + dy*dy + dz*dz)
+		ex := math.Round(ch.Pos.X) == math.Round(p[0]) &&
+			math.Round(ch.Pos.Y) == math.Round(p[1]) &&
+			math.Round(ch.Pos.Z) == math.Round(p[2])
+		if ex {
+			exact = append(exact, posHit{ch, d})
+		} else if radius > 0 && d <= radius {
+			near = append(near, posHit{ch, d})
+		}
+	}
+	byDist := func(s []posHit) {
+		for i := 1; i < len(s); i++ {
+			for j := i; j > 0 && s[j].dist < s[j-1].dist; j-- {
+				s[j], s[j-1] = s[j-1], s[j]
+			}
+		}
+	}
+	byDist(exact)
+	byDist(near)
+
+	if asJSON {
+		type hitJSON struct {
+			Chip testbench.Chip `json:"chip"`
+			Dist float64        `json:"dist"`
+		}
+		conv := func(s []posHit) []hitJSON {
+			out := make([]hitJSON, 0, len(s))
+			for _, h := range s {
+				out = append(out, hitJSON{h.chip, h.dist})
+			}
+			return out
+		}
+		return printJSON(map[string]any{
+			"at":    map[string]float64{"x": p[0], "y": p[1], "z": p[2]},
+			"range": radius,
+			"exact": conv(exact),
+			"near":  conv(near),
+		})
+	}
+	fmt.Printf("精确位置（四舍五入 = %.0f, %.0f, %.0f）: %d 个\n", p[0], p[1], p[2], len(exact))
+	for _, h := range exact {
+		fmt.Println("  " + chipSummary(h.chip))
+	}
+	if radius > 0 {
+		fmt.Printf("大致位置（≤ %.1f，已排除精确）: %d 个\n", radius, len(near))
+		for _, h := range near {
+			fmt.Printf("  %6.1f  %s\n", h.dist, chipSummary(h.chip))
+		}
+	}
+	return 0
+}
+
+// chipSummary renders a chip on one line.
+func chipSummary(ch testbench.Chip) string {
+	name := ch.Name
+	if name == "" {
+		name = ch.Prefab
+	}
+	s := fmt.Sprintf("[%d] %s  %s", ch.Index, name, ch.Prefab)
+	if ch.Lines > 0 {
+		s += fmt.Sprintf("  %d lines", ch.Lines)
+	}
+	if ch.Fingerprint != "" {
+		s += "  fp=" + ch.Fingerprint
+	}
+	if ch.Pos != nil {
+		s += fmt.Sprintf("  @(%s)", ch.Pos.String())
+	}
+	return s
 }
 
 // locateMatches selects the chips to report: by index or loose name/prefab match

@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.31",
+  "version": "0.7.32",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -36,7 +36,8 @@
     "onCommand:icg.bench.pause",
     "onCommand:icg.bench.loadSave",
     "onCommand:icg.bench.pulseDevice",
-    "onCommand:icg.bench.track"
+    "onCommand:icg.bench.track",
+    "onCommand:icg.bench.findAt"
   ],
   "contributes": {
     "languages": [
@@ -375,6 +376,11 @@
         "icon": "$(location)"
       },
       {
+        "command": "icg.bench.findAt",
+        "title": "%cmd.bench.findAt%",
+        "icon": "$(search)"
+      },
+      {
         "command": "icg.bench.setDevice",
         "title": "%cmd.bench.setDevice%"
       },
@@ -435,6 +441,11 @@
         }
       ],
       "view/title": [
+        {
+          "command": "icg.bench.findAt",
+          "when": "view == icg.bench",
+          "group": "navigation@0"
+        },
         {
           "command": "icg.bench.push",
           "when": "view == icg.bench",

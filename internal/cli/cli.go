@@ -510,6 +510,7 @@ var Commands = []Command{
 				"  list                      list programmable chips\n" +
 				"  locate [--chip NAME]      where a chip is (world position)\n" +
 				"                            --program FILE: find the chip(s) running it\n" +
+				"                            --at X Y Z: find hosts by position; --range N\n" +
 				"  hud [on|off|clear|X Y Z]  in-game overlay: your position/heading and a\n" +
 				"                            tracked target (--chip NAME to track a chip)\n" +
 				"  push <file.icg>           compile and upload (runs any loader first)\n" +
@@ -538,6 +539,7 @@ var Commands = []Command{
 				"  list                      列出可编程芯片\n" +
 				"  locate [--chip NAME]      芯片位置（世界坐标）\n" +
 				"                            --program FILE：按源码找出跑该程序的芯片\n" +
+				"                            --at X Y Z：按坐标找芯片；--range N 再列大致位置\n" +
 				"  hud [on|off|clear|X Y Z]  游戏内罗盘：自身坐标/朝向 + 追踪目标坐标\n" +
 				"                            （--chip NAME 追踪某块芯片；F8 开关、F9 清目标）\n" +
 				"  push <file.icg>           编译并上传（必要时先跑 loader）\n" +
@@ -562,6 +564,8 @@ var Commands = []Command{
 			{Long: "--addr", Arg: "H:P", Desc: text{EN: "testbench address (env IC10_BENCH_ADDR)", ZH: "测试台地址（环境变量 IC10_BENCH_ADDR）"}},
 			{Long: "--chip", Arg: "NAME", Desc: text{EN: "select a chip by name or prefab", ZH: "按名字或预制体选择芯片"}},
 			{Long: "--program", Arg: "FILE", Desc: text{EN: "locate: find the chip(s) running this program", ZH: "locate：找出跑该程序的芯片"}},
+			{Long: "--at", Arg: "X Y Z", Desc: text{EN: "locate: find hosts at a position (decimals ignored)", ZH: "locate：按坐标找芯片（忽略小数）"}},
+			{Long: "--range", Arg: "N", Desc: text{EN: "locate --at: also list hosts within N (approximate)", ZH: "locate --at：再列出 N 格内的芯片（大致位置）"}},
 			{Long: "--offset", Arg: "DEG", Desc: text{EN: "hud: add this many degrees to the view heading (if it differs from your HUD compass)", ZH: "hud：给朝向加上这个角度（若与你的 HUD 罗盘不一致）"}},
 			{Long: "--as", Arg: "NAME", Desc: text{EN: "push: which `chip` block to upload (multi-chip sources)", ZH: "push：多芯片源码中上传哪个 `chip` 块"}},
 			{Long: "--data-access", Arg: "get|stack", Desc: text{EN: "push: data-segment access; use `stack` on a device host (e.g. air conditioner)", ZH: "push：数据段访问方式；设备 host（如空调）用 `stack`"}},

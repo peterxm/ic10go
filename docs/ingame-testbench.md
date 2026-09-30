@@ -292,6 +292,7 @@ ic10c testbench list                       # 列出芯片（含位置 pos 与程
 ic10c testbench ping                        # 连接自检
 ic10c testbench locate [--chip NAME]        # 这块芯片在哪（世界坐标）
 ic10c testbench locate --program <file.ic>  # 哪块芯片在跑这份程序（按源码指纹匹配）
+ic10c testbench locate --at X Y Z [--range N]  # 按坐标找：精确（四舍五入，忽略小数）+ N 格内的大致位置
 ic10c testbench hud [on|off|clear|X Y Z]    # 游戏内 HUD：自身坐标/朝向 + 追踪目标（--chip 追踪芯片）
 ic10c testbench push <file.icg> [--chip N] [--as NAME]  # 编译 + 上传（多芯片用 --as 选块；自动先跑 loader）
 ic10c testbench state [--chip N] [--all] [--json]
@@ -315,7 +316,7 @@ mod ≥ 0.3.0 在屏幕左上角画一个小面板：自身 **X / Y / Z** 与 **
 - 开关 `F8`，清目标 `F9`。
 - 设目标：`ic10c testbench hud --chip 118`（用该 host 的世界坐标）或 `ic10c testbench hud 669 192 -627`（直接给坐标）；`hud off` / `hud clear` / `hud`（查状态）。
 - 朝向与游戏内罗盘一致：`CameraController.CurrentCamera.transform.eulerAngles.y + 180`（这就是 StationeersUIMod 的 `HeadingDeg` 公式，用的也是它的 `CurrentCamera`；不要用 `Camera.main`，可能命中对着角色脸的人像相机）。若你的 HUD 用别的零度，`ic10c testbench hud --offset N` 可现场校准（立即生效）。
-- VSCode：在「IC10 测试台」树里**右键一块 host → Track in Game**，等价于 `hud --chip`。
+- VSCode：在「IC10 测试台」树里**右键一块 host → Track in Game**，等价于 `hud --chip`；标题栏的 🔍 **Find Hosts by Position** 输入 `X Y Z`（+可选半径）即可按坐标找芯片（精确=四舍五入忽略小数，大致=半径内的按距离排序）。
 - 只画在**运行 mod 的那个进程**上，且仅在进入世界后出现（主菜单不画）。若 mod 跑在无头服务端，客户端看不到这个面板。
 
 ### 6.1 场景文件（JSON）

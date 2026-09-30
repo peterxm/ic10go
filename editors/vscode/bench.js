@@ -392,6 +392,21 @@ function isNoChip(err) {
     return /no-chip|no chip|not a ProgrammableChip/i.test(msg);
 }
 
+// posPick builds a QuickPick item for a host found by position (locate --at).
+function posPick(hit, prefix, tag) {
+    const chip = hit.chip || hit;
+    const name = chip.name || chip.prefab || `chip#${chip.index}`;
+    let extra = '';
+    if (chip.programmable === false) extra = ` · ${t('no chip', '无芯片')}`;
+    else if (!chip.lines) extra = ` · ${t('no code', '无代码')}`;
+    else extra = ` · ${chip.lines} ${t('lines', '行')}`;
+    return {
+        label: `${prefix}  ${name}`,
+        description: [tag, chip.prefab].filter(Boolean).join(' · ') + extra,
+        chip,
+    };
+}
+
 // chipNode renders one host/chip in the tree. The selected chip expands into
 // Registers / Stack / Devices; others are clickable to select.
 function chipNode(chip, selected) {
@@ -610,6 +625,7 @@ class Bench {
         cmd('icg.bench.openPanel', () => this.openPanel());
         cmd('icg.bench.selectChip', (chip) => this.selectChip(chip));
         cmd('icg.bench.track', (arg) => this.trackChip(arg));
+        cmd('icg.bench.findAt', () => this.findByPos());
         cmd('icg.bench.setDevice', (arg) => this.setDevice(arg));
         cmd('icg.bench.pulseDevice', (arg) => this.pulseDevice(arg));
 
@@ -1672,6 +1688,56 @@ ${note}${diffNote}
         vscode.window.setStatusBarMessage(
             t(`IC10: tracking ${name} in game (F8 toggles the HUD)`,
               `IC10: 游戏中追踪 ${name}（F8 开关 HUD）`), 6000);
+    }
+
+    // findByPos asks for a coordinate and an optional approximate range, then
+    // lists the hosts there: exact (decimals ignored) first, then within range.
+    // Picking one selects it, like clicking it in the tree.
+    async findByPos() {
+        const input = await vscode.window.showInputBox({
+            prompt: t('Position "X Y Z" (exact match ignores decimals)', '坐标「X Y Z」（精确匹配忽略小数）'),
+            placeHolder: '669 192 -627',
+            validateInput: (v) =>
+                v.trim().split(/[\s,]+/).filter(Boolean).length === 3 ? undefined : t('need three numbers', '需要三个数字'),
+        });
+        if (input === undefined) return;
+        const xyz = input.trim().split(/[\s,]+/).filter(Boolean).slice(0, 3);
+        const range = await vscode.window.showInputBox({
+            prompt: t('Approximate range in blocks (blank = exact only)', '大致位置半径（格）；留空 = 只看精确'),
+            placeHolder: '12',
+        });
+        if (range === undefined) return;
+
+        const args = ['testbench', 'locate', '--at', ...xyz, '--json'];
+        if (range.trim()) args.push('--range', range.trim());
+        const res = await this.client.execCli(args);
+        let out;
+        try {
+            out = JSON.parse(res.stdout);
+        } catch (err) {
+            this.client.output.appendLine(`=== locate --at failed ===\n${res.stderr || res.stdout}`);
+            this.client.output.show(true);
+            vscode.window.showErrorMessage(
+                t('IC10: find by position failed. See the "IC10 Go" output.', 'IC10: 按坐标查找失败，详见 "IC10 Go" 输出面板。')
+            );
+            return;
+        }
+        const exact = out.exact || [];
+        const near = out.near || [];
+        if (!exact.length && !near.length) {
+            vscode.window.showInformationMessage(
+                t(`No host near ${xyz.join(' ')}`, `没找到 ${xyz.join(' ')} 附近的 host`)
+            );
+            return;
+        }
+        const items = exact
+            .map((h) => posPick(h, `$(pinned) ${t('exact', '精确')}`, t('exact', '精确')))
+            .concat(near.map((h) => posPick(h, `$(location) ${h.dist.toFixed(1)} m`, `${h.dist.toFixed(1)} m`)));
+        const pick = await vscode.window.showQuickPick(items, {
+            title: t(`Hosts at ${xyz.join(' ')}`, `${xyz.join(' ')} 附近的 host`),
+            placeHolder: t('Select to make it the current chip', '选择后切换为当前芯片'),
+        });
+        if (pick && pick.chip) this.selectChip(pick.chip);
     }
 
     async runScenario() {
