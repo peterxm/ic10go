@@ -9,6 +9,10 @@
 #   REPORT=/tmp/report.md sh testdata/cli/run.sh  # 额外写出 Markdown 报告
 #
 # 退出码：0 = 全部通过；1 = 有失败；2 = 找不到编译器。
+# 脚本用 bash 数组，若被 `sh`（Ubuntu 的 dash）调用则先用 bash 重启自己。
+if [ -z "${BASH_VERSION:-}" ]; then
+    exec bash "$0" "$@"
+fi
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
