@@ -71,3 +71,61 @@ func TestOutlineNonLeaf(t *testing.T) {
 			gotErr, wantErr, got, want, incl.Code)
 	}
 }
+
+// A device-parameter helper called with different device constants. Outlining
+// shares one body (ports passed as numbers, IC10 drN) instead of inlining it at
+// each call site.
+const outlineDeviceSrc = `
+func control(src, dst, lo, hi) {
+    v := src.Setting
+    if v < lo { v = lo }
+    if v > hi { v = hi }
+    scaled := v * 3
+    offset := scaled - 30
+    dst.On = abs(offset) > 5
+}
+
+func main() {
+    for i := 0; i < 6; i++ {
+        control(d4, d0, 0, 100)
+        control(d0, d3, 0, 100)
+    }
+}
+`
+
+// TestOutlineDeviceParams checks that a helper taking device ports is outlined
+// (the ports become runtime registers read through drN) and produces the same
+// device writes as the all-inlined build.
+func TestOutlineDeviceParams(t *testing.T) {
+	t.Setenv("IC10C_NO_OPT", "")
+	t.Setenv("IC10C_NO_OUTLINE", "")
+	out, diags, err := ic10.CompileResult("t.icg", []byte(outlineDeviceSrc), ic10.Options{})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("default compile failed: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(out.Code, "jal ") {
+		t.Fatalf("device-parameter helper was not outlined:\n%s", out.Code)
+	}
+	if !strings.Contains(out.Code, "dr") {
+		t.Fatalf("outlined body did not use a register-selected device:\n%s", out.Code)
+	}
+
+	t.Setenv("IC10C_NO_OUTLINE", "1")
+	plain, diags, err := ic10.CompileResult("t.icg", []byte(outlineDeviceSrc), ic10.Options{})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("no-outline compile failed: %v %v", diags.Diags, err)
+	}
+	lines := func(s string) int { return strings.Count(strings.TrimSuffix(s, "\n"), "\n") + 1 }
+	if lines(out.Code) >= lines(plain.Code) {
+		t.Fatalf("outlining did not shrink (%d vs %d lines)\n--- outlined ---\n%s\n--- inlined ---\n%s",
+			lines(out.Code), lines(plain.Code), out.Code, plain.Code)
+	}
+
+	init := deviceInit(23)
+	want, wantErr := runWrites(plain.Code, init)
+	got, gotErr := runWrites(out.Code, init)
+	if gotErr != wantErr || strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("outlined and inlined differ (err %v vs %v)\n--- outlined ---\n%v\n--- inlined ---\n%v\n--- outlined code ---\n%s",
+			gotErr, wantErr, got, want, out.Code)
+	}
+}

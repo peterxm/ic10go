@@ -488,20 +488,27 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	var best Result
 	haveBest := false
 	var bestErr error
+	var failed *diag.Bag
 	sawSpill := false
 	consider := func(r Result) {
 		if !haveBest || better(r.Code, best.Code) {
 			best, haveBest = r, true
 		}
 	}
-	run := func(outline map[string]bool, noFold, noMem2Reg, forceNoOpt bool) {
+	run := func(outline map[string]bool, inlineConstArgs, noFold, noMem2Reg, forceNoOpt bool) {
 		o := opts
 		o.NoFoldDataReads = noFold
 		o.NoMem2Reg = noMem2Reg
-		fn := lowerAndOptimize(info, o, outline, noCheck, noOpt || forceNoOpt, diags)
-		if fn == nil || diags.HasErrors() {
+		// Lower each variant into its own diagnostics bag: a variant the size
+		// model discards (e.g. one that trips an internal error on an awkward
+		// shape) must not disqualify the variants that do work.
+		cand := &diag.Bag{}
+		fn := lowerAndOptimize(info, o, outline, inlineConstArgs, noCheck, noOpt || forceNoOpt, cand)
+		if fn == nil || cand.HasErrors() {
+			failed = cand
 			return
 		}
+		mergeDiags(diags, cand)
 		code, lineMap, spills, err := generate(fn, info, o)
 		if err == nil {
 			// Only look for a smaller unoptimised build when it could matter:
@@ -591,14 +598,19 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	// User-stack promotion only applies to private, constant user slots; probe
 	// with a cheap lowering (no optimisation) to avoid extra compiles.
 	mem2regs := []bool{false}
-	if probe := lowerAndOptimize(info, opts, nil, noCheck, true, &diag.Bag{}); probe != nil &&
+	if probe := lowerAndOptimize(info, opts, nil, false, noCheck, true, &diag.Bag{}); probe != nil &&
 		probe.PrivateStack && probe.UserStackManual > 0 && !probe.UserStackDynamic {
 		mem2regs = append(mem2regs, true)
 	}
 	for _, outline := range outlines {
 		for _, noFold := range folds {
 			for _, noMem2Reg := range mem2regs {
-				run(outline, noFold, noMem2Reg, false)
+				run(outline, false, noFold, noMem2Reg, false)
+				// A plan can both share the body and specialise constant calls;
+				// try the specialising variant too and keep the shorter.
+				if len(outline) > 0 {
+					run(outline, true, noFold, noMem2Reg, false)
+				}
 			}
 		}
 	}
@@ -607,14 +619,19 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	// costs more lines than it saves. When that happened, also build an
 	// unoptimised program and keep whichever is shorter.
 	if !noOpt && sawSpill {
-		run(nil, false, false, true)
+		run(nil, false, false, false, true)
 		if len(plan) > 0 {
-			run(plan, false, false, true)
+			run(plan, false, false, false, true)
 		}
 	}
 	// Each candidate re-runs lowering, so warnings can repeat; keep one copy.
 	dedupeDiags(diags)
 	if !haveBest {
+		// No variant worked: surface the last lowering failure (if any) so the
+		// user still sees why.
+		if failed != nil {
+			mergeDiags(diags, failed)
+		}
 		return Result{}, bestErr
 	}
 	return best, nil
@@ -873,12 +890,13 @@ func envSwitches() (noCheck, noOutline, noOpt bool) {
 }
 
 // lowerAndOptimize lowers a checked program to IR and runs the optimiser.
-func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, noCheck, noOpt bool, diags *diag.Bag) *ir.Function {
+func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, inlineConstArgs, noCheck, noOpt bool, diags *diag.Bag) *ir.Function {
 	fn := lower.Lower(info, diags, lower.Options{
 		StableInsOrder:  opts.StableInsOrder,
 		DataCheck:       !opts.NoDataCheck && !opts.Unsafe,
 		DataAccessStack: opts.DataAccessStack,
 		Outline:         outline,
+		InlineConstArgs: inlineConstArgs,
 		JumpTable:       opts.JumpTable,
 		Fast:            opts.Fast,
 		NoCheck:         noCheck,

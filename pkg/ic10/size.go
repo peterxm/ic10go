@@ -64,12 +64,15 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 	bestTotal := -1
 	var best *SizeReport
 	sawSpill := false
-	try := func(outline map[string]bool, noFold, noMem2Reg, forceNoOpt bool) {
+	try := func(outline map[string]bool, inlineConstArgs, noFold, noMem2Reg, forceNoOpt bool) {
 		o := opts
 		o.NoFoldDataReads = noFold
 		o.NoMem2Reg = noMem2Reg
-		fn := lowerAndOptimize(info, o, outline, noCheck, noOpt || forceNoOpt, diags)
-		if fn == nil {
+		// Isolate per-variant diagnostics: a discarded variant that hits an
+		// internal error must not hide the variants that work.
+		cand := &diag.Bag{}
+		fn := lowerAndOptimize(info, o, outline, inlineConstArgs, noCheck, noOpt || forceNoOpt, cand)
+		if fn == nil || cand.HasErrors() {
 			return
 		}
 		reserved := info.DataSize
@@ -128,23 +131,26 @@ func Size(name string, src []byte, opts Options) (*SizeReport, error) {
 		folds = append(folds, true)
 	}
 	mem2regs := []bool{false}
-	if probe := lowerAndOptimize(info, opts, nil, noCheck, true, &diag.Bag{}); probe != nil &&
+	if probe := lowerAndOptimize(info, opts, nil, false, noCheck, true, &diag.Bag{}); probe != nil &&
 		probe.PrivateStack && probe.UserStackManual > 0 && !probe.UserStackDynamic {
 		mem2regs = append(mem2regs, true)
 	}
 	for _, outline := range outlines {
 		for _, noFold := range folds {
 			for _, noMem2Reg := range mem2regs {
-				try(outline, noFold, noMem2Reg, false)
+				try(outline, false, noFold, noMem2Reg, false)
+				if len(outline) > 0 {
+					try(outline, true, noFold, noMem2Reg, false)
+				}
 			}
 		}
 	}
 	// Match Compile's size fallback: when the optimised build spills, an
 	// unoptimised build can be shorter.
 	if !noOpt && sawSpill {
-		try(nil, false, false, true)
+		try(nil, false, false, false, true)
 		if len(plan) > 0 {
-			try(plan, false, false, true)
+			try(plan, false, false, false, true)
 		}
 	}
 	if best == nil {

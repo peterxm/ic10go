@@ -677,6 +677,15 @@ func redundantLoads(fn *ir.Function) bool {
 				delete(seen, k)
 			}
 			delete(byDevice, dev)
+			// A write to any device may be the one a runtime-selected load
+			// (drN) reads: those register under the dynamic pseudo-device, so
+			// any named-device write invalidates them too.
+			if dev != dynamicDev {
+				for _, k := range byDevice[dynamicDev] {
+					delete(seen, k)
+				}
+				delete(byDevice, dynamicDev)
+			}
 		}
 		invalidateReg := func(r *ir.Reg) {
 			for _, k := range byReg[r] {
@@ -806,6 +815,12 @@ func depsOf(v ir.Value) []*ir.Reg {
 	return nil
 }
 
+// dynamicDev is the pseudo-device used for a load whose port is chosen at run
+// time (IC10 drN / ReferenceId). No single device owns it, so any device write
+// invalidates it; the load-invalidation code treats every real device as
+// overlapping it.
+const dynamicDev = "*"
+
 // loadKey recognises a redundant-load candidate and returns a stable key, the
 // device it reads, its destination, and any registers its address depends on.
 func loadKey(i ir.Instr) (key, dev string, dst *ir.Reg, deps []*ir.Reg, ok bool) {
@@ -819,10 +834,37 @@ func loadKey(i ir.Instr) (key, dev string, dst *ir.Reg, deps []*ir.Reg, ok bool)
 	case *ir.Load:
 		return "l|" + v.Dev + "|" + v.Logic, v.Dev, v.Dst, nil, true
 	case *ir.LoadSlot:
+		if v.DevPtr != nil {
+			// Runtime-selected port: invalidated by any device write.
+			return "ls|dr|" + valKey(v.DevPtr) + "|" + valKey(v.Index) + "|" + v.Logic, dynamicDev, v.Dst,
+				append(indexReg(v.DevPtr), indexReg(v.Index)...), true
+		}
 		if c, isC := v.Index.(*ir.Const); isC {
 			return "ls|" + v.Dev + "|" + c.String() + "|" + v.Logic, v.Dev, v.Dst, nil, true
 		}
 		return "ls|" + v.Dev + "|" + valKey(v.Index) + "|" + v.Logic, v.Dev, v.Dst, indexReg(v.Index), true
+	case *ir.LoadDyn:
+		// A reagent read (lr) is left out: its key would need the reagent too.
+		if v.Reagent != nil {
+			return "", "", nil, nil, false
+		}
+		logic := valKey(v.Logic)
+		if v.DevID != nil {
+			// ReferenceId-addressed: the id register may select any device.
+			return "ldynid|" + valKey(v.DevID) + "|" + logic, dynamicDev, v.Dst,
+				append(indexReg(v.DevID), indexReg(v.Logic)...), true
+		}
+		if v.DevPtr == nil {
+			// Compile-time port with a runtime logic type: precise invalidation.
+			return "ldyn|" + v.Dev + "|" + logic, v.Dev, v.Dst, indexReg(v.Logic), true
+		}
+		if c, isC := v.DevPtr.(*ir.Const); isC && c.Raw == "" && c.Special == "" {
+			dev := "d" + strconv.Itoa(int(c.V))
+			return "ldyn|" + dev + "|" + logic, dev, v.Dst, indexReg(v.Logic), true
+		}
+		// Runtime-selected port: invalidated by any device write.
+		return "ldyn|" + valKey(v.DevPtr) + "|" + logic, dynamicDev, v.Dst,
+			append(indexReg(v.DevPtr), indexReg(v.Logic)...), true
 	case *ir.Builtin:
 		// get(dev, addr) reads a device-stack slot; addr may be a register.
 		if v.Name == "get" && v.Dst != nil && len(v.Args) == 2 {
@@ -909,6 +951,14 @@ func globalCSE(fn *ir.Function) bool {
 				delete(avail, key)
 			}
 			delete(byDev, dev)
+			// A runtime-selected load (drN) may be reading this device, so a
+			// write to it invalidates those too.
+			if dev != dynamicDev {
+				for _, key := range byDev[dynamicDev] {
+					delete(avail, key)
+				}
+				delete(byDev, dynamicDev)
+			}
 		}
 		invalidateKey := func(key string) {
 			e, ok := avail[key]
@@ -1095,6 +1145,14 @@ func transferAvail(b *ir.Block, in map[string]availExpr) map[string]availExpr {
 			delete(avail, key)
 		}
 		delete(byDev, dev)
+		// A runtime-selected load (drN) may be reading this device, so a write
+		// to it invalidates those too.
+		if dev != dynamicDev {
+			for _, key := range byDev[dynamicDev] {
+				delete(avail, key)
+			}
+			delete(byDev, dynamicDev)
+		}
 	}
 	invalidateKey := func(key string) {
 		e, ok := avail[key]

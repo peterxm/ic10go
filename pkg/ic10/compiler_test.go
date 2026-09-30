@@ -648,6 +648,20 @@ func TestDynamicDeviceNumericConst(t *testing.T) {
 	}
 }
 
+// TestDynamicDeviceReadEliminated checks that two reads of the same dynamic
+// port/logic collapse to one (loadKey covers LoadDyn), and that a device write
+// in between forces a re-read.
+func TestDynamicDeviceReadEliminated(t *testing.T) {
+	code := mustCompile(t, "func main() { p := d4.Setting; x := p.Temperature; y := p.Temperature; d0.Setting = x + y }\n")
+	if n := strings.Count(code, "Temperature"); n != 1 {
+		t.Errorf("expected one dynamic load, got %d:\n%s", n, code)
+	}
+	code = mustCompile(t, "func main() { p := d4.Setting; x := p.Temperature; d0.Setting = 1; y := p.Temperature; d1.Setting = x + y }\n")
+	if n := strings.Count(code, "Temperature"); n != 2 {
+		t.Errorf("expected the device write to invalidate the dynamic load, got %d loads:\n%s", n, code)
+	}
+}
+
 func TestSizeReport(t *testing.T) {
 	src := []byte(`func helper(a num, b num) num {
     x := a + b

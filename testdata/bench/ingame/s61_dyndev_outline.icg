@@ -1,0 +1,30 @@
+// Round 2: a device helper with a non-trivial body, called with different
+// device constants, so the compiler outlines one body and passes ports as
+// numbers (drN). Sources don't feed destinations, so state is stable.
+//   d0 LED (Setting/On r/w), d3 ElectronicsPrinter (On r/w), d4 LogicMemory.
+const (
+	LED = d0
+	PRN = d3
+	MEM = d4
+)
+
+func control(src, dst, lo, hi) {
+	v := src.Setting
+	if v < lo {
+		v = lo
+	}
+	if v > hi {
+		v = hi
+	}
+	scaled := v * 3
+	offset := scaled - 30
+	dst.On = abs(offset) > 5
+}
+
+func main() {
+	for {
+		yield()
+		control(MEM, LED, 0, 100)
+		control(LED, PRN, 0, 100)
+	}
+}

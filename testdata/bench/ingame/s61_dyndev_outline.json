@@ -1,0 +1,11 @@
+{
+  "program": "s61_dyndev_outline.icg",
+  "chip": { "name": "A CHIP" },
+  "ports": { "d0": "LED", "d3": "ElectronicsPrinter", "d4": "Memory" },
+  "cases": [
+    { "name": "both hot -> 1/1", "set": { "d4.Setting": 20, "d0.Setting": 20 }, "run": 2, "expect": { "d0.On": 1, "d3.On": 1 } },
+    { "name": "both neutral -> 0/0", "set": { "d4.Setting": 10, "d0.Setting": 10 }, "run": 2, "expect": { "d0.On": 0, "d3.On": 0 } },
+    { "name": "mem hot, led neutral -> 1/0", "set": { "d4.Setting": 20, "d0.Setting": 10 }, "run": 2, "expect": { "d0.On": 1, "d3.On": 0 } },
+    { "name": "mem neutral, led hot -> 0/1", "set": { "d4.Setting": 10, "d0.Setting": 20 }, "run": 2, "expect": { "d0.On": 0, "d3.On": 1 } }
+  ]
+}

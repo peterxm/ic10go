@@ -31,6 +31,12 @@ type Options struct {
 	// Outline lists user functions to emit once as subroutines instead of
 	// inlining them at every call site. See PlanOutlines.
 	Outline map[string]bool
+	// InlineConstArgs keeps the old specialisation: a call whose arguments are
+	// all compile-time constants is inlined so the optimiser can fold the body,
+	// even when the function is otherwise outlined. When false, constant-arg
+	// calls are outlined too, which lets the size model share a large body that
+	// cannot fold away (e.g. one keyed on device ports).
+	InlineConstArgs bool
 	// JumpTable lowers dense integer switches to a computed jump through a
 	// table of `j` instructions. Off by default.
 	JumpTable bool
@@ -2173,7 +2179,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 
 	// User-defined functions take precedence over built-ins.
 	if fi, ok := l.info.Funcs[id.Name]; ok {
-		if l.outline[id.Name] && !l.inOutlineBody && !l.hasDeviceOrDataArg(call.Args) {
+		if l.outline[id.Name] && !l.inOutlineBody && !l.hasDataArg(call.Args) {
 			return l.outlineCall(id, fi, call.Args, needResult)
 		}
 		return l.inlineCall(id, fi, call.Args, needResult)
@@ -2645,10 +2651,27 @@ func (l *lowerer) inlineInto(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr, 
 // function's parameter registers, then a jal is emitted. The body itself is
 // emitted once later, by lowerOutlined.
 func (l *lowerer) outlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr, needResult bool) ir.Value {
-	// Specialize constant-argument calls: inlining lets the optimizer fold the
-	// body, so outline only the calls that cannot be folded.
-	if l.argsConstant(args) {
+	// Optional specialisation: a constant-argument call can fold, so keep it
+	// inline when the size model asked for that. Otherwise constant calls are
+	// outlined too, and any argument that is the same at every call site folds
+	// in the shared body via global constant propagation.
+	if l.opts.InlineConstArgs && l.argsConstant(args) {
 		return l.inlineCall(id, fi, args, needResult)
+	}
+	// Every argument must fit a parameter register. Data tables have no
+	// register form; device ports are passed as their port number and accessed
+	// through the register-selected device operand (drN), except the host stack
+	// (`db`), which has no tested number. Anything unsupported falls back to
+	// inlining, which binds it as a compile-time symbol instead.
+	for _, a := range args {
+		if _, ok := l.dataTable(a); ok {
+			return l.inlineCall(id, fi, args, needResult)
+		}
+		if dev, ok := l.deviceName(a); ok {
+			if _, ok := devicePortNumber(dev); !ok {
+				return l.inlineCall(id, fi, args, needResult)
+			}
+		}
 	}
 	if len(args) != len(fi.Decl.Params) {
 		l.diags.Errorf(id.Pos(), "%s expects %d arguments, got %d", id.Name, len(fi.Decl.Params), len(args))
@@ -2676,6 +2699,12 @@ func (l *lowerer) outlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr,
 	// argument may itself call this function and clobber the parameters.
 	vals := make([]ir.Value, len(args))
 	for i, a := range args {
+		if dev, ok := l.deviceName(a); ok {
+			if n, ok := devicePortNumber(dev); ok {
+				vals[i] = &ir.Const{V: float64(n)}
+				continue
+			}
+		}
 		vals[i] = l.lowerExpr(a)
 	}
 	for i := range of.params {
@@ -2692,6 +2721,16 @@ func (l *lowerer) outlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr,
 		return tmp
 	}
 	return &ir.Const{V: 0}
+}
+
+// devicePortNumber maps a compile-time device port to the port number a
+// register-selected device operand (drN) expects: d0..d5 -> 0..5. The host
+// stack (db) has no tested number and is not passed by register.
+func devicePortNumber(dev string) (int, bool) {
+	if len(dev) == 2 && dev[0] == 'd' && dev[1] >= '0' && dev[1] <= '5' {
+		return int(dev[1] - '0'), true
+	}
+	return 0, false
 }
 
 // argsConstant reports whether every argument is a compile-time constant, so an
@@ -2917,14 +2956,12 @@ func (l *lowerer) dynamicSlotOf(e ast.Expr) (ir.Value, ast.Expr, bool) {
 	return ptr, idx.Index, true
 }
 
-// hasDeviceOrDataArg reports whether any call argument is a device port or a
-// data table. Such arguments cannot be passed in registers, so the call must be
-// inlined even when the function is otherwise outlined.
-func (l *lowerer) hasDeviceOrDataArg(args []ast.Expr) bool {
+// hasDataArg reports whether any call argument is a data table. A data table's
+// base is a compile-time symbol with no register form, so such a call must be
+// inlined even when the function is otherwise outlined. Device ports are no
+// longer a veto: they are passed as a port number and accessed through drN.
+func (l *lowerer) hasDataArg(args []ast.Expr) bool {
 	for _, a := range args {
-		if _, ok := l.deviceName(a); ok {
-			return true
-		}
 		if _, ok := l.dataTable(a); ok {
 			return true
 		}

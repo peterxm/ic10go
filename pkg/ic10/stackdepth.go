@@ -23,7 +23,7 @@ func MaxStackDepth(name string, src []byte, opts Options) (depth int, unbounded 
 	}
 	opts.PrivateStack = private
 	noCheck, noOutline, noOpt := envSwitches()
-	fn := lowerAndOptimize(info, opts, lower.PlanOutlines(info, noOutline), noCheck, noOpt, diags)
+	fn := lowerAndOptimize(info, opts, lower.PlanOutlines(info, noOutline), false, noCheck, noOpt, diags)
 	if fn == nil {
 		return 0, false, fmt.Errorf("compile failed")
 	}

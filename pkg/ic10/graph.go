@@ -34,8 +34,8 @@ func Graph(name string, src []byte, opts Options) (*GraphResult, *diag.Bag, erro
 
 	var best *GraphResult
 	bestLines := -1
-	try := func(outline map[string]bool) {
-		fn := lowerAndOptimize(info, opts, outline, noCheck, noOpt, diags)
+	try := func(outline map[string]bool, inlineConstArgs bool) {
+		fn := lowerAndOptimize(info, opts, outline, inlineConstArgs, noCheck, noOpt, diags)
 		if fn == nil || diags.HasErrors() {
 			return
 		}
@@ -49,9 +49,10 @@ func Graph(name string, src []byte, opts Options) (*GraphResult, *diag.Bag, erro
 			bestLines = n
 		}
 	}
-	try(nil)
+	try(nil, false)
 	if len(plan) > 0 {
-		try(plan)
+		try(plan, false)
+		try(plan, true)
 	}
 	if best == nil {
 		return nil, diags, nil
