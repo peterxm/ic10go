@@ -58,24 +58,22 @@ namespace Ic10Go.Testbench
                 var human = Human.LocalHuman;
                 if (human == null) return false;
                 pos = human.transform.position;
-                // Use the player's camera, not Camera.main: Stationeers also has
-                // a portrait camera, and Camera.main can resolve to it (looking
-                // at the player, ~180° off the view heading).
-                Transform view = null;
-                try { var cc = CameraController.Instance; if (cc != null) view = cc.MainCameraTransform; } catch { }
-                if (view == null)
+                // Match the in-game compass (StationeersUIMod):
+                //   heading = CameraController.CurrentCamera.eulerAngles.y + 180
+                // The +180 is that UI's convention; Camera.main is not used
+                // because it can resolve to the portrait camera instead.
+                Camera cam = null;
+                try { cam = CameraController.CurrentCamera; } catch { }
+                if (cam == null)
                 {
                     if (_cam == null) _cam = Camera.main;
-                    if (_cam != null) view = _cam.transform;
+                    cam = _cam;
                 }
-                if (view != null)
+                if (cam != null)
                 {
-                    var f = view.forward;
-                    yaw = Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg;
-                    if (yaw < 0f) yaw += 360f;
-                    yaw = Mathf.Repeat(yaw + HeadingOffset, 360f);
-                    float e = view.eulerAngles.x;
-                    pitch = e > 180f ? e - 360f : e;
+                    float e = cam.transform.eulerAngles.y;
+                    yaw = Mathf.Repeat(e + 180f + HeadingOffset, 360f);
+                    pitch = Mathf.DeltaAngle(0f, cam.transform.eulerAngles.x);
                 }
                 return true;
             }
