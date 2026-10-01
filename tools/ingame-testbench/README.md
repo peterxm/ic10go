@@ -19,7 +19,9 @@ It lets you:
   target; `F8` toggles the overlay, `F9` clears the target).
 - **track a player** — `players` lists everyone (`Brain.PlayerBrains`, so **offline**
   players show too, with an online/offline flag and distance); `hud --player NAME`
-  points the compass at an online player, reading their position live.
+  points the compass at any player who still has something in the world, reading its
+  position live — an online player's body, an **offline** player's body, or a dead
+  player's **body bag**.
 
 ## Disclaimer
 

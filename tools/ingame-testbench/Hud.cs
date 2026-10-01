@@ -10,6 +10,7 @@
 
 using System;
 using Assets.Scripts;
+using Assets.Scripts.Objects;
 using Assets.Scripts.Objects.Entities;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
@@ -22,9 +23,9 @@ namespace Ic10Go.Testbench
         public static bool HasTarget;
         public static Vector3 Target;
         public static string TargetLabel = "";
-        /// <summary>When set, the target is this player (its position is read live
-        /// each frame, since players move).</summary>
-        public static Human TargetHuman;
+        /// <summary>When set, the target is this entity (a player's human or a body
+        /// bag); its position is read live each frame, since they move.</summary>
+        public static Thing TargetThing;
         /// <summary>Degrees added to the view heading, if a client's compass uses
         /// a different zero. Tunable at runtime with `hud --offset N`.</summary>
         public static float HeadingOffset;
@@ -36,41 +37,42 @@ namespace Ic10Go.Testbench
 
         public static void SetTarget(Vector3 p, string label)
         {
-            TargetHuman = null;
+            TargetThing = null;
             Target = p;
             TargetLabel = label ?? "";
             HasTarget = true;
             Enabled = true;
         }
 
-        /// <summary>Tracks a player: the target position is read live each frame.</summary>
-        public static void SetPlayer(Human human, string label)
+        /// <summary>Tracks an entity: the target position is read live each frame.
+        /// Works for a player's human and for a body bag.</summary>
+        public static void SetEntity(Thing thing, string label)
         {
-            TargetHuman = human;
-            if (human != null)
+            TargetThing = thing;
+            if (thing != null)
             {
-                try { Target = human.transform.position; } catch { Target = Vector3.zero; }
+                try { Target = thing.transform.position; } catch { Target = Vector3.zero; }
             }
             TargetLabel = label ?? "";
-            HasTarget = human != null;
+            HasTarget = thing != null;
             Enabled = true;
         }
 
         public static void Clear()
         {
-            TargetHuman = null;
+            TargetThing = null;
             HasTarget = false;
             TargetLabel = "";
         }
 
-        /// <summary>The current target position: a live player when one is tracked,
+        /// <summary>The current target position: a live entity when one is tracked,
         /// else the fixed point. False when nothing is tracked.</summary>
         public static bool TryTarget(out Vector3 pos)
         {
-            var h = TargetHuman;
-            if (h != null)
+            var t = TargetThing;
+            if (t != null)
             {
-                try { pos = h.transform.position; return true; } catch { }
+                try { pos = t.transform.position; return true; } catch { }
             }
             if (HasTarget) { pos = Target; return true; }
             pos = Vector3.zero;
@@ -136,7 +138,7 @@ namespace Ic10Go.Testbench
             {
                 var t = new JObject { ["x"] = Math.Round(tp.x, 2), ["y"] = Math.Round(tp.y, 2), ["z"] = Math.Round(tp.z, 2) };
                 if (!string.IsNullOrEmpty(TargetLabel)) t["label"] = TargetLabel;
-                if (TargetHuman != null) t["player"] = true;
+                if (TargetThing != null) t["entity"] = true;
                 o["target"] = t;
             }
             return o;

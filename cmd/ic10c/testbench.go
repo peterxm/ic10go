@@ -302,9 +302,13 @@ func benchPlayers(addr string, asJSON bool) int {
 		line := fmt.Sprintf("  %-18s", name)
 		if p.Self {
 			line += " (你)"
+		} else if p.Body {
+			line += " 尸体袋"
 		} else if p.Online != nil {
 			if *p.Online {
 				line += " 在线"
+			} else if p.Trackable != nil && *p.Trackable {
+				line += " 离线(角色在)"
 			} else {
 				line += " 离线"
 			}

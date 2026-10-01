@@ -354,8 +354,10 @@ namespace Ic10Go.Testbench
             return name;
         }
 
-        /// <summary>All players (online and offline), from Brain.PlayerBrains: the
-        /// roster persists for disconnected players. Falls back to living Humans.</summary>
+        /// <summary>Every player we can find a body for, online and offline, from
+        /// Brain.PlayerBrains. A disconnected player may still have a human in the
+        /// world, and a dead one a body bag; both are reported with a position so
+        /// the HUD can point at them. Falls back to living Humans.</summary>
         public static List<JObject> PlayerRows()
         {
             var rows = new List<JObject>();
@@ -374,28 +376,16 @@ namespace Ic10Go.Testbench
                     bool online = false;
                     try { online = b.IsOnline; } catch { }
                     o["online"] = online;
+
                     Human h = null;
                     try { h = b.ParentHuman; } catch { }
+                    DynamicBodyBag bag = (h == null) ? BodyBagOf(b) : null;
+                    Thing t = h != null ? (Thing)h : (Thing)bag;
+
                     o["self"] = (h != null && h == me);
-                    if (h != null)
-                    {
-                        try
-                        {
-                            var p = h.transform.position;
-                            o["pos"] = new JObject
-                            {
-                                ["x"] = Math.Round(p.x, 2),
-                                ["y"] = Math.Round(p.y, 2),
-                                ["z"] = Math.Round(p.z, 2),
-                            };
-                            if (me != null)
-                            {
-                                float dx = p.x - mePos.x, dy = p.y - mePos.y, dz = p.z - mePos.z;
-                                o["dist"] = Math.Round(Math.Sqrt(dx * dx + dy * dy + dz * dz), 1);
-                            }
-                        }
-                        catch { }
-                    }
+                    o["body"] = (bag != null);
+                    o["trackable"] = (t != null);
+                    if (t != null) FillPosition(o, t, me, mePos);
                     rows.Add(o);
                 }
             }
@@ -404,24 +394,9 @@ namespace Ic10Go.Testbench
             {
                 foreach (var h in AllPlayers())
                 {
-                    var o = new JObject { ["name"] = "", ["online"] = true, ["self"] = (h == me) };
+                    var o = new JObject { ["name"] = "", ["online"] = true, ["self"] = (h == me), ["trackable"] = true };
                     try { o["name"] = h.DisplayName ?? ""; } catch { }
-                    try
-                    {
-                        var p = h.transform.position;
-                        o["pos"] = new JObject
-                        {
-                            ["x"] = Math.Round(p.x, 2),
-                            ["y"] = Math.Round(p.y, 2),
-                            ["z"] = Math.Round(p.z, 2),
-                        };
-                        if (me != null)
-                        {
-                            float dx = p.x - mePos.x, dy = p.y - mePos.y, dz = p.z - mePos.z;
-                            o["dist"] = Math.Round(Math.Sqrt(dx * dx + dy * dy + dz * dz), 1);
-                        }
-                    }
-                    catch { }
+                    FillPosition(o, h, me, mePos);
                     rows.Add(o);
                 }
             }
@@ -435,6 +410,91 @@ namespace Ic10Go.Testbench
             return rows;
         }
 
+        /// <summary>Records pos/dist on a player row from a live entity's transform.</summary>
+        private static void FillPosition(JObject o, Thing t, Human me, Vector3 mePos)
+        {
+            try
+            {
+                var p = t.transform.position;
+                o["pos"] = new JObject
+                {
+                    ["x"] = Math.Round(p.x, 2),
+                    ["y"] = Math.Round(p.y, 2),
+                    ["z"] = Math.Round(p.z, 2),
+                };
+                if (me != null)
+                {
+                    float dx = p.x - mePos.x, dy = p.y - mePos.y, dz = p.z - mePos.z;
+                    o["dist"] = Math.Round(Math.Sqrt(dx * dx + dy * dy + dz * dz), 1);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>The body bag holding this brain, or null (the player is alive or
+        /// gone). A body bag lets us still point at a dead player's remains.</summary>
+        private static DynamicBodyBag BodyBagOf(Brain b)
+        {
+            foreach (var bag in AllBodyBags())
+                if ((object)BagBrain(bag) == (object)b) return bag;
+
+            // Fallback: the body bag's display name is normally part of the brain's
+            // trackable name ("VAIDAM" -> "VAIDAM's Body Bag").
+            string name = BrainName(b);
+            if (!string.IsNullOrEmpty(name))
+            {
+                foreach (var bag in AllBodyBags())
+                {
+                    string dn = "";
+                    try { dn = bag.PlayersDisplayName ?? ""; } catch { }
+                    if (!string.IsNullOrEmpty(dn) &&
+                        name.IndexOf(dn, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return bag;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>The brain inside a body bag. The game exposes this only as a
+        /// private member, so read it by reflection.</summary>
+        private static Brain BagBrain(DynamicBodyBag bag)
+        {
+            return Member(bag, "Brain") as Brain;
+        }
+
+        /// <summary>Reads a named property or field (public or not) from an object.</summary>
+        private static object Member(object o, string name)
+        {
+            if (o == null) return null;
+            var t = o.GetType();
+            try
+            {
+                var p = t.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (p != null && p.CanRead) return p.GetValue(o, null);
+            }
+            catch { }
+            try
+            {
+                var f = t.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (f != null) return f.GetValue(o);
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>Every body bag in the world (empty on error).</summary>
+        private static List<DynamicBodyBag> AllBodyBags()
+        {
+            var list = new List<DynamicBodyBag>();
+            try
+            {
+                var all = DynamicBodyBag.AllBodyBags;
+                if (all != null) foreach (var bag in all) if (bag != null) list.Add(bag);
+            }
+            catch { }
+            return list;
+        }
+
         /// <summary>Players with position, distance from the local player and a
         /// self flag, nearest-first (offline players last).</summary>
         public static JArray PlayersReport()
@@ -444,9 +504,11 @@ namespace Ic10Go.Testbench
             return arr;
         }
 
-        /// <summary>Resolves a player name to their live Human (null when offline
-        /// or unknown). Matches SteamName / trackable name, case-insensitive.</summary>
-        public static Human FindPlayerHuman(string name)
+        /// <summary>Resolves a player name to the live entity to track: their human
+        /// (online, or a body still in the world) or their body bag when dead. Null
+        /// when the name is unknown. Matches SteamName / trackable name, and human /
+        /// body-bag display names, case-insensitive.</summary>
+        public static Thing FindPlayerTarget(string name)
         {
             if (string.IsNullOrEmpty(name)) return null;
             try
@@ -457,14 +519,22 @@ namespace Ic10Go.Testbench
                     foreach (var b in brains.Values)
                     {
                         if (b == null) continue;
-                        if (string.Equals(BrainName(b), name, StringComparison.OrdinalIgnoreCase))
-                        {
-                            try { return b.ParentHuman; } catch { return null; }
-                        }
+                        if (!string.Equals(BrainName(b), name, StringComparison.OrdinalIgnoreCase)) continue;
+                        Human h = null;
+                        try { h = b.ParentHuman; } catch { }
+                        if (h != null) return h;
+                        var bag = BodyBagOf(b);
+                        if (bag != null) return bag;
                     }
                 }
             }
             catch { }
+            foreach (var bag in AllBodyBags())
+            {
+                string dn = "";
+                try { dn = bag.PlayersDisplayName ?? ""; } catch { }
+                if (string.Equals(dn, name, StringComparison.OrdinalIgnoreCase)) return bag;
+            }
             foreach (var h in AllPlayers())
             {
                 string dn = "";

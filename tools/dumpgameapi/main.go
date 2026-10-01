@@ -65,7 +65,16 @@ var required = []struct {
 	{"Assets.Scripts.Objects.Motherboards.LogicType", []string{"Setting", "On"}},
 	{"Assets.Scripts.Objects.Motherboards.LogicSlotType", nil},
 	{"WorldManager", []string{"IsGamePaused"}},
-	{"Assets.Scripts.Objects.Thing", []string{"PrefabName", "ReferenceId", "_customName"}},
+	{"Assets.Scripts.Objects.Thing", []string{"PrefabName", "ReferenceId", "_customName", "DisplayName", "Transform"}},
+	{"Assets.Scripts.Objects.Entities.Human", []string{
+		"LocalHuman", "AllHumans",
+	}},
+	{"Assets.Scripts.Objects.Items.Brain", []string{
+		"PlayerBrains", "ParentHuman", "IsOnline", "SteamName", "TrackableName",
+	}},
+	{"Assets.Scripts.DynamicBodyBag", []string{
+		"AllBodyBags", "PlayersDisplayName", "Brain",
+	}},
 }
 
 func main() {

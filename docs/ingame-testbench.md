@@ -198,8 +198,8 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `writes` | `{clear?:bool, from?:int}` | `{writes:[{seq,id,device,logic,slot,value}], count}` |
 | `trace` | `{n:int}` | `{steps, hitCount, hits:[{pc,text,regs}]}`（逐条 `Execute(1)`，只回存储指令） |
 | `program` | `{}` | `{lines, code}`（芯片当前 IC10 源码） |
-| `hud` | `{on?, clear?, offset?, target?:{x,y,z,label?}|{chip}|{player}}` | `{on, offset, player?{x,y,z,yaw,pitch}, target?{x,y,z,label?,player?}}` |
-| `players` | `{}` | `[{name, self, online, dist?, pos?{x,y,z}}]`（来自 `Brain.PlayerBrains`，含**离线**玩家；按到本机玩家的距离排序，离线排最后） |
+| `hud` | `{on?, clear?, offset?, target?:{x,y,z,label?}|{chip}|{player}}` | `{on, offset, player?{x,y,z,yaw,pitch}, target?{x,y,z,label?,entity?}}`（`target.player` 可为在线玩家的 Human，也可是**离线但角色还在**的 Human 或**尸体袋**） |
+| `players` | `{}` | `[{name, self, online, body?, trackable?, dist?, pos?{x,y,z}}]`（来自 `Brain.PlayerBrains`，含**离线**玩家；`body:true` = 尸体袋，`trackable` = 世界里能找到实体可被 HUD 追踪；按到本机玩家的距离排序，无实体的排最后） |
 | `run` | `{ticks:n, mode?:"step"|"realtime"}` | `{ticks, line}` |
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
 | `ports` | `{chip?}` | diagnostic: `Devices[]`, ids, labels, lookups |

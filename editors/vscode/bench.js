@@ -1798,15 +1798,31 @@ ${note}${diffNote}
         }
         const items = players.map((p) => {
             const online = p.online !== false; // absent => assume online
+            const present = p.trackable != null ? !!p.trackable : p.self || !!p.pos;
             const tags = [];
-            if (p.self) tags.push(t('you', '你'));
-            else tags.push(online ? t('online', '在线') : t('offline', '离线'));
+            let icon;
+            if (p.self) {
+                icon = '$(account)';
+                tags.push(t('you', '你'));
+            } else if (p.body) {
+                icon = present ? '$(archive)' : '$(circle-slash)';
+                tags.push(t('body bag', '尸体袋'));
+            } else if (online) {
+                icon = '$(person)';
+                tags.push(t('online', '在线'));
+            } else if (present) {
+                icon = '$(person)';
+                tags.push(t('offline · body in world', '离线 · 角色在'));
+            } else {
+                icon = '$(circle-slash)';
+                tags.push(t('offline', '离线'));
+            }
             if (p.dist != null) tags.push(`${p.dist.toFixed(1)} m`);
             return {
-                label: (p.self ? '$(account) ' : online ? '$(person) ' : '$(circle-slash) ') + (p.name || t('(unnamed)', '(无名)')),
+                label: `${icon} ${p.name || t('(unnamed)', '(无名)')}`,
                 description: tags.join(' · '),
                 player: p,
-                online,
+                present,
             };
         });
         const pick = await vscode.window.showQuickPick(items, {
@@ -1814,8 +1830,11 @@ ${note}${diffNote}
             placeHolder: t('The in-game HUD will point at them', '游戏内 HUD 会指向他'),
         });
         if (!pick) return;
-        if (!pick.online) {
-            vscode.window.showWarningMessage(t(`IC10: ${pick.player.name} is offline.`, `IC10: ${pick.player.name} 离线，无法追踪。`));
+        if (!pick.present) {
+            vscode.window.showWarningMessage(
+                t(`IC10: ${pick.player.name} has no entity in the world — nothing to track.`,
+                  `IC10: ${pick.player.name} 在世界里没有实体，无法追踪。`)
+            );
             return;
         }
         const res = await this.client.execCli(['testbench', 'hud', '--player', pick.player.name]);
