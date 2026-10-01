@@ -185,15 +185,8 @@ namespace Ic10Go.Testbench
                 else if (t["player"] != null)
                 {
                     string pname = (string)t["player"];
-                    Human found = null;
-                    foreach (var h in GameApi.AllPlayers())
-                    {
-                        string dn = "";
-                        try { dn = h.DisplayName ?? ""; } catch { }
-                        if (string.IsNullOrEmpty(dn)) { try { dn = h.name ?? ""; } catch { } }
-                        if (string.Equals(dn, pname, StringComparison.OrdinalIgnoreCase)) { found = h; break; }
-                    }
-                    if (found == null) throw new BenchError("no-player", "no player named \"" + pname + "\"");
+                    var found = GameApi.FindPlayerHuman(pname);
+                    if (found == null) throw new BenchError("no-player", "\"" + pname + "\" is offline or unknown");
                     Hud.SetPlayer(found, pname);
                 }
                 else

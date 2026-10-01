@@ -275,10 +275,11 @@ func (c *Client) ListChips() ([]Chip, error) {
 // Player is a player (Human) as reported by the `players` command, sorted by
 // distance from the local player.
 type Player struct {
-	Name string   `json:"name"`
-	Self bool     `json:"self"`
-	Dist *float64 `json:"dist,omitempty"`
-	Pos  *ChipPos `json:"pos,omitempty"`
+	Name   string   `json:"name"`
+	Self   bool     `json:"self"`
+	Online *bool    `json:"online,omitempty"`
+	Dist   *float64 `json:"dist,omitempty"`
+	Pos    *ChipPos `json:"pos,omitempty"`
 }
 
 // Players lists the players in the world.

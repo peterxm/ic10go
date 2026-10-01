@@ -302,6 +302,12 @@ func benchPlayers(addr string, asJSON bool) int {
 		line := fmt.Sprintf("  %-18s", name)
 		if p.Self {
 			line += " (你)"
+		} else if p.Online != nil {
+			if *p.Online {
+				line += " 在线"
+			} else {
+				line += " 离线"
+			}
 		}
 		if p.Dist != nil {
 			line += fmt.Sprintf("  %7.1f m", *p.Dist)

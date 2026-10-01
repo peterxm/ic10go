@@ -538,7 +538,7 @@ var Commands = []Command{
 				"子命令：\n" +
 				"  ping                      连接/版本自检\n" +
 				"  list                      列出可编程芯片\n" +
-				"  players                   列出玩家（按距离）\n" +
+				"  players                   列出玩家（在线/离线，按距离）\n" +
 				"  locate [--chip NAME]      芯片位置（世界坐标）\n" +
 				"                            --program FILE：按源码找出跑该程序的芯片\n" +
 				"                            --at X Y Z：按坐标找芯片；--range N 再列大致位置\n" +

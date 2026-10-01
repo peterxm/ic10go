@@ -26,6 +26,7 @@ using Assets.Scripts;
 using Assets.Scripts.Objects;
 using Assets.Scripts.Objects.Electrical;
 using Assets.Scripts.Objects.Entities;
+using Assets.Scripts.Objects.Items;
 using Assets.Scripts.Objects.Motherboards;
 using Assets.Scripts.Objects.Pipes;
 using Assets.Scripts.Serialization;
@@ -343,44 +344,134 @@ namespace Ic10Go.Testbench
             return list;
         }
 
-        /// <summary>Players with position, distance from the local player and a
-        /// self flag, newest-first by distance.</summary>
-        public static JArray PlayersReport()
+        /// <summary>The player's Steam name from their brain, or fallbacks.</summary>
+        private static string BrainName(Brain b)
         {
-            var arr = new JArray();
+            string name = "";
+            try { name = b.SteamName ?? ""; } catch { }
+            if (string.IsNullOrEmpty(name)) { try { name = b.TrackableName ?? ""; } catch { } }
+            if (string.IsNullOrEmpty(name)) { try { name = b.name ?? ""; } catch { } }
+            return name;
+        }
+
+        /// <summary>All players (online and offline), from Brain.PlayerBrains: the
+        /// roster persists for disconnected players. Falls back to living Humans.</summary>
+        public static List<JObject> PlayerRows()
+        {
+            var rows = new List<JObject>();
             Human me = null;
             Vector3 mePos = Vector3.zero;
             try { me = Human.LocalHuman; if (me != null) mePos = me.transform.position; } catch { }
-            var rows = new List<JObject>();
-            foreach (var h in AllPlayers())
+
+            var brains = (Dictionary<ulong, Brain>)null;
+            try { brains = Brain.PlayerBrains; } catch { }
+            if (brains != null)
             {
-                var o = new JObject();
-                string name = "";
-                try { name = h.DisplayName ?? ""; } catch { }
-                if (string.IsNullOrEmpty(name)) { try { name = h.name ?? ""; } catch { } }
-                o["name"] = name;
-                o["self"] = (h == me);
-                try
+                foreach (var b in brains.Values)
                 {
-                    var p = h.transform.position;
-                    o["pos"] = new JObject
+                    if (b == null) continue;
+                    var o = new JObject { ["name"] = BrainName(b) };
+                    bool online = false;
+                    try { online = b.IsOnline; } catch { }
+                    o["online"] = online;
+                    Human h = null;
+                    try { h = b.ParentHuman; } catch { }
+                    o["self"] = (h != null && h == me);
+                    if (h != null)
                     {
-                        ["x"] = Math.Round(p.x, 2),
-                        ["y"] = Math.Round(p.y, 2),
-                        ["z"] = Math.Round(p.z, 2),
-                    };
-                    if (me != null)
+                        try
+                        {
+                            var p = h.transform.position;
+                            o["pos"] = new JObject
+                            {
+                                ["x"] = Math.Round(p.x, 2),
+                                ["y"] = Math.Round(p.y, 2),
+                                ["z"] = Math.Round(p.z, 2),
+                            };
+                            if (me != null)
+                            {
+                                float dx = p.x - mePos.x, dy = p.y - mePos.y, dz = p.z - mePos.z;
+                                o["dist"] = Math.Round(Math.Sqrt(dx * dx + dy * dy + dz * dz), 1);
+                            }
+                        }
+                        catch { }
+                    }
+                    rows.Add(o);
+                }
+            }
+
+            if (rows.Count == 0)
+            {
+                foreach (var h in AllPlayers())
+                {
+                    var o = new JObject { ["name"] = "", ["online"] = true, ["self"] = (h == me) };
+                    try { o["name"] = h.DisplayName ?? ""; } catch { }
+                    try
                     {
-                        float dx = p.x - mePos.x, dy = p.y - mePos.y, dz = p.z - mePos.z;
-                        o["dist"] = Math.Round(Math.Sqrt(dx * dx + dy * dy + dz * dz), 1);
+                        var p = h.transform.position;
+                        o["pos"] = new JObject
+                        {
+                            ["x"] = Math.Round(p.x, 2),
+                            ["y"] = Math.Round(p.y, 2),
+                            ["z"] = Math.Round(p.z, 2),
+                        };
+                        if (me != null)
+                        {
+                            float dx = p.x - mePos.x, dy = p.y - mePos.y, dz = p.z - mePos.z;
+                            o["dist"] = Math.Round(Math.Sqrt(dx * dx + dy * dy + dz * dz), 1);
+                        }
+                    }
+                    catch { }
+                    rows.Add(o);
+                }
+            }
+
+            rows.Sort((a, b) =>
+            {
+                double ad = (double?)a["dist"] ?? double.MaxValue;
+                double bd = (double?)b["dist"] ?? double.MaxValue;
+                return ad.CompareTo(bd);
+            });
+            return rows;
+        }
+
+        /// <summary>Players with position, distance from the local player and a
+        /// self flag, nearest-first (offline players last).</summary>
+        public static JArray PlayersReport()
+        {
+            var arr = new JArray();
+            foreach (var o in PlayerRows()) arr.Add(o);
+            return arr;
+        }
+
+        /// <summary>Resolves a player name to their live Human (null when offline
+        /// or unknown). Matches SteamName / trackable name, case-insensitive.</summary>
+        public static Human FindPlayerHuman(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            try
+            {
+                var brains = Brain.PlayerBrains;
+                if (brains != null)
+                {
+                    foreach (var b in brains.Values)
+                    {
+                        if (b == null) continue;
+                        if (string.Equals(BrainName(b), name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            try { return b.ParentHuman; } catch { return null; }
+                        }
                     }
                 }
-                catch { }
-                rows.Add(o);
             }
-            rows.Sort((a, b) => ((double?)a["dist"] ?? 0).CompareTo((double?)b["dist"] ?? 0));
-            foreach (var o in rows) arr.Add(o);
-            return arr;
+            catch { }
+            foreach (var h in AllPlayers())
+            {
+                string dn = "";
+                try { dn = h.DisplayName ?? ""; } catch { }
+                if (string.Equals(dn, name, StringComparison.OrdinalIgnoreCase)) return h;
+            }
+            return null;
         }
 
         /// <summary>The world position of a chip host, for the HUD target.</summary>

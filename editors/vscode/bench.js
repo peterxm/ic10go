@@ -1796,18 +1796,28 @@ ${note}${diffNote}
             vscode.window.showInformationMessage(t('IC10: no players.', 'IC10: 没有玩家。'));
             return;
         }
-        const items = players.map((p) => ({
-            label: (p.self ? '$(account) ' : '$(person) ') + (p.name || t('(unnamed)', '(无名)')),
-            description: [p.self ? t('you', '你') : '', p.dist != null ? `${p.dist.toFixed(1)} m` : '']
-                .filter(Boolean)
-                .join(' · '),
-            player: p,
-        }));
+        const items = players.map((p) => {
+            const online = p.online !== false; // absent => assume online
+            const tags = [];
+            if (p.self) tags.push(t('you', '你'));
+            else tags.push(online ? t('online', '在线') : t('offline', '离线'));
+            if (p.dist != null) tags.push(`${p.dist.toFixed(1)} m`);
+            return {
+                label: (p.self ? '$(account) ' : online ? '$(person) ' : '$(circle-slash) ') + (p.name || t('(unnamed)', '(无名)')),
+                description: tags.join(' · '),
+                player: p,
+                online,
+            };
+        });
         const pick = await vscode.window.showQuickPick(items, {
             title: t('Track a player', '追踪玩家'),
             placeHolder: t('The in-game HUD will point at them', '游戏内 HUD 会指向他'),
         });
         if (!pick) return;
+        if (!pick.online) {
+            vscode.window.showWarningMessage(t(`IC10: ${pick.player.name} is offline.`, `IC10: ${pick.player.name} 离线，无法追踪。`));
+            return;
+        }
         const res = await this.client.execCli(['testbench', 'hud', '--player', pick.player.name]);
         if (res.code !== 0) {
             vscode.window.showErrorMessage(

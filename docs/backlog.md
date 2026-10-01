@@ -29,7 +29,7 @@
 > - 游戏内 **HUD 罗盘**（`hud` / 右键 **Track in Game**）：自身 `X/Y/Z` + 朝向/俯仰、追踪目标的
 >   距离/方向词/箭头；`F8` 开关、`F9` 清目标、`hud --offset N` 校准。朝向对齐 StationeersUIMod 的
 >   `HeadingDeg = CameraController.CurrentCamera.eulerAngles.y + 180`（用错相机会差 180°）。
->   目标也可是**玩家**（`players` 列人 / `hud --player NAME`，经 `Human.AllHumans`，位置每帧实时读）。
+>   目标也可是**玩家**（`players` 经 `Brain.PlayerBrains` 列出**在线/离线**玩家 / `hud --player NAME`，在线者位置每帧实时读）。
 >   修了 HUD 一处格式符 bug（`{0,+0.0;…}` 逗号当了对齐符）——它每帧抛 `FormatException`，一次会话刷了
 >   2.6 万行日志并拖住主线程，正是「下不了代码 / 定位报错」的元凶；现在出错只记一条、连续 30 次自动关 HUD。
 > - VSCode：树按「**有芯片·有代码 / 有芯片·无代码 / 无芯片**」分三组、组内名字降序；标题栏
