@@ -498,7 +498,7 @@ var Commands = []Command{
 		},
 	},
 	{
-		Name: "testbench", Args: "ping|list|locate|hud|push|state|program|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
+		Name: "testbench", Args: "ping|list|players|locate|hud|push|state|program|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
 		Summary: text{EN: "drive the in-game testbench mod", ZH: "驱动游戏内测试台 mod"},
 		Long: text{
 			EN: "Talk to the ic10go-testbench mod running in Stationeers over NDJSON/TCP\n" +
@@ -508,6 +508,7 @@ var Commands = []Command{
 				"Subcommands:\n" +
 				"  ping                      connection / version check\n" +
 				"  list                      list programmable chips\n" +
+				"  players                   list players (nearest first)\n" +
 				"  locate [--chip NAME]      where a chip is (world position)\n" +
 				"                            --program FILE: find the chip(s) running it\n" +
 				"                            --at X Y Z: find hosts by position; --range N\n" +
@@ -537,6 +538,7 @@ var Commands = []Command{
 				"子命令：\n" +
 				"  ping                      连接/版本自检\n" +
 				"  list                      列出可编程芯片\n" +
+				"  players                   列出玩家（按距离）\n" +
 				"  locate [--chip NAME]      芯片位置（世界坐标）\n" +
 				"                            --program FILE：按源码找出跑该程序的芯片\n" +
 				"                            --at X Y Z：按坐标找芯片；--range N 再列大致位置\n" +
@@ -565,6 +567,7 @@ var Commands = []Command{
 			{Long: "--chip", Arg: "NAME", Desc: text{EN: "select a chip by name or prefab", ZH: "按名字或预制体选择芯片"}},
 			{Long: "--program", Arg: "FILE", Desc: text{EN: "locate: find the chip(s) running this program", ZH: "locate：找出跑该程序的芯片"}},
 			{Long: "--at", Arg: "X Y Z", Desc: text{EN: "locate: find hosts at a position (decimals ignored)", ZH: "locate：按坐标找芯片（忽略小数）"}},
+			{Long: "--player", Arg: "NAME", Desc: text{EN: "hud: track a player (live position)", ZH: "hud：追踪某个玩家（实时位置）"}},
 			{Long: "--range", Arg: "N", Desc: text{EN: "locate --at: also list hosts within N (approximate)", ZH: "locate --at：再列出 N 格内的芯片（大致位置）"}},
 			{Long: "--offset", Arg: "DEG", Desc: text{EN: "hud: add this many degrees to the view heading (if it differs from your HUD compass)", ZH: "hud：给朝向加上这个角度（若与你的 HUD 罗盘不一致）"}},
 			{Long: "--as", Arg: "NAME", Desc: text{EN: "push: which `chip` block to upload (multi-chip sources)", ZH: "push：多芯片源码中上传哪个 `chip` 块"}},

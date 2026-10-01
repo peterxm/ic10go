@@ -117,10 +117,10 @@ ic10c build --split-data [--data-out FILE] [--data-access get|stack] \
                               # --extract-setup：把序言里的一次性常量设备写外提到 loader（需先运行一次）
 ic10c build --data-only [--chip NAME] <file.icg>  # 只输出一次性 loader（数据段 + 外提设置）
 ic10c run    <file.icg>       # 编译并在内置 VM 中运行（自动先跑一次性 loader；多芯片锁步；--steps/--ticks/--set/--seed/--strict/--dump/--json/--trace）
-ic10c testbench ping|list|locate|hud|push|state|program|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--as NAME] [--json]
+ic10c testbench ping|list|players|locate|hud|push|state|program|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--as NAME] [--json]
                               # 驱动游戏内测试台 mod（tools/ingame-testbench）：上传/读寄存器/栈/设备、单步/暂停/载入存档/跑场景；
-                              # locate：按 host 坐标(--at X Y Z [--range N]，精确忽略小数 + 大致半径) / 按源码指纹(--program FILE) 找芯片；
-                              # hud：游戏内 HUD（自身坐标/朝向 + 追踪目标罗盘）控制；见 docs/ingame-testbench.md
+                              # players：列出玩家（按距离）；locate：按 host 坐标(--at X Y Z [--range N]，精确忽略小数 + 大致半径) / 按源码指纹(--program FILE) 找芯片；
+                              # hud：游戏内 HUD（自身坐标/朝向 + 追踪目标：坐标 / --chip 芯片 / --player 玩家）；见 docs/ingame-testbench.md
 ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] [--spill db|stack] [--dynamic-stack] [--user-stack N] [--max-lines N] [--max-bytes N] [--max-line N] [--redundant-device-writes] [--merge-renamed-tails] [--extract-setup] <file.icg>
                               # 行 / 字节 / 寄存器预算 + 峰值活跃 / 溢出槽（多芯片按芯片分组；含 loader 预算）+ 栈预算（stack user 个数/上限，默认固定 128；--dynamic-stack 动态边界，越界报错；--redundant-device-writes 删除重复设备写）
 ic10c size   <file.icg>       # 按函数拆分行预算（找最占行数的函数）

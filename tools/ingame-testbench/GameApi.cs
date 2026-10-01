@@ -25,6 +25,7 @@ using System.Text;
 using Assets.Scripts;
 using Assets.Scripts.Objects;
 using Assets.Scripts.Objects.Electrical;
+using Assets.Scripts.Objects.Entities;
 using Assets.Scripts.Objects.Motherboards;
 using Assets.Scripts.Objects.Pipes;
 using Assets.Scripts.Serialization;
@@ -326,6 +327,60 @@ namespace Ic10Go.Testbench
                 for (int i = 0; i < 4; i++) sb.Append(hash[i].ToString("x2"));
                 return sb.ToString();
             }
+        }
+
+        /// <summary>All players (Human instances). Used by the HUD's live player
+        /// tracking and the `players` command.</summary>
+        public static List<Human> AllPlayers()
+        {
+            var list = new List<Human>();
+            try
+            {
+                var all = Human.AllHumans;
+                if (all != null) foreach (var h in all) if (h != null) list.Add(h);
+            }
+            catch { }
+            return list;
+        }
+
+        /// <summary>Players with position, distance from the local player and a
+        /// self flag, newest-first by distance.</summary>
+        public static JArray PlayersReport()
+        {
+            var arr = new JArray();
+            Human me = null;
+            Vector3 mePos = Vector3.zero;
+            try { me = Human.LocalHuman; if (me != null) mePos = me.transform.position; } catch { }
+            var rows = new List<JObject>();
+            foreach (var h in AllPlayers())
+            {
+                var o = new JObject();
+                string name = "";
+                try { name = h.DisplayName ?? ""; } catch { }
+                if (string.IsNullOrEmpty(name)) { try { name = h.name ?? ""; } catch { } }
+                o["name"] = name;
+                o["self"] = (h == me);
+                try
+                {
+                    var p = h.transform.position;
+                    o["pos"] = new JObject
+                    {
+                        ["x"] = Math.Round(p.x, 2),
+                        ["y"] = Math.Round(p.y, 2),
+                        ["z"] = Math.Round(p.z, 2),
+                    };
+                    if (me != null)
+                    {
+                        float dx = p.x - mePos.x, dy = p.y - mePos.y, dz = p.z - mePos.z;
+                        o["dist"] = Math.Round(Math.Sqrt(dx * dx + dy * dy + dz * dz), 1);
+                    }
+                }
+                catch { }
+                rows.Add(o);
+            }
+            rows.Sort((a, b) => ((double?)a["dist"] ?? 0).CompareTo((double?)b["dist"] ?? 0));
+            foreach (var o in rows) arr.Add(o);
+            return arr;
         }
 
         /// <summary>The world position of a chip host, for the HUD target.</summary>

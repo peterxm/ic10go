@@ -272,6 +272,26 @@ func (c *Client) ListChips() ([]Chip, error) {
 	return res.Chips, nil
 }
 
+// Player is a player (Human) as reported by the `players` command, sorted by
+// distance from the local player.
+type Player struct {
+	Name string   `json:"name"`
+	Self bool     `json:"self"`
+	Dist *float64 `json:"dist,omitempty"`
+	Pos  *ChipPos `json:"pos,omitempty"`
+}
+
+// Players lists the players in the world.
+func (c *Client) Players() ([]Player, error) {
+	var res struct {
+		Players []Player `json:"players"`
+	}
+	if err := c.CallInto("players", nil, &res); err != nil {
+		return nil, err
+	}
+	return res.Players, nil
+}
+
 // HudPos is a position (and, for the player, view angles) in the HUD state.
 type HudPos struct {
 	X     float64 `json:"x"`

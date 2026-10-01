@@ -8,6 +8,7 @@
 using System;
 using System.Collections.Generic;
 using Assets.Scripts;
+using Assets.Scripts.Objects.Entities;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
@@ -34,6 +35,7 @@ namespace Ic10Go.Testbench
                 case "ports": return Ports(args);
                 case "push": return Push(args);
                 case "state": return State(args);
+                case "players": return Players();
                 case "hud": return HudCmd(args);
                 case "set": return Set(args);
                 case "get": return Get(args);
@@ -77,6 +79,11 @@ namespace Ic10Go.Testbench
             var arr = new JArray();
             foreach (var c in GameApi.ListChips()) arr.Add(c.ToJson());
             return new JObject { ["chips"] = arr };
+        }
+
+        private static JObject Players()
+        {
+            return new JObject { ["players"] = GameApi.PlayersReport() };
         }
 
         private static JObject ChipSelect(JObject args)
@@ -175,9 +182,23 @@ namespace Ic10Go.Testbench
                         throw new BenchError("no-chip", "tracked host has no world position");
                     Hud.SetTarget(p, string.IsNullOrEmpty(h.Name) ? h.Prefab : h.Name);
                 }
+                else if (t["player"] != null)
+                {
+                    string pname = (string)t["player"];
+                    Human found = null;
+                    foreach (var h in GameApi.AllPlayers())
+                    {
+                        string dn = "";
+                        try { dn = h.DisplayName ?? ""; } catch { }
+                        if (string.IsNullOrEmpty(dn)) { try { dn = h.name ?? ""; } catch { } }
+                        if (string.Equals(dn, pname, StringComparison.OrdinalIgnoreCase)) { found = h; break; }
+                    }
+                    if (found == null) throw new BenchError("no-player", "no player named \"" + pname + "\"");
+                    Hud.SetPlayer(found, pname);
+                }
                 else
                 {
-                    throw new BenchError("bad-request", "hud target needs {x,y,z} or {chip}");
+                    throw new BenchError("bad-request", "hud target needs {x,y,z} or {chip} or {player}");
                 }
             }
             return Hud.State();

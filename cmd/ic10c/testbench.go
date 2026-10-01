@@ -33,6 +33,7 @@ func cmdTestbench(args []string) int {
 	chipName := ""
 	asName := ""
 	programFile := ""
+	playerName := ""
 	atArg := ""
 	radius := 0.0
 	offset := 0.0
@@ -65,6 +66,11 @@ func cmdTestbench(args []string) int {
 			i++
 		case strings.HasPrefix(a, "--program="):
 			programFile = strings.TrimPrefix(a, "--program=")
+		case a == "--player" && i+1 < len(args):
+			playerName = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--player="):
+			playerName = strings.TrimPrefix(a, "--player=")
 		case a == "--at" && i+3 < len(args):
 			atArg = args[i+1] + "," + args[i+2] + "," + args[i+3]
 			i += 3
@@ -132,10 +138,12 @@ func cmdTestbench(args []string) int {
 		return benchPing(addr, asJSON)
 	case "list":
 		return benchList(addr, asJSON)
+	case "players":
+		return benchPlayers(addr, asJSON)
 	case "locate":
 		return benchLocate(addr, chipName, programFile, atArg, radius, asJSON)
 	case "hud":
-		return benchHud(addr, chipName, rest, offset, offsetSet, asJSON)
+		return benchHud(addr, chipName, playerName, rest, offset, offsetSet, asJSON)
 	case "push":
 		var file string
 		if len(rest) > 0 {
@@ -267,6 +275,45 @@ func powerText(powered *bool, lines int) string {
 // running that program (matching the source fingerprint the mod reports);
 // otherwise it prints the position of the chip selected by --chip (name, prefab
 // or index).
+// benchPlayers lists the players in the world, nearest first.
+func benchPlayers(addr string, asJSON bool) int {
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	players, err := c.Players()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if asJSON {
+		return printJSON(map[string]any{"players": players})
+	}
+	if len(players) == 0 {
+		fmt.Println("no players")
+		return 0
+	}
+	for _, p := range players {
+		name := p.Name
+		if name == "" {
+			name = "(无名)"
+		}
+		line := fmt.Sprintf("  %-18s", name)
+		if p.Self {
+			line += " (你)"
+		}
+		if p.Dist != nil {
+			line += fmt.Sprintf("  %7.1f m", *p.Dist)
+		}
+		if p.Pos != nil {
+			line += fmt.Sprintf("  @(%s)", p.Pos.String())
+		}
+		fmt.Println(line)
+	}
+	return 0
+}
+
 func benchLocate(addr, chipName, programFile, atArg string, radius float64, asJSON bool) int {
 	c, rc := benchDial(addr)
 	if c == nil {
@@ -472,7 +519,7 @@ func locateMatches(chips []testbench.Chip, chipName string) []testbench.Chip {
 // benchHud drives the in-game overlay: `hud` prints its state, `hud on|off`
 // toggles it, `hud clear` drops the target, `hud X Y Z` tracks a point and
 // `hud --chip NAME|INDEX` tracks a chip's host.
-func benchHud(addr, chipName string, args []string, offset float64, offsetSet, asJSON bool) int {
+func benchHud(addr, chipName, playerName string, args []string, offset float64, offsetSet, asJSON bool) int {
 	c, rc := benchDial(addr)
 	if c == nil {
 		return rc
@@ -483,10 +530,12 @@ func benchHud(addr, chipName string, args []string, offset float64, offsetSet, a
 	if offsetSet {
 		req["offset"] = offset
 	}
-	if chipName != "" {
+	if playerName != "" {
+		req["target"] = map[string]any{"player": playerName}
+	} else if chipName != "" {
 		req["target"] = map[string]any{"chip": chipSelector(chipName)}
 	}
-	if len(args) > 0 && chipName == "" {
+	if len(args) > 0 && chipName == "" && playerName == "" {
 		switch strings.ToLower(args[0]) {
 		case "on", "true", "1":
 			req["on"] = true

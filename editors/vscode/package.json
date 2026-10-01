@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.33",
+  "version": "0.7.34",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -37,6 +37,7 @@
     "onCommand:icg.bench.loadSave",
     "onCommand:icg.bench.pulseDevice",
     "onCommand:icg.bench.track",
+    "onCommand:icg.bench.trackPlayer",
     "onCommand:icg.bench.findAt",
     "onCommand:icg.bench.filterNear",
     "onCommand:icg.bench.clearNear"
@@ -378,6 +379,11 @@
         "icon": "$(location)"
       },
       {
+        "command": "icg.bench.trackPlayer",
+        "title": "%cmd.bench.trackPlayer%",
+        "icon": "$(person)"
+      },
+      {
         "command": "icg.bench.findAt",
         "title": "%cmd.bench.findAt%",
         "icon": "$(search)"
@@ -467,6 +473,11 @@
           "command": "icg.bench.clearNear",
           "when": "view == icg.bench && icg.bench.nearOnly",
           "group": "navigation@4.5"
+        },
+        {
+          "command": "icg.bench.trackPlayer",
+          "when": "view == icg.bench",
+          "group": "navigation@4.6"
         },
         {
           "command": "icg.bench.push",

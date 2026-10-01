@@ -60,6 +60,7 @@
   "cmd.bench.loadSave": "IC10 Go: Load Save",
   "cmd.bench.selectChip": "IC10 Go: Select Chip",
   "cmd.bench.track": "IC10 Go: Track in Game (HUD compass)",
+  "cmd.bench.trackPlayer": "IC10 Go: Track a Player (HUD compass)",
   "cmd.bench.findAt": "IC10 Go: Find Hosts by Position",
   "cmd.bench.filterNear": "IC10 Go: Only Hosts Near Me (±4)",
   "cmd.bench.clearNear": "IC10 Go: Show All Hosts",

@@ -17,6 +17,8 @@ It lets you:
   [--range N]`), and `hud --chip N` / the VSCode **Track in Game** action draws
   an on-screen compass arrow (your X/Y/Z + heading, distance/direction to the
   target; `F8` toggles the overlay, `F9` clears the target).
+- **track a player** — `players` lists everyone (nearest first, with distance);
+  `hud --player NAME` points the compass at them, reading their position live.
 
 ## Disclaimer
 

@@ -22,6 +22,9 @@ namespace Ic10Go.Testbench
         public static bool HasTarget;
         public static Vector3 Target;
         public static string TargetLabel = "";
+        /// <summary>When set, the target is this player (its position is read live
+        /// each frame, since players move).</summary>
+        public static Human TargetHuman;
         /// <summary>Degrees added to the view heading, if a client's compass uses
         /// a different zero. Tunable at runtime with `hud --offset N`.</summary>
         public static float HeadingOffset;
@@ -33,16 +36,45 @@ namespace Ic10Go.Testbench
 
         public static void SetTarget(Vector3 p, string label)
         {
+            TargetHuman = null;
             Target = p;
             TargetLabel = label ?? "";
             HasTarget = true;
             Enabled = true;
         }
 
+        /// <summary>Tracks a player: the target position is read live each frame.</summary>
+        public static void SetPlayer(Human human, string label)
+        {
+            TargetHuman = human;
+            if (human != null)
+            {
+                try { Target = human.transform.position; } catch { Target = Vector3.zero; }
+            }
+            TargetLabel = label ?? "";
+            HasTarget = human != null;
+            Enabled = true;
+        }
+
         public static void Clear()
         {
+            TargetHuman = null;
             HasTarget = false;
             TargetLabel = "";
+        }
+
+        /// <summary>The current target position: a live player when one is tracked,
+        /// else the fixed point. False when nothing is tracked.</summary>
+        public static bool TryTarget(out Vector3 pos)
+        {
+            var h = TargetHuman;
+            if (h != null)
+            {
+                try { pos = h.transform.position; return true; } catch { }
+            }
+            if (HasTarget) { pos = Target; return true; }
+            pos = Vector3.zero;
+            return false;
         }
 
         public static void Toggle() => Enabled = !Enabled;
@@ -99,10 +131,12 @@ namespace Ic10Go.Testbench
                     ["pitch"] = Math.Round(pitch, 1),
                 };
             }
-            if (HasTarget)
+            Vector3 tp;
+            if (TryTarget(out tp))
             {
-                var t = new JObject { ["x"] = Math.Round(Target.x, 2), ["y"] = Math.Round(Target.y, 2), ["z"] = Math.Round(Target.z, 2) };
+                var t = new JObject { ["x"] = Math.Round(tp.x, 2), ["y"] = Math.Round(tp.y, 2), ["z"] = Math.Round(tp.z, 2) };
                 if (!string.IsNullOrEmpty(TargetLabel)) t["label"] = TargetLabel;
+                if (TargetHuman != null) t["player"] = true;
                 o["target"] = t;
             }
             return o;
@@ -119,9 +153,12 @@ namespace Ic10Go.Testbench
             string pose = string.Format("X {0:0.0}   Y {1:0.0}   Z {2:0.0}", p.x, p.y, p.z);
             string look = string.Format("朝向 {0:0}°   俯仰 {1:0}°", yaw, pitch);
 
+            Vector3 target;
+            bool hasTarget = TryTarget(out target);
+
             float width = 226f;
             float height = 54f;               // position + heading
-            if (HasTarget) height += 74f;     // target lines + a compass row
+            if (hasTarget) height += 74f;     // target lines + a compass row
             var rect = new Rect(10f, 10f, width, height);
             GUI.DrawTexture(rect, _bg);
 
@@ -130,11 +167,11 @@ namespace Ic10Go.Testbench
             Label(x, ref y, 18f, pose);
             Label(x, ref y, 18f, look);
 
-            if (HasTarget)
+            if (hasTarget)
             {
-                float dx = Target.x - p.x;
-                float dy = Target.y - p.y;
-                float dz = Target.z - p.z;
+                float dx = target.x - p.x;
+                float dy = target.y - p.y;
+                float dz = target.z - p.z;
                 float dist = Mathf.Sqrt(dx * dx + dy * dy + dz * dz);
                 float bearing = Mathf.Atan2(dx, dz) * Mathf.Rad2Deg; // 0 = +Z
                 float rel = Mathf.DeltaAngle(yaw, bearing);          // signed, right positive

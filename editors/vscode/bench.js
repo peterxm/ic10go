@@ -627,6 +627,7 @@ class Bench {
         cmd('icg.bench.openPanel', () => this.openPanel());
         cmd('icg.bench.selectChip', (chip) => this.selectChip(chip));
         cmd('icg.bench.track', (arg) => this.trackChip(arg));
+        cmd('icg.bench.trackPlayer', () => this.trackPlayer());
         cmd('icg.bench.findAt', () => this.findByPos());
         cmd('icg.bench.filterNear', () => this.setNear(true));
         cmd('icg.bench.clearNear', () => this.setNear(false));
@@ -1774,6 +1775,47 @@ ${note}${diffNote}
             placeHolder: t('Select to make it the current chip', '选择后切换为当前芯片'),
         });
         if (pick && pick.chip) this.selectChip(pick.chip);
+    }
+
+    // trackPlayer lists the players and points the in-game HUD at the chosen
+    // one (the mod reads its position live, so it keeps up as they move).
+    async trackPlayer() {
+        const c = await this.connect(true);
+        if (!c) {
+            vscode.window.showWarningMessage(t('IC10: not connected to the game.', 'IC10: 未连接到游戏。'));
+            return;
+        }
+        let players = [];
+        try {
+            players = ((await c.call('players', {})).players) || [];
+        } catch (err) {
+            vscode.window.showErrorMessage(t('IC10: players failed: ', 'IC10: 获取玩家失败：') + err.message);
+            return;
+        }
+        if (!players.length) {
+            vscode.window.showInformationMessage(t('IC10: no players.', 'IC10: 没有玩家。'));
+            return;
+        }
+        const items = players.map((p) => ({
+            label: (p.self ? '$(account) ' : '$(person) ') + (p.name || t('(unnamed)', '(无名)')),
+            description: [p.self ? t('you', '你') : '', p.dist != null ? `${p.dist.toFixed(1)} m` : '']
+                .filter(Boolean)
+                .join(' · '),
+            player: p,
+        }));
+        const pick = await vscode.window.showQuickPick(items, {
+            title: t('Track a player', '追踪玩家'),
+            placeHolder: t('The in-game HUD will point at them', '游戏内 HUD 会指向他'),
+        });
+        if (!pick) return;
+        const res = await this.client.execCli(['testbench', 'hud', '--player', pick.player.name]);
+        if (res.code !== 0) {
+            vscode.window.showErrorMessage(
+                t('IC10: track failed: ', 'IC10: 追踪失败：') + (res.stderr || res.stdout || '').trim()
+            );
+            return;
+        }
+        vscode.window.setStatusBarMessage(t(`IC10: tracking ${pick.player.name}`, `IC10: 正在追踪 ${pick.player.name}`), 5000);
     }
 
     async runScenario() {

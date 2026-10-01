@@ -198,7 +198,8 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `writes` | `{clear?:bool, from?:int}` | `{writes:[{seq,id,device,logic,slot,value}], count}` |
 | `trace` | `{n:int}` | `{steps, hitCount, hits:[{pc,text,regs}]}`（逐条 `Execute(1)`，只回存储指令） |
 | `program` | `{}` | `{lines, code}`（芯片当前 IC10 源码） |
-| `hud` | `{on?, clear?, target?:{x,y,z,label?}|{chip}}` | `{on, player?{x,y,z,yaw,pitch}, target?{x,y,z,label}}` |
+| `hud` | `{on?, clear?, offset?, target?:{x,y,z,label?}|{chip}|{player}}` | `{on, offset, player?{x,y,z,yaw,pitch}, target?{x,y,z,label?,player?}}` |
+| `players` | `{}` | `[{name, self, dist?, pos?{x,y,z}}]`（按到本机玩家的距离排序） |
 | `run` | `{ticks:n, mode?:"step"|"realtime"}` | `{ticks, line}` |
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
 | `ports` | `{chip?}` | diagnostic: `Devices[]`, ids, labels, lookups |
@@ -289,11 +290,12 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 
 ```text
 ic10c testbench list                       # 列出芯片（含位置 pos 与程序指纹 fp）
+ic10c testbench players                    # 列出玩家（按到你的距离，标出自己）
 ic10c testbench ping                        # 连接自检
 ic10c testbench locate [--chip NAME]        # 这块芯片在哪（世界坐标）
 ic10c testbench locate --program <file.ic>  # 哪块芯片在跑这份程序（按源码指纹匹配）
 ic10c testbench locate --at X Y Z [--range N]  # 按坐标找：精确（四舍五入，忽略小数）+ N 格内的大致位置
-ic10c testbench hud [on|off|clear|X Y Z]    # 游戏内 HUD：自身坐标/朝向 + 追踪目标（--chip 追踪芯片；--offset 校准朝向）
+ic10c testbench hud [on|off|clear|X Y Z]    # 游戏内 HUD：自身坐标/朝向 + 追踪目标（--chip 追踪芯片；--player 追踪玩家；--offset 校准朝向）
 ic10c testbench program [--chip N]          # 打印芯片当前 IC10 源码（可重定向到文件）
 ic10c testbench push <file.icg> [--chip N] [--as NAME]  # 编译 + 上传（多芯片用 --as 选块；自动先跑 loader）
 ic10c testbench state [--chip N] [--all] [--json]
@@ -402,6 +404,7 @@ Activity Bar「IC10」
 | `icg.bench.loadSave` | IC10: Load Save | 视图标题（快速选择存档） |
 | `icg.bench.selectChip` | IC10: Select Chip | 树（点击某块 host） |
 | `icg.bench.track` | IC10: Track in Game (HUD compass) | 树（右键 host）→ `hud --chip`，游戏内罗盘指向它 |
+| `icg.bench.trackPlayer` | IC10: Track a Player | 标题栏：列出玩家（按距离）→ 选中后 `hud --player`，罗盘实时指向该玩家 |
 | `icg.bench.findAt` | IC10: Find Hosts by Position | 标题栏 🔍：输入 `X Y Z`（+可选半径）→ QuickPick（精确忽略小数 / 大致按距离），选中即切芯片 |
 | `icg.bench.filterNear` / `clearNear` | IC10: Only Hosts Near Me (±4) / Show All | 标题栏漏斗：只显示玩家 ±4 格内的 host（空心/实心图标切换） |
 | `icg.bench.setDevice` | IC10: Set Device Value | 树（点击某个 logic 值） |
