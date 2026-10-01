@@ -569,7 +569,7 @@ var Commands = []Command{
 			{Long: "--at", Arg: "X Y Z", Desc: text{EN: "locate: find hosts at a position (decimals ignored)", ZH: "locate：按坐标找芯片（忽略小数）"}},
 			{Long: "--player", Arg: "NAME", Desc: text{EN: "hud: track a player (live position)", ZH: "hud：追踪某个玩家（实时位置）"}},
 			{Long: "--range", Arg: "N", Desc: text{EN: "locate --at: also list hosts within N (approximate)", ZH: "locate --at：再列出 N 格内的芯片（大致位置）"}},
-			{Long: "--offset", Arg: "DEG", Desc: text{EN: "hud: add this many degrees to the view heading (if it differs from your HUD compass)", ZH: "hud：给朝向加上这个角度（若与你的 HUD 罗盘不一致）"}},
+			{Long: "--offset", Arg: "DEG", Desc: text{EN: "hud: calibrate the displayed heading (does not move the arrow)", ZH: "hud：校准显示的朝向数字（不影响箭头方向）"}},
 			{Long: "--as", Arg: "NAME", Desc: text{EN: "push: which `chip` block to upload (multi-chip sources)", ZH: "push：多芯片源码中上传哪个 `chip` 块"}},
 			{Long: "--data-access", Arg: "get|stack", Desc: text{EN: "push: data-segment access; use `stack` on a device host (e.g. air conditioner)", ZH: "push：数据段访问方式；设备 host（如空调）用 `stack`"}},
 			{Long: "--all", Desc: text{EN: "state: include the whole stack", ZH: "state：返回整段栈"}},

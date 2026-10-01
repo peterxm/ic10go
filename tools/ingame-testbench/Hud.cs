@@ -81,21 +81,21 @@ namespace Ic10Go.Testbench
 
         public static void Toggle() => Enabled = !Enabled;
 
-        /// <summary>Reads the local player. False when no world/player is loaded.</summary>
-        public static bool Player(out Vector3 pos, out float yaw, out float pitch)
+        /// <summary>Reads the local player. False when no world/player is loaded.
+        /// <paramref name="heading"/> is the compass heading shown in-game (matches
+        /// the Stationeers HUD); <paramref name="facing"/> is the raw world yaw used
+        /// for the target arrow, so the compass convention cannot skew it.</summary>
+        public static bool Player(out Vector3 pos, out float heading, out float facing, out float pitch)
         {
             pos = Vector3.zero;
-            yaw = 0f;
+            heading = 0f;
+            facing = 0f;
             pitch = 0f;
             try
             {
                 var human = Human.LocalHuman;
                 if (human == null) return false;
                 pos = human.transform.position;
-                // Match the in-game compass (StationeersUIMod):
-                //   heading = CameraController.CurrentCamera.eulerAngles.y + 180
-                // The +180 is that UI's convention; Camera.main is not used
-                // because it can resolve to the portrait camera instead.
                 Camera cam = null;
                 try { cam = CameraController.CurrentCamera; } catch { }
                 if (cam == null)
@@ -105,9 +105,15 @@ namespace Ic10Go.Testbench
                 }
                 if (cam != null)
                 {
-                    float e = cam.transform.eulerAngles.y;
-                    yaw = Mathf.Repeat(e + 180f + HeadingOffset, 360f);
+                    // The arrow uses the camera's world forward: atan2(x, z) is in the
+                    // same frame as the target bearing, so no compass offset applies.
+                    var f = cam.transform.forward;
+                    facing = Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg;
                     pitch = Mathf.DeltaAngle(0f, cam.transform.eulerAngles.x);
+                    // Compass heading, matching the in-game HUD (StationeersUIMod):
+                    //   heading = CameraController.CurrentCamera.eulerAngles.y + 180
+                    // Its +180 is a display convention only — do NOT feed it to the arrow.
+                    heading = Mathf.Repeat(cam.transform.eulerAngles.y + 180f + HeadingOffset, 360f);
                 }
                 return true;
             }
@@ -121,15 +127,15 @@ namespace Ic10Go.Testbench
         {
             var o = new JObject { ["on"] = Enabled, ["offset"] = HeadingOffset };
             Vector3 p;
-            float yaw, pitch;
-            if (Player(out p, out yaw, out pitch))
+            float heading, facing, pitch;
+            if (Player(out p, out heading, out facing, out pitch))
             {
                 o["player"] = new JObject
                 {
                     ["x"] = Math.Round(p.x, 2),
                     ["y"] = Math.Round(p.y, 2),
                     ["z"] = Math.Round(p.z, 2),
-                    ["yaw"] = Math.Round(yaw, 1),
+                    ["yaw"] = Math.Round(heading, 1),
                     ["pitch"] = Math.Round(pitch, 1),
                 };
             }
@@ -148,12 +154,12 @@ namespace Ic10Go.Testbench
         {
             if (!Enabled) return;
             Vector3 p;
-            float yaw, pitch;
-            if (!Player(out p, out yaw, out pitch)) return;
+            float heading, facing, pitch;
+            if (!Player(out p, out heading, out facing, out pitch)) return;
             Ensure();
 
             string pose = string.Format("X {0:0.0}   Y {1:0.0}   Z {2:0.0}", p.x, p.y, p.z);
-            string look = string.Format("朝向 {0:0}°   俯仰 {1:0}°", yaw, pitch);
+            string look = string.Format("朝向 {0:0}°   俯仰 {1:0}°", heading, pitch);
 
             Vector3 target;
             bool hasTarget = TryTarget(out target);
@@ -175,8 +181,8 @@ namespace Ic10Go.Testbench
                 float dy = target.y - p.y;
                 float dz = target.z - p.z;
                 float dist = Mathf.Sqrt(dx * dx + dy * dy + dz * dz);
-                float bearing = Mathf.Atan2(dx, dz) * Mathf.Rad2Deg; // 0 = +Z
-                float rel = Mathf.DeltaAngle(yaw, bearing);          // signed, right positive
+                float bearing = Mathf.Atan2(dx, dz) * Mathf.Rad2Deg; // same frame as facing
+                float rel = Mathf.DeltaAngle(facing, bearing);        // signed, right positive
 
                 string name = string.IsNullOrEmpty(TargetLabel) ? "目标" : TargetLabel;
                 Label(x, ref y, 18f, string.Format("{0}  {1:0.0} m  {2}", name, dist, Direction(rel)));

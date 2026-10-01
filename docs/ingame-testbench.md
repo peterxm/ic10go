@@ -318,7 +318,8 @@ mod ≥ 0.3.0 在屏幕左上角画一个小面板：自身 **X / Y / Z** 与 **
 
 - 开关 `F8`，清目标 `F9`。
 - 设目标：`ic10c testbench hud --chip 118`（用该 host 的世界坐标）或 `ic10c testbench hud 669 192 -627`（直接给坐标）；`hud off` / `hud clear` / `hud`（查状态）。
-- 朝向与游戏内罗盘一致：`CameraController.CurrentCamera.transform.eulerAngles.y + 180`（这就是 StationeersUIMod 的 `HeadingDeg` 公式，用的也是它的 `CurrentCamera`；不要用 `Camera.main`，可能命中对着角色脸的人像相机）。若你的 HUD 用别的零度，`ic10c testbench hud --offset N` 可现场校准（立即生效）。
+- 朝向与游戏内罗盘一致：`CameraController.CurrentCamera.transform.eulerAngles.y + 180`（这就是 StationeersUIMod 的 `HeadingDeg` 公式，用的也是它的 `CurrentCamera`；不要用 `Camera.main`，可能命中对着角色脸的人像相机）。若你的 HUD 用别的零度，`ic10c testbench hud --offset N` 可现场校准（只影响**朝向数字**，不影响箭头）。
+- **箭头是纯几何的**：由摄像机的世界朝向与目标方向算相对角，**不含**罗盘那 +180（否则箭头会正好指反 180°、提示“正前”却越走越远）。所以 `--offset` 无论怎么调，箭头方向都不变。
 - VSCode：在「IC10 测试台」树里**右键一块 host → Track in Game**，等价于 `hud --chip`；标题栏的 🔍 **Find Hosts by Position** 输入 `X Y Z`（+可选半径）即可按坐标找芯片（精确=四舍五入忽略小数，大致=半径内的按距离排序）。
 - 只画在**运行 mod 的那个进程**上，且仅在进入世界后出现（主菜单不画）。若 mod 跑在无头服务端，客户端看不到这个面板。
 
