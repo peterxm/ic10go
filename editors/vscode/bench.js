@@ -248,7 +248,7 @@ class BenchTree {
             const isHost = sv.role === 'server';
             const host = sv.address || (isHost ? sv.localIp : '');
             const full = host && sv.port ? `${host}:${sv.port}` : host;
-            const peer = [sv.hostSteamId, sv.hostId].find((v) => v && v !== '0') || '';
+            const peer = [sv.hostSteamId, sv.hostId].find((v) => v && v !== '0' && v !== '-1') || '';
             const geo = b.geo;
             const flag = geo && geo.emoji ? geo.emoji + ' ' : '';
             let label = '';
@@ -1077,7 +1077,7 @@ class Bench {
             const isHost = s.role === 'server';
             const host = s.address || (isHost ? s.localIp : '');
             text = host ? (s.port ? `${host}:${s.port}` : host) : '';
-            if (!text) text = [s.hostSteamId, s.hostId, s.lobby].find((v) => v && v !== '0') || '';
+            if (!text) text = [s.hostSteamId, s.hostId, s.lobby].find((v) => v && v !== '0' && v !== '-1') || '';
         }
         if (!text) {
             vscode.window.showInformationMessage(t('IC10: no server address yet.', 'IC10: 还没有服务器地址。'));

@@ -276,12 +276,12 @@ func benchServer(addr string, asJSON bool) int {
 	if host != "" {
 		fmt.Printf("server  %s\n", host)
 	} else if s.Role == "client" {
-		peer := s.HostSteamID
-		if peer == "" {
-			peer = s.HostID
-		}
-		if peer == "" {
-			peer = s.Lobby
+		peer := ""
+		for _, v := range []string{s.HostSteamID, s.HostID, s.Lobby} {
+			if v != "" && v != "0" && v != "-1" {
+				peer = v
+				break
+			}
 		}
 		if peer != "" {
 			fmt.Printf("peer    %s\n", peer)
@@ -296,10 +296,10 @@ func benchServer(addr string, asJSON bool) int {
 	if s.SteamID != "" {
 		fmt.Printf("steamId %s\n", s.SteamID)
 	}
-	if s.HostID != "" {
+	if s.HostID != "" && s.HostID != "-1" {
 		fmt.Printf("hostId  %s\n", s.HostID)
 	}
-	if s.HostSteamID != "" {
+	if s.HostSteamID != "" && s.HostSteamID != "0" {
 		fmt.Printf("hostSteam %s\n", s.HostSteamID)
 	}
 	if s.Lobby != "" {
