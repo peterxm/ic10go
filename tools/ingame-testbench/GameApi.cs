@@ -540,19 +540,22 @@ namespace Ic10Go.Testbench
 
                 GameSession gs = NetworkManager.CurrentGameSession;
                 if (gs == null) gs = SelectedSession();
+                int connPing = 0;
                 if (gs != null)
                 {
                     o["name"] = gs.Name ?? "";
                     o["address"] = gs.Address ?? "";
                     o["port"] = gs.Port ?? "";
-                    o["map"] = gs.MapName ?? "";
+                    if (!string.IsNullOrEmpty(gs.MapName)) o["map"] = gs.MapName;
                     o["version"] = gs.Version ?? "";
-                    o["players"] = gs.Players;
                     o["maxPlayers"] = gs.MaxPlayers;
-                    o["latency"] = gs.Latency;
-                    o["password"] = gs.Password;
-                    try { o["steamId"] = gs.SteamId.ToString(); } catch { }
+                    if (gs.Latency > 0) o["latency"] = gs.Latency;
+                    if (gs.UpTime > 0) o["uptime"] = gs.UpTime;
+                    if (gs.Password) o["password"] = true;
+                    if (gs.SteamId != 0) o["steamId"] = gs.SteamId.ToString();
                 }
+                // The session's MapName is often null; fall back to the world.
+                if (o["map"] == null) { try { o["map"] = WorldName(); } catch { } }
 
                 // When there is no meta game session the client reached the host
                 // over Steam P2P, addressed by a Steam id: expose the host id and
@@ -572,6 +575,7 @@ namespace Ic10Go.Testbench
                     foreach (var s in samples)
                     {
                         if (s.Id == 0 && string.IsNullOrEmpty(s.Name)) continue;
+                        if (s.AvgPing > 0 && (connPing == 0 || s.AvgPing < connPing)) connPing = s.AvgPing;
                         arr.Add(new JObject
                         {
                             ["id"] = s.Id.ToString(),
@@ -582,6 +586,12 @@ namespace Ic10Go.Testbench
                     if (arr.Count > 0) o["connections"] = arr;
                 }
                 catch (Exception ce) { o["connectionsError"] = ce.Message; }
+                // The live round-trip time from the connection samples is the
+                // meaningful latency; the session's Latency is usually 0.
+                if (connPing > 0) o["latency"] = connPing;
+                // The session's Players count is stale (browser snapshot), so
+                // report who is actually online right now.
+                o["players"] = OnlinePlayerCount();
             }
             catch (Exception e) { o["error"] = e.Message; }
             return o;
@@ -598,6 +608,27 @@ namespace Ic10Go.Testbench
                 return v == null ? "" : v.ToString();
             }
             catch { return ""; }
+        }
+
+        /// <summary>How many players are online right now (Brain.IsOnline), which
+        /// is what "players" should show rather than the stale browser count.</summary>
+        private static int OnlinePlayerCount()
+        {
+            int n = 0;
+            try
+            {
+                var brains = Brain.PlayerBrains;
+                if (brains != null)
+                {
+                    foreach (var b in brains.Values)
+                    {
+                        if (b == null) continue;
+                        try { if (b.IsOnline) n++; } catch { }
+                    }
+                }
+            }
+            catch { }
+            return n;
         }
 
         /// <summary>Diagnostic dump of the networking objects, to locate where the

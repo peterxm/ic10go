@@ -246,7 +246,9 @@ class BenchTree {
             const isHost = sv.role === 'server';
             const host = sv.address || (isHost ? sv.localIp : '');
             const full = host && sv.port ? `${host}:${sv.port}` : host;
-            const peer = sv.hostSteamId || sv.hostId || sv.lobby || '';
+            const peer = [sv.hostSteamId, sv.hostId].find((v) => v && v !== '0') || '';
+            const geo = b.geo;
+            const flag = geo && geo.emoji ? geo.emoji + ' ' : '';
             let label = '';
             if (full) {
                 label = isHost ? t(`Local host: ${full}`, `本地主机：${full}`) : t(`Server: ${full}`, `服务器：${full}`);
@@ -256,21 +258,29 @@ class BenchTree {
                 label = t(`Server: ${sv.name}`, `服务器：${sv.name}`);
             }
             if (label) {
-                const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+                const item = new vscode.TreeItem(flag + label, vscode.TreeItemCollapsibleState.None);
                 item.iconPath = new vscode.ThemeIcon('globe');
                 const bits = [];
                 if (sv.name && sv.name !== host) bits.push(sv.name);
+                if (geo && geo.country) bits.push(geo.emoji ? `${geo.emoji} ${geo.country}` : geo.country);
                 if (sv.map) bits.push(sv.map);
                 if (isHost) bits.push(t('host', '主机'));
-                if (sv.players || sv.maxPlayers) bits.push(`${sv.players || 0}/${sv.maxPlayers || 0}`);
+                if (sv.players != null || sv.maxPlayers) bits.push(`${sv.players || 0}/${sv.maxPlayers || 0}`);
                 item.description = bits.join(' · ');
                 item.tooltip = [
                     sv.name && t(`name: ${sv.name}`, `名称：${sv.name}`),
                     full && t(`address: ${full}`, `地址：${full}`),
-                    sv.steamId && `steamId: ${sv.steamId}`,
-                    peer && `host: ${peer}`,
+                    geo && geo.country && t(`region: ${geo.country}${geo.region ? ' · ' + geo.region : ''}`,
+                        `地区：${geo.country}${geo.region ? ' · ' + geo.region : ''}`),
+                    sv.latency > 0 && t(`latency: ${sv.latency} ms`, `延迟：${sv.latency} ms`),
+                    sv.players != null || sv.maxPlayers
+                        ? t(`players: ${sv.players || 0}/${sv.maxPlayers || 0}`, `在线：${sv.players || 0}/${sv.maxPlayers || 0}`)
+                        : '',
+                    sv.version && t(`version: ${sv.version}`, `版本：${sv.version}`),
                     sv.map && t(`map: ${sv.map}`, `地图：${sv.map}`),
-                    sv.latency != null && t(`latency: ${sv.latency} ms`, `延迟：${sv.latency} ms`),
+                    sv.uptime > 0 && t(`uptime: ${Math.floor(sv.uptime / 3600)}h`, `已运行：${Math.floor(sv.uptime / 3600)}h`),
+                    sv.steamId && sv.steamId !== '0' && `steamId: ${sv.steamId}`,
+                    peer && `host: ${peer}`,
                     sv.role && t(`role: ${sv.role}`, `角色：${sv.role}`),
                     (full || peer) && t('click to copy', '点击复制'),
                 ].filter(Boolean).join('\n');
@@ -424,6 +434,12 @@ function chipByNameDesc(a, b) {
     const an = String(a.name || a.prefab || '');
     const bn = String(b.name || b.prefab || '');
     return bn.localeCompare(an, 'zh');
+}
+
+// flagEmoji turns a 2-letter country code into its regional-indicator flag.
+function flagEmoji(cc) {
+    if (!cc || cc.length !== 2) return '';
+    return String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
 }
 
 // isNoChip reports whether an error means the selected holder has no chip (or
@@ -835,6 +851,7 @@ class Bench {
             } catch (err) {
                 this.server = undefined; // older mod without the `server` command
             }
+            if (this.server && this.server.address) this.lookupGeo(this.server.address);
             const list = await c.call('chip.list', {}).catch(() => ({ chips: [] }));
             const all = list.chips || [];
             // Drop a stale pinned selection against the full list (the game
@@ -929,6 +946,29 @@ class Bench {
         }
     }
 
+    // lookupGeo resolves the server IP to a country/flag once per address, via
+    // ipwho.is (best-effort: no flag if it fails or is offline).
+    async lookupGeo(ip) {
+        if (!ip || this.geoIP === ip) return;
+        this.geoIP = ip;
+        this.geo = undefined;
+        try {
+            const res = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`);
+            const j = await res.json();
+            if (j && j.success !== false && j.country_code) {
+                this.geo = {
+                    code: j.country_code,
+                    country: j.country || '',
+                    region: j.region || '',
+                    emoji: (j.flag && j.flag.emoji) || flagEmoji(j.country_code),
+                };
+                if (this.tree) this.tree.refresh();
+            }
+        } catch (err) {
+            // offline / blocked: leave the flag off
+        }
+    }
+
     // copyServer copies the current server address (or Steam host id) to the
     // clipboard.
     copyServer() {
@@ -938,7 +978,7 @@ class Bench {
             const isHost = s.role === 'server';
             const host = s.address || (isHost ? s.localIp : '');
             text = host ? (s.port ? `${host}:${s.port}` : host) : '';
-            if (!text) text = s.hostSteamId || s.hostId || s.lobby || '';
+            if (!text) text = [s.hostSteamId, s.hostId, s.lobby].find((v) => v && v !== '0') || '';
         }
         if (!text) {
             vscode.window.showInformationMessage(t('IC10: no server address yet.', 'IC10: 还没有服务器地址。'));
