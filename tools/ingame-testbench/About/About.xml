@@ -2,7 +2,7 @@
 <ModMetadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Name>ic10go testbench</Name>
   <Author>ic10go</Author>
-  <Version>0.4.4</Version>
+  <Version>0.4.5</Version>
   <ModID>ic10go-testbench</ModID>
   <Description>[h1]ic10go testbench[/h1]
 A local test server for IC10 development. It lets the ic10go toolchain (`ic10c testbench`) and the VSCode extension upload a compiled program to a chip, set device inputs, step the chip, and read back registers, stack and device values.

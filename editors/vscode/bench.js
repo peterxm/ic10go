@@ -794,6 +794,7 @@ class Bench {
             // restarted and the id may now belong to a different holder).
             if (this.sel && !all.some((ch) => this.sameSel(ch, this.sel))) {
                 this.sel = undefined;
+                this.persistSel();
             }
             if (all.length === 0) {
                 // No programmable chip in this world: a normal state, not an
@@ -819,21 +820,22 @@ class Bench {
                 st = await this.fetchState(c);
             } catch (err) {
                 if (this.sel) {
+                    // A pinned chip that vanished (world change / despawn) makes
+                    // `state` fail; forget it and retry against the default.
                     this.sel = undefined;
-                    st = await this.fetchState(c).catch((err2) => {
-                        if (isNoChip(err2)) {
-                            this.noChip = true;
-                            return undefined;
-                        }
-                        throw err2;
-                    });
-                } else if (isNoChip(err)) {
-                    // The default holder has no chip inserted.
-                    this.noChip = true;
-                    st = undefined;
-                } else {
+                    this.persistSel();
+                    try {
+                        st = await this.fetchState(c);
+                    } catch (err2) {
+                        if (!isNoChip(err2)) throw err2;
+                    }
+                } else if (!isNoChip(err)) {
                     throw err;
                 }
+                // Only a genuinely empty world has "no programmable chip": a
+                // no-chip error while hosts exist just means nothing is selected,
+                // so keep the chip list visible instead of hiding it.
+                if (!this.chips.length) this.noChip = true;
             }
             this.state = st;
             if (st && !this.sel && st.chip) {

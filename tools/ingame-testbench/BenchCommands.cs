@@ -355,7 +355,18 @@ namespace Ic10Go.Testbench
         private static ChipHandle ResolveChip(JToken sel)
         {
             if (sel != null && sel.Type != JTokenType.Null) _selection = sel;
-            return GameApi.Resolve(_selection);
+            try
+            {
+                return GameApi.Resolve(_selection);
+            }
+            catch (BenchError e) when (e.Code == "no-chip" && _selection != null)
+            {
+                // The pinned chip is gone (the world changed, or it despawned).
+                // Forget it and fall back to the default so `state`/`push` keep
+                // working right after loading a different save.
+                _selection = null;
+                return GameApi.Resolve(null);
+            }
         }
 
         private static string PortLabel(int port) => port < 0 ? "db" : "d" + port;
