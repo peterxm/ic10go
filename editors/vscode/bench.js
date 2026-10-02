@@ -240,34 +240,44 @@ class BenchTree {
         items.push(conn);
 
         // The current network session: for a client, the server it is connected
-        // to (address:port). Click to copy.
+        // to (address:port, or a Steam id when reached over P2P). Click to copy.
         const sv = b.server;
-        if (sv && (sv.address || sv.localIp || sv.name || sv.role === 'server')) {
-            const addr = sv.address || sv.localIp || '';
-            const full = addr && sv.port ? `${addr}:${sv.port}` : addr;
-            const item = new vscode.TreeItem(
-                full ? t(`Server: ${full}`, `服务器：${full}`) : sv.name || t('Server', '服务器'),
-                vscode.TreeItemCollapsibleState.None
-            );
-            item.iconPath = new vscode.ThemeIcon('globe');
-            const bits = [];
-            if (sv.name && sv.name !== addr) bits.push(sv.name);
-            if (sv.map) bits.push(sv.map);
-            if (sv.role === 'server') bits.push(t('host', '主机'));
-            if (sv.players || sv.maxPlayers) bits.push(`${sv.players || 0}/${sv.maxPlayers || 0}`);
-            item.description = bits.join(' · ');
-            item.tooltip = [
-                sv.name && t(`name: ${sv.name}`, `名称：${sv.name}`),
-                full && t(`address: ${full}`, `地址：${full}`),
-                sv.map && t(`map: ${sv.map}`, `地图：${sv.map}`),
-                sv.steamId && `steamId: ${sv.steamId}`,
-                sv.latency != null && t(`latency: ${sv.latency} ms`, `延迟：${sv.latency} ms`),
-                sv.role && t(`role: ${sv.role}`, `角色：${sv.role}`),
-                full && t('click to copy', '点击复制'),
-            ].filter(Boolean).join('\n');
-            item.contextValue = 'server';
-            item.command = { command: 'icg.bench.copyServer', title: t('Copy address', '复制地址') };
-            items.push(item);
+        if (sv) {
+            const isHost = sv.role === 'server';
+            const host = sv.address || (isHost ? sv.localIp : '');
+            const full = host && sv.port ? `${host}:${sv.port}` : host;
+            const peer = sv.hostSteamId || sv.hostId || sv.lobby || '';
+            let label = '';
+            if (full) {
+                label = isHost ? t(`Local host: ${full}`, `本地主机：${full}`) : t(`Server: ${full}`, `服务器：${full}`);
+            } else if (peer) {
+                label = t(`Server (Steam): ${peer}`, `服务器（Steam）：${peer}`);
+            } else if (sv.name) {
+                label = t(`Server: ${sv.name}`, `服务器：${sv.name}`);
+            }
+            if (label) {
+                const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+                item.iconPath = new vscode.ThemeIcon('globe');
+                const bits = [];
+                if (sv.name && sv.name !== host) bits.push(sv.name);
+                if (sv.map) bits.push(sv.map);
+                if (isHost) bits.push(t('host', '主机'));
+                if (sv.players || sv.maxPlayers) bits.push(`${sv.players || 0}/${sv.maxPlayers || 0}`);
+                item.description = bits.join(' · ');
+                item.tooltip = [
+                    sv.name && t(`name: ${sv.name}`, `名称：${sv.name}`),
+                    full && t(`address: ${full}`, `地址：${full}`),
+                    sv.steamId && `steamId: ${sv.steamId}`,
+                    peer && `host: ${peer}`,
+                    sv.map && t(`map: ${sv.map}`, `地图：${sv.map}`),
+                    sv.latency != null && t(`latency: ${sv.latency} ms`, `延迟：${sv.latency} ms`),
+                    sv.role && t(`role: ${sv.role}`, `角色：${sv.role}`),
+                    (full || peer) && t('click to copy', '点击复制'),
+                ].filter(Boolean).join('\n');
+                item.contextValue = 'server';
+                item.command = { command: 'icg.bench.copyServer', title: t('Copy address', '复制地址') };
+                items.push(item);
+            }
         }
 
         const chips = b.chips || [];
@@ -919,17 +929,23 @@ class Bench {
         }
     }
 
-    // copyServer copies the current server address to the clipboard.
+    // copyServer copies the current server address (or Steam host id) to the
+    // clipboard.
     copyServer() {
         const s = this.server;
-        const addr = s && (s.address || s.localIp);
-        const full = addr ? (s.port ? `${addr}:${s.port}` : addr) : '';
-        if (!full) {
+        let text = '';
+        if (s) {
+            const isHost = s.role === 'server';
+            const host = s.address || (isHost ? s.localIp : '');
+            text = host ? (s.port ? `${host}:${s.port}` : host) : '';
+            if (!text) text = s.hostSteamId || s.hostId || s.lobby || '';
+        }
+        if (!text) {
             vscode.window.showInformationMessage(t('IC10: no server address yet.', 'IC10: 还没有服务器地址。'));
             return;
         }
-        vscode.env.clipboard.writeText(full);
-        vscode.window.setStatusBarMessage(t(`IC10: copied ${full}`, `IC10: 已复制 ${full}`), 3000);
+        vscode.env.clipboard.writeText(text);
+        vscode.window.setStatusBarMessage(t(`IC10: copied ${text}`, `IC10: 已复制 ${text}`), 3000);
     }
 
     async push() {

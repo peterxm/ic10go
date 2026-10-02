@@ -254,8 +254,8 @@ func benchServer(addr string, asJSON bool) int {
 		role = "主机（本机开服）"
 	}
 	host := s.Address
-	if host == "" {
-		host = s.LocalIP
+	if host == "" && (s.Role == "server" || s.Role == "") {
+		host = s.LocalIP // only the host's own address is the local IP
 	}
 	if host != "" && s.Port != "" {
 		host += ":" + s.Port
@@ -271,6 +271,17 @@ func benchServer(addr string, asJSON bool) int {
 	}
 	if host != "" {
 		fmt.Printf("server  %s\n", host)
+	} else if s.Role == "client" {
+		peer := s.HostSteamID
+		if peer == "" {
+			peer = s.HostID
+		}
+		if peer == "" {
+			peer = s.Lobby
+		}
+		if peer != "" {
+			fmt.Printf("peer    %s\n", peer)
+		}
 	}
 	if s.Map != "" {
 		fmt.Printf("map     %s\n", s.Map)
