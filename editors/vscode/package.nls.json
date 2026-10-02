@@ -48,6 +48,7 @@
   "cmd.bench.disconnect": "IC10 Go: Disconnect from Testbench",
   "cmd.bench.refresh": "IC10 Go: Refresh Chip State",
   "cmd.bench.copyServer": "IC10 Go: Copy Server Address",
+  "cmd.bench.copyAddress": "IC10 Go: Copy Address",
   "cmd.bench.watch": "IC10 Go: Toggle Live Updates",
   "cmd.bench.runScenario": "IC10 Go: Run Testbench Scenario",
   "cmd.bench.openPanel": "IC10 Go: Open Chip State Panel",

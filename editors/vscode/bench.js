@@ -206,6 +206,8 @@ class BenchTree {
                     return this.chipItems();
                 case 'chipGroup':
                     return this.chipGroupItems(el);
+                case 'serverList':
+                    return this.serverListItems();
                 case 'chipLeaf':
                     return [];
                 default:
@@ -290,6 +292,19 @@ class BenchTree {
             }
         }
 
+        // The server-browser list (expand to see address/players/ping/flag).
+        const sl = b.serverList || [];
+        if (sl.length) {
+            const node = new vscode.TreeItem(
+                t(`Server list (${sl.length})`, `服务器列表（${sl.length}）`),
+                vscode.TreeItemCollapsibleState.Collapsed
+            );
+            node.iconPath = new vscode.ThemeIcon('list-unordered');
+            node.contextValue = 'serverList';
+            node._kind = 'serverList';
+            items.push(node);
+        }
+
         const chips = b.chips || [];
         const sel = b.state && b.state.chip;
         if (b.noChip) {
@@ -339,6 +354,50 @@ class BenchTree {
     chipGroupItems(el) {
         const sel = this.bench.state && this.bench.state.chip;
         return (el._chips || []).map((chip) => chipNode(chip, sameChip(chip, sel)));
+    }
+
+    // serverListItems renders the server-browser list, one row per server.
+    serverListItems() {
+        const b = this.bench;
+        const list = b.serverList || [];
+        const missing = [];
+        const items = list.map((s) => {
+            const host = s.address && s.port ? `${s.address}:${s.port}` : s.address || '';
+            const geo = b.geoCache && b.geoCache.get(s.address);
+            const flag = geo && geo.emoji ? geo.emoji + ' ' : '';
+            const lock = s.password ? '🔒 ' : '';
+            const item = new vscode.TreeItem(
+                `${flag}${lock}${s.name || host}`,
+                vscode.TreeItemCollapsibleState.None
+            );
+            item.iconPath = new vscode.ThemeIcon('server');
+            const bits = [];
+            if (host) bits.push(host);
+            if (geo && geo.country) bits.push(geo.emoji ? `${geo.emoji} ${geo.country}` : geo.country);
+            if (s.players != null || s.maxPlayers) bits.push(`${s.players || 0}/${s.maxPlayers || 0}`);
+            if (s.latency > 0) bits.push(`${s.latency}ms`);
+            item.description = bits.join(' · ');
+            item.tooltip = [
+                s.name && t(`name: ${s.name}`, `名称：${s.name}`),
+                host && t(`address: ${host}`, `地址：${host}`),
+                geo && geo.country && t(`region: ${geo.country}${geo.region ? ' · ' + geo.region : ''}`,
+                    `地区：${geo.country}${geo.region ? ' · ' + geo.region : ''}`),
+                s.latency > 0 && t(`latency: ${s.latency} ms`, `延迟：${s.latency} ms`),
+                s.players != null || s.maxPlayers
+                    ? t(`players: ${s.players || 0}/${s.maxPlayers || 0}`, `在线：${s.players || 0}/${s.maxPlayers || 0}`)
+                    : '',
+                s.map && t(`map: ${s.map}`, `地图：${s.map}`),
+                s.version && t(`version: ${s.version}`, `版本：${s.version}`),
+                s.uptime > 0 && t(`uptime: ${Math.floor(s.uptime / 3600)}h`, `已运行：${Math.floor(s.uptime / 3600)}h`),
+                host && t('click to copy address', '点击复制地址'),
+            ].filter(Boolean).join('\n');
+            item.contextValue = 'serverListRow';
+            item.command = { command: 'icg.bench.copyAddress', title: t('Copy address', '复制地址'), arguments: [host] };
+            if (host && s.address && b.geoCache && !b.geoCache.has(s.address)) missing.push(s.address);
+            return item;
+        });
+        if (missing.length) b.lookupGeos(missing);
+        return items;
     }
 
     chipItems() {
@@ -440,6 +499,24 @@ function chipByNameDesc(a, b) {
 function flagEmoji(cc) {
     if (!cc || cc.length !== 2) return '';
     return String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
+
+// fetchGeo resolves an IP to {code, country, region, emoji} via ipwho.is, or
+// undefined when it fails / is offline.
+async function fetchGeo(ip) {
+    try {
+        const res = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`);
+        const j = await res.json();
+        if (!j || j.success === false || !j.country_code) return undefined;
+        return {
+            code: j.country_code,
+            country: j.country || '',
+            region: j.region || '',
+            emoji: (j.flag && j.flag.emoji) || flagEmoji(j.country_code),
+        };
+    } catch (err) {
+        return undefined;
+    }
 }
 
 // isNoChip reports whether an error means the selected holder has no chip (or
@@ -671,6 +748,7 @@ class Bench {
         cmd('icg.bench.pull', () => this.pull());
         cmd('icg.bench.refresh', () => this.refresh(true));
         cmd('icg.bench.copyServer', () => this.copyServer());
+        cmd('icg.bench.copyAddress', (text) => this.copyAddress(text));
         cmd('icg.bench.watch', () => this.toggleWatch());
         cmd('icg.bench.pause', () => this.togglePause());
         cmd('icg.bench.step', () => this.runTicks(1));
@@ -852,6 +930,12 @@ class Bench {
                 this.server = undefined; // older mod without the `server` command
             }
             if (this.server && this.server.address) this.lookupGeo(this.server.address);
+            try {
+                const sl = await c.call('serverlist', {});
+                this.serverList = (sl && sl.servers) || [];
+            } catch (err) {
+                this.serverList = [];
+            }
             const list = await c.call('chip.list', {}).catch(() => ({ chips: [] }));
             const all = list.chips || [];
             // Drop a stale pinned selection against the full list (the game
@@ -946,27 +1030,42 @@ class Bench {
         }
     }
 
-    // lookupGeo resolves the server IP to a country/flag once per address, via
-    // ipwho.is (best-effort: no flag if it fails or is offline).
+    // lookupGeo resolves the current server IP to a country/flag (cached).
     async lookupGeo(ip) {
-        if (!ip || this.geoIP === ip) return;
+        if (!ip) return;
+        if (!this.geoCache) this.geoCache = new Map();
+        if (this.geoIP === ip && this.geo) return;
         this.geoIP = ip;
-        this.geo = undefined;
-        try {
-            const res = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`);
-            const j = await res.json();
-            if (j && j.success !== false && j.country_code) {
-                this.geo = {
-                    code: j.country_code,
-                    country: j.country || '',
-                    region: j.region || '',
-                    emoji: (j.flag && j.flag.emoji) || flagEmoji(j.country_code),
-                };
-                if (this.tree) this.tree.refresh();
-            }
-        } catch (err) {
-            // offline / blocked: leave the flag off
+        const cached = this.geoCache.get(ip);
+        if (cached) {
+            this.geo = cached;
+            return;
         }
+        this.geo = undefined;
+        const g = await fetchGeo(ip);
+        if (g) {
+            this.geoCache.set(ip, g);
+            this.geo = g;
+            if (this.tree) this.tree.refresh();
+        }
+    }
+
+    // lookupGeos resolves several IPs (for the server list), cached, 4 at a time.
+    async lookupGeos(ips) {
+        if (!this.geoCache) this.geoCache = new Map();
+        const todo = ips.filter((ip) => ip && !this.geoCache.has(ip));
+        if (!todo.length) return;
+        for (const ip of todo) this.geoCache.set(ip, null); // mark in-flight
+        const queue = todo.slice();
+        const worker = async () => {
+            while (queue.length) {
+                const ip = queue.shift();
+                const g = await fetchGeo(ip);
+                this.geoCache.set(ip, g || null);
+            }
+        };
+        await Promise.all([worker(), worker(), worker(), worker()]);
+        if (this.tree) this.tree.refresh();
     }
 
     // copyServer copies the current server address (or Steam host id) to the
@@ -984,6 +1083,13 @@ class Bench {
             vscode.window.showInformationMessage(t('IC10: no server address yet.', 'IC10: 还没有服务器地址。'));
             return;
         }
+        vscode.env.clipboard.writeText(text);
+        vscode.window.setStatusBarMessage(t(`IC10: copied ${text}`, `IC10: 已复制 ${text}`), 3000);
+    }
+
+    // copyAddress copies an arbitrary address string (server-list rows).
+    copyAddress(text) {
+        if (!text) return this.copyServer();
         vscode.env.clipboard.writeText(text);
         vscode.window.setStatusBarMessage(t(`IC10: copied ${text}`, `IC10: 已复制 ${text}`), 3000);
     }

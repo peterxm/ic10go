@@ -246,6 +246,33 @@ func (c *Client) Server() (*ServerInfo, error) {
 	return &s, nil
 }
 
+// GameSessionRow is one server-browser entry (`serverlist`).
+type GameSessionRow struct {
+	SessionID  int    `json:"sessionId"`
+	Name       string `json:"name"`
+	Address    string `json:"address"`
+	Port       string `json:"port"`
+	Map        string `json:"map"`
+	Players    int    `json:"players"`
+	MaxPlayers int    `json:"maxPlayers"`
+	Latency    int    `json:"latency"`
+	Password   bool   `json:"password"`
+	Version    string `json:"version"`
+	UpTime     int    `json:"uptime"`
+	SteamID    string `json:"steamId"`
+}
+
+// ServerList returns the server-browser list the game last fetched.
+func (c *Client) ServerList() ([]GameSessionRow, error) {
+	var res struct {
+		Servers []GameSessionRow `json:"servers"`
+	}
+	if err := c.CallInto("serverlist", nil, &res); err != nil {
+		return nil, err
+	}
+	return res.Servers, nil
+}
+
 // Hello describes the running mod.
 type Hello struct {
 	Mod         string  `json:"mod"`

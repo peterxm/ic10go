@@ -610,6 +610,42 @@ namespace Ic10Go.Testbench
             catch { return ""; }
         }
 
+        /// <summary>The server-browser list the game last fetched, with address,
+        /// players, latency, version and password flag.</summary>
+        public static JArray ServerList()
+        {
+            var arr = new JArray();
+            try
+            {
+                var list = Prop(null, "GameSessionList") as System.Collections.IEnumerable;
+                if (list != null)
+                {
+                    foreach (var item in list)
+                    {
+                        var gs = item as GameSession;
+                        if (gs == null) continue;
+                        arr.Add(new JObject
+                        {
+                            ["sessionId"] = gs.SessionId,
+                            ["name"] = gs.Name ?? "",
+                            ["address"] = gs.Address ?? "",
+                            ["port"] = gs.Port ?? "",
+                            ["map"] = gs.MapName ?? "",
+                            ["players"] = gs.Players,
+                            ["maxPlayers"] = gs.MaxPlayers,
+                            ["latency"] = gs.Latency,
+                            ["password"] = gs.Password,
+                            ["version"] = gs.Version ?? "",
+                            ["uptime"] = gs.UpTime,
+                            ["steamId"] = gs.SteamId.ToString(),
+                        });
+                    }
+                }
+            }
+            catch { }
+            return arr;
+        }
+
         /// <summary>How many players are online right now (Brain.IsOnline), which
         /// is what "players" should show rather than the stale browser count.</summary>
         private static int OnlinePlayerCount()

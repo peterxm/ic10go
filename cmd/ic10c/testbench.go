@@ -148,6 +148,8 @@ func cmdTestbench(args []string) int {
 		return benchPlayers(addr, asJSON)
 	case "server":
 		return benchServer(addr, asJSON)
+	case "serverlist":
+		return benchServerList(addr, asJSON)
 	case "netdump":
 		return benchNetDump(addr)
 	case "locate":
@@ -338,6 +340,47 @@ func benchNetDump(addr string) int {
 	b, _ := json.MarshalIndent(v, "", "  ")
 	fmt.Println(string(b))
 	return 0
+}
+
+// benchServerList prints the game's server-browser list.
+func benchServerList(addr string, asJSON bool) int {
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	list, err := c.ServerList()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if asJSON {
+		return printJSON(list)
+	}
+	if len(list) == 0 {
+		fmt.Println("no servers (open the in-game server browser once)")
+		return 0
+	}
+	for _, s := range list {
+		host := s.Address
+		if host != "" && s.Port != "" {
+			host += ":" + s.Port
+		}
+		lock := " "
+		if s.Password {
+			lock = "🔒"
+		}
+		fmt.Printf("  %-44s %-22s %2d/%-2d %4dms %s %s\n",
+			clip(s.Name, 44), host, s.Players, s.MaxPlayers, s.Latency, lock, s.Version)
+	}
+	return 0
+}
+
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
 
 func benchList(addr string, asJSON bool) int {
