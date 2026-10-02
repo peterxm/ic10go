@@ -832,8 +832,20 @@ class Bench {
         // Restore the last selected chip and the live-update toggle, so a reload
         // comes back to the same chip.
         this.store = context.workspaceState;
+        this.globalStore = context.globalState;
         this.serverSort = 'name';
-        this.pingCache = new Map(); // "ip:port" -> {rtt, at}
+        this.pingCache = new Map(); // "ip:port" -> {rtt, at} (transient)
+        this.geoCache = new Map(); // ip -> {code,country,region,emoji}
+        try {
+            const saved = this.globalStore && this.globalStore.get('icg.bench.geo');
+            if (saved && typeof saved === 'object') {
+                for (const [ip, g] of Object.entries(saved)) {
+                    if (ip && g && g.code) this.geoCache.set(ip, g);
+                }
+            }
+        } catch (err) {
+            // ignore a corrupt cache
+        }
         if (this.store) {
             const sel = this.store.get('icg.bench.sel');
             if (sel && typeof sel === 'object') this.sel = sel;
@@ -1155,7 +1167,20 @@ class Bench {
         if (g) {
             this.geoCache.set(ip, g);
             this.geo = g;
+            this.saveGeo();
             if (this.tree) this.tree.refresh();
+        }
+    }
+
+    // saveGeo persists the IP -> country/region cache across windows.
+    saveGeo() {
+        if (!this.globalStore || !this.geoCache) return;
+        const obj = {};
+        for (const [ip, g] of this.geoCache) if (g) obj[ip] = g;
+        try {
+            this.globalStore.update('icg.bench.geo', obj);
+        } catch (err) {
+            // ignore
         }
     }
 
@@ -1174,6 +1199,7 @@ class Bench {
             }
         };
         await Promise.all([worker(), worker(), worker(), worker()]);
+        this.saveGeo();
         if (this.tree) this.tree.refresh();
     }
 
