@@ -281,8 +281,26 @@ func benchServer(addr string, asJSON bool) int {
 	if s.SteamID != "" {
 		fmt.Printf("steamId %s\n", s.SteamID)
 	}
+	if s.HostID != "" {
+		fmt.Printf("hostId  %s\n", s.HostID)
+	}
+	if s.HostSteamID != "" {
+		fmt.Printf("hostSteam %s\n", s.HostSteamID)
+	}
+	if s.Lobby != "" {
+		fmt.Printf("lobby   %s\n", s.Lobby)
+	}
+	if s.Transport != "" {
+		fmt.Printf("transport %s\n", s.Transport)
+	}
+	for _, cn := range s.Connections {
+		fmt.Printf("conn    %s  %s  %dms\n", cn.ID, cn.Name, cn.Ping)
+	}
 	if s.Error != "" {
 		fmt.Printf("error   %s\n", s.Error)
+	}
+	if s.ConnectionsError != "" {
+		fmt.Printf("connErr %s\n", s.ConnectionsError)
 	}
 	return 0
 }

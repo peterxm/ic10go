@@ -552,9 +552,51 @@ namespace Ic10Go.Testbench
                     o["password"] = gs.Password;
                     try { o["steamId"] = gs.SteamId.ToString(); } catch { }
                 }
+
+                // When there is no meta game session the client reached the host
+                // over Steam P2P, addressed by a Steam id: expose the host id and
+                // the live connection samples.
+                var nmType = typeof(NetworkManager);
+                o["hostId"] = StaticStr(nmType, "_hostId");
+                o["hostSteamId"] = StaticStr(nmType, "_hostSteamId");
+                o["hasP2P"] = StaticStr(nmType, "bHasSteamP2PConnections");
+                o["lobby"] = StaticStr(nmType, "steamLobby");
+                try { o["transport"] = NetworkManager.CurrentTransport != null ? NetworkManager.CurrentTransport.GetType().Name : ""; }
+                catch { }
+                try
+                {
+                    var samples = new NetworkManager.NetClientSample[64];
+                    NetworkManager.SampleConnections(samples);
+                    var arr = new JArray();
+                    foreach (var s in samples)
+                    {
+                        if (s.Id == 0 && string.IsNullOrEmpty(s.Name)) continue;
+                        arr.Add(new JObject
+                        {
+                            ["id"] = s.Id.ToString(),
+                            ["name"] = s.Name ?? "",
+                            ["ping"] = s.AvgPing,
+                        });
+                    }
+                    if (arr.Count > 0) o["connections"] = arr;
+                }
+                catch (Exception ce) { o["connectionsError"] = ce.Message; }
             }
             catch (Exception e) { o["error"] = e.Message; }
             return o;
+        }
+
+        /// <summary>Reads a static field (public or not) as a string.</summary>
+        private static string StaticStr(Type t, string name)
+        {
+            try
+            {
+                var f = t.GetField(name, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (f == null) return "";
+                var v = f.GetValue(null);
+                return v == null ? "" : v.ToString();
+            }
+            catch { return ""; }
         }
 
         /// <summary>Resolves a player name to the live entity to track: their human
