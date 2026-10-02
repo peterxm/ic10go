@@ -168,6 +168,10 @@ type Options struct {
 	// Limits overrides the IC10 editor limits the output is validated against.
 	// A zero field means the default; the zero Limits means DefaultLimits.
 	Limits Limits
+	// LegacyByID emits the legacy `ld`/`sd` mnemonics for readById/writeById
+	// instead of the current `l`/`s` with a ReferenceId device operand. Off by
+	// default (the game's deprecated spelling is only for old game versions).
+	LegacyByID bool
 }
 
 // Generate renders a function to IC10 code and validates the result against the
@@ -191,7 +195,7 @@ func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, e
 // layoutLines computes the codegen block order and the emitted lines before
 // branch targets are resolved to line numbers. It is shared by code generation
 // and by Layout (used for the control-flow graph).
-func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.Block, []line, map[*ir.Block]int) {
+func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bool) ([]*ir.Block, []line, map[*ir.Block]int) {
 	fn.BuildCFG()
 	blocks := rpo(fn)
 	// Blocks that a call returns to must be laid out right after the call and
@@ -289,7 +293,7 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 				idx += n - 1
 				continue
 			}
-			if text, n, ok := foldLoadOperand(instrs, idx, uses, colors); ok {
+			if text, n, ok := foldLoadOperand(instrs, idx, uses, colors, legacyByID); ok {
 				if spill != nil && spillStart < 0 && idx+n > len(b.Instrs) {
 					spillStart = len(lines)
 				}
@@ -318,7 +322,7 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB bool) ([]*ir.B
 				add("poke "+strconv.Itoa(ss.Slot)+" "+valueText(ss.Src, colors), nil, b.Func)
 				continue
 			}
-			if text, ok := renderInstr(ins, colors); ok {
+			if text, ok := renderInstr(ins, colors, legacyByID); ok {
 				add(text, nil, b.Func)
 			}
 		}
@@ -631,7 +635,7 @@ func foldIndirectDst(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 // consumer, the loaded value must be used exactly once, and the consumer must
 // actually read it, so nothing can change the register in between and the load
 // is never dropped while still needed.
-func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[*ir.Reg]int) (string, int, bool) {
+func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[*ir.Reg]int, legacyByID bool) (string, int, bool) {
 	if i+1 >= len(instrs) {
 		return "", 0, false
 	}
@@ -704,7 +708,11 @@ func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 			if !mentions(v.DevID, v.Logic, v.Src) {
 				return "", 0, false
 			}
-			return "sd " + val(v.DevID) + " " + val(v.Logic) + " " + val(v.Src), 2, true
+			mn := "s"
+			if legacyByID {
+				mn = "sd"
+			}
+			return mn + " " + val(v.DevID) + " " + val(v.Logic) + " " + val(v.Src), 2, true
 		}
 		if mentions(v.DevPtr) || !mentions(v.Logic, v.Src) {
 			return "", 0, false
@@ -752,13 +760,13 @@ func labelLine(b *ir.Block, start map[*ir.Block]int, n int) (int, bool) {
 
 // Layout returns the codegen block order and each block's 0-based start line.
 func Layout(fn *ir.Function, colors map[*ir.Reg]int) ([]*ir.Block, map[*ir.Block]int) {
-	blocks, _, start := layoutLines(fn, colors, false)
+	blocks, _, start := layoutLines(fn, colors, false, false)
 	return blocks, start
 }
 
 // GenerateReportWithOptions is GenerateReport with explicit options.
 func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Options) (string, *Report, error) {
-	blocks, lines, start := layoutLines(fn, colors, opts.SpillDB)
+	blocks, lines, start := layoutLines(fn, colors, opts.SpillDB, opts.LegacyByID)
 
 	if err := checkCallLayout(blocks, lines, start); err != nil {
 		return "", nil, err
@@ -1123,10 +1131,10 @@ func rpo(fn *ir.Function) []*ir.Block {
 // InstrText renders one IR instruction as IC10 text. It is used by the
 // control-flow graph (ic10c graph) to label blocks.
 func InstrText(ins ir.Instr, colors map[*ir.Reg]int) (string, bool) {
-	return renderInstr(ins, colors)
+	return renderInstr(ins, colors, false)
 }
 
-func renderInstr(ins ir.Instr, colors map[*ir.Reg]int) (string, bool) {
+func renderInstr(ins ir.Instr, colors map[*ir.Reg]int, legacyByID bool) (string, bool) {
 	switch v := ins.(type) {
 	case *ir.Assign:
 		if r, ok := v.Src.(*ir.Reg); ok && regName(r, colors) == regName(v.Dst, colors) {
@@ -1177,14 +1185,22 @@ func renderInstr(ins ir.Instr, colors map[*ir.Reg]int) (string, bool) {
 				valueText(v.Logic, colors) + " " + valueText(v.Reagent, colors), true
 		}
 		if v.DevID != nil {
-			return "ld " + regName(v.Dst, colors) + " " + valueText(v.DevID, colors) + " " +
+			mn := "l"
+			if legacyByID {
+				mn = "ld"
+			}
+			return mn + " " + regName(v.Dst, colors) + " " + valueText(v.DevID, colors) + " " +
 				valueText(v.Logic, colors), true
 		}
 		return "l " + regName(v.Dst, colors) + " " + dynDev(v.Dev, v.DevPtr, colors) + " " +
 			valueText(v.Logic, colors), true
 	case *ir.StoreDyn:
 		if v.DevID != nil {
-			return "sd " + valueText(v.DevID, colors) + " " + valueText(v.Logic, colors) + " " +
+			mn := "s"
+			if legacyByID {
+				mn = "sd"
+			}
+			return mn + " " + valueText(v.DevID, colors) + " " + valueText(v.Logic, colors) + " " +
 				valueText(v.Src, colors), true
 		}
 		return "s " + dynDev(v.Dev, v.DevPtr, colors) + " " + valueText(v.Logic, colors) + " " +

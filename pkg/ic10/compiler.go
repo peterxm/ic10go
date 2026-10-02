@@ -65,6 +65,11 @@ type Options struct {
 	// bytes. Off by default; requires the game's relative-jump base to match
 	// the VM (relative to the jump's own line).
 	RelJump bool
+	// LegacyByID emits the legacy `ld`/`sd` instructions for
+	// readById/writeById instead of `l`/`s` with a ReferenceId device operand.
+	// Off by default: the game treats `ld`/`sd` as the deprecated spelling, so
+	// they are only needed on old game versions.
+	LegacyByID bool
 
 	// SpillStack keeps register spills in the IC stack with a peek/poke
 	// save-restore sequence (5 lines per load, reserves r15 as scratch). The
@@ -811,9 +816,10 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 		fn.BuildCFG()
 	}
 	code, report, err := codegen.GenerateReportWithOptions(fn, colors, codegen.Options{
-		RelJump: opts.RelJump,
-		SpillDB: !opts.SpillStack,
-		Limits:  opts.editorLimits(),
+		RelJump:    opts.RelJump,
+		SpillDB:    !opts.SpillStack,
+		Limits:     opts.editorLimits(),
+		LegacyByID: opts.LegacyByID,
 	})
 	if err != nil {
 		return code, colors, nil, spillCount, err

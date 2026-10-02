@@ -130,6 +130,11 @@ var relJumpFlag = Flag{Long: "--rel-jump", Desc: text{
 	ZH: "在相对跳转（jr / br*）更短时使用（需真机验证基准行）",
 }}
 
+var legacyByIDFlag = Flag{Long: "--legacy-by-id", Desc: text{
+	EN: "emit the deprecated ld/sd for readById/writeById (only for old game versions; default is l/s with a ReferenceId)",
+	ZH: "readById/writeById 发已弃用的 ld/sd（仅老版本游戏需要；默认发 l/s + ReferenceId）",
+}}
+
 var spillFlag = Flag{Long: "--spill", Arg: "db|stack", Desc: text{
 	EN: "register spill storage: get/put db (default, 1 line per load) or peek/poke stack (5 lines, fallback)",
 	ZH: "寄存器溢出存放：get/put db（默认，每次加载 1 行）或 peek/poke 栈（5 行，回退）",
@@ -236,6 +241,7 @@ var Commands = []Command{
 			jumpTableFlag,
 			fastFlag,
 			relJumpFlag,
+			legacyByIDFlag,
 			spillFlag,
 			dynamicStackFlag,
 			userStackFlag,
@@ -572,6 +578,7 @@ var Commands = []Command{
 			{Long: "--offset", Arg: "DEG", Desc: text{EN: "hud: calibrate the displayed heading (does not move the arrow)", ZH: "hud：校准显示的朝向数字（不影响箭头方向）"}},
 			{Long: "--as", Arg: "NAME", Desc: text{EN: "push: which `chip` block to upload (multi-chip sources)", ZH: "push：多芯片源码中上传哪个 `chip` 块"}},
 			{Long: "--raw", Desc: text{EN: "push: send the file as raw IC10 (no .icg compile)", ZH: "push：把文件当原始 IC10 直接上传（不编译 .icg）"}},
+			legacyByIDFlag,
 			{Long: "--data-access", Arg: "get|stack", Desc: text{EN: "push: data-segment access; use `stack` on a device host (e.g. air conditioner)", ZH: "push：数据段访问方式；设备 host（如空调）用 `stack`"}},
 			{Long: "--all", Desc: text{EN: "state: include the whole stack", ZH: "state：返回整段栈"}},
 			{Long: "--force", Desc: text{EN: "set: write even if the device reports the logic as read-only", ZH: "set：即使设备报告该逻辑为只读也强制写入"}},

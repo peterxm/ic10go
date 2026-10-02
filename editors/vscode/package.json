@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.38",
+  "version": "0.7.39",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -107,6 +107,11 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "%icg.relJump.desc%"
+        },
+        "icg.legacyById": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%icg.legacyById.desc%"
         },
         "icg.fast": {
           "type": "boolean",

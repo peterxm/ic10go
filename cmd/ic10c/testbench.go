@@ -39,6 +39,7 @@ func cmdTestbench(args []string) int {
 	offset := 0.0
 	offsetSet := false
 	rawPush := false
+	legacyByID := false
 	interval := 250
 	count := 0
 	sub := ""
@@ -101,6 +102,8 @@ func cmdTestbench(args []string) int {
 			asJSON = true
 		case a == "--raw":
 			rawPush = true
+		case a == "--legacy-by-id":
+			legacyByID = true
 		case a == "--all":
 			all = true
 		case a == "--force":
@@ -152,7 +155,7 @@ func cmdTestbench(args []string) int {
 		if len(rest) > 0 {
 			file = rest[0]
 		}
-		return benchPush(addr, file, chip, asName, stableIns, dataAccessStack, libDirs, lim, asJSON, rawPush)
+		return benchPush(addr, file, chip, asName, stableIns, dataAccessStack, legacyByID, libDirs, lim, asJSON, rawPush)
 	case "state":
 		return benchState(addr, chip, all, asJSON)
 	case "program":
@@ -763,7 +766,7 @@ func benchPorts(addr string, chip any, asJSON bool) int {
 	return 0
 }
 
-func benchPush(addr, file string, chip any, asName string, stableIns, dataAccessStack bool, libDirs []string, lim limitArgs, asJSON, raw bool) int {
+func benchPush(addr, file string, chip any, asName string, stableIns, dataAccessStack, legacyByID bool, libDirs []string, lim limitArgs, asJSON, raw bool) int {
 	if file == "" {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "testbench"))
 		return 2
@@ -783,6 +786,7 @@ func benchPush(addr, file string, chip any, asName string, stableIns, dataAccess
 		opts := ic10.Options{
 			StableInsOrder:  stableIns,
 			DataAccessStack: dataAccessStack,
+			LegacyByID:      legacyByID,
 			MaxLines:        lim.lines,
 			MaxBytes:        lim.bytes,
 			MaxLineLen:      lim.line,
@@ -1212,6 +1216,8 @@ func benchOptions(flags []string, lim limitArgs, libDirs []string) (ic10.Options
 			opts.StableInsOrder = true
 		case a == "--rel-jump":
 			opts.RelJump = true
+		case a == "--legacy-by-id":
+			opts.LegacyByID = true
 		case a == "--jump-table":
 			opts.JumpTable = true
 		case a == "--auto-table":

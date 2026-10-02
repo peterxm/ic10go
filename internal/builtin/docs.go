@@ -82,8 +82,8 @@ var Docs = map[string]Doc{
 
 	"read":          {"read(dev, lt)", "Read a device logic type chosen at runtime.", "读取运行期决定的 logic type。"},
 	"write":         {"write(dev, lt, v)", "Write a device logic type chosen at runtime.", "写入运行期决定的 logic type。"},
-	"readById":      {"readById(id, lt)", "Read a logic type from a device by ReferenceId (IC10 ld).", "按 ReferenceId 读取 logic type（IC10 ld）。"},
-	"writeById":     {"writeById(id, lt, v)", "Write a logic type to a device by ReferenceId (IC10 sd).", "按 ReferenceId 写入 logic type（IC10 sd）。"},
+	"readById":      {"readById(id, lt)", "Read a logic type from a device by ReferenceId (IC10 l with a ReferenceId operand).", "按 ReferenceId 读取 logic type（IC10 l，ReferenceId 作设备操作数）。"},
+	"writeById":     {"writeById(id, lt, v)", "Write a logic type to a device by ReferenceId (IC10 s with a ReferenceId operand).", "按 ReferenceId 写入 logic type（IC10 s，ReferenceId 作设备操作数）。"},
 	"readByIdSlot":  {"readByIdSlot(id, index, slt)", "Read a slot property from a device by ReferenceId (IC10 ls rN).", "按 ReferenceId 读取槽位属性（IC10 ls rN）。"},
 	"writeByIdSlot": {"writeByIdSlot(id, index, slt, v)", "Write a slot property to a device by ReferenceId (IC10 ss rN).", "按 ReferenceId 写入槽位属性（IC10 ss rN）。"},
 	"readDevSlot":   {"readDevSlot(reg, index, slt)", "Read a slot property from a runtime-selected device port (IC10 ls drN).", "从运行期选择的设备端口读取槽位属性（IC10 ls drN）。"},

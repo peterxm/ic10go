@@ -8,6 +8,7 @@
   "icg.autoTable.desc": "Compile with `--auto-table`: table eligible constant switches into the data segment (run the install code first).",
   "icg.jumpTable.desc": "Compile with `--jump-table`: lower dense integer switches to a computed jump table.",
   "icg.relJump.desc": "Compile with `--rel-jump`: emit relative jumps (jr / br*) to save bytes (verify in game).",
+  "icg.legacyById.desc": "Compile with `--legacy-by-id`: emit the deprecated `ld`/`sd` for readById/writeById. Only for old game versions; the default uses `l`/`s` with a ReferenceId.",
   "icg.fast.desc": "Compile with `--fast`: prefer runtime speed over size (unroll more loops).",
   "icg.unsafe.desc": "Compile with `--unsafe`: skip the data-segment runtime check to shrink the code.",
   "icg.dataLayout.desc": "Data segment placement (`--data-layout`): `top` (default) or `middle`.",

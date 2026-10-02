@@ -8,6 +8,7 @@
   "icg.autoTable.desc": "用 `--auto-table` 编译：自动把符合条件的常量 switch 表化进数据段（需先运行安装代码）。",
   "icg.jumpTable.desc": "用 `--jump-table` 编译：把稠密整数 switch 降为计算跳转表。",
   "icg.relJump.desc": "用 `--rel-jump` 编译：生成相对跳转（jr / br*）以节省字节（需真机验证）。",
+  "icg.legacyById.desc": "用 `--legacy-by-id` 编译：readById/writeById 发已弃用的 `ld`/`sd`。仅老版本游戏需要；默认发 `l`/`s` + ReferenceId。",
   "icg.fast.desc": "用 `--fast` 编译：优先运行速度而非体积（展开更多循环）。",
   "icg.unsafe.desc": "用 `--unsafe` 编译：跳过数据段运行时校验以进一步压缩代码。",
   "icg.dataLayout.desc": "数据段位置（`--data-layout`）：`top`（默认）或 `middle`。",

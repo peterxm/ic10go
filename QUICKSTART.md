@@ -216,7 +216,7 @@ d2.Mode = rmap(d3, hash("Iron"))
 d0.On = isSet(d1)
 d0.Setting = approx(x, y, 0.1)
 d0.Setting = str("Ready!")
-d0.Setting = readById(id, LogicType.Temperature)   // 按 ReferenceId 读（ld）
+d0.Setting = readById(id, LogicType.Temperature)   // 按 ReferenceId 读（l + ReferenceId）
 d0.Setting = raw("SomeGameConstant")               // 原样输出（枚举/关键字逃生口）
 ```
 

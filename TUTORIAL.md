@@ -525,8 +525,8 @@ getd(id, addr)              // 等价 get，按设备 id
 putd(id, addr, value)
 clr(d0)                     // 清空设备
 clrById(id)                 // 按设备 id 清空（clrd）
-readById(id, LogicType.Temperature)   // 按 id 读逻辑类型（ld）
-writeById(id, LogicType.On, 1)        // 按 id 写逻辑类型（sd）
+readById(id, LogicType.Temperature)   // 按 id 读逻辑类型（l + ReferenceId）
+writeById(id, LogicType.On, 1)        // 按 id 写逻辑类型（s + ReferenceId）
 readDevSlot(reg, i, Occupied)         // 运行期端口槽位（ls drN）
 writeDevSlot(reg, i, On, 1)           // （ss drN）
 readReagent(d0, LogicReagentMode.Contents, hash("Oxygen"))  // 读取反应物（lr）

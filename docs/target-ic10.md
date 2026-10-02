@@ -136,7 +136,7 @@
 | `dN.stack[addr]` / `id.stack[addr]` | `get` / `put`（device 操作数接受端口 / id / 寄存器） |
 | `getd(id, addr)` / `putd(id, addr, v)` | 统一 `get` / `put`（独立的 `getd`/`putd` 已弃用） |
 | `clrById(id)` | `clrd` |
-| `readById(id, lt)` / `writeById(id, lt, v)` | `ld` / `sd`（按 ReferenceId 读写逻辑类型） |
+| `readById(id, lt)` / `writeById(id, lt, v)` | `l` / `s`（设备操作数直接用 ReferenceId；老版本加 `--legacy-by-id` 发 `ld`/`sd`） |
 | `readDevSlot(reg, i, slt)` / `writeDevSlot(reg, i, slt, v)` | `ls drN` / `ss drN`（运行期端口） |
 | `readByIdSlot(id, i, slt)` / `writeByIdSlot(id, i, slt, v)` | `ls rN` / `ss rN`（按 ReferenceId） |
 | `readReagent(dev, mode, key)` | `lr` |

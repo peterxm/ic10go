@@ -254,6 +254,7 @@ func cmdBuild(args []string) int {
 	jumpTable := false
 	fast := false
 	relJump := false
+	legacyByID := false
 	dataAccessStack := false
 	spillStack := false
 	dynamicStack := false
@@ -276,6 +277,8 @@ func cmdBuild(args []string) int {
 			fast = true
 		case "--rel-jump":
 			relJump = true
+		case "--legacy-by-id":
+			legacyByID = true
 		case "--unsafe":
 			unsafe = true
 		case "--auto-table":
@@ -366,6 +369,7 @@ func cmdBuild(args []string) int {
 		JumpTable:             jumpTable,
 		Fast:                  fast,
 		RelJump:               relJump,
+		LegacyByID:            legacyByID,
 		DataAccessStack:       dataAccessStack,
 		SpillStack:            spillStack,
 		DataLayout:            dataLayout,

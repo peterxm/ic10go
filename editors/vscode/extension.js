@@ -367,6 +367,7 @@ class LspClient {
             autoTable: c.get('autoTable'),
             jumpTable: c.get('jumpTable'),
             relJump: c.get('relJump'),
+            legacyById: c.get('legacyById'),
             fast: c.get('fast'),
             unsafe: c.get('unsafe'),
             dataLayout: c.get('dataLayout'),
@@ -408,6 +409,7 @@ class LspClient {
         if (cfg.autoTable) flags.push('--auto-table');
         if (cfg.jumpTable) flags.push('--jump-table');
         if (cfg.relJump) flags.push('--rel-jump');
+        if (cfg.legacyById) flags.push('--legacy-by-id');
         if (cfg.fast) flags.push('--fast');
         if (cfg.unsafe) flags.push('--unsafe');
         if (cfg.dataLayout && cfg.dataLayout !== 'top') flags.push('--data-layout', cfg.dataLayout);

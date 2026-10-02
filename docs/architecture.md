@@ -366,7 +366,7 @@ VS Code `icg.redundantDeviceWrites`）会删除**同一段直落代码**内、�
 | `d.channel[c][n]` | `l d d:c Channel<n>` |
 | `d.stack[i]` / `d.stack[i] = v` | `get d i` / `put d i v` |
 | `read(d, lt)` / `write(d, lt, v)` | `l r d (r_lt)` / `s d (r_lt) v` |
-| `readById(id, lt)` / `writeById(id, lt, v)` | `ld r (id) (r_lt)` / `sd (id) (r_lt) v` |
+| `readById(id, lt)` / `writeById(id, lt, v)` | `l r (id) (r_lt)` / `s (id) (r_lt) v`（默认；`--legacy-by-id` → `ld`/`sd`） |
 | `readDev(i, lt)` / `writeDev(i, lt, v)` | `l r drN (r_lt)` / `s drN (r_lt) v` |
 | `readDevSlot(i, n, slt)` / `writeDevSlot(i, n, slt, v)` | `ls r drN n slt` / `ss drN n slt v` |
 | `ireg(p)` / `setIreg(p, v)` | `move r rrN` / `move rrN r`（`p` 为常量时直接寻址 `rN`，需 `reserveRegs` 覆盖） |
@@ -519,7 +519,7 @@ ic10go/
 - 槽位 `ls/ss`、通道 `ChannelN`
 - 批量 `lb/lbn/lbs/sb/sbn/sbs`
 - 栈 `push/pop/peek/poke`、设备栈 `get/put/getd/putd/clr/clrById`（`get/put` 的 device 操作数接受端口 / id / 寄存器）、`dN.stack[addr]` / `id.stack[addr]` 语法糖
-- 按 ReferenceId 读写 `readById`/`writeById`（`ld`/`sd`）、运行期端口槽位 `readDevSlot`/`writeDevSlot`（`ls/ss drN`）
+- 按 ReferenceId 读写 `readById`/`writeById`（`l`/`s` + ReferenceId 设备操作数；旧版 `ld`/`sd` 用 `--legacy-by-id`）、运行期端口槽位 `readDevSlot`/`writeDevSlot`（`ls/ss drN`）
 - 设备栈指令构建器 `sorter.*` / `printer.*`（字段位宽校验）；未知 `Enum.Member` 原样输出、`raw("...")` 逃生口
 - `approx/approxZero/notApprox/notApproxZero/logicalNor/isNotNaN`、`isSet`/`isUnset`/`rmap`/`readReagent`、NaN 支持、`ext/ins/sla/srl/rol/ror`
 - 底层控制流：`label/goto/call/ret`、`ra/sp`、`ireg/setIreg`、`jump(expr)`

@@ -12,6 +12,13 @@
 
 优先级：**P1 > P2 > P3 > P4 > P5 > P6**。状态用 ✅ 已实现 / 🚧 进行中 / ⬜ 待做。
 
+> ✅ **`readById`/`writeById` 改发 `l`/`s`（去掉弃用的 `ld`/`sd`）（2026-10）**。游戏的 IC10 现在支持把
+> **ReferenceId 直接当设备操作数**（`l r0 r4 Setting` / `l r0 704 Setting`），旧的 `ld`/`sd` 已弃用。
+> 真机（0.2.6428）实测：按 id 的 `l`/`s` 与 `ld`/`sd` 在读、写、缺 id 报错上**完全等价**、字节数相同。
+> 编译器默认改发 `l`/`s`；`--legacy-by-id`（CLI，及 VSCode `icg.legacyById`）可回退到 `ld`/`sd` 兼容老版本。
+> 反编译仍把 `ld`/`sd` 还原成 `readById`/`writeById`，且新的 `l`/`s` 按 id 也能还原；`readReagentById`（`lr`）
+> 与 `readByIdSlot`/`writeByIdSlot`（`ls`/`ss`）本就是现代写法，未动。
+
 > ✅ **反编译：未知值操作数不再丢行；运行期 id+logic（已修，2026-10）**。真机脚本暴露两处：
 > ① 不认识的**值操作数**（游戏特殊寄存器 `rgas`、试剂名等）会让**整行被丢**（改行为）；现在改
 > `raw("...")` 原样保留并告警，寄存器照常参与分配。② `l rN rM` / `s rN rM v`（设备 id 在寄存器、

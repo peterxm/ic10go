@@ -670,12 +670,12 @@ readReagentById(reg, LogicReagentMode.Contents, key) // lr r? rN：按 Reference
 > 生成 `get` / `put`（独立的 `getd`/`putd` 指令已弃用）。
 > `dN.stack[addr]` / `id.stack[addr]` 与 `dN.slot[i].X` 一样是语法糖。
 
-按 ReferenceId 读写逻辑类型（IC10 `ld` / `sd`），以及运行期选择设备端口的槽位
-读写（IC10 `ls drN` / `ss drN`）：
+按 ReferenceId 读写逻辑类型（IC10 `l`/`s`，ReferenceId 作为设备操作数；旧写法 `ld`/`sd`
+用 `--legacy-by-id`），以及运行期选择设备端口的槽位读写（IC10 `ls drN` / `ss drN`）：
 
 ```go
-v := readById(id, LogicType.Temperature)   // ld：按 id 读逻辑类型
-writeById(id, LogicType.On, 1)             // sd：按 id 写逻辑类型
+v := readById(id, LogicType.Temperature)   // l：按 id 读逻辑类型（id 放设备操作数）
+writeById(id, LogicType.On, 1)             // s：按 id 写逻辑类型
 ptr := d2.Setting                           // 端口号在寄存器里
 n := readDevSlot(ptr, 0, Occupied)          // ls r? drN i slt
 writeDevSlot(ptr, 1, On, 1)                 // ss drN i slt r?

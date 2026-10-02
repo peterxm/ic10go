@@ -180,7 +180,9 @@ func TestStackSizeConstants(t *testing.T) {
 	}
 }
 
-// TestReadWriteByID checks readById/writeById (IC10 ld/sd).
+// TestReadWriteByID checks readById/writeById lower to `l`/`s` with the
+// ReferenceId as the device operand (the current IC10 spelling), and that
+// LegacyByID restores the deprecated `ld`/`sd` for old game versions.
 func TestReadWriteByID(t *testing.T) {
 	src := `func main() {
     id := d1.ReferenceId
@@ -189,38 +191,61 @@ func TestReadWriteByID(t *testing.T) {
     d0.Setting = v
 }`
 	code := mustCompile(t, src)
-	if !strings.Contains(code, "ld ") || !strings.Contains(code, "sd ") {
-		t.Errorf("code = %q, want ld/sd", code)
+	if strings.Contains(code, "ld ") || strings.Contains(code, "sd ") {
+		t.Errorf("default output must not use the deprecated ld/sd:\n%s", code)
 	}
-	// The logic type must stay a static operand with its bare member name
-	// (`ld r? id Temperature`): the game rejects the `LogicType.` prefix there,
-	// and materialising the enum into a register tends to spill it into a data
-	// table.
-	for _, want := range []string{"ld ", "Temperature", " On "} {
-		if !strings.Contains(code, want) {
-			t.Errorf("code = %q, want %q", code, want)
+	byID := false
+	for _, ln := range strings.Split(code, "\n") {
+		if strings.HasPrefix(ln, "l ") && strings.HasSuffix(ln, "Temperature") && strings.Contains(ln, " r") {
+			byID = true
 		}
 	}
-	if strings.Contains(code, "LogicType.") {
-		t.Errorf("logic operand must be the bare name:\n%s", code)
+	if !byID {
+		t.Errorf("readById should lower to `l rX rN Temperature`:\n%s", code)
 	}
-	if strings.Contains(code, "put db") {
-		t.Errorf("logic constant was materialised into the data segment:\n%s", code)
+
+	legacy, diags, err := ic10.CompileWithOptions("test.icg", []byte(src), ic10.Options{LegacyByID: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("legacy compile: %v %v", diags.Diags, err)
 	}
-	m := vm.New()
-	m.Set("d1", "ReferenceId", 55)
-	m.Set("d1", "Temperature", 321)
-	if err := m.Load(code); err != nil {
-		t.Fatalf("vm load: %v", err)
+	if !strings.Contains(legacy, "ld ") || !strings.Contains(legacy, "sd ") {
+		t.Errorf("LegacyByID should restore ld/sd:\n%s", legacy)
 	}
-	if err := m.Run(200); err != nil && err != vm.ErrStepLimit {
-		t.Fatalf("vm run: %v", err)
+
+	for _, gen := range []string{code, legacy} {
+		// The logic type must stay a static operand with its bare member name
+		// (`l r? id Temperature`): the game rejects the `LogicType.` prefix
+		// there, and materialising the enum into a register tends to spill it
+		// into a data table.
+		for _, want := range []string{"Temperature", " On "} {
+			if !strings.Contains(gen, want) {
+				t.Errorf("code = %q, want %q", gen, want)
+			}
+		}
+		if strings.Contains(gen, "LogicType.") {
+			t.Errorf("logic operand must be the bare name:\n%s", gen)
+		}
+		if strings.Contains(gen, "put db") {
+			t.Errorf("logic constant was materialised into the data segment:\n%s", gen)
+		}
 	}
-	if got := m.Get("d0", "Setting"); got != 321 {
-		t.Errorf("d0.Setting = %v, want 321", got)
-	}
-	if got := m.Get("d1", "On"); got != 1 {
-		t.Errorf("d1.On = %v, want 1", got)
+
+	for _, gen := range []string{code, legacy} {
+		m := vm.New()
+		m.Set("d1", "ReferenceId", 55)
+		m.Set("d1", "Temperature", 321)
+		if err := m.Load(gen); err != nil {
+			t.Fatalf("vm load: %v", err)
+		}
+		if err := m.Run(200); err != nil && err != vm.ErrStepLimit {
+			t.Fatalf("vm run: %v", err)
+		}
+		if got := m.Get("d0", "Setting"); got != 321 {
+			t.Errorf("d0.Setting = %v, want 321", got)
+		}
+		if got := m.Get("d1", "On"); got != 1 {
+			t.Errorf("d1.On = %v, want 1", got)
+		}
 	}
 }
 
