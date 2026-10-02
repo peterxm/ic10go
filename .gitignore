@@ -13,6 +13,10 @@ coverage.txt
 *.data.ic
 *.data.[0-9]*.ic
 
+# Editor temp copies: the VSCode extension writes .icg-<pid>-<ts>.icg beside the
+# document while compiling/importing (deleted afterwards; ignore crash leftovers).
+.icg-*.icg
+
 # Editor / OS
 .DS_Store
 .idea/
