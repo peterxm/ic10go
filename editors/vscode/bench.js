@@ -295,13 +295,22 @@ class BenchTree {
         // The server-browser list (expand to see address/players/ping/flag).
         const sl = b.serverList || [];
         if (sl.length) {
+            const sortLabel = {
+                name: t('name', '名称'),
+                players: t('players', '人数'),
+                latency: t('latency', '延迟'),
+                country: t('country', '国别'),
+                password: t('no password first', '无密码优先'),
+                address: t('IP', 'IP'),
+            }[b.serverSort || 'name'] || 'name';
             const node = new vscode.TreeItem(
-                t(`Server list (${sl.length})`, `服务器列表（${sl.length}）`),
+                t(`Server list (${sl.length} · by ${sortLabel})`, `服务器列表（${sl.length} · 按${sortLabel}）`),
                 vscode.TreeItemCollapsibleState.Collapsed
             );
             node.iconPath = new vscode.ThemeIcon('list-unordered');
             node.contextValue = 'serverList';
             node._kind = 'serverList';
+            node.tooltip = t('Click the title-bar sort icon to change the order', '点标题栏的排序图标可改排序');
             items.push(node);
         }
 
@@ -359,7 +368,7 @@ class BenchTree {
     // serverListItems renders the server-browser list, one row per server.
     serverListItems() {
         const b = this.bench;
-        const list = b.serverList || [];
+        const list = sortServers(b.serverList || [], b.serverSort || 'name', b.geoCache);
         const missing = [];
         const items = list.map((s) => {
             const host = s.address && s.port ? `${s.address}:${s.port}` : s.address || '';
@@ -517,6 +526,42 @@ async function fetchGeo(ip) {
     } catch (err) {
         return undefined;
     }
+}
+
+// sortServers returns a sorted copy of the server list. mode: name | players |
+// latency | country | password | address.
+function sortServers(list, mode, geoCache) {
+    const byName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+    const geo = (s) => (geoCache && geoCache.get(s.address)) || null;
+    const arr = list.slice();
+    switch (mode) {
+        case 'players':
+            arr.sort((a, b) => (b.players || 0) - (a.players || 0) || byName(a, b));
+            break;
+        case 'latency':
+            arr.sort((a, b) => {
+                const la = a.latency > 0 ? a.latency : 1e9;
+                const lb = b.latency > 0 ? b.latency : 1e9;
+                return la - lb || byName(a, b);
+            });
+            break;
+        case 'country':
+            arr.sort((a, b) => {
+                const ca = (geo(a) && geo(a).country) || '\uffff';
+                const cb = (geo(b) && geo(b).country) || '\uffff';
+                return ca.localeCompare(cb) || byName(a, b);
+            });
+            break;
+        case 'password':
+            arr.sort((a, b) => (a.password ? 1 : 0) - (b.password ? 1 : 0) || byName(a, b));
+            break;
+        case 'address':
+            arr.sort((a, b) => (a.address || '').localeCompare(b.address || '') || byName(a, b));
+            break;
+        default:
+            arr.sort(byName);
+    }
+    return arr;
 }
 
 // isNoChip reports whether an error means the selected holder has no chip (or
@@ -729,10 +774,13 @@ class Bench {
         // Restore the last selected chip and the live-update toggle, so a reload
         // comes back to the same chip.
         this.store = context.workspaceState;
+        this.serverSort = 'name';
         if (this.store) {
             const sel = this.store.get('icg.bench.sel');
             if (sel && typeof sel === 'object') this.sel = sel;
             this.restoreWatch = this.store.get('icg.bench.watching') === true;
+            const ss = this.store.get('icg.bench.serverSort');
+            if (typeof ss === 'string' && ss) this.serverSort = ss;
         }
 
         this.tree = new BenchTree(this);
@@ -749,6 +797,7 @@ class Bench {
         cmd('icg.bench.refresh', () => this.refresh(true));
         cmd('icg.bench.copyServer', () => this.copyServer());
         cmd('icg.bench.copyAddress', (text) => this.copyAddress(text));
+        cmd('icg.bench.serverSort', () => this.pickServerSort());
         cmd('icg.bench.watch', () => this.toggleWatch());
         cmd('icg.bench.pause', () => this.togglePause());
         cmd('icg.bench.step', () => this.runTicks(1));
@@ -1092,6 +1141,26 @@ class Bench {
         if (!text) return this.copyServer();
         vscode.env.clipboard.writeText(text);
         vscode.window.setStatusBarMessage(t(`IC10: copied ${text}`, `IC10: 已复制 ${text}`), 3000);
+    }
+
+    // pickServerSort lets the user choose the server-list order (persisted).
+    async pickServerSort() {
+        const opts = [
+            ['name', t('Name', '名称')],
+            ['players', t('Players', '人数')],
+            ['latency', t('Latency', '延迟')],
+            ['country', t('Country / region', '国别 / 地区')],
+            ['password', t('No password first', '无密码优先')],
+            ['address', t('IP address', 'IP 地址')],
+        ];
+        const pick = await vscode.window.showQuickPick(
+            opts.map(([value, label]) => ({ label, value })),
+            { title: t('Sort the server list', '服务器列表排序') }
+        );
+        if (!pick) return;
+        this.serverSort = pick.value;
+        if (this.store) this.store.update('icg.bench.serverSort', this.serverSort);
+        if (this.tree) this.tree.refresh();
     }
 
     async push() {
