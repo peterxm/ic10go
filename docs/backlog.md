@@ -12,6 +12,12 @@
 
 优先级：**P1 > P2 > P3 > P4 > P5 > P6**。状态用 ✅ 已实现 / 🚧 进行中 / ⬜ 待做。
 
+> ✅ **VSCode 直传原始 IC10 + 上传尾部空行（2026-10，mod 0.4.6 · 扩展 0.7.40）**。以前「上传」只认
+> `.icg`（`activeICG` 要求 `languageId === 'icg'`），打开 `.ic10` 会报「请先打开一个 .icg 文件」；现在
+> `.ic10`/`.ic`（IC10）走 `activeProgram()` 里的 **raw 分支**，把文件内容**原样**经 `testbench push`
+> 上传（不编译）。另外编译产物以 `\n` 结尾，`SetSourceCode` 会把它当成**空的最后一行**（芯片显示 31 行
+> 而实际 30 行指令）；现在 CLI/扩展上传前 `TrimRight("\r\n")`，mod 的 `Push` 也兜底裁剪（含 loader）。
+
 > ✅ **`readById`/`writeById` 改发 `l`/`s`（去掉弃用的 `ld`/`sd`）（2026-10）**。游戏的 IC10 现在支持把
 > **ReferenceId 直接当设备操作数**（`l r0 r4 Setting` / `l r0 704 Setting`），旧的 `ld`/`sd` 已弃用。
 > 真机（0.2.6428）实测：按 id 的 `l`/`s` 与 `ld`/`sd` 在读、写、缺 id 报错上**完全等价**、字节数相同。

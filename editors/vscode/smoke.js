@@ -159,7 +159,7 @@ ext.activate({ subscriptions: [], workspaceState: { get: () => undefined, update
 
 // Panel HTML builders must render sample payloads without throwing.
 const { Bench } = require(path.join(__dirname, 'bench.js'));
-const bench = new Bench({ output: { appendLine: noop }, execCli: noop, config: () => ({}), buildFlags: () => [], activeICG: () => undefined });
+const bench = new Bench({ output: { appendLine: noop }, execCli: noop, config: () => ({}), buildFlags: () => [], activeICG: () => undefined, activeProgram: () => undefined });
 const compare = bench.compareHtml();
 if (!compare.includes('id="cols"') || !compare.includes('id="diffOnly"') || !compare.includes('spbar') || !compare.includes('acquireVsCodeApi')) {
     console.error('compareHtml is missing its render target/script');

@@ -883,10 +883,31 @@ class Bench {
     }
 
     async push() {
-        const doc = this.client.activeICG();
-        if (!doc) return;
+        const prog = this.client.activeProgram();
+        if (!prog) return;
+        const doc = prog.doc;
         const conn = await this.connect(false);
         if (!conn) return;
+
+        // Raw IC10 (.ic/.ic10): upload verbatim, no compile. Trailing newlines
+        // are trimmed so the chip does not gain an empty last line.
+        if (prog.raw) {
+            const code = doc.getText().replace(/\r?\n+$/, '');
+            try {
+                const r = await conn.call('push', { code });
+                vscode.window.setStatusBarMessage(
+                    t(`IC10: uploaded ${r.lines || 0} lines (raw IC10)`,
+                      `IC10: 已上传 ${r.lines || 0} 行（原始 IC10）`),
+                    4000
+                );
+                await this.refresh(false);
+            } catch (err) {
+                this.client.output.appendLine(`IC10 bench push (raw) failed: ${err.message}`);
+                vscode.window.showErrorMessage(t('IC10: upload failed. See the "IC10 Go" output.', 'IC10: 上传失败，详见 "IC10 Go" 输出面板。'));
+            }
+            return;
+        }
+
         await this.client.withTempFile(doc, async (tmp) => {
             const args = ['build', '--json', ...this.client.buildFlags(this.client.config()), tmp];
             const res = await this.client.execCli(args);
@@ -939,7 +960,10 @@ class Bench {
             }
             this.programData = data || undefined;
             try {
-                const r = await conn.call('push', { code, loaders });
+                const r = await conn.call('push', {
+                    code: (code || '').replace(/\r?\n+$/, ''),
+                    loaders: (loaders || []).map((l) => (l || '').replace(/\r?\n+$/, '')),
+                });
                 const lines = r.lines || 0;
                 const tail = chipLabel ? ` [${chipLabel}]` : '';
                 const loaderNote = loaders.length ? ` (+${loaders.length} loader)` : '';

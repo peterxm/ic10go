@@ -127,7 +127,7 @@ func main() {
 | `IC10 Go: Annotate IC10 (disasm)` | 给 `.ic`/`.ic10` 加跳转目标注释 |
 | `IC10 Go: Show CFG (Mermaid)` | 在 Markdown 预览中显示 `.icg` 的**源码级控制流图**（Mermaid，按函数分组；条件/分支/循环/break/continue 一目了然） |
 | `IC10 Go: Restart Language Server` | 重启语言服务器 |
-| `IC10 Go: Upload to Game` | 编译当前 `.icg` 并上传到游戏内的芯片（`Ctrl+Alt+U`；多芯片源码会先弹芯片选择；有安装代码/loader 会先自动运行） |
+| `IC10 Go: Upload to Game` | 上传到游戏内的芯片：当前是 `.icg` 就先**编译**再上传（`Ctrl+Alt+U`；多芯片源码会先弹芯片选择；有安装代码/loader 会先自动运行），当前是 `.ic10`/`.ic` 则**原样上传**（便于测试社区脚本，尾部空行会被去掉） |
 | `IC10 Go: Download from Game` | 从选中芯片下载当前 IC10 源码到新编辑器，可一键反编译为 `.icg` 或另存为文件（`Ctrl+Alt+D`） |
 | `IC10 Go: Connect to Game Testbench` | 连接游戏内测试台 mod（默认 `127.0.0.1:7800`） |
 | `IC10 Go: Disconnect from Testbench` | 断开连接 |

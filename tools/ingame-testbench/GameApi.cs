@@ -583,13 +583,17 @@ namespace Ic10Go.Testbench
             var chip = handle.Chip;
             if (chip == null) throw new BenchError("no-chip", "selected holder is not a ProgrammableChip");
 
+            // A trailing newline would become an empty last line on the chip, so
+            // trim it (and from the one-time loaders) before loading the source.
+            code = (code ?? "").TrimEnd('\r', '\n');
+
             int loaderOps = 0;
             if (loaders != null)
             {
                 foreach (var loader in loaders)
                 {
                     if (string.IsNullOrEmpty(loader)) continue;
-                    chip.SetSourceCode(loader);
+                    chip.SetSourceCode(loader.TrimEnd('\r', '\n'));
                     int ops = Math.Max(4096, LineCount(loader) * 16);
                     loaderOps += ops;
                     chip.Execute(ops); // bounded: loaders are straight-line stores

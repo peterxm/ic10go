@@ -458,6 +458,21 @@ class LspClient {
         return editor.document;
     }
 
+    // activeProgram returns the active editor's document plus whether it must be
+    // uploaded raw: .icg is compiled first, .ic/.ic10 (IC10) goes verbatim.
+    activeProgram() {
+        const editor = vscode.window.activeTextEditor;
+        if (editor) {
+            const id = editor.document.languageId;
+            if (id === 'icg') return { doc: editor.document, raw: false };
+            if (id === 'ic10') return { doc: editor.document, raw: true };
+        }
+        vscode.window.showWarningMessage(
+            t('IC10 Go: open a .icg or .ic10 file first.', 'IC10 Go: 请先打开一个 .icg 或 .ic10 文件。')
+        );
+        return undefined;
+    }
+
     // withTempFile writes the document to a temp .icg file and calls fn(path).
     // It prefers the document's own directory so relative `import`s resolve the
     // same way they do in the editor, falling back to the OS temp dir for

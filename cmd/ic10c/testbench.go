@@ -805,6 +805,12 @@ func benchPush(addr, file string, chip any, asName string, stableIns, dataAccess
 		code, loaders = block.Code, block.Loaders
 		blockName = block.Name
 	}
+	// The IC10 editor (and the chip) count a trailing newline as an empty last
+	// line, so trim it before uploading.
+	code = strings.TrimRight(code, "\r\n")
+	for i := range loaders {
+		loaders[i] = strings.TrimRight(loaders[i], "\r\n")
+	}
 
 	c, rc := benchDial(addr)
 	if c == nil {
