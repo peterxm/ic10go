@@ -571,6 +571,7 @@ var Commands = []Command{
 			{Long: "--range", Arg: "N", Desc: text{EN: "locate --at: also list hosts within N (approximate)", ZH: "locate --at：再列出 N 格内的芯片（大致位置）"}},
 			{Long: "--offset", Arg: "DEG", Desc: text{EN: "hud: calibrate the displayed heading (does not move the arrow)", ZH: "hud：校准显示的朝向数字（不影响箭头方向）"}},
 			{Long: "--as", Arg: "NAME", Desc: text{EN: "push: which `chip` block to upload (multi-chip sources)", ZH: "push：多芯片源码中上传哪个 `chip` 块"}},
+			{Long: "--raw", Desc: text{EN: "push: send the file as raw IC10 (no .icg compile)", ZH: "push：把文件当原始 IC10 直接上传（不编译 .icg）"}},
 			{Long: "--data-access", Arg: "get|stack", Desc: text{EN: "push: data-segment access; use `stack` on a device host (e.g. air conditioner)", ZH: "push：数据段访问方式；设备 host（如空调）用 `stack`"}},
 			{Long: "--all", Desc: text{EN: "state: include the whole stack", ZH: "state：返回整段栈"}},
 			{Long: "--force", Desc: text{EN: "set: write even if the device reports the logic as read-only", ZH: "set：即使设备报告该逻辑为只读也强制写入"}},

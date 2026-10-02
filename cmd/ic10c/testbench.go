@@ -38,6 +38,7 @@ func cmdTestbench(args []string) int {
 	radius := 0.0
 	offset := 0.0
 	offsetSet := false
+	rawPush := false
 	interval := 250
 	count := 0
 	sub := ""
@@ -98,6 +99,8 @@ func cmdTestbench(args []string) int {
 			i++
 		case a == "--json":
 			asJSON = true
+		case a == "--raw":
+			rawPush = true
 		case a == "--all":
 			all = true
 		case a == "--force":
@@ -149,7 +152,7 @@ func cmdTestbench(args []string) int {
 		if len(rest) > 0 {
 			file = rest[0]
 		}
-		return benchPush(addr, file, chip, asName, stableIns, dataAccessStack, libDirs, lim, asJSON)
+		return benchPush(addr, file, chip, asName, stableIns, dataAccessStack, libDirs, lim, asJSON, rawPush)
 	case "state":
 		return benchState(addr, chip, all, asJSON)
 	case "program":
@@ -760,30 +763,44 @@ func benchPorts(addr string, chip any, asJSON bool) int {
 	return 0
 }
 
-func benchPush(addr, file string, chip any, asName string, stableIns, dataAccessStack bool, libDirs []string, lim limitArgs, asJSON bool) int {
+func benchPush(addr, file string, chip any, asName string, stableIns, dataAccessStack bool, libDirs []string, lim limitArgs, asJSON, raw bool) int {
 	if file == "" {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "testbench"))
 		return 2
 	}
-	opts := ic10.Options{
-		StableInsOrder:  stableIns,
-		DataAccessStack: dataAccessStack,
-		MaxLines:        lim.lines,
-		MaxBytes:        lim.bytes,
-		MaxLineLen:      lim.line,
-		Imports:         true,
-		LibDirs:         libDirs,
+	var code string
+	var loaders []string
+	blockName := ""
+	if raw {
+		// Push IC10 verbatim (e.g. a community script): no .icg compilation.
+		data, err := os.ReadFile(file)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 2
+		}
+		code = strings.TrimRight(string(data), "\r\n")
+	} else {
+		opts := ic10.Options{
+			StableInsOrder:  stableIns,
+			DataAccessStack: dataAccessStack,
+			MaxLines:        lim.lines,
+			MaxBytes:        lim.bytes,
+			MaxLineLen:      lim.line,
+			Imports:         true,
+			LibDirs:         libDirs,
+		}
+		compiled, rc := benchCompileResult(file, opts)
+		if rc != 0 {
+			return rc
+		}
+		block, err := pickChipBlock(compiled.Chips, asName, chipNameOf(chip))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 2
+		}
+		code, loaders = block.Code, block.Loaders
+		blockName = block.Name
 	}
-	compiled, rc := benchCompileResult(file, opts)
-	if rc != 0 {
-		return rc
-	}
-	block, err := pickChipBlock(compiled.Chips, asName, chipNameOf(chip))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "ic10c:", err)
-		return 2
-	}
-	code, loaders := block.Code, block.Loaders
 
 	c, rc := benchDial(addr)
 	if c == nil {
@@ -799,8 +816,8 @@ func benchPush(addr, file string, chip any, asName string, stableIns, dataAccess
 		return printJSON(res)
 	}
 	label := ""
-	if block.Name != "" {
-		label = " (block " + block.Name + ")"
+	if blockName != "" {
+		label = " (block " + blockName + ")"
 	}
 	fmt.Printf("uploaded %d lines to %s%s", res.Lines, chipName(res.Chip), label)
 	if len(loaders) > 0 {
