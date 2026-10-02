@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.45",
+  "version": "0.7.46",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -328,6 +328,11 @@
         "icon": "$(sort-precedence)"
       },
       {
+        "command": "icg.bench.pingServers",
+        "title": "%cmd.bench.pingServers%",
+        "icon": "$(pulse)"
+      },
+      {
         "command": "icg.bench.watch",
         "title": "%cmd.bench.watch%",
         "icon": "$(pulse)"
@@ -501,6 +506,11 @@
           "command": "icg.bench.serverSort",
           "when": "view == icg.bench",
           "group": "navigation@4.7"
+        },
+        {
+          "command": "icg.bench.pingServers",
+          "when": "view == icg.bench",
+          "group": "navigation@4.8"
         },
         {
           "command": "icg.bench.push",

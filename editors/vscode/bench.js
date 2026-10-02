@@ -16,6 +16,7 @@
 
 const vscode = require('vscode');
 const net = require('net');
+const dgram = require('dgram');
 const path = require('path');
 
 function t(en, zh) {
@@ -303,8 +304,9 @@ class BenchTree {
                 password: t('no password first', '无密码优先'),
                 address: t('IP', 'IP'),
             }[b.serverSort || 'name'] || 'name';
+            const pinging = b.pinging ? ` · ping ${b.pinging.done}/${b.pinging.total}` : '';
             const node = new vscode.TreeItem(
-                t(`Server list (${sl.length} · by ${sortLabel})`, `服务器列表（${sl.length} · 按${sortLabel}）`),
+                t(`Server list (${sl.length} · by ${sortLabel}${pinging})`, `服务器列表（${sl.length} · 按${sortLabel}${pinging}）`),
                 vscode.TreeItemCollapsibleState.Collapsed
             );
             node.iconPath = new vscode.ThemeIcon('list-unordered');
@@ -368,9 +370,14 @@ class BenchTree {
     // serverListItems renders the server-browser list, one row per server.
     serverListItems() {
         const b = this.bench;
-        const list = sortServers(b.serverList || [], b.serverSort || 'name', b.geoCache);
+        const list = sortServers(b.serverList || [], b.serverSort || 'name', b.geoCache, b.pingCache);
         const missing = [];
+        const ping = (s) => {
+            const c = b.pingCache && b.pingCache.get(`${s.address}:${s.port}`);
+            return c && c.rtt != null ? c.rtt : 0;
+        };
         const items = list.map((s) => {
+            const rtt = ping(s);
             const host = s.address && s.port ? `${s.address}:${s.port}` : s.address || '';
             const geo = b.geoCache && b.geoCache.get(s.address);
             const flag = geo && geo.emoji ? geo.emoji + ' ' : '';
@@ -384,14 +391,14 @@ class BenchTree {
             if (host) bits.push(host);
             if (geo && geo.country) bits.push(geo.emoji ? `${geo.emoji} ${geo.country}` : geo.country);
             if (s.players != null || s.maxPlayers) bits.push(`${s.players || 0}/${s.maxPlayers || 0}`);
-            if (s.latency > 0) bits.push(`${s.latency}ms`);
+            if (rtt > 0) bits.push(`${rtt}ms`);
             item.description = bits.join(' · ');
             item.tooltip = [
                 s.name && t(`name: ${s.name}`, `名称：${s.name}`),
                 host && t(`address: ${host}`, `地址：${host}`),
                 geo && geo.country && t(`region: ${geo.country}${geo.region ? ' · ' + geo.region : ''}`,
                     `地区：${geo.country}${geo.region ? ' · ' + geo.region : ''}`),
-                s.latency > 0 && t(`latency: ${s.latency} ms`, `延迟：${s.latency} ms`),
+                rtt > 0 && t(`latency: ${rtt} ms`, `延迟：${rtt} ms`),
                 s.players != null || s.maxPlayers
                     ? t(`players: ${s.players || 0}/${s.maxPlayers || 0}`, `在线：${s.players || 0}/${s.maxPlayers || 0}`)
                     : '',
@@ -406,6 +413,15 @@ class BenchTree {
             return item;
         });
         if (missing.length) b.lookupGeos(missing);
+        // Ping any entries we do not have a fresh RTT for (cached 2 min).
+        if (
+            !b.pinging &&
+            (b.serverList || []).some(
+                (s) => s.address && s.port && !(b.pingCache && b.pingCache.has(`${s.address}:${s.port}`))
+            )
+        ) {
+            b.pingAll(false);
+        }
         return items;
     }
 
@@ -530,9 +546,13 @@ async function fetchGeo(ip) {
 
 // sortServers returns a sorted copy of the server list. mode: name | players |
 // latency | country | password | address.
-function sortServers(list, mode, geoCache) {
+function sortServers(list, mode, geoCache, pingCache) {
     const byName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
     const geo = (s) => (geoCache && geoCache.get(s.address)) || null;
+    const ping = (s) => {
+        const c = pingCache && pingCache.get(`${s.address}:${s.port}`);
+        return c && c.rtt != null ? c.rtt : 0;
+    };
     const arr = list.slice();
     switch (mode) {
         case 'players':
@@ -540,8 +560,8 @@ function sortServers(list, mode, geoCache) {
             break;
         case 'latency':
             arr.sort((a, b) => {
-                const la = a.latency > 0 ? a.latency : 1e9;
-                const lb = b.latency > 0 ? b.latency : 1e9;
+                const la = ping(a) > 0 ? ping(a) : 1e9;
+                const lb = ping(b) > 0 ? ping(b) : 1e9;
                 return la - lb || byName(a, b);
             });
             break;
@@ -562,6 +582,44 @@ function sortServers(list, mode, geoCache) {
             arr.sort(byName);
     }
     return arr;
+}
+
+// The RakNet offline-message magic, required for a server to answer an
+// unconnected ping (ID_UNCONNECTED_PING 0x01 -> ID_UNCONNECTED_PONG 0x1c).
+const RAKNET_MAGIC = Buffer.from([
+    0x00, 0xff, 0xff, 0x00, 0xfe, 0xfe, 0xfe, 0xfe, 0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78,
+]);
+
+// raknetPing resolves the round-trip time to a Stationeers server in ms, or
+// null if it does not answer within timeoutMs.
+function raknetPing(host, port, timeoutMs) {
+    return new Promise((resolve) => {
+        let done = false;
+        const sock = dgram.createSocket('udp4');
+        const pkt = Buffer.alloc(1 + 8 + 16 + 8);
+        pkt[0] = 0x01;
+        pkt.writeBigUInt64BE(BigInt(Date.now()), 1);
+        RAKNET_MAGIC.copy(pkt, 9);
+        pkt.writeBigUInt64BE(0n, 25);
+        const start = Date.now();
+        const finish = (v) => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            try { sock.close(); } catch (err) { /* ignore */ }
+            resolve(v);
+        };
+        const timer = setTimeout(() => finish(null), timeoutMs);
+        sock.on('message', (msg) => {
+            if (msg.length && msg[0] === 0x1c) finish(Date.now() - start);
+        });
+        sock.on('error', () => finish(null));
+        try {
+            sock.send(pkt, 0, pkt.length, port, host, (err) => { if (err) finish(null); });
+        } catch (err) {
+            finish(null);
+        }
+    });
 }
 
 // isNoChip reports whether an error means the selected holder has no chip (or
@@ -775,6 +833,7 @@ class Bench {
         // comes back to the same chip.
         this.store = context.workspaceState;
         this.serverSort = 'name';
+        this.pingCache = new Map(); // "ip:port" -> {rtt, at}
         if (this.store) {
             const sel = this.store.get('icg.bench.sel');
             if (sel && typeof sel === 'object') this.sel = sel;
@@ -798,6 +857,7 @@ class Bench {
         cmd('icg.bench.copyServer', () => this.copyServer());
         cmd('icg.bench.copyAddress', (text) => this.copyAddress(text));
         cmd('icg.bench.serverSort', () => this.pickServerSort());
+        cmd('icg.bench.pingServers', () => this.pingAll(true));
         cmd('icg.bench.watch', () => this.toggleWatch());
         cmd('icg.bench.pause', () => this.togglePause());
         cmd('icg.bench.step', () => this.runTicks(1));
@@ -1160,6 +1220,37 @@ class Bench {
         if (!pick) return;
         this.serverSort = pick.value;
         if (this.store) this.store.update('icg.bench.serverSort', this.serverSort);
+        if (this.tree) this.tree.refresh();
+    }
+
+    // pingAll refreshes RakNet pings for the server list (uncached or stale),
+    // 24 at a time. force re-pings everything.
+    async pingAll(force) {
+        const list = this.serverList || [];
+        if (!list.length || this.pinging) return;
+        if (!this.pingCache) this.pingCache = new Map();
+        const TTL = 120000;
+        const now = Date.now();
+        const todo = list.filter((s) => {
+            if (!s.address || !s.port) return false;
+            const c = this.pingCache.get(`${s.address}:${s.port}`);
+            return force || !c || now - c.at > TTL;
+        });
+        if (!todo.length) return;
+        this.pinging = { done: 0, total: todo.length };
+        if (this.tree) this.tree.refresh();
+        const queue = todo.slice();
+        const worker = async () => {
+            while (queue.length) {
+                const s = queue.shift();
+                const rtt = await raknetPing(s.address, s.port, 2000);
+                this.pingCache.set(`${s.address}:${s.port}`, { rtt, at: Date.now() });
+                this.pinging.done++;
+                if (this.pinging.done % 10 === 0 && this.tree) this.tree.refresh();
+            }
+        };
+        await Promise.all(Array.from({ length: 24 }, worker));
+        this.pinging = undefined;
         if (this.tree) this.tree.refresh();
     }
 

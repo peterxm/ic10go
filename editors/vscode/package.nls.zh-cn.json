@@ -50,6 +50,7 @@
   "cmd.bench.copyServer": "IC10 Go: 复制服务器地址",
   "cmd.bench.copyAddress": "IC10 Go: 复制地址",
   "cmd.bench.serverSort": "IC10 Go: 服务器列表排序",
+  "cmd.bench.pingServers": "IC10 Go: Ping 服务器列表",
   "cmd.bench.watch": "IC10 Go: 切换实时更新",
   "cmd.bench.runScenario": "IC10 Go: 运行测试台场景",
   "cmd.bench.openPanel": "IC10 Go: 打开芯片状态面板",
