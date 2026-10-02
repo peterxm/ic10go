@@ -8,6 +8,7 @@
 #
 # Usage:
 #   tools/ingame-testbench/deploy.sh            # build + install (must not be running)
+#   tools/ingame-testbench/deploy.sh --wait     # wait for the game to exit, then install
 #   tools/ingame-testbench/deploy.sh --force    # install even if the game is running
 #
 # Overridable env: STATIONEERS_DIR, MODS_DIR, DOTNET.
@@ -16,7 +17,13 @@ set -e
 here=$(cd "$(dirname "$0")" && pwd)
 
 force=0
-[ "$1" = "--force" ] && force=1
+wait_exit=0
+for arg in "$@"; do
+    case "$arg" in
+        --force) force=1 ;;
+        --wait) wait_exit=1 ;;
+    esac
+done
 
 # --- locate the game + mods folder -------------------------------------------
 stationeers=${STATIONEERS_DIR:-}
@@ -39,10 +46,17 @@ fi
 [ -n "$mods" ] || { echo "deploy: set MODS_DIR to .../My Games/Stationeers/mods/ic10go-testbench" >&2; exit 1; }
 
 # --- safety: never swap the DLL under a running game --------------------------
-if pgrep -f 'rocketstation.exe' >/dev/null 2>&1 && [ "$force" -ne 1 ]; then
-    echo "deploy: Stationeers is running — refusing to swap the mod DLL."
-    echo "        Quit the game to the desktop, then run this again (or --force)."
-    exit 1
+if pgrep -f 'rocketstation.exe' >/dev/null 2>&1; then
+    if [ "$wait_exit" -eq 1 ]; then
+        echo "deploy: Stationeers is running — waiting for it to exit..."
+        while pgrep -f 'rocketstation.exe' >/dev/null 2>&1; do sleep 2; done
+        sleep 3   # let the process release the DLL
+        echo "deploy: game exited."
+    elif [ "$force" -ne 1 ]; then
+        echo "deploy: Stationeers is running — refusing to swap the mod DLL."
+        echo "        Quit the game to the desktop, then run this again (--wait or --force)."
+        exit 1
+    fi
 fi
 
 # --- build --------------------------------------------------------------------
