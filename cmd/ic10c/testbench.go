@@ -148,6 +148,8 @@ func cmdTestbench(args []string) int {
 		return benchPlayers(addr, asJSON)
 	case "server":
 		return benchServer(addr, asJSON)
+	case "netdump":
+		return benchNetDump(addr)
 	case "locate":
 		return benchLocate(addr, chipName, programFile, atArg, radius, asJSON)
 	case "hud":
@@ -313,6 +315,28 @@ func benchServer(addr string, asJSON bool) int {
 	if s.ConnectionsError != "" {
 		fmt.Printf("connErr %s\n", s.ConnectionsError)
 	}
+	return 0
+}
+
+// benchNetDump prints the mod's networking diagnostic dump (raw JSON).
+func benchNetDump(addr string) int {
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	raw, err := c.Call("netdump", nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	var v any
+	if json.Unmarshal(raw, &v) != nil {
+		fmt.Println(string(raw))
+		return 0
+	}
+	b, _ := json.MarshalIndent(v, "", "  ")
+	fmt.Println(string(b))
 	return 0
 }
 

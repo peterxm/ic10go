@@ -599,6 +599,99 @@ namespace Ic10Go.Testbench
             catch { return ""; }
         }
 
+        /// <summary>Diagnostic dump of the networking objects, to locate where the
+        /// connected server's address lives (RakNet has no compile reference).</summary>
+        public static JObject NetDump()
+        {
+            var o = new JObject();
+            try
+            {
+                object nm = null;
+                try
+                {
+                    var f = typeof(NetworkManager).GetField("Instance",
+                        BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                    if (f != null) nm = f.GetValue(null);
+                }
+                catch { }
+                o["instanceType"] = nm != null ? nm.GetType().FullName : "";
+                o["hostClient"] = Dump(Prop(nm, "HostClient"));
+                o["rakNet"] = Dump(Prop(nm, "rakNet"));
+                o["transport"] = Dump(Prop(nm, "CurrentTransport"));
+                o["steamLobby"] = Dump(Prop(nm, "steamLobby"));
+                try
+                {
+                    var list = Prop(nm, "GameSessionList") as System.Collections.IEnumerable;
+                    var arr = new JArray();
+                    if (list != null)
+                    {
+                        int n = 0;
+                        foreach (var s in list)
+                        {
+                            if (++n > 40) break;
+                            var g = new JObject();
+                            foreach (var name in new[] { "Name", "Address", "Port", "SteamId", "MapName", "Players" })
+                            {
+                                var v = Prop(s, name);
+                                if (v != null) g[name] = v.ToString();
+                            }
+                            arr.Add(g);
+                        }
+                    }
+                    o["sessions"] = arr;
+                }
+                catch (Exception se) { o["sessionsError"] = se.Message; }
+            }
+            catch (Exception e) { o["error"] = e.Message; }
+            return o;
+        }
+
+        /// <summary>Reads a named property or field (public or not, instance or
+        /// static) from an object, or null.</summary>
+        private static object Prop(object o, string name)
+        {
+            var t = o != null ? o.GetType() : typeof(NetworkManager);
+            try
+            {
+                var p = t.GetProperty(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (p != null && p.CanRead && p.GetIndexParameters().Length == 0)
+                {
+                    var get = p.GetGetMethod(true);
+                    return p.GetValue(get != null && get.IsStatic ? null : o, null);
+                }
+            }
+            catch { }
+            try
+            {
+                var f = t.GetField(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (f != null) return f.GetValue(f.IsStatic ? null : o);
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>Shallow reflection dump: type, ToString and each non-null field
+        /// or property stringified (capped).</summary>
+        private static JToken Dump(object o)
+        {
+            if (o == null) return JValue.CreateNull();
+            var t = o.GetType();
+            var j = new JObject { ["type"] = t.FullName };
+            try { j["toString"] = o.ToString(); } catch { }
+            int n = 0;
+            foreach (var f in t.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                if (f.Name.Contains("k__BackingField") || ++n > 60) continue;
+                try { var v = f.GetValue(o); if (v != null) j[f.Name] = v.ToString(); } catch { }
+            }
+            foreach (var p in t.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                if (!p.CanRead || p.GetIndexParameters().Length > 0 || ++n > 90) continue;
+                try { var v = p.GetValue(o, null); if (v != null) j[p.Name] = v.ToString(); } catch { }
+            }
+            return j;
+        }
+
         /// <summary>Resolves a player name to the live entity to track: their human
         /// (online, or a body still in the world) or their body bag when dead. Null
         /// when the name is unknown. Matches SteamName / trackable name, and human /

@@ -51,6 +51,7 @@ namespace Ic10Go.Testbench
                 case "world.load": return WorldLoad(args);
                 case "world.state": return WorldState();
                 case "server": return GameApi.ServerInfo();
+                case "netdump": return GameApi.NetDump();
                 default: throw new BenchError("bad-request", "unknown command \"" + cmd + "\"");
             }
         }

@@ -547,6 +547,7 @@ var Commands = []Command{
 				"  list                      列出可编程芯片\n" +
 				"  players                   列出玩家（在线/离线，按距离）\n" +
 				"  server                    当前网络会话（客户端连的服务器地址 / 本机主机）\n" +
+				"  netdump                   网络诊断转储（原始 JSON）\n" +
 				"  locate [--chip NAME]      芯片位置（世界坐标）\n" +
 				"                            --program FILE：按源码找出跑该程序的芯片\n" +
 				"                            --at X Y Z：按坐标找芯片；--range N 再列大致位置\n" +
