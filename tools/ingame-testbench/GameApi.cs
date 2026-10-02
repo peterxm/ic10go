@@ -23,6 +23,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using Assets.Scripts;
+using Assets.Scripts.Networking;
 using Assets.Scripts.Objects;
 using Assets.Scripts.Objects.Electrical;
 using Assets.Scripts.Objects.Entities;
@@ -522,6 +523,38 @@ namespace Ic10Go.Testbench
             var arr = new JArray();
             foreach (var o in PlayerRows()) arr.Add(o);
             return arr;
+        }
+
+        /// <summary>The game's current network session: for a client, the address
+        /// of the server it is connected to. Read from
+        /// NetworkManager.Instance.CurrentGameSession.</summary>
+        public static JObject ServerInfo()
+        {
+            var o = new JObject();
+            try
+            {
+                // All of these are static members of NetworkManager.
+                try { o["state"] = NetworkManager.NetworkState.ToString(); } catch { }
+                o["role"] = NetworkManager.IsServer ? "server" : "client";
+                try { o["localIp"] = NetworkManager.GetIPv4Address(); } catch { }
+
+                GameSession gs = NetworkManager.CurrentGameSession;
+                if (gs != null)
+                {
+                    o["name"] = gs.Name ?? "";
+                    o["address"] = gs.Address ?? "";
+                    o["port"] = gs.Port ?? "";
+                    o["map"] = gs.MapName ?? "";
+                    o["version"] = gs.Version ?? "";
+                    o["players"] = gs.Players;
+                    o["maxPlayers"] = gs.MaxPlayers;
+                    o["latency"] = gs.Latency;
+                    o["password"] = gs.Password;
+                    try { o["steamId"] = gs.SteamId.ToString(); } catch { }
+                }
+            }
+            catch (Exception e) { o["error"] = e.Message; }
+            return o;
         }
 
         /// <summary>Resolves a player name to the live entity to track: their human

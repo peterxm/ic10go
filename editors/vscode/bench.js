@@ -239,6 +239,37 @@ class BenchTree {
         conn.contextValue = 'connection';
         items.push(conn);
 
+        // The current network session: for a client, the server it is connected
+        // to (address:port). Click to copy.
+        const sv = b.server;
+        if (sv && (sv.address || sv.localIp || sv.name || sv.role === 'server')) {
+            const addr = sv.address || sv.localIp || '';
+            const full = addr && sv.port ? `${addr}:${sv.port}` : addr;
+            const item = new vscode.TreeItem(
+                full ? t(`Server: ${full}`, `服务器：${full}`) : sv.name || t('Server', '服务器'),
+                vscode.TreeItemCollapsibleState.None
+            );
+            item.iconPath = new vscode.ThemeIcon('globe');
+            const bits = [];
+            if (sv.name && sv.name !== addr) bits.push(sv.name);
+            if (sv.map) bits.push(sv.map);
+            if (sv.role === 'server') bits.push(t('host', '主机'));
+            if (sv.players || sv.maxPlayers) bits.push(`${sv.players || 0}/${sv.maxPlayers || 0}`);
+            item.description = bits.join(' · ');
+            item.tooltip = [
+                sv.name && t(`name: ${sv.name}`, `名称：${sv.name}`),
+                full && t(`address: ${full}`, `地址：${full}`),
+                sv.map && t(`map: ${sv.map}`, `地图：${sv.map}`),
+                sv.steamId && `steamId: ${sv.steamId}`,
+                sv.latency != null && t(`latency: ${sv.latency} ms`, `延迟：${sv.latency} ms`),
+                sv.role && t(`role: ${sv.role}`, `角色：${sv.role}`),
+                full && t('click to copy', '点击复制'),
+            ].filter(Boolean).join('\n');
+            item.contextValue = 'server';
+            item.command = { command: 'icg.bench.copyServer', title: t('Copy address', '复制地址') };
+            items.push(item);
+        }
+
         const chips = b.chips || [];
         const sel = b.state && b.state.chip;
         if (b.noChip) {
@@ -613,6 +644,7 @@ class Bench {
         cmd('icg.bench.push', () => this.push());
         cmd('icg.bench.pull', () => this.pull());
         cmd('icg.bench.refresh', () => this.refresh(true));
+        cmd('icg.bench.copyServer', () => this.copyServer());
         cmd('icg.bench.watch', () => this.toggleWatch());
         cmd('icg.bench.pause', () => this.togglePause());
         cmd('icg.bench.step', () => this.runTicks(1));
@@ -788,6 +820,11 @@ class Bench {
         }
         try {
             this.noChip = false;
+            try {
+                this.server = await c.call('server', {});
+            } catch (err) {
+                this.server = undefined; // older mod without the `server` command
+            }
             const list = await c.call('chip.list', {}).catch(() => ({ chips: [] }));
             const all = list.chips || [];
             // Drop a stale pinned selection against the full list (the game
@@ -880,6 +917,19 @@ class Bench {
         } catch (err) {
             vscode.window.showErrorMessage(t('IC10: select chip failed: ', 'IC10: 选择芯片失败：') + err.message);
         }
+    }
+
+    // copyServer copies the current server address to the clipboard.
+    copyServer() {
+        const s = this.server;
+        const addr = s && (s.address || s.localIp);
+        const full = addr ? (s.port ? `${addr}:${s.port}` : addr) : '';
+        if (!full) {
+            vscode.window.showInformationMessage(t('IC10: no server address yet.', 'IC10: 还没有服务器地址。'));
+            return;
+        }
+        vscode.env.clipboard.writeText(full);
+        vscode.window.setStatusBarMessage(t(`IC10: copied ${full}`, `IC10: 已复制 ${full}`), 3000);
     }
 
     async push() {

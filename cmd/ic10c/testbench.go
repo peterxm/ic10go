@@ -146,6 +146,8 @@ func cmdTestbench(args []string) int {
 		return benchList(addr, asJSON)
 	case "players":
 		return benchPlayers(addr, asJSON)
+	case "server":
+		return benchServer(addr, asJSON)
 	case "locate":
 		return benchLocate(addr, chipName, programFile, atArg, radius, asJSON)
 	case "hud":
@@ -225,6 +227,63 @@ func benchPing(addr string, asJSON bool) int {
 	fmt.Printf("game       %s\n", h.GameVersion)
 	fmt.Printf("paused     %v\n", h.Paused)
 	fmt.Printf("chips      %d\n", h.Chips)
+	return 0
+}
+
+// benchServer prints the game's current network session (the server a client
+// is connected to, or the local host).
+func benchServer(addr string, asJSON bool) int {
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	s, err := c.Server()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if asJSON {
+		return printJSON(s)
+	}
+	role := s.Role
+	switch role {
+	case "client":
+		role = "客户端（连入）"
+	case "server":
+		role = "主机（本机开服）"
+	}
+	host := s.Address
+	if host == "" {
+		host = s.LocalIP
+	}
+	if host != "" && s.Port != "" {
+		host += ":" + s.Port
+	}
+	if role != "" {
+		fmt.Printf("role    %s\n", role)
+	}
+	if s.State != "" {
+		fmt.Printf("state   %s\n", s.State)
+	}
+	if s.Name != "" {
+		fmt.Printf("name    %s\n", s.Name)
+	}
+	if host != "" {
+		fmt.Printf("server  %s\n", host)
+	}
+	if s.Map != "" {
+		fmt.Printf("map     %s\n", s.Map)
+	}
+	if s.MaxPlayers > 0 {
+		fmt.Printf("players %d/%d\n", s.Players, s.MaxPlayers)
+	}
+	if s.SteamID != "" {
+		fmt.Printf("steamId %s\n", s.SteamID)
+	}
+	if s.Error != "" {
+		fmt.Printf("error   %s\n", s.Error)
+	}
 	return 0
 }
 

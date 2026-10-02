@@ -203,6 +203,34 @@ func (c *Client) Ping() (*Hello, error) {
 	return &h, nil
 }
 
+// ServerInfo is the game's current network session as reported by the `server`
+// command. For a client, Address/Port identify the server it is connected to.
+type ServerInfo struct {
+	State      string `json:"state,omitempty"`
+	Role       string `json:"role,omitempty"` // "client" or "server"
+	LocalIP    string `json:"localIp,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Address    string `json:"address,omitempty"`
+	Port       string `json:"port,omitempty"`
+	Map        string `json:"map,omitempty"`
+	Version    string `json:"version,omitempty"`
+	Players    int    `json:"players,omitempty"`
+	MaxPlayers int    `json:"maxPlayers,omitempty"`
+	Latency    int    `json:"latency,omitempty"`
+	Password   bool   `json:"password,omitempty"`
+	SteamID    string `json:"steamId,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+// Server returns the game's current network session.
+func (c *Client) Server() (*ServerInfo, error) {
+	var s ServerInfo
+	if err := c.CallInto("server", nil, &s); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 // Hello describes the running mod.
 type Hello struct {
 	Mod         string  `json:"mod"`

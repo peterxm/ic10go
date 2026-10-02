@@ -50,6 +50,7 @@ namespace Ic10Go.Testbench
                 case "world.saves": return new JObject { ["saves"] = GameApi.Saves() };
                 case "world.load": return WorldLoad(args);
                 case "world.state": return WorldState();
+                case "server": return GameApi.ServerInfo();
                 default: throw new BenchError("bad-request", "unknown command \"" + cmd + "\"");
             }
         }

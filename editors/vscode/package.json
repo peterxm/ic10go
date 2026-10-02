@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.40",
+  "version": "0.7.41",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -313,6 +313,10 @@
         "command": "icg.bench.refresh",
         "title": "%cmd.bench.refresh%",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "icg.bench.copyServer",
+        "title": "%cmd.bench.copyServer%"
       },
       {
         "command": "icg.bench.watch",
