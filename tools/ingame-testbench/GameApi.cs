@@ -539,6 +539,7 @@ namespace Ic10Go.Testbench
                 try { o["localIp"] = NetworkManager.GetIPv4Address(); } catch { }
 
                 GameSession gs = NetworkManager.CurrentGameSession;
+                if (gs == null) gs = SelectedSession();
                 if (gs != null)
                 {
                     o["name"] = gs.Name ?? "";
@@ -616,6 +617,7 @@ namespace Ic10Go.Testbench
                 catch { }
                 o["instanceType"] = nm != null ? nm.GetType().FullName : "";
                 o["hostClient"] = Dump(Prop(nm, "HostClient"));
+                o["selected"] = Dump(SelectedSession());
                 o["rakNet"] = Dump(Prop(nm, "rakNet"));
                 o["transport"] = Dump(Prop(nm, "CurrentTransport"));
                 o["steamLobby"] = Dump(Prop(nm, "steamLobby"));
@@ -644,6 +646,28 @@ namespace Ic10Go.Testbench
             }
             catch (Exception e) { o["error"] = e.Message; }
             return o;
+        }
+
+        /// <summary>The server the player joined, from the server browser: the
+        /// NetworkManager only sets CurrentGameSession for some transports, but
+        /// ServerListManager keeps the selected/joined entry. Null if never set.</summary>
+        private static GameSession SelectedSession()
+        {
+            try
+            {
+                var objs = UnityEngine.Resources.FindObjectsOfTypeAll(typeof(ServerListManager));
+                foreach (var o in objs)
+                {
+                    var m = o as ServerListManager;
+                    if (m == null) continue;
+                    var cur = Member(m, "TargetServerItem") as GameSession;
+                    if (cur != null) return cur;
+                    var sel = Member(m, "_selectedSession") as GameSession;
+                    if (sel != null) return sel;
+                }
+            }
+            catch { }
+            return null;
         }
 
         /// <summary>Reads a named property or field (public or not, instance or
