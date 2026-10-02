@@ -80,6 +80,12 @@ Under Proton that is `.../compatdata/544550/pfx/drive_c/users/steamuser/Document
 Enable it in the mods menu. `[ic10go-testbench]` in `Player.log` confirms it
 loaded and reports the listening address.
 
+On Linux, `tools/ingame-testbench/deploy.sh` builds **and** copies it in one step
+(`--force` to override). It **refuses to overwrite a running game**: Mono JITs
+methods lazily, so swapping the DLL under a live process makes later calls fail
+with `BadImageFormatException: method has zero rva`. Quit to the desktop first —
+a world reload is not enough.
+
 ## Configure
 
 Create `Documents/My Games/Stationeers/ic10go/testbench.json` to change the bind

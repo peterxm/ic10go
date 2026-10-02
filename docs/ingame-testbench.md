@@ -199,7 +199,7 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `trace` | `{n:int}` | `{steps, hitCount, hits:[{pc,text,regs}]}`（逐条 `Execute(1)`，只回存储指令） |
 | `program` | `{}` | `{lines, code}`（芯片当前 IC10 源码） |
 | `hud` | `{on?, clear?, offset?, target?:{x,y,z,label?}|{chip}|{player}}` | `{on, offset, player?{x,y,z,yaw,pitch}, target?{x,y,z,label?,entity?}}`（`target.player` 可为在线玩家的 Human，也可是**离线但角色还在**的 Human 或**尸体袋**） |
-| `players` | `{}` | `[{name, self, online, body?, trackable?, dist?, pos?{x,y,z}}]`（来自 `Brain.PlayerBrains`，含**离线**玩家；`body:true` = 尸体袋，`trackable` = 世界里能找到实体可被 HUD 追踪；按到本机玩家的距离排序，无实体的排最后） |
+| `players` | `{}` | `[{name, self, online, body?, trackable?, dist?, pos?{x,y,z}}]`（来自 `Brain.PlayerBrains`，含**离线**玩家；`body:true` = 尸体袋，`trackable` = 世界里能找到实体可被 HUD 追踪；排序：**你 → 在线 → 离线(角色在) → 尸体袋 → 无实体**，同组按名字，再按距离） |
 | `run` | `{ticks:n, mode?:"step"|"realtime"}` | `{ticks, line}` |
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
 | `ports` | `{chip?}` | diagnostic: `Devices[]`, ids, labels, lookups |
@@ -314,7 +314,7 @@ ic10c testbench watch [--json]               # 持续打印 state 事件
 
 ### 6.0 游戏内 HUD（定位）
 
-mod ≥ 0.3.0 在屏幕左上角画一个小面板：自身 **X / Y / Z** 与 **朝向 / 俯仰**；设了目标时再显示**距离、方向词（正前/右前/…）和一个指向目标的罗盘箭头**。它就是为“跟着箭头走到刚 `locate` 出来的那块芯片”准备的：
+mod ≥ 0.3.0 在屏幕左上角画一个小面板：自身 **X / Y / Z** 与 **朝向 / 俯仰**；设了目标时再显示**目标名（过长会省略号截断）、距离、方向词（正前/右前/…）和一个指向目标的罗盘箭头**，三者各占一行（芯片名很长也不会把距离/方向挤出面板）。它就是为“跟着箭头走到刚 `locate` 出来的那块芯片”准备的：
 
 - 开关 `F8`，清目标 `F9`。
 - 设目标：`ic10c testbench hud --chip 118`（用该 host 的世界坐标）或 `ic10c testbench hud 669 192 -627`（直接给坐标）；`hud off` / `hud clear` / `hud`（查状态）。

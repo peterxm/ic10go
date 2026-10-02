@@ -39,7 +39,7 @@ namespace Ic10Go.Testbench
     {
         public const string ModId = "ic10go-testbench";
         public const string ModName = "ic10go testbench";
-        public const string ModVersion = "0.4.3";
+        public const string ModVersion = "0.4.4";
 
         private static bool _initialized;
 

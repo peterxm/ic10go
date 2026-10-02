@@ -401,13 +401,33 @@ namespace Ic10Go.Testbench
                 }
             }
 
+            // You, then alive-online, alive-offline (body still in the world),
+            // body bags, then names with no entity at all; alphabetical within a
+            // group, nearest first as a tie-break.
             rows.Sort((a, b) =>
             {
+                int ra = PlayerRank(a), rb = PlayerRank(b);
+                if (ra != rb) return ra.CompareTo(rb);
+                int byName = string.Compare(
+                    (string)a["name"] ?? "", (string)b["name"] ?? "",
+                    StringComparison.OrdinalIgnoreCase);
+                if (byName != 0) return byName;
                 double ad = (double?)a["dist"] ?? double.MaxValue;
                 double bd = (double?)b["dist"] ?? double.MaxValue;
                 return ad.CompareTo(bd);
             });
             return rows;
+        }
+
+        /// <summary>Sort group for a player row: self(0), online(1), alive but
+        /// offline(2), body bag(3), no entity(4).</summary>
+        private static int PlayerRank(JObject o)
+        {
+            if ((bool?)o["self"] == true) return 0;
+            if ((bool?)o["body"] == true) return 3;
+            if ((bool?)o["online"] == true) return 1;
+            if ((bool?)o["trackable"] == true) return 2;
+            return 4;
         }
 
         /// <summary>Records pos/dist on a player row from a live entity's transform.</summary>

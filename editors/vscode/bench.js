@@ -1796,6 +1796,15 @@ ${note}${diffNote}
             vscode.window.showInformationMessage(t('IC10: no players.', 'IC10: 没有玩家。'));
             return;
         }
+        // Group: you, alive-online, alive-offline, body bags, gone; then by name.
+        const rank = (p) =>
+            p.self ? 0 : p.body ? 3 : p.online !== false ? 1 : (p.trackable ?? !!p.pos) ? 2 : 4;
+        players = players.slice().sort((a, b) => {
+            const ra = rank(a),
+                rb = rank(b);
+            if (ra !== rb) return ra - rb;
+            return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+        });
         const items = players.map((p) => {
             const online = p.online !== false; // absent => assume online
             const present = p.trackable != null ? !!p.trackable : p.self || !!p.pos;

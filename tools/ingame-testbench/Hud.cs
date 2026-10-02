@@ -166,7 +166,7 @@ namespace Ic10Go.Testbench
 
             float width = 226f;
             float height = 54f;               // position + heading
-            if (hasTarget) height += 74f;     // target lines + a compass row
+            if (hasTarget) height += 96f;     // target lines + a compass row
             var rect = new Rect(10f, 10f, width, height);
             GUI.DrawTexture(rect, _bg);
 
@@ -184,8 +184,11 @@ namespace Ic10Go.Testbench
                 float bearing = Mathf.Atan2(dx, dz) * Mathf.Rad2Deg; // same frame as facing
                 float rel = Mathf.DeltaAngle(facing, bearing);        // signed, right positive
 
+                // The name goes on its own (clipped) line so a long chip name can
+                // never push the distance/direction off the panel.
                 string name = string.IsNullOrEmpty(TargetLabel) ? "目标" : TargetLabel;
-                Label(x, ref y, 18f, string.Format("{0}  {1:0.0} m  {2}", name, dist, Direction(rel)));
+                Label(x, ref y, 18f, Fit(name, 216f));
+                Label(x, ref y, 18f, string.Format("{0:0.0} m   {1}", dist, Direction(rel)));
                 Label(x, ref y, 16f, string.Format("高差 {0:+0.0;-0.0;0.0} m", dy));
 
                 // The compass lives on its own centred row so it never covers
@@ -199,6 +202,19 @@ namespace Ic10Go.Testbench
         {
             GUI.Label(new Rect(x, y, 220f, line), text, _label);
             y += line;
+        }
+
+        /// <summary>Truncates s with an ellipsis so it fits the label width.</summary>
+        private static string Fit(string s, float maxWidth)
+        {
+            if (string.IsNullOrEmpty(s) || _label == null) return s;
+            if (_label.CalcSize(new GUIContent(s)).x <= maxWidth) return s;
+            for (int n = s.Length - 1; n > 0; n--)
+            {
+                string t = s.Substring(0, n) + "…";
+                if (_label.CalcSize(new GUIContent(t)).x <= maxWidth) return t;
+            }
+            return "…";
         }
 
         /// <summary>Draws the up-pointing arrow rotated to the target's relative bearing.</summary>
