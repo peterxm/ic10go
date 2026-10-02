@@ -536,7 +536,9 @@ namespace Ic10Go.Testbench
                 // All of these are static members of NetworkManager.
                 try { o["state"] = NetworkManager.NetworkState.ToString(); } catch { }
                 o["role"] = NetworkManager.IsServer ? "server" : "client";
-                try { o["localIp"] = NetworkManager.GetIPv4Address(); } catch { }
+                // NOTE: do NOT call NetworkManager.GetIPv4Address() here — it calls
+                // native RakNet GetNumberOfAddresses and hard-crashes when there is
+                // no peer (e.g. the extension polls `server` from the main menu).
 
                 GameSession gs = NetworkManager.CurrentGameSession;
                 if (gs == null) gs = SelectedSession();
@@ -567,25 +569,32 @@ namespace Ic10Go.Testbench
                 o["lobby"] = StaticStr(nmType, "steamLobby");
                 try { o["transport"] = NetworkManager.CurrentTransport != null ? NetworkManager.CurrentTransport.GetType().Name : ""; }
                 catch { }
-                try
+                // SampleConnections also reaches into native RakNet, so only call
+                // it while a session is online.
+                bool online = false;
+                try { online = NetworkManager.NetworkState == NetworkState.Online; } catch { }
+                if (online)
                 {
-                    var samples = new NetworkManager.NetClientSample[64];
-                    NetworkManager.SampleConnections(samples);
-                    var arr = new JArray();
-                    foreach (var s in samples)
+                    try
                     {
-                        if (s.Id == 0 && string.IsNullOrEmpty(s.Name)) continue;
-                        if (s.AvgPing > 0 && (connPing == 0 || s.AvgPing < connPing)) connPing = s.AvgPing;
-                        arr.Add(new JObject
+                        var samples = new NetworkManager.NetClientSample[64];
+                        NetworkManager.SampleConnections(samples);
+                        var arr = new JArray();
+                        foreach (var s in samples)
                         {
-                            ["id"] = s.Id.ToString(),
-                            ["name"] = s.Name ?? "",
-                            ["ping"] = s.AvgPing,
-                        });
+                            if (s.Id == 0 && string.IsNullOrEmpty(s.Name)) continue;
+                            if (s.AvgPing > 0 && (connPing == 0 || s.AvgPing < connPing)) connPing = s.AvgPing;
+                            arr.Add(new JObject
+                            {
+                                ["id"] = s.Id.ToString(),
+                                ["name"] = s.Name ?? "",
+                                ["ping"] = s.AvgPing,
+                            });
+                        }
+                        if (arr.Count > 0) o["connections"] = arr;
                     }
-                    if (arr.Count > 0) o["connections"] = arr;
+                    catch (Exception ce) { o["connectionsError"] = ce.Message; }
                 }
-                catch (Exception ce) { o["connectionsError"] = ce.Message; }
                 // The live round-trip time from the connection samples is the
                 // meaningful latency; the session's Latency is usually 0.
                 if (connPing > 0) o["latency"] = connPing;
