@@ -1,0 +1,115 @@
+clr db
+move r1 3
+move r3 -1
+move r5 0
+move r6 0
+yield
+l r0 d0 Idle
+blez r0 5
+yield
+l r2 d0 Horizontal
+l r4 d0 Vertical
+ble r2 90 14
+blt r1 7 18
+j 17
+blt r5 270 18
+add r1 r1 1
+blt r1 7 18
+move r1 0
+mul r0 360 r1
+add r0 r0 r2
+add r0 r0 8
+mod r7 r0 360
+div r0 r0 18
+add r0 r0 10
+blt r0 80 26
+sub r0 160 r0
+s d0 Horizontal r7
+s d0 Vertical r0
+l r0 d0 ContactSlotIndex
+l r9 d0 SignalID
+bltz r0 44
+mul r7 r0 12
+add r8 r7 1
+get r8 db r8
+beq r8 r9 44
+add r7 r7 1
+put db r7 r9
+move r8 2
+bge r8 12 44
+mul r7 r0 12
+add r7 r7 r8
+put db r7 0
+add r8 r8 1
+j 38
+beq r0 r3 111
+ble r0 -1 57
+mul r7 r0 12
+add r8 r7 2
+put db r8 0
+add r7 r7 4
+put db r7 r2
+move r7 r0
+move r9 r4
+jal 97
+move r7 r0
+move ra 57
+j 68
+ble r3 -1 111
+mul r7 r3 12
+add r8 r7 2
+put db r8 0
+add r7 r7 3
+put db r7 r5
+move r7 r3
+move r9 r6
+jal 97
+move r7 r3
+move ra 111
+mul r7 r7 12
+add r8 r7 4
+get r9 db r8
+add r8 r7 3
+get r11 db r8
+sgtz r10 r9
+sgtz r8 r11
+min r8 r10 r8
+beqz r8 84
+bgt r11 r9 79
+add r11 r11 360
+add r8 r11 r9
+div r8 r8 2
+mod r9 r8 360
+add r8 r7 7
+put db r8 r9
+add r8 r7 5
+get r10 db r8
+add r8 r7 6
+get r11 db r8
+sgtz r9 r10
+sgtz r8 r11
+min r8 r9 r8
+beqz r8 96
+add r8 r10 r11
+div r8 r8 2
+add r7 r7 8
+put db r7 r8
+j ra
+mul r7 r7 12
+add r8 r7 5
+get r10 db r8
+sgtz r11 r10
+sgt r10 r9 r10
+min r10 r11 r10
+bnez r10 105
+put db r8 r9
+add r8 r7 6
+get r8 db r8
+ble r9 r8 110
+add r7 r7 6
+put db r7 r9
+j ra
+move r5 r2
+move r6 r4
+move r3 r0
+j 8

@@ -1,0 +1,126 @@
+yield
+s d0 BestContactFilter -1
+s d0 Activate 0
+s d0 On 0
+l r6 d3 Setting
+mul r6 r6 12
+l r7 d2 Open
+blez r7 4
+add r7 r6 1
+get r9 d5 r7
+add r7 r6 7
+get r10 d5 r7
+add r7 r6 8
+get r11 d5 r7
+add r7 r6 2
+put d5 r7 1
+sgtz r8 r10
+sgtz r7 r11
+min r7 r8 r7
+beqz r7 4
+s d0 On 1
+sleep 1
+s d0 BestContactFilter r9
+s d0 Vertical r11
+s d0 Horizontal r10
+move r14 0
+move r15 180
+add r7 r6 2
+jal 89
+bnez r0 50
+l r1 d0 Vertical
+l r4 d0 Horizontal
+l r3 d0 SignalStrength
+sub r1 0 r1
+mul r2 r1 deg2rad
+sub r1 0 r4
+mul r4 r1 deg2rad
+div r1 r3 4
+mul r1 r1 deg2rad
+move r7 0
+jal 60
+add r7 r6 2
+jal 89
+bnez r0 50
+l r5 d0 SignalStrength
+mul r7 -90 deg2rad
+jal 60
+add r7 r6 2
+jal 89
+beqz r0 53
+move r6 r0
+bne r6 2 0
+j 4
+l r7 d0 SignalStrength
+mul r1 r3 deg2rad
+sub r8 r7 r3
+sub r7 r5 r3
+sub r7 0 r7
+atan2 r7 r8 r7
+move ra 25
+sub r9 1.5707963267948966 r1
+cos r10 r2
+sin r8 r9
+mul r8 r10 r8
+cos r11 r7
+sin r10 r2
+mul r11 r11 r10
+cos r10 r9
+mul r10 r11 r10
+sub r8 r8 r10
+asin r8 r8
+sub r8 1.5707963267948966 r8
+mul r8 r8 rad2deg
+tan r10 r9
+sin r9 r2
+mul r11 r10 r9
+cos r10 r7
+cos r9 r2
+mul r9 r10 r9
+add r9 r11 r9
+sin r7 r7
+atan2 r9 r7 r9
+sub r7 r9 r4
+mul r9 r7 rad2deg
+s d0 Vertical r8
+add r7 r9 180
+mod r7 r7 360
+s d0 Horizontal r7
+j ra
+yield
+l r0 d2 Open
+bgtz r0 93
+j 102
+l r0 d0 SignalID
+bgez r0 96
+j 102
+l r0 d0 InterrogationProgress
+blez r0 104
+blt r0 1 89
+sleep 2
+s d0 Activate 1
+s d2 Open 0
+move r0 1
+j 122
+l r0 d0 SignalStrength
+bne r0 -1 117
+l r0 d0 Idle
+blez r0 89
+add r0 r14 1
+move r14 r0
+bgt r0 360 115
+blt r0 60 89
+blt r15 90 89
+get r0 d5 r7
+bgtz r0 89
+move r0 2
+j 122
+move r14 0
+bgt r0 r15 120
+move r15 r0
+ble r0 2 123
+move r0 0
+j ra
+sleep 2
+s d0 Activate 1
+j 89
