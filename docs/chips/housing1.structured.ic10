@@ -11,23 +11,21 @@ get r9 d5 r7
 add r7 r6 7
 get r10 d5 r7
 add r7 r6 8
-get r11 d5 r7
+get r8 d5 r7
 add r7 r6 2
 put d5 r7 1
-sgtz r8 r10
-sgtz r7 r11
-min r7 r8 r7
-beqz r7 4
+blez r10 4
+blez r8 4
 s d0 On 1
 sleep 1
 s d0 BestContactFilter r9
-s d0 Vertical r11
+s d0 Vertical r8
 s d0 Horizontal r10
 move r14 0
 move r15 180
 add r7 r6 2
-jal 89
-bnez r0 50
+jal 87
+bnez r0 48
 l r1 d0 Vertical
 l r4 d0 Horizontal
 l r3 d0 SignalStrength
@@ -38,16 +36,16 @@ mul r4 r1 deg2rad
 div r1 r3 4
 mul r1 r1 deg2rad
 move r7 0
-jal 60
+jal 58
 add r7 r6 2
-jal 89
-bnez r0 50
+jal 87
+bnez r0 48
 l r5 d0 SignalStrength
 mul r7 -90 deg2rad
-jal 60
+jal 58
 add r7 r6 2
-jal 89
-beqz r0 53
+jal 87
+beqz r0 51
 move r6 r0
 bne r6 2 0
 j 4
@@ -57,7 +55,7 @@ sub r8 r7 r3
 sub r7 r5 r3
 sub r7 0 r7
 atan2 r7 r8 r7
-move ra 25
+move ra 23
 sub r9 1.5707963267948966 r1
 cos r10 r2
 sin r8 r9
@@ -89,38 +87,38 @@ s d0 Horizontal r7
 j ra
 yield
 l r0 d2 Open
-bgtz r0 93
-j 102
+bgtz r0 91
+j 100
 l r0 d0 SignalID
-bgez r0 96
-j 102
+bgez r0 94
+j 100
 l r0 d0 InterrogationProgress
-blez r0 104
-blt r0 1 89
+blez r0 102
+blt r0 1 87
 sleep 2
 s d0 Activate 1
 s d2 Open 0
 move r0 1
-j 122
+j 120
 l r0 d0 SignalStrength
-bne r0 -1 117
+bne r0 -1 115
 l r0 d0 Idle
-blez r0 89
+blez r0 87
 add r0 r14 1
 move r14 r0
-bgt r0 360 115
-blt r0 60 89
-blt r15 90 89
+bgt r0 360 113
+blt r0 60 87
+blt r15 90 87
 get r0 d5 r7
-bgtz r0 89
+bgtz r0 87
 move r0 2
-j 122
+j 120
 move r14 0
-bgt r0 r15 120
+bgt r0 r15 118
 move r15 r0
-ble r0 2 123
+ble r0 2 121
 move r0 0
 j ra
 sleep 2
 s d0 Activate 1
-j 89
+j 87

@@ -42,7 +42,7 @@ add r7 r7 r8
 put db r7 0
 add r8 r8 1
 j 38
-beq r4 r1 111
+beq r4 r1 105
 ble r4 -1 57
 mul r7 r4 12
 add r8 r7 2
@@ -51,11 +51,11 @@ add r7 r7 4
 put db r7 r6
 move r7 r4
 move r9 r5
-jal 97
+jal 93
 move r7 r4
 move ra 57
 j 68
-ble r1 -1 111
+ble r1 -1 105
 mul r7 r1 12
 add r8 r7 2
 put db r8 0
@@ -63,34 +63,30 @@ add r7 r7 3
 put db r7 r2
 move r7 r1
 move r9 r3
-jal 97
+jal 93
 move r7 r1
-move ra 111
+move ra 105
 mul r7 r7 12
 add r8 r7 4
 get r9 db r8
 add r8 r7 3
-get r11 db r8
-sgtz r10 r9
-sgtz r8 r11
-min r8 r10 r8
-beqz r8 84
-bgt r11 r9 79
-add r11 r11 360
-add r8 r11 r9
+get r8 db r8
+blez r9 82
+blez r8 82
+bgt r8 r9 77
+add r8 r8 360
+add r8 r8 r9
 div r8 r8 2
 mod r9 r8 360
 add r8 r7 7
 put db r8 r9
 add r8 r7 5
-get r10 db r8
+get r9 db r8
 add r8 r7 6
-get r11 db r8
-sgtz r9 r10
-sgtz r8 r11
-min r8 r9 r8
-beqz r8 96
-add r8 r10 r11
+get r8 db r8
+blez r9 92
+blez r8 92
+add r8 r9 r8
 div r8 r8 2
 add r7 r7 8
 put db r7 r8
@@ -98,14 +94,12 @@ j ra
 mul r7 r7 12
 add r8 r7 5
 get r10 db r8
-sgtz r11 r10
-sgt r10 r9 r10
-min r10 r11 r10
-bnez r10 105
+blez r10 98
+bgt r9 r10 99
 put db r8 r9
 add r8 r7 6
 get r8 db r8
-ble r9 r8 110
+ble r9 r8 104
 add r7 r7 6
 put db r7 r9
 j ra
