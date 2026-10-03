@@ -463,7 +463,7 @@ func (l *lowerer) lowerStmt(s ast.Stmt) {
 	case *ast.CallStmt:
 		target := l.useLabel(s.Name.Name, s.Name.Pos())
 		ret := l.newBlock()
-		l.b.SetTerm(&ir.Call{Target: target, Return: ret})
+		l.b.SetTerm(&ir.Call{Target: target, Return: ret, Nested: l.inOutlineBody})
 		l.b.SetBlock(ret)
 	case *ast.RetStmt:
 		l.b.SetTerm(&ir.JmpRA{})
@@ -880,7 +880,7 @@ func (l *lowerer) tryLowerCondCall(s *ast.IfStmt) bool {
 	endB := l.newBlock()
 	target := l.useLabel(call.Name.Name, call.Name.Pos())
 	cond, a, b := l.lowerCond(s.Cond)
-	l.b.SetTerm(&ir.BrCall{Cond: cond, A: a, B: b, Target: target, Return: endB})
+	l.b.SetTerm(&ir.BrCall{Cond: cond, A: a, B: b, Target: target, Return: endB, Nested: l.inOutlineBody})
 	l.b.SetBlock(endB)
 	return true
 }
@@ -2179,7 +2179,7 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 
 	// User-defined functions take precedence over built-ins.
 	if fi, ok := l.info.Funcs[id.Name]; ok {
-		if l.outline[id.Name] && !l.inOutlineBody && !l.hasDataArg(call.Args) {
+		if l.outline[id.Name] && !l.hasDataArg(call.Args) {
 			return l.outlineCall(id, fi, call.Args, needResult)
 		}
 		return l.inlineCall(id, fi, call.Args, needResult)
@@ -2711,7 +2711,7 @@ func (l *lowerer) outlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr,
 		l.b.Emit(&ir.Assign{Dst: of.params[i], Src: vals[i]})
 	}
 	ret := l.newBlock()
-	l.b.SetTerm(&ir.Call{Target: of.entry, Return: ret})
+	l.b.SetTerm(&ir.Call{Target: of.entry, Return: ret, Nested: l.inOutlineBody})
 	l.b.SetBlock(ret)
 	if needResult {
 		// Copy the result out of the function's fixed result register: a later
@@ -2787,8 +2787,10 @@ func (l *lowerer) lowerOutlined(name string) {
 	l.scopes = append(l.scopes, scope)
 	l.inline = append(l.inline, inlineCtx{end: of.epilogue, result: of.result})
 	l.stack = append(l.stack, name)
-	// Inline every call in the body: an outlined body must not contain a `jal`,
-	// or the inner call would clobber the outer return address (D3a).
+	// Calls in the body may target other outlined functions: those become
+	// nested calls (ir.Call.Nested), and the code generator saves/restores ra
+	// around them (push ra / pop ra) so IC10's single return-address register
+	// stays safe.
 	l.inOutlineBody = true
 
 	l.lowerStmts(of.fi.Decl.Body.List)

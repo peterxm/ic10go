@@ -404,6 +404,10 @@ type Goto struct{ Target *Block }
 type Call struct {
 	Target *Block
 	Return *Block
+	// Nested marks a call made from inside an outlined function body: the inner
+	// jal overwrites ra, so the code generator saves it (push ra) before the
+	// call and restores it (pop ra) at the continuation.
+	Nested bool
 }
 
 // JmpRA jumps to the return address register (IC10 "j ra").
@@ -451,6 +455,7 @@ type BrCall struct {
 	A, B   Value
 	Target *Block // callee entry
 	Return *Block // continuation / fall-through
+	Nested bool   // see Call.Nested
 }
 
 func (*Jmp) isTerm()          {}

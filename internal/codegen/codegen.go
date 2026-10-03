@@ -240,10 +240,30 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 
 	uses := regUseCounts(fn)
 
+	// A nested call (made from inside an outlined body) overwrites ra with the
+	// inner jal, so save it before the call and restore it at the continuation.
+	// Real-machine verified: push ra / pop ra round-trips.
+	popRA := map[*ir.Block]bool{}
+	for _, b := range fn.Blocks {
+		switch t := b.Term.(type) {
+		case *ir.Call:
+			if t.Nested && t.Return != nil {
+				popRA[t.Return] = true
+			}
+		case *ir.BrCall:
+			if t.Nested && t.Return != nil {
+				popRA[t.Return] = true
+			}
+		}
+	}
+
 	consumed := map[*ir.Block]int{}
 	for i, b := range blocks {
 		curSrc = b.SrcLine
 		if consumed[b] == 0 {
+			if popRA[b] {
+				add("pop ra", nil, b.Func)
+			}
 			start[b] = len(lines)
 		}
 		var next *ir.Block
@@ -358,6 +378,9 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 				add("j ", t.Target, b.Func)
 			}
 		case *ir.Call:
+			if t.Nested {
+				add("push ra", nil, b.Func)
+			}
 			add("jal ", t.Target, b.Func)
 		case *ir.JmpRA:
 			add("j ra", nil, b.Func)
@@ -426,6 +449,9 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 		case *ir.BrCall:
 			// Conditional call: branch with the return address to the callee;
 			// the continuation is laid out right after this line.
+			if t.Nested {
+				add("push ra", nil, b.Func)
+			}
 			add(branchCallText(t.Cond, t.A, t.B, colors)+" ", t.Target, b.Func)
 		}
 	}
