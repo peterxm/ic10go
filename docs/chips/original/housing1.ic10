@@ -1,0 +1,128 @@
+alias searchIC d5
+define memospace 12
+s d3 Mode 4
+alias dish d0
+prepare:
+yield
+s dish BestContactFilter -1
+s dish Activate 0
+s dish On 0
+recheck:
+l r1 d3 Setting
+brdns d1 2
+brgt r1 2 3
+  alias dish d0
+  jr 2
+  alias dish d1
+l r0 d2 Open
+blez r0 recheck
+mul r14 r1 memospace
+add r14 r14 1
+get r13 searchIC r14            #get signal id
+add r14 r14 6
+get r11 searchIC r14            #get possible h angle
+add r14 r14 1
+get r12 searchIC r14            #get possible v angle
+sub r14 r14 6
+put searchIC r14 1
+blez r11 recheck
+blez r12 recheck
+  s dish On 1
+  sleep 1
+  s dish BestContactFilter r13  #start
+  s dish Vertical r12
+  s dish Horizontal r11
+move r12 180
+move r11 0
+jal waitloop
+l r0 dish Vertical              #first measurement
+l r1 dish Horizontal
+l r8 dish SignalStrength
+div r10 r8 4                    #spread of measuring points
+mul r0 r0 -1
+mul r1 r1 -1
+mul r0 r0 deg2rad
+mul r1 r1 deg2rad
+move r3 0                       #second measurement
+mul r2 r10 deg2rad
+jal coordinate
+s dish Vertical r4
+s dish Horizontal r5
+jal waitloop
+l r9 dish SignalStrength        #third measurement
+mul r2 r10 deg2rad
+mul r3 -90 deg2rad
+jal coordinate
+s dish Vertical r4
+s dish Horizontal r5
+jal waitloop
+l r10 dish SignalStrength       #final measurement
+mul r2 r8 deg2rad
+sub r6 r9 r8
+sub r7 r10 r8
+mul r6 r6 -1
+atan2 r3 r7 r6
+jal coordinate
+s dish Vertical r4
+s dish Horizontal r5
+jr -33
+waitloop:
+yield
+l r6 d2 Open                 #cancle
+blez r6 prepare
+l r6 dish SignalID              #signal present
+bltz r6 prepare
+l r6 dish InterrogationProgress #interrogation
+brlez r6 6
+blt r6 1 waitloop
+  sleep 2
+  s dish Activate 1
+  s d2 Open 0
+  j prepare
+l r6 dish SignalStrength
+brne r6 -1 10                   #timeout
+  l r13 dish Idle
+  blez r13 waitloop
+    add r11 r11 1
+    bgt r11 360 recheck
+    brlt r11 60 4
+    brlt r12 90 3               #minimal angle
+      get r13 searchIC r14
+      blez r13 recheck
+j waitloop
+move r11 0
+brgt r6 r12 2                   #update minimal angle
+  move r12 r6
+brgt r6 2 4                     #angle < 2, abort
+  sleep 2
+  s dish Activate 1
+  j waitloop
+j ra
+coordinate:
+sub r2 1.5707963267948966 r2 #vertical 0 = latitude 90
+cos r4 r0
+sin r5 r2
+mul r4 r4 r5
+cos r5 r3
+sin r6 r0
+mul r5 r5 r6
+cos r6 r2
+mul r5 r5 r6
+sub r4 r4 r5
+asin r4 r4
+sub r4 1.5707963267948966 r4 #latitude 90 = vertical 0
+mul r4 r4 rad2deg #dish vertical
+tan r5 r2
+sin r6 r0
+mul r5 r5 r6
+cos r6 r3
+cos r7 r0
+mul r6 r6 r7
+add r5 r5 r6
+sin r6 r3
+atan2 r5 r6 r5
+sub r5 r5 r1
+mul r5 r5 rad2deg
+add r5 r5 180
+mod r5 r5 360 #dish horizontal
+j ra

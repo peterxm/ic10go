@@ -1,8 +1,25 @@
 // ============================================================================
 // 交易天线「1」—— 锁定 & 审问芯片（中型天线 d0）
-// 用 .icg 结构化特性重写：具名变量、for/if、func（coordinate/waitloop/track）。
-// 接线按当前：d0=中型天线  d2=拨杆  d3=旋钮  d5=邻芯片 housing(共享栈)
-// 注意：原程序的重复 `alias dish d0`/`d1` 会解析到空的 d1；本版直接用 d0。
+//
+// 接线（housing「1」，见 docs/chips/交易天线接线图.md）
+//   d0 = 中型卫星天线  MediumSatelliteDish      ← 精锁/审问主天线
+//   d1 = 空
+//   d2 = 拨杆开关      LogicSwitch   .Open      ← 扳起=开始锁定；中途扳下=取消
+//   d3 = 旋钮          LogicDial     .Setting   ← 选要锁定的联系人槽号(0..N)
+//   d4 = 空
+//   d5 = chip「2」的外壳 CircuitHousing         ← 读它的共享栈（同一根数据电缆）
+//
+// 与 chip「2」的共享协议（chip2 在自己外壳栈上按 ContactSlotIndex 发布）：
+//   base = 旋钮值 * MEMO(=12)
+//   get(d5, base+1)      = 信号ID
+//   get(d5, base+7)      = 估计水平 H
+//   get(d5, base+8)      = 估计俯仰 V
+//   put(d5, base+2, 1)   = 握手：标记已取用（chip2 进/出新联系人时清 0）
+//   → 若 H/V <= 0 视为无效，回 recheck 等待
+//
+// 流程：prepare(复位) → recheck(等拨杆+取联系人) → track(锁定/3点峰值测量/审问)
+//       → 审问完成 InterrogationProgress=1 → Activate=1 放行 → lever=0 → 回 prepare
+//
 // icg: shared-stack
 // ============================================================================
 

@@ -1,0 +1,127 @@
+clr db
+alias dish d0
+alias round r15
+alias chAngle r14
+alias cvAngle r13
+alias bhAngle r12
+alias bvAngle r11
+alias totalH r10
+alias nextH r9
+alias nextV r8
+alias sigType r10
+alias sigID r9
+alias bSigType r7
+alias tempSigType r6
+define memospace 12
+define step 8          #searching step hAngle, small:8, medium:2
+define vStart 10        #searching start vAngle
+define vEnd 80          #searching end vAngle
+define vhRate 18
+define maxRound 7
+move round 3
+move bSigType -1
+s dish Setting 7500
+s dish BestContactFilter -1
+s dish Horizontal 180
+s dish Vertical vEnd
+yield
+l r0 dish Idle
+brlez r0 -2
+loop:
+yield
+l chAngle dish Horizontal
+l cvAngle dish Vertical
+brgt chAngle 90 3
+brlt bhAngle 270 4      #round plus
+  add round round 1
+  brlt round maxRound 2
+    move round 0
+mul totalH 360 round    #nextH & nextV
+add totalH totalH chAngle
+add totalH totalH step
+mod nextH totalH 360
+div nextV totalH vhRate
+add nextV nextV vStart
+brlt nextV vEnd 3
+  mul r0 vEnd 2
+  sub nextV r0 nextV
+s dish Horizontal nextH #scanning
+s dish Vertical nextV
+l sigType dish ContactSlotIndex
+l sigID dish SignalID
+brltz sigType 11
+  mul sp sigType memospace
+  push sigType
+  add sp sp 1
+  pop r0
+  breq r0 sigID 6       #sig stack data refresh check
+    push sigID
+    move r0 10
+    push 0
+    sub r0 r0 1
+    brgtz r0 -2
+beq sigType bSigType end
+  brle sigType -1 18
+    mul sp sigType memospace     #update sig entering border
+    move tempSigType sigType
+    add sp sp 2
+    push 0
+    add sp sp 1
+    push chAngle
+    add sp sp 2
+    pop r0                #down v angle
+    pop r1                #up v angle
+    brlez r1 4
+    brle cvAngle r1 3
+      add sp sp 1
+      jr 2
+      push cvAngle
+    brle cvAngle r0 2
+      push cvAngle
+    jal avg
+  brle bSigType -1 17
+    mul sp bSigType memospace    #update sig leaving border
+    move tempSigType bSigType
+    add sp sp 2
+    push 0
+    push bhAngle
+    add sp sp 3
+    pop r0                #down v angle
+    pop r1                #up v angle
+    brlez r1 4
+    brle bvAngle r1 3
+    add sp sp 1
+    jr 2
+    push bvAngle
+    brle bvAngle r0 2
+      push bvAngle
+    jal avg
+end:
+move bhAngle chAngle
+move bvAngle cvAngle
+move bSigType sigType
+j loop
+avg:
+  mul sp tempSigType memospace  #caculate possible angle
+  add sp sp 7
+  pop r5
+  pop r4
+  pop r3
+  pop r2
+  add sp sp 4
+  brlez r3 9        #possible h angle
+  brlez r2 8
+  brgt r2 r3 2
+    add r2 r2 360
+  add r0 r2 r3
+  div r0 r0 2
+  mod r0 r0 360
+  push r0
+  jr 2
+  add sp sp 1
+  brlez r5 5        #possible v angle
+  brlez r4 4
+    add r0 r4 r5
+    div r0 r0 2
+    push r0
+j ra

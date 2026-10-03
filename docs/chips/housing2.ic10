@@ -1,35 +1,35 @@
 clr db
-move r1 3
-move r3 -1
-move r5 0
-move r6 0
+move r0 3
+move r1 -1
+move r2 0
+move r3 0
 yield
-l r0 d0 Idle
-blez r0 5
+l r4 d0 Idle
+blez r4 5
 yield
-l r2 d0 Horizontal
-l r4 d0 Vertical
-ble r2 90 14
-blt r1 7 18
+l r6 d0 Horizontal
+l r5 d0 Vertical
+ble r6 90 14
+blt r0 7 18
 j 17
-blt r5 270 18
-add r1 r1 1
-blt r1 7 18
-move r1 0
-mul r0 360 r1
-add r0 r0 r2
-add r0 r0 8
-mod r7 r0 360
-div r0 r0 18
-add r0 r0 10
-blt r0 80 26
-sub r0 160 r0
+blt r2 270 18
+add r0 r0 1
+blt r0 7 18
+move r0 0
+mul r4 360 r0
+add r4 r4 r6
+add r4 r4 8
+mod r7 r4 360
+div r4 r4 18
+add r4 r4 10
+blt r4 80 26
+sub r4 160 r4
 s d0 Horizontal r7
-s d0 Vertical r0
-l r0 d0 ContactSlotIndex
+s d0 Vertical r4
+l r4 d0 ContactSlotIndex
 l r9 d0 SignalID
-bltz r0 44
-mul r7 r0 12
+bltz r4 44
+mul r7 r4 12
 add r8 r7 1
 get r8 db r8
 beq r8 r9 44
@@ -37,34 +37,34 @@ add r7 r7 1
 put db r7 r9
 move r8 2
 bge r8 12 44
-mul r7 r0 12
+mul r7 r4 12
 add r7 r7 r8
 put db r7 0
 add r8 r8 1
 j 38
-beq r0 r3 111
-ble r0 -1 57
-mul r7 r0 12
+beq r4 r1 111
+ble r4 -1 57
+mul r7 r4 12
 add r8 r7 2
 put db r8 0
 add r7 r7 4
-put db r7 r2
-move r7 r0
-move r9 r4
+put db r7 r6
+move r7 r4
+move r9 r5
 jal 97
-move r7 r0
+move r7 r4
 move ra 57
 j 68
-ble r3 -1 111
-mul r7 r3 12
+ble r1 -1 111
+mul r7 r1 12
 add r8 r7 2
 put db r8 0
 add r7 r7 3
-put db r7 r5
-move r7 r3
-move r9 r6
+put db r7 r2
+move r7 r1
+move r9 r3
 jal 97
-move r7 r3
+move r7 r1
 move ra 111
 mul r7 r7 12
 add r8 r7 4
@@ -109,7 +109,7 @@ ble r9 r8 110
 add r7 r7 6
 put db r7 r9
 j ra
-move r5 r2
-move r6 r4
-move r3 r0
+move r2 r6
+move r3 r5
+move r1 r4
 j 8
