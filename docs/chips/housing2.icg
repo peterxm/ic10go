@@ -1,0 +1,110 @@
+// ============================================================================
+// 交易天线「2」—— 全天空扫描芯片（小型天线 d0）
+// 用 .icg 结构化特性重写：具名变量、for/if、db.stack[] 直接寻址、辅助函数。
+// 行为与原程序一致（见本地 VM 差分验证）。
+// icg: shared-stack
+//
+// 每个联系人类型 t 在宿主栈占 MEMO=12 槽：
+//   +1 信号ID   +2 握手标志(1=已被 housing「1」取用, 0=新/失效)
+//   +3 离开时H  +4 进入时H   +5 最小V   +6 最大V
+//   +7 估计H(输出)   +8 估计V(输出)
+// housing「1」用 get(housing2, base+1/+7/+8) 读取。
+// ============================================================================
+
+const dish = d0
+const MEMO = 12
+const STEP = 8
+const V_START = 10
+const V_END = 80
+const VH_RATE = 18
+const MAX_ROUND = 7
+
+// 用 val 更新联系人 t 的俯仰范围
+func touchV(t num, val num) {
+    minV := db.stack[t * MEMO + 5]
+    if !(minV > 0 && val > minV) { db.stack[t * MEMO + 5] = val }
+    if val > db.stack[t * MEMO + 6] { db.stack[t * MEMO + 6] = val }
+}
+
+// 由边界数据估算 t 的 (H,V)，写入输出槽 +7/+8
+func estimate(t num) {
+    enterH := db.stack[t * MEMO + 4]
+    leaveH := db.stack[t * MEMO + 3]
+    if enterH > 0 && leaveH > 0 {
+        if leaveH <= enterH { leaveH = leaveH + 360 }   // 跨 0 处理
+        db.stack[t * MEMO + 7] = ((leaveH + enterH) / 2) % 360
+    }
+    minV := db.stack[t * MEMO + 5]
+    maxV := db.stack[t * MEMO + 6]
+    if minV > 0 && maxV > 0 {
+        db.stack[t * MEMO + 8] = (minV + maxV) / 2
+    }
+}
+
+func main() {
+    clr(db)
+    var round = 3
+    var lastType = -1
+    var prevH = 0
+    var prevV = 0
+
+    dish.Setting = 7500
+    dish.BestContactFilter = -1        // 不过滤，扫所有联系人
+    dish.Horizontal = 180
+    dish.Vertical = V_END
+    for {                              // 等天线就位
+        yield()
+        if dish.Idle > 0 { break }
+    }
+
+    for {
+        yield()
+        curH := dish.Horizontal
+        curV := dish.Vertical
+
+        // 水平每绕一圈 round+1（0↔360 跨界）
+        if curH > 90 {
+            if round >= MAX_ROUND { round = 0 }
+        } else if prevH >= 270 {
+            round = round + 1
+            if round >= MAX_ROUND { round = 0 }
+        }
+
+        // 三角波扫描：H 均速前进，V 由同一累计量线性升降
+        total := 360 * round + curH + STEP
+        nextH := total % 360
+        nextV := total / VH_RATE + V_START
+        if nextV >= V_END { nextV = V_END * 2 - nextV }
+        dish.Horizontal = nextH
+        dish.Vertical = nextV
+
+        // 当前扫到的联系人
+        slot := dish.ContactSlotIndex
+        id := dish.SignalID
+        if slot >= 0 {
+            if db.stack[slot * MEMO + 1] != id {        // 信号ID变了 → 清空重记
+                db.stack[slot * MEMO + 1] = id
+                for j := 2; j < MEMO; j++ { db.stack[slot * MEMO + j] = 0 }
+            }
+        }
+
+        // 类型变化：记录进入/离开边界并重估
+        if slot != lastType {
+            if slot > -1 {
+                db.stack[slot * MEMO + 2] = 0           // 新进入 → 握手标志清零
+                db.stack[slot * MEMO + 4] = curH
+                touchV(slot, curV)
+                estimate(slot)
+            }
+            if lastType > -1 {
+                db.stack[lastType * MEMO + 2] = 0       // 离开 → 握手标志清零
+                db.stack[lastType * MEMO + 3] = prevH
+                touchV(lastType, prevV)
+                estimate(lastType)
+            }
+        }
+        prevH = curH
+        prevV = curV
+        lastType = slot
+    }
+}

@@ -1,0 +1,134 @@
+// ============================================================================
+// 交易天线「1」—— 锁定 & 审问芯片（中型天线 d0）
+// 用 .icg 结构化特性重写：具名变量、for/if、func（coordinate/waitloop/track）。
+// 接线按当前：d0=中型天线  d2=拨杆  d3=旋钮  d5=邻芯片 housing(共享栈)
+// 注意：原程序的重复 `alias dish d0`/`d1` 会解析到空的 d1；本版直接用 d0。
+// icg: shared-stack
+// ============================================================================
+
+const dish = d0
+const lever = d2
+const dial = d3
+const searchIC = d5
+const MEMO = 12
+const HALF_PI = 1.5707963267948966
+
+const CONT = 0          // waitloop：继续测量
+const TO_PREPARE = 1    // waitloop：回 prepare
+const TO_RECHECK = 2    // waitloop：回 recheck
+
+// 球面三角：由当前天线角 (-a,-b) 与探测偏移 (c,d) 解出精确 (V,H)，直接写天线
+func coordinate(a num, b num, c num, d num) {
+    cc := HALF_PI - c
+    v := cos(a) * sin(cc)
+    v = asin(v - cos(d) * sin(a) * cos(cc))
+    v = (HALF_PI - v) * rad2deg
+    h := tan(cc) * sin(a) + cos(d) * cos(a)
+    h = atan2(sin(d), h)
+    h = (h - b) * rad2deg
+    dish.Vertical = v
+    dish.Horizontal = (h + 180) % 360
+}
+
+// 等待/审问一拍；返回 CONT / TO_PREPARE / TO_RECHECK
+func waitloop(idx num) num {
+    for {
+        yield()
+        if lever.Open <= 0 { return TO_PREPARE }          // 中途取消
+        if dish.SignalID < 0 { return TO_PREPARE }         // 信号丢失 → 复位
+        ip := dish.InterrogationProgress
+        if ip > 0 {
+            if ip < 1 { continue }                         // 审问中
+            sleep(2)
+            dish.Activate = 1                              // 审问完成 → 放行
+            lever.Open = 0
+            return TO_PREPARE
+        }
+        s := dish.SignalStrength
+        if s == -1 {                                       // 尚无强度 → 超时计数
+            if dish.Idle <= 0 { continue }
+            a := ireg(14) + 1
+            setIreg(14, a)
+            if a > 360 { return TO_RECHECK }
+            if a < 60 { continue }
+            if ireg(15) < 90 { continue }
+            if get(searchIC, idx) <= 0 { return TO_RECHECK }
+            continue
+        }
+        setIreg(14, 0)
+        if s <= ireg(15) { setIreg(15, s) }                // 记录最小强度
+        if s > 2 { return CONT }                           // 峰值够尖 → 返回
+        sleep(2)
+        dish.Activate = 1
+    }
+}
+
+// 峰值测量循环：3 次探测点 → coordinate 精确对准；返回 TO_PREPARE/TO_RECHECK
+func track(base num) num {
+    for {
+        setIreg(14, 0)
+        setIreg(15, 180)
+        act := waitloop(base + 2)
+        if act != CONT { return act }
+
+        v0 := dish.Vertical                             // 基准点 + 基准强度
+        h0 := dish.Horizontal
+        s0 := dish.SignalStrength
+        a0 := -v0 * deg2rad                             // 基准点角（3 次探测共用）
+        b0 := -h0 * deg2rad
+        sp := s0 / 4 * deg2rad                          // 探测间距
+        c := sp                                         // 探测角（统一用局部变量传参）
+        d := 0
+        coordinate(a0, b0, c, d)
+        act = waitloop(base + 2)
+        if act != CONT { return act }
+
+        s1 := dish.SignalStrength
+        d = -90 * deg2rad
+        coordinate(a0, b0, c, d)
+        act = waitloop(base + 2)
+        if act != CONT { return act }
+
+        s2 := dish.SignalStrength
+        c = s0 * deg2rad
+        d = atan2(s2 - s0, -(s1 - s0))
+        coordinate(a0, b0, c, d)
+    }
+}
+
+func main() {
+    reserveRegs(14, 15)     // r14/r15 保留给 waitloop 的跨调用计数器（ireg/setIreg）
+    dial.Mode = 4
+    for {
+        // —— prepare ——
+        yield()
+        dish.BestContactFilter = -1
+        dish.Activate = 0
+        dish.On = 0
+
+        // 内层：recheck → track；track 返回 TO_RECHECK 时只重做 recheck（不复位）
+        for {
+            // —— recheck：等拨杆扳起并取到一个有效联系人 ——
+            base := 0
+            for {
+                base = dial.Setting * MEMO
+                if lever.Open > 0 {
+                    id := get(searchIC, base + 1)
+                    gh := get(searchIC, base + 7)
+                    gv := get(searchIC, base + 8)
+                    put(searchIC, base + 2, 1)              // 握手：标记已取用
+                    if gh > 0 && gv > 0 {
+                        dish.On = 1                         // 角度有效才上电
+                        sleep(1)
+                        dish.BestContactFilter = id
+                        dish.Vertical = gv
+                        dish.Horizontal = gh
+                        break
+                    }
+                }
+            }
+            // —— 锁定/审问 ——（TO_PREPARE → 跳出到 prepare；TO_RECHECK → 重做 recheck）
+            if track(base) != TO_RECHECK { break }
+        }
+    }
+}

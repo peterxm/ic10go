@@ -1,0 +1,165 @@
+// ============================================================================
+// 交易天线「1」—— 锁定 & 审问芯片（中型天线 d0）
+// 接线按当前：d0=中型天线  d2=拨杆  d3=旋钮  d5=邻芯片 housing(共享栈)
+// 原程序的重复 `alias dish d0`/`d1` 会解析到空的 d1；本版直接使用 d0。
+//
+// 说明：IC10 硬上限 128 行，本程序逻辑量已顶满。完全结构化的 `.icg` 版本
+// （func waitloop/track + 具名变量）编译后 145 行、无法装载，故此处保留
+// 寄存器级写法；结构化参考版见 housing1.structured.icg。
+// icg: shared-stack
+// ============================================================================
+
+const dish = d0
+const lever = d2
+const dial = d3
+const searchIC = d5
+
+const MEMO = 12
+const HALF_PI = 1.5707963267948966
+
+func main() {
+    var r0 = 0
+    var r1 = 0
+    var r2 = 0
+    var r3 = 0
+    var r4 = 0
+    var r5 = 0
+    var r6 = 0
+    var r7 = 0
+    var r8 = 0
+    var r9 = 0
+    var r10 = 0
+    var r11 = 0
+    var r12 = 0
+    var r13 = 0
+    var r14 = 0
+
+    dial.Mode = 4
+
+    label prepare:                     // 复位天线后等待
+    yield()
+    dish.BestContactFilter = -1
+    dish.Activate = 0
+    dish.On = 0
+    label recheck:                     // 等拨杆 + 取有效联系人
+    r1 = dial.Setting
+    r0 = lever.Open
+    if r0 <= 0 { goto recheck }
+    r14 = (r1 * MEMO)
+    r14 = (r14 + 1)
+    r13 = get(searchIC, r14)           // 信号ID
+    r14 = (r14 + 6)
+    r11 = get(searchIC, r14)           // 估计H
+    r14 = (r14 + 1)
+    r12 = get(searchIC, r14)           // 估计V
+    r14 = (r14 - 6)                    // -> base+2 (握手位)
+    put(searchIC, r14, 1)
+    if r11 <= 0 { goto recheck }
+    if r12 <= 0 { goto recheck }
+    dish.On = 1
+    sleep(1)
+    dish.BestContactFilter = r13
+    dish.Vertical = r12
+    dish.Horizontal = r11
+
+    label track:                       // 3 点峰值测量 → coordinate 精确对准
+    r12 = 180
+    r11 = 0
+    call waitloop
+    r0 = dish.Vertical
+    r1 = dish.Horizontal
+    r8 = dish.SignalStrength
+    r10 = (r8 / 4)
+    r0 = (r0 * -1)
+    r1 = (r1 * -1)
+    r0 = (r0 * deg2rad)
+    r1 = (r1 * deg2rad)
+    r3 = 0
+    r2 = (r10 * deg2rad)
+    call coordinate
+    dish.Vertical = r4
+    dish.Horizontal = r5
+    call waitloop
+    r9 = dish.SignalStrength
+    r2 = (r10 * deg2rad)
+    r3 = (-90 * deg2rad)
+    call coordinate
+    dish.Vertical = r4
+    dish.Horizontal = r5
+    call waitloop
+    r10 = dish.SignalStrength
+    r2 = (r8 * deg2rad)
+    r6 = (r9 - r8)
+    r7 = (r10 - r8)
+    r6 = (r6 * -1)
+    r3 = atan2(r7, r6)
+    call coordinate
+    dish.Vertical = r4
+    dish.Horizontal = r5
+    goto track
+
+    label waitloop:                    // 等待/审问
+    yield()
+    r6 = lever.Open
+    if r6 <= 0 { goto prepare }
+    r6 = dish.SignalID
+    if r6 < 0 { goto prepare }
+    r6 = dish.InterrogationProgress
+    if r6 <= 0 { goto search }
+    if r6 < 1 { goto waitloop }
+    sleep(2)
+    dish.Activate = 1
+    lever.Open = 0
+    goto prepare
+    label search:
+    r6 = dish.SignalStrength
+    if r6 != -1 { goto peak }
+    r13 = dish.Idle
+    if r13 <= 0 { goto waitloop }
+    r11 = (r11 + 1)
+    if r11 > 360 { goto recheck }
+    if r11 < 60 { goto waitloop }
+    if r12 < 90 { goto waitloop }
+    r13 = get(searchIC, r14)
+    if r13 <= 0 { goto recheck }
+    goto waitloop
+    label peak:
+    r11 = 0
+    if r6 > r12 { goto trigger }
+    r12 = r6
+    label trigger:
+    if r6 > 2 { ret }
+    sleep(2)
+    dish.Activate = 1
+    goto waitloop
+
+    // 球面三角：由 (-r0,-r1) 与探测偏移 (r2,r3) 解出精确 (V,H) -> r4,r5
+    label coordinate:
+    r2 = (HALF_PI - r2)
+    r4 = cos(r0)
+    r5 = sin(r2)
+    r4 = (r4 * r5)
+    r5 = cos(r3)
+    r6 = sin(r0)
+    r5 = (r5 * r6)
+    r6 = cos(r2)
+    r5 = (r5 * r6)
+    r4 = (r4 - r5)
+    r4 = asin(r4)
+    r4 = (HALF_PI - r4)
+    r4 = (r4 * rad2deg)
+    r5 = tan(r2)
+    r6 = sin(r0)
+    r5 = (r5 * r6)
+    r6 = cos(r3)
+    r7 = cos(r0)
+    r6 = (r6 * r7)
+    r5 = (r5 + r6)
+    r6 = sin(r3)
+    r5 = atan2(r6, r5)
+    r5 = (r5 - r1)
+    r5 = (r5 * rad2deg)
+    r5 = (r5 + 180)
+    r5 = (r5 % 360)
+    ret
+}

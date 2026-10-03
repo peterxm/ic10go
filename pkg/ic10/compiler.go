@@ -97,6 +97,8 @@ type Options struct {
 	// compares both variants when the source has constant user slots and keeps
 	// the shorter runtime.
 	NoMem2Reg bool
+	// NoGlobalProp disables cross-block copy propagation.
+	NoGlobalProp bool
 	// RedundantDeviceWrites removes a constant device write that repeats the
 	// previous write to the same device+logic, saving lines but changing the
 	// observable write sequence. Off by default.
@@ -511,10 +513,11 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			best, haveBest = r, true
 		}
 	}
-	run := func(outline map[string]bool, inlineConstArgs, noFold, noMem2Reg, forceNoOpt bool) {
+	run := func(outline map[string]bool, inlineConstArgs, noFold, noMem2Reg, noGlobalProp, forceNoOpt bool) {
 		o := opts
 		o.NoFoldDataReads = noFold
 		o.NoMem2Reg = noMem2Reg
+		o.NoGlobalProp = noGlobalProp
 		// Lower each variant into its own diagnostics bag: a variant the size
 		// model discards (e.g. one that trips an internal error on an awkward
 		// shape) must not disqualify the variants that do work.
@@ -627,11 +630,13 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	for _, outline := range outlines {
 		for _, noFold := range folds {
 			for _, noMem2Reg := range mem2regs {
-				run(outline, false, noFold, noMem2Reg, false)
-				// A plan can both share the body and specialise constant calls;
-				// try the specialising variant too and keep the shorter.
-				if len(outline) > 0 {
-					run(outline, true, noFold, noMem2Reg, false)
+				for _, noGlobalProp := range []bool{false, true} {
+					run(outline, false, noFold, noMem2Reg, noGlobalProp, false)
+					// A plan can both share the body and specialise constant calls;
+					// try the specialising variant too and keep the shorter.
+					if len(outline) > 0 {
+						run(outline, true, noFold, noMem2Reg, noGlobalProp, false)
+					}
 				}
 			}
 		}
@@ -641,9 +646,9 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	// costs more lines than it saves. When that happened, also build an
 	// unoptimised program and keep whichever is shorter.
 	if !noOpt && sawSpill {
-		run(nil, false, false, false, true)
+		run(nil, false, false, false, false, true)
 		if len(plan) > 0 {
-			run(plan, false, false, false, true)
+			run(plan, false, false, false, false, true)
 		}
 	}
 	// Each candidate re-runs lowering, so warnings can repeat; keep one copy.
@@ -938,6 +943,7 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, in
 	fn.DataBase = compilerBase(info, 0, opts)
 	fn.PrivateStack = opts.PrivateStack
 	fn.NoMem2Reg = opts.NoMem2Reg
+	fn.NoGlobalProp = opts.NoGlobalProp
 	fn.RedundantDeviceWrites = opts.RedundantDeviceWrites
 	if !noOpt {
 		if err := opt.Optimize(fn); err != nil {

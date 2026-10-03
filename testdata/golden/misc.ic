@@ -9,8 +9,8 @@ move r0 0
 bge r1 r0 11
 move r0 0
 j 13
-sgt r0 r1 100
-select r0 r0 100 r1
+sgt r0 r2 100
+select r0 r0 100 r2
 s d0 Setting r0
 sgt r0 r2 20
 l r1 d0 Open

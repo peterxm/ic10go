@@ -27,6 +27,7 @@ type pass struct {
 // pipeline is the ordered optimization pipeline.
 var pipeline = []pass{
 	{"propagate", propagate},
+	{"globalPropagate", globalPropagate},
 	{"constProp", constProp},
 	{"fold", foldAll},
 	{"simplify", simplify},
@@ -199,6 +200,205 @@ func propagate(fn *ir.Function) bool {
 		}
 	}
 	return changed
+}
+
+// ---------------------------------------------------------------------------
+// Global copy propagation (must analysis)
+// ---------------------------------------------------------------------------
+
+// globalPropagate lifts propagate across block boundaries. The block-local pass
+// cannot cross a call, so the argument binds an outlined call emits
+// (param = arg at the call site, param read inside the callee) survive it.
+// This pass tracks, at every block entry, the copies d = s that hold on all
+// paths (intersection over predecessors; any redefinition of d or s kills the
+// fact) and rewrites uses of d to s where s is still live. Only destinations
+// copied from a single source are tracked, so a surviving fact always names the
+// one value d is known to equal.
+func globalPropagate(fn *ir.Function) bool {
+	if fn.NoGlobalProp {
+		return false
+	}
+	fn.BuildCFG()
+	_, liveOut := ir.Liveness(fn)
+
+	// Universe: destinations that are copied from exactly one source anywhere.
+	// Limit it to the registers the lowerer creates for an outlined call's
+	// parameter and result temporaries (named "func$param" / "func$res"): those
+	// are the argument and return moves this pass exists to remove. Leaving
+	// ordinary copies alone keeps the pass from perturbing register allocation
+	// in programs that do not use outlining.
+	srcs := map[*ir.Reg]map[ir.Value]bool{}
+	for _, b := range fn.Blocks {
+		for _, ins := range b.Instrs {
+			a, ok := ins.(*ir.Assign)
+			if !ok {
+				continue
+			}
+			if _, ok := a.Src.(*ir.Reg); !ok {
+				continue
+			}
+			if !strings.Contains(a.Dst.Name, "$") {
+				continue
+			}
+			if srcs[a.Dst] == nil {
+				srcs[a.Dst] = map[ir.Value]bool{}
+			}
+			srcs[a.Dst][a.Src] = true
+		}
+	}
+	universe := map[*ir.Reg]ir.Value{}
+	for d, ss := range srcs {
+		if len(ss) == 1 {
+			for s := range ss {
+				universe[d] = s
+			}
+		}
+	}
+	if len(universe) == 0 {
+		return false
+	}
+
+	// transfer applies a block to a set of facts (nil = TOP = the universe).
+	transfer := func(in map[*ir.Reg]ir.Value, b *ir.Block) map[*ir.Reg]ir.Value {
+		out := map[*ir.Reg]ir.Value{}
+		if in == nil {
+			for d, s := range universe {
+				out[d] = s
+			}
+		} else {
+			for d, s := range in {
+				out[d] = s
+			}
+		}
+		for _, ins := range b.Instrs {
+			d := ir.DefOf(ins)
+			if d == nil {
+				continue
+			}
+			delete(out, d)
+			for k, v := range out {
+				if r, ok := v.(*ir.Reg); ok && r == d {
+					delete(out, k)
+				}
+			}
+			if a, ok := ins.(*ir.Assign); ok {
+				if s, ok := a.Src.(*ir.Reg); ok {
+					if u, ok := universe[d]; ok && sameValue(u, s) {
+						out[d] = s
+					}
+				}
+			}
+		}
+		return out
+	}
+
+	// Forward fixpoint: in[b] = meet of predecessors' out (nil = TOP).
+	in := map[*ir.Block]map[*ir.Reg]ir.Value{}
+	for _, b := range fn.Blocks {
+		in[b] = nil
+	}
+	in[fn.Entry] = map[*ir.Reg]ir.Value{}
+	for changed, rounds := true, 0; changed && rounds < 64; rounds++ {
+		changed = false
+		for _, b := range fn.Blocks {
+			if b == fn.Entry {
+				continue
+			}
+			var merged map[*ir.Reg]ir.Value
+			first := true
+			for _, p := range b.Preds {
+				po := transfer(in[p], p)
+				if first {
+					merged = po
+					first = false
+					continue
+				}
+				for k, v := range merged {
+					if pv, ok := po[k]; !ok || !sameValue(pv, v) {
+						delete(merged, k)
+					}
+				}
+			}
+			if merged == nil {
+				merged = map[*ir.Reg]ir.Value{}
+			}
+			if !factsEqual(merged, in[b]) {
+				in[b] = merged
+				changed = true
+			}
+		}
+	}
+
+	// Rewrite uses where the fact holds and the source stays live.
+	out := false
+	for _, b := range fn.Blocks {
+		val := map[*ir.Reg]ir.Value{}
+		for k, v := range in[b] {
+			val[k] = v
+		}
+		lastUse := map[*ir.Reg]int{}
+		for idx, ins := range b.Instrs {
+			u, _ := ir.DefUse(ins)
+			for _, r := range u {
+				lastUse[r] = idx
+			}
+		}
+		for _, r := range ir.TermUses(b.Term) {
+			lastUse[r] = len(b.Instrs)
+		}
+		lo := liveOut[b]
+		for idx := range b.Instrs {
+			ins := b.Instrs[idx]
+			allow := func(nv ir.Value) bool {
+				switch x := nv.(type) {
+				case *ir.Const:
+					return true
+				case *ir.Reg:
+					return lastUse[x] >= idx || lo[x]
+				default:
+					return true
+				}
+			}
+			if rewriteUses(ins, val, allow) {
+				out = true
+			}
+			d := ir.DefOf(ins)
+			if d == nil {
+				continue
+			}
+			for x, v := range val {
+				if r, ok := v.(*ir.Reg); ok && r == d {
+					delete(val, x)
+				}
+			}
+			if a, ok := ins.(*ir.Assign); ok {
+				if s, ok := a.Src.(*ir.Reg); ok {
+					if u, ok := universe[d]; ok && sameValue(u, s) {
+						val[d] = s
+						continue
+					}
+				}
+			}
+			delete(val, d)
+		}
+	}
+	return out
+}
+
+func factsEqual(a, b map[*ir.Reg]ir.Value) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		w, ok := b[k]
+		if !ok || !sameValue(v, w) {
+			return false
+		}
+	}
+	return true
 }
 
 // ---------------------------------------------------------------------------

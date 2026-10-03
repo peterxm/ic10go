@@ -5,6 +5,7 @@ package regalloc
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"ic10go/internal/ir"
 )
@@ -220,6 +221,36 @@ func colorGraph(fn *ir.Function, g map[*ir.Reg]map[*ir.Reg]bool, palette []int) 
 		delete(cadj, b)
 		parent[b] = a
 	}
+	// copySrc[d] = s when every definition of d is a copy from the same source
+	// register s (d is read-only apart from those copies).
+	copySrc := map[*ir.Reg]*ir.Reg{}
+	{
+		seen := map[*ir.Reg]bool{}
+		bad := map[*ir.Reg]bool{}
+		uniq := map[*ir.Reg]*ir.Reg{}
+		for _, blk := range fn.Blocks {
+			for _, ins := range blk.Instrs {
+				d := ir.DefOf(ins)
+				if d == nil {
+					continue
+				}
+				if a, ok := ins.(*ir.Assign); ok {
+					if sr, ok := a.Src.(*ir.Reg); ok && (!seen[d] || uniq[d] == sr) {
+						uniq[d] = sr
+						seen[d] = true
+						continue
+					}
+				}
+				bad[d] = true
+				seen[d] = true
+			}
+		}
+		for d, sr := range uniq {
+			if !bad[d] {
+				copySrc[d] = sr
+			}
+		}
+	}
 	for _, blk := range fn.Blocks {
 		for _, ins := range blk.Instrs {
 			a, ok := ins.(*ir.Assign)
@@ -231,8 +262,19 @@ func colorGraph(fn *ir.Function, g map[*ir.Reg]map[*ir.Reg]bool, palette []int) 
 				continue
 			}
 			rd, rs := find(a.Dst), find(s)
-			if rd == rs || cadj[rd][rs] {
+			if rd == rs {
 				continue
+			}
+			if cadj[rd][rs] {
+				// A register whose every definition is a copy of an outlined
+				// call's result register (func$ret) is safe to coalesce even
+				// across an interference edge: it is never written except by
+				// those copies, so sharing the result register is safe.
+				if copySrc[a.Dst] == nil || !strings.Contains(s.Name, "$") {
+					continue
+				}
+				delete(cadj[rd], rs)
+				delete(cadj[rs], rd)
 			}
 			union(rd, rs)
 		}
@@ -345,21 +387,55 @@ func chaitinBriggs(list []*ir.Reg, g map[*ir.Reg]map[*ir.Reg]bool, cost map[*ir.
 	return colors, spilled
 }
 
-// spillCosts counts how often each register is used or defined.
+// loopDepths returns, for every block, how many natural loops enclose it, plus
+// which blocks are loop latches (have a back edge to a dominator).
+func loopDepths(fn *ir.Function) (map[*ir.Block]int, map[*ir.Block]bool) {
+	dom := ir.Dominators(fn)
+	depth := map[*ir.Block]int{}
+	latch := map[*ir.Block]bool{}
+	for _, b := range fn.Blocks {
+		for _, s := range b.Succs {
+			if dom[b][s] {
+				latch[b] = true
+				for _, x := range fn.Blocks {
+					if dom[x][s] {
+						depth[x]++
+					}
+				}
+			}
+		}
+	}
+	return depth, latch
+}
+
+// spillCosts counts how often each register is used or defined, weighted by the
+// loop nesting depth of the block it appears in. Values live across a loop back
+// edge (loop-carried) get a large extra weight.
 func spillCosts(fn *ir.Function) map[*ir.Reg]int {
+	depth, latch := loopDepths(fn)
+	_, liveOut := ir.Liveness(fn)
 	cost := map[*ir.Reg]int{}
 	for _, b := range fn.Blocks {
+		w := 1
+		for i := 0; i < depth[b] && w < 1<<16; i++ {
+			w *= 8
+		}
 		for _, ins := range b.Instrs {
 			u, d := ir.DefUse(ins)
 			for _, r := range u {
-				cost[r]++
+				cost[r] += w
 			}
 			for _, r := range d {
-				cost[r]++
+				cost[r] += w
 			}
 		}
 		for _, r := range ir.TermUses(b.Term) {
-			cost[r]++
+			cost[r] += w
+		}
+		if latch[b] {
+			for r := range liveOut[b] {
+				cost[r] += 1 << 14
+			}
 		}
 	}
 	for r := range allRegs(fn) {
