@@ -25,6 +25,226 @@ type pass struct {
 }
 
 // pipeline is the ordered optimization pipeline.
+// nonnegFold drops boolean tests implied by "register >= 0" facts derived from
+// branch guards. Motivating shape: `x >= 0 && x > y` after `if y < 0 { ... }`
+// — since y >= 0 there, `x > y` already implies `x >= 0`, so the `x >= 0`
+// conjunct (and its sgez) is redundant. Also folds `x >= 0` / `x < 0` to a
+// constant where x is known non-negative.
+func nonnegFold(fn *ir.Function) bool {
+	fn.BuildCFG()
+	defs := map[*ir.Reg]ir.Instr{}
+	all := map[*ir.Reg]bool{}
+	for _, b := range fn.Blocks {
+		for _, ins := range b.Instrs {
+			if d := ir.DefOf(ins); d != nil {
+				defs[d] = ins
+				all[d] = true
+			}
+		}
+		for _, r := range ir.TermUses(b.Term) {
+			all[r] = true
+		}
+	}
+	if len(all) == 0 {
+		return false
+	}
+
+	transfer := func(facts map[*ir.Reg]bool, b *ir.Block) map[*ir.Reg]bool {
+		out := map[*ir.Reg]bool{}
+		if facts == nil {
+			for r := range all {
+				out[r] = true
+			}
+		} else {
+			for r := range facts {
+				out[r] = true
+			}
+		}
+		for _, ins := range b.Instrs {
+			if d := ir.DefOf(ins); d != nil {
+				delete(out, d)
+			}
+		}
+		return out
+	}
+
+	in := map[*ir.Block]map[*ir.Reg]bool{}
+	for _, b := range fn.Blocks {
+		in[b] = nil // nil = TOP (no facts ruled out)
+	}
+	in[fn.Entry] = map[*ir.Reg]bool{}
+	for changed := true; changed; {
+		changed = false
+		for _, b := range fn.Blocks {
+			if b == fn.Entry {
+				continue
+			}
+			var merged map[*ir.Reg]bool
+			first := true
+			for _, p := range b.Preds {
+				o := transfer(in[p], p)
+				if f := nonnegOnEdge(p.Term, b); f != nil {
+					o[f] = true
+				}
+				if first {
+					merged = o
+					first = false
+					continue
+				}
+				for k := range merged {
+					if !o[k] {
+						delete(merged, k)
+					}
+				}
+			}
+			if merged == nil {
+				merged = map[*ir.Reg]bool{}
+			}
+			if !regSetEqual(merged, in[b]) {
+				in[b] = merged
+				changed = true
+			}
+		}
+	}
+
+	out := false
+	for _, b := range fn.Blocks {
+		local := map[*ir.Reg]bool{}
+		for r := range in[b] {
+			local[r] = true
+		}
+		for i := range b.Instrs {
+			ins := b.Instrs[i]
+			if c, ok := ins.(*ir.Cmp); ok && c.B != nil && isConstVal(c.B, 0) {
+				if r, ok := c.A.(*ir.Reg); ok && local[r] {
+					switch c.Cond {
+					case ir.Ge:
+						b.Instrs[i] = &ir.Assign{Dst: c.Dst, Src: &ir.Const{V: 1}}
+						out = true
+						continue
+					case ir.Lt:
+						b.Instrs[i] = &ir.Assign{Dst: c.Dst, Src: &ir.Const{V: 0}}
+						out = true
+						continue
+					}
+				}
+			}
+			if bin, ok := ins.(*ir.Bin); ok && bin.Op == ir.Min {
+				if repl, ok := impliedConjunct(bin.A, bin.B, local, defs); ok {
+					b.Instrs[i] = &ir.Assign{Dst: bin.Dst, Src: repl}
+					out = true
+				}
+			}
+			if d := ir.DefOf(ins); d != nil {
+				delete(local, d)
+			}
+		}
+	}
+	return out
+}
+
+// nonnegOnEdge reports the register known >= 0 when control flows from term to
+// successor s, or nil. Handles `r < 0` / `r >= 0` / `0 < r` guards.
+func nonnegOnEdge(term ir.Term, s *ir.Block) *ir.Reg {
+	br, ok := term.(*ir.Br)
+	if !ok {
+		return nil
+	}
+	var r *ir.Reg
+	var right bool
+	if v, ok := br.A.(*ir.Reg); ok && br.B != nil && isConstVal(br.B, 0) {
+		r, right = v, true
+	} else if v, ok := br.B.(*ir.Reg); ok && br.A != nil && isConstVal(br.A, 0) {
+		r, right = v, false
+	}
+	if r == nil {
+		return nil
+	}
+	thenNN, elseNN := false, false
+	if right {
+		switch br.Cond {
+		case ir.Ge, ir.Gt:
+			thenNN = true
+		case ir.Lt, ir.Le:
+			elseNN = true
+		}
+	} else {
+		switch br.Cond {
+		case ir.Lt, ir.Le:
+			thenNN = true
+		case ir.Gt, ir.Ge:
+			elseNN = true
+		}
+	}
+	if s == br.Then && thenNN {
+		return r
+	}
+	if s == br.Else && elseNN {
+		return r
+	}
+	return nil
+}
+
+// impliedConjunct returns a replacement for min(a, b) when one conjunct is
+// `x >= 0` and the other is `x > y` / `x >= y` with y known non-negative.
+func impliedConjunct(a, b ir.Value, nonneg map[*ir.Reg]bool, defs map[*ir.Reg]ir.Instr) (ir.Value, bool) {
+	cmpOf := func(v ir.Value) (*ir.Cmp, bool) {
+		r, ok := v.(*ir.Reg)
+		if !ok {
+			return nil, false
+		}
+		c, ok := defs[r].(*ir.Cmp)
+		return c, ok
+	}
+	ca, aok := cmpOf(a)
+	cb, bok := cmpOf(b)
+	if !aok || !bok {
+		return nil, false
+	}
+	pick := func(ge, other *ir.Cmp, otherVal ir.Value) (ir.Value, bool) {
+		if ge.Cond != ir.Ge || ge.B == nil || !isConstVal(ge.B, 0) {
+			return nil, false
+		}
+		x, ok := ge.A.(*ir.Reg)
+		if !ok {
+			return nil, false
+		}
+		if other.Cond != ir.Gt && other.Cond != ir.Ge {
+			return nil, false
+		}
+		if !sameValue(other.A, x) {
+			return nil, false
+		}
+		y, ok := other.B.(*ir.Reg)
+		if !ok || !nonneg[y] {
+			return nil, false
+		}
+		return otherVal, true
+	}
+	if v, ok := pick(ca, cb, b); ok {
+		return v, true
+	}
+	if v, ok := pick(cb, ca, a); ok {
+		return v, true
+	}
+	return nil, false
+}
+
+func regSetEqual(a, b map[*ir.Reg]bool) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if !b[k] {
+			return false
+		}
+	}
+	return true
+}
+
 var pipeline = []pass{
 	{"propagate", propagate},
 	{"globalPropagate", globalPropagate},
@@ -38,6 +258,7 @@ var pipeline = []pass{
 	{"select", selectConvert},
 	{"foldBranches", foldBranches},
 	{"fuseBranches", fuseBranches},
+	{"nonnegFold", nonnegFold},
 	{"licm", licm},
 	{"tailCall", tailCall},
 	{"dce", dce},
