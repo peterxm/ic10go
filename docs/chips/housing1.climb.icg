@@ -1,0 +1,128 @@
+// ============================================================================
+// 交易天线「1」—— v4 保守爬山版（中型天线 d0）
+//
+// 接线同 v2（docs/chips/交易天线接线图.md）：d0=中天线 d2=拨杆 d3=旋钮 d5=chip2外壳
+//
+// 目标量：WattsReachingContact（W，随对准度平滑变化；波束外为 -1）。
+// 策略：坐标爬山——每轴 ±step 各探一次，**只在 W 严格变大且探点有效(≥0)时才移动**，
+//       绝不走进 -1；某轮无改进就 step 减半，直到最小步长 → 判定对齐。
+// 判据：W ≥ 0 且 W ≥ MinimumWattsToContact 时由 waitloop 触发审问。
+//
+// icg: shared-stack
+// ============================================================================
+
+const dish = d0
+const lever = d2
+const dial = d3
+const searchIC = d5
+const MEMO = 12
+
+const CONT = 0
+const TO_PREPARE = 1
+const TO_RECHECK = 2
+
+const STEP0 = 8
+const STEPMIN = 2
+const MAXROUND = 24
+
+func waitloop(idx num) num {
+    for {
+        yield()
+        if lever.Open <= 0 { return TO_PREPARE }
+        if dish.SignalID < 0 { return TO_PREPARE }
+        ip := dish.InterrogationProgress
+        if ip > 0 {
+            if ip < 1 { continue }
+            sleep(2)
+            dish.Activate = 1
+            lever.Open = 0
+            return TO_PREPARE
+        }
+        s := dish.SignalStrength
+        if s == -1 {
+            if dish.Idle <= 0 { continue }
+            a := ireg(14) + 1
+            setIreg(14, a)
+            if a > 360 { return TO_RECHECK }
+            if a < 60 { continue }
+            if ireg(15) < 90 { continue }
+            if get(searchIC, idx) <= 0 { return TO_RECHECK }
+            continue
+        }
+        setIreg(14, 0)
+        if s <= ireg(15) { setIreg(15, s) }
+        if s > 2 { return CONT }
+        sleep(2)
+        dish.Activate = 1
+    }
+}
+
+// 保守爬山；返回 TO_PREPARE / TO_RECHECK / CONT(收敛)
+func climb(base num) num {
+    step := STEP0
+    for t := 0; t < MAXROUND; t++ {
+        act := waitloop(base + 2)
+        if act != CONT { return act }
+        h0 := dish.Horizontal
+        v0 := dish.Vertical
+        w0 := dish.WattsReachingContact
+        if w0 < 0 { continue }
+        dish.Horizontal = h0 + step
+        waitloop(base + 2)
+        wp := dish.WattsReachingContact
+        dish.Horizontal = h0 - step
+        waitloop(base + 2)
+        wm := dish.WattsReachingContact
+        hb := h0
+        if wp > w0 { hb = h0 + step }
+        if wm > w0 && wm > wp { hb = h0 - step }
+        dish.Horizontal = hb
+        dish.Vertical = v0 + step
+        waitloop(base + 2)
+        wp = dish.WattsReachingContact
+        dish.Vertical = v0 - step
+        waitloop(base + 2)
+        wm = dish.WattsReachingContact
+        vb := v0
+        if wp > w0 { vb = v0 + step }
+        if wm > w0 && wm > wp { vb = v0 - step }
+        dish.Vertical = vb
+        if hb == h0 && vb == v0 {
+            if step <= STEPMIN { return CONT }
+            step = step / 2
+        }
+    }
+    return CONT
+}
+
+func main() {
+    reserveRegs(14, 15)
+    dial.Mode = 4
+    for {
+        yield()
+        dish.BestContactFilter = -1
+        dish.Activate = 0
+        dish.On = 0
+        for {
+            base := 0
+            for {
+                base = dial.Setting * MEMO
+                if lever.Open > 0 {
+                    id := get(searchIC, base + 1)
+                    gh := get(searchIC, base + 7)
+                    gv := get(searchIC, base + 8)
+                    put(searchIC, base + 2, 1)
+                    if gh > 0 && gv > 0 {
+                        dish.On = 1
+                        sleep(1)
+                        dish.BestContactFilter = id
+                        dish.Vertical = gv
+                        dish.Horizontal = gh
+                        break
+                    }
+                }
+            }
+            if climb(base) != TO_RECHECK { break }
+        }
+    }
+}

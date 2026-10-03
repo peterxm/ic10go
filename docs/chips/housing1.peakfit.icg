@@ -1,0 +1,145 @@
+// ============================================================================
+// 交易天线「1」—— v3 峰值拟合版（中型天线 d0）
+//
+// 接线同 v2（见 docs/chips/交易天线接线图.md）：
+//   d0=中型卫星天线  d2=拨杆  d3=旋钮  d5=chip「2」的外壳(读共享栈)
+//
+// 与 v2 的差别：不再用「梯度方向 atan2 + S0 步长」迭代，而是**每轴对称三点
+// 抛物线拟合**直接求峰值偏移：
+//     Δ = d·(S− − S+) / (2·(S− − 2·S0 + S+))   限幅 ±d
+//   H 轴、V 轴各算一次 → 一步跳到峰值附近；失败时退化为不动/继续迭代。
+//   因此不再需要球面三角 coordinate()（直接探天线自身的 H/V 轴）。
+//
+// 共享协议（chip2 在自己外壳栈发布）同 v2：
+//   base=旋钮×12；get(d5,base+1)=信号ID, +7=H, +8=V；put(d5,base+2,1)=已取用
+//
+// icg: shared-stack
+// ============================================================================
+
+const dish = d0
+const lever = d2
+const dial = d3
+const searchIC = d5
+const MEMO = 12
+
+const CONT = 0
+const TO_PREPARE = 1
+const TO_RECHECK = 2
+
+const STEP = 6          // 探测步长（度）——按天线波瓣宽度调
+const MAX_TRIES = 5     // 拟合最大迭代次数
+
+// 等待/审问一拍；返回 CONT / TO_PREPARE / TO_RECHECK（与 v2 相同）
+func waitloop(idx num) num {
+    for {
+        yield()
+        if lever.Open <= 0 { return TO_PREPARE }
+        if dish.SignalID < 0 { return TO_PREPARE }
+        ip := dish.InterrogationProgress
+        if ip > 0 {
+            if ip < 1 { continue }
+            sleep(2)
+            dish.Activate = 1
+            lever.Open = 0
+            return TO_PREPARE
+        }
+        s := dish.SignalStrength
+        if s == -1 {
+            if dish.Idle <= 0 { continue }
+            a := ireg(14) + 1
+            setIreg(14, a)
+            if a > 360 { return TO_RECHECK }
+            if a < 60 { continue }
+            if ireg(15) < 90 { continue }
+            if get(searchIC, idx) <= 0 { return TO_RECHECK }
+            continue
+        }
+        setIreg(14, 0)
+        if s <= ireg(15) { setIreg(15, s) }
+        if s > 2 { return CONT }
+        sleep(2)
+        dish.Activate = 1
+    }
+}
+
+// 三点抛物线峰值偏移（限幅到 ±d）
+func peak(sm num, s0 num, sp num, d num) num {
+    den := sm - 2*s0 + sp
+    if den == 0 { return 0 }
+    off := d * (sm - sp) / (2 * den)
+    if off > d { return d }
+    if off < -d { return -d }
+    return off
+}
+
+// 峰值拟合循环；返回 TO_PREPARE / TO_RECHECK
+func fit(base num) num {
+    for t := 0; t < MAX_TRIES; t++ {
+        act := waitloop(base + 2)
+        if act != CONT { return act }
+
+        v0 := dish.Vertical
+        h0 := dish.Horizontal
+        s0 := dish.SignalStrength
+        if s0 <= 0 { continue }
+        d := STEP
+
+        // H 轴：h0-d, h0, h0+d
+        dish.Horizontal = h0 - d
+        act = waitloop(base + 2)
+        if act != CONT { return act }
+        sm := dish.SignalStrength
+        dish.Horizontal = h0 + d
+        act = waitloop(base + 2)
+        if act != CONT { return act }
+        sp := dish.SignalStrength
+        dish.Horizontal = h0 + peak(sm, s0, sp, d)
+
+        // V 轴：v0-d, v0, v0+d
+        dish.Vertical = v0 - d
+        act = waitloop(base + 2)
+        if act != CONT { return act }
+        sm = dish.SignalStrength
+        dish.Vertical = v0 + d
+        act = waitloop(base + 2)
+        if act != CONT { return act }
+        sp = dish.SignalStrength
+        dish.Vertical = v0 + peak(sm, s0, sp, d)
+    }
+    return CONT
+}
+
+func main() {
+    reserveRegs(14, 15)     // waitloop 的跨调用计数器（ireg/setIreg）
+    dial.Mode = 4
+    for {
+        // —— prepare ——
+        yield()
+        dish.BestContactFilter = -1
+        dish.Activate = 0
+        dish.On = 0
+
+        // 内层：recheck → fit；fit 返回 TO_RECHECK 时只重做 recheck
+        for {
+            base := 0
+            for {
+                base = dial.Setting * MEMO
+                if lever.Open > 0 {
+                    id := get(searchIC, base + 1)
+                    gh := get(searchIC, base + 7)
+                    gv := get(searchIC, base + 8)
+                    put(searchIC, base + 2, 1)
+                    if gh > 0 && gv > 0 {
+                        dish.On = 1
+                        sleep(1)
+                        dish.BestContactFilter = id
+                        dish.Vertical = gv
+                        dish.Horizontal = gh
+                        break
+                    }
+                }
+            }
+            if fit(base) != TO_RECHECK { break }
+        }
+    }
+}
