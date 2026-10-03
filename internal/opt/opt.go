@@ -2212,6 +2212,84 @@ func fuseBranches(fn *ir.Function) bool {
 		uses[r]--
 		changed = true
 	}
+
+	// Fuse `t = min(c1, c2)` used only by a branch on t into two short-circuit
+	// branches, dropping the min and the materialised comparisons:
+	//   if c1 && c2 { Then } else { Else }  ->
+	//     b:   if !c1 goto Else else goto mid
+	//     mid: if !c2 goto Else else goto Then
+	// This is the branch form of `x >= 0 && x > y`: nonnegFold leaves it as a
+	// min, and this removes the min and its two comparison lines.
+	for _, b := range fn.Blocks {
+		br, ok := b.Term.(*ir.Br)
+		if !ok {
+			continue
+		}
+		cond, a := br.Cond, br.A
+		if br.B != nil {
+			c, isConst := br.B.(*ir.Const)
+			if !isConst || c.V != 0 || (br.Cond != ir.Eq && br.Cond != ir.Ne) {
+				continue
+			}
+			if br.Cond == ir.Eq {
+				cond = ir.Zero
+			} else {
+				cond = ir.NonZero
+			}
+		}
+		if cond != ir.Zero && cond != ir.NonZero {
+			continue
+		}
+		r, ok := a.(*ir.Reg)
+		if !ok || uses[r] != 1 {
+			continue
+		}
+		var min *ir.Bin
+		for _, ins := range b.Instrs {
+			d := ir.DefOf(ins)
+			if d != r {
+				continue
+			}
+			if mb, isMin := ins.(*ir.Bin); isMin && mb.Op == ir.Min {
+				min = mb
+			}
+			break
+		}
+		if min == nil {
+			continue
+		}
+		cmpIn := func(v ir.Value) *ir.Cmp {
+			rr, ok := v.(*ir.Reg)
+			if !ok || uses[rr] != 1 {
+				return nil
+			}
+			for _, ins := range b.Instrs {
+				if ir.DefOf(ins) == rr {
+					if c, isCmp := ins.(*ir.Cmp); isCmp {
+						return c
+					}
+					return nil
+				}
+			}
+			return nil
+		}
+		c1, c2 := cmpIn(min.A), cmpIn(min.B)
+		if c1 == nil || c2 == nil {
+			continue
+		}
+		mid := fn.NewBlock()
+		if cond == ir.NonZero { // Then exactly when c1 && c2
+			b.Term = &ir.Br{Cond: c1.Cond.Invert(), A: c1.A, B: c1.B, Then: br.Else, Else: mid}
+			mid.Term = &ir.Br{Cond: c2.Cond.Invert(), A: c2.A, B: c2.B, Then: br.Else, Else: br.Then}
+		} else { // Then exactly when !(c1 && c2)
+			b.Term = &ir.Br{Cond: c1.Cond.Invert(), A: c1.A, B: c1.B, Then: br.Then, Else: mid}
+			mid.Term = &ir.Br{Cond: c2.Cond.Invert(), A: c2.A, B: c2.B, Then: br.Then, Else: br.Else}
+		}
+		changed = true
+	}
+	if changed {
+		fn.BuildCFG()
+	}
 	return changed
 }
 
