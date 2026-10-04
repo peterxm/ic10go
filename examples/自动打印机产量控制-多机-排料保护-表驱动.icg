@@ -89,8 +89,10 @@ func control(i num) {
     active := readById(pa, LogicType.Activate)
     done := readById(pa, LogicType.ExportCount) - db.stack[base]
     if active != 0 {
-        // 取消打印有延迟，在制的那件也会完成，所以把它也算进目标
-        if done + (readById(pa, LogicType.CompletionRatio) > 0) >= readById(st, LogicType.Setting) {
+        // 取消打印有延迟，在制的那件也会完成，所以把它也算进目标。
+        // done>0：第一件没做完前不许提前停，否则 Setting=1 会刚开工就停。
+        target := readById(st, LogicType.Setting)
+        if done >= target || (done > 0 && done + 1 >= target && readById(pa, LogicType.CompletionRatio) > 0) {
             writeById(pa, LogicType.Activate, 0)
             active = 0
         }
