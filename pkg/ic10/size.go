@@ -48,6 +48,22 @@ type StackReport struct {
 	UserDynamic   bool // a user stack address is not a compile-time constant
 }
 
+// StackWarning returns an advisory when the program addresses the persistent
+// stack through a runtime value (db.stack[reg], poke(reg), get/put(db, reg))
+// while the compiler owns stack slots (a data segment or register spills). Such
+// addresses cannot be checked against the compiler region, so a too-large index
+// can silently overwrite the data segment at runtime. It returns "" when there
+// is nothing to warn about.
+func StackWarning(r StackReport) string {
+	if !r.UserDynamic || r.CompilerUsed == 0 {
+		return ""
+	}
+	return fmt.Sprintf("a user stack address is a runtime value (db.stack[reg]/poke(reg)); "+
+		"the compiler cannot check it against the compiler region [%d..%d], so keep the "+
+		"max index below %d (declare the boundary with --user-stack; --dynamic-stack "+
+		"does not check it either)", r.CompilerBase, StackSize-1, r.CompilerBase)
+}
+
 // Size compiles the source and returns a per-function line breakdown. It uses
 // the same inlined/outlined selection as Compile.
 func Size(name string, src []byte, opts Options) (*SizeReport, error) {

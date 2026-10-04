@@ -1208,8 +1208,13 @@ func cmdStats(args []string) int {
 			fmt.Printf("warning    auto-tabled %d switch(es) into the data segment; reinstall the loader\n", autoTabled)
 		}
 	}
-	if haveStack && stack.UserUnbounded {
-		fmt.Printf("warning    push depth is unbounded (a loop grows the stack); keep the data segment clear\n")
+	if haveStack {
+		if stack.UserUnbounded {
+			fmt.Printf("warning    push depth is unbounded (a loop grows the stack); keep the data segment clear\n")
+		}
+		if w := ic10.StackWarning(stack); w != "" {
+			fmt.Printf("warning    %s\n", w)
+		}
 	}
 	return 0
 }

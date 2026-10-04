@@ -792,6 +792,51 @@ func main() {
 	}
 }
 
+func TestStackWarning(t *testing.T) {
+	// A runtime stack index plus a data segment cannot be checked, so it warns.
+	dyn := []byte(`data T = [1, 2, 3, 4, 5]
+func main() {
+    i := d1.Setting
+    db.stack[i] = 7
+    d0.Setting = T[0] + db.stack[i]
+}`)
+	rep, err := ic10.Size("t.icg", dyn, ic10.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := ic10.StackWarning(rep.Stack); w == "" {
+		t.Fatal("expected a warning for a runtime stack index with a data segment")
+	}
+
+	// A compile-time constant index is checked by the compiler: no warning.
+	konst := []byte(`data T = [1, 2, 3, 4, 5]
+func main() {
+    db.stack[9] = 7
+    d0.Setting = T[0] + db.stack[9]
+}`)
+	rep, err = ic10.Size("t.icg", konst, ic10.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := ic10.StackWarning(rep.Stack); w != "" {
+		t.Fatalf("constant index should not warn: %s", w)
+	}
+
+	// A runtime index without a compiler region cannot clobber anything.
+	plain := []byte(`func main() {
+    i := d1.Setting
+    db.stack[i] = 7
+    d0.Setting = db.stack[i]
+}`)
+	rep, err = ic10.Size("t.icg", plain, ic10.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := ic10.StackWarning(rep.Stack); w != "" {
+		t.Fatalf("no compiler region means nothing to clobber: %s", w)
+	}
+}
+
 func TestSizeStackCustomLimit(t *testing.T) {
 	src := []byte(`func main() { d0.Setting = 1 }`)
 	rep, err := ic10.Size("t.icg", src, ic10.Options{UserStackLimit: 64})
