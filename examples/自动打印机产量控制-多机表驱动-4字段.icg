@@ -1,0 +1,93 @@
+// 打印机产量控制器（多机 · 表驱动 loader 版 · 4 字段）。
+//
+// 与 examples/自动打印机产量控制-多机.icg 控制完全相同的 9 台机器
+// （同型号多台、同名、同基线槽位），但用 data 表 + for 遍历：代码行数
+// 不随台数增长，加只加数据、不动逻辑。
+// 代价是要先跑一次 loader（编译自动生成的 <file>.data.ic）再烧 runtime。
+//
+// 每台打印机占连续 4 个槽：打印机类型、打印机名、堆叠机名、基线槽位。
+// 同型号多台靠名字区分。基线槽位显式写死，方便和「直接调用版」逐槽对齐。
+// 加一台打印机：在 Units 末尾追加 4 个值，并把 COUNT 加一。
+//
+// 上限：编译器默认固定留 128 个用户栈槽 [0..127]，数据段只剩 384 槽；每台
+//   4 槽，故默认最多 (384-1)/4 = 95 台。
+//   编译时加 `--user-stack <台数>`（把用户区缩到刚够放基线槽），可把上限
+//   提到 512/(4+1) ≈ 102 台。例：
+//     ic10c build --user-stack 102 examples/自动打印机产量控制-多机表驱动-4字段.icg
+//   ⚠ 基线索引 db.stack[slot] 是运行时变量，编译器不检查越界，所以
+//     --user-stack 必须 ≥ 最大基线槽 + 1，否则基线会压进数据段、运行时坏数据；
+//     也不要图省事用 --dynamic-stack（它会把数据紧贴用户区下方，静默重叠）。
+// 3 字段版见 examples/自动打印机产量控制-多机表驱动-3字段.icg（可到 127 台）。
+const Stacker = hash("StructureStackerReverse")
+
+data Units = [
+    // 打印机类型 / 打印机名 / 堆叠机名 / 基线槽位
+    hash("StructureAutolathe"),
+    hash("Autolathe A"),
+    hash("Autolathe Stacker A"),
+    0,
+    hash("StructureAutolathe"),
+    hash("Autolathe B"),
+    hash("Autolathe Stacker B"),
+    1,
+    hash("StructureElectronicsPrinter"),
+    hash("Electronics A"),
+    hash("Electronics Stacker A"),
+    2,
+    hash("StructureElectronicsPrinter"),
+    hash("Electronics B"),
+    hash("Electronics Stacker B"),
+    3,
+    hash("StructureHydraulicPipeBender"),
+    hash("Pipe Bender A"),
+    hash("Pipe Stacker A"),
+    4,
+    hash("StructureHydraulicPipeBender"),
+    hash("Pipe Bender B"),
+    hash("Pipe Stacker B"),
+    5,
+    hash("StructureRocketManufactory"),
+    hash("Rocket"),
+    hash("Rocket Stacker"),
+    6,
+    hash("StructureToolManufactory"),
+    hash("Tool"),
+    hash("Tool Stacker"),
+    7,
+    hash("StructureSecurityPrinter"),
+    hash("Security"),
+    hash("Security Stacker"),
+    8,
+]
+
+const COUNT = 9  // 打印机台数
+const STRIDE = 4  // 每台占的槽数
+
+func main() {
+    for {
+        yield()
+        for i := 0; i < COUNT; i++ {
+            control(i)
+        }
+    }
+}
+
+// control 处理第 i 台：从 Units 里取类型 / 名字 / 基线槽位，按名字配对
+// ReferenceId，到量停机；空闲时刷新产量基线并镜像 On。
+func control(i num) {
+    base := i * STRIDE
+    slot := Units[base + 3]
+    pa := batch.readName(Units[base], Units[base + 1], "ReferenceId", "Average")
+    st := batch.readName(Stacker, Units[base + 2], "ReferenceId", "Average")
+    if isNaN(pa) || isNaN(st) {
+        return
+    }
+    if readById(pa, LogicType.Activate) != 0 {
+        if readById(pa, LogicType.ExportCount) - db.stack[slot] >= readById(st, LogicType.Setting) {
+            writeById(pa, LogicType.Activate, 0)
+        }
+    } else {
+        db.stack[slot] = readById(pa, LogicType.ExportCount)
+        writeById(st, LogicType.On, readById(pa, LogicType.On))
+    }
+}

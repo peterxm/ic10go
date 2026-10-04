@@ -1,0 +1,67 @@
+// 打印机产量控制器（多机 · 按名字配对版）。
+//
+// 与 examples/自动打印机产量控制.icg 的区别：
+//   原版按「打印机预制体类型」批量寻址（batch.read 取 Average），同一型号的
+//   打印机只能当成一台，无法各配一个堆叠机、各自计数；本版给每台打印机 /
+//   堆叠机起唯一名字，按名字配对 ReferenceId，所以同型号可以挂多台
+//   （例如两台自动车床），互不干扰。
+//
+// 相比 data 表遍历版的好处：配置直接写在 main 里，加一台只加一行；不用跑
+//   loader，编译产物直接烧进芯片即可。代价是代码行数随台数线性增长
+//   （约 5 行 / 台），十来台仍远在 128 行预算内。
+//
+// 功能与原来一致：在堆叠机 Setting 上设定目标数量；打印机打印时按
+//   ExportCount 增量统计，到量即清除 Activate 停机；空闲时刷新基线并把
+//   打印机 On 镜像给堆叠机。
+//
+// 部署：
+//   1. 所有打印机、堆叠机接到 IC 的数据网络上；
+//   2. 在游戏里把设备命名为 control(...) 里写的名字；名字不匹配的那台会被
+//      当作不存在而跳过；
+//   3. 直接运行编译出的 IC10，无需 loader。
+//
+// 加一台打印机：复制一行 control(...)，改类型和两个名字，并把最后一个参数
+//   （基线槽位）改成没用过的唯一数字（0, 1, 2, ...）。
+//   同型号多台时类型 hash 写同一个，设备名必须不同。
+//
+// 栈参数：基线用 db.stack[slot]，slot 是运行时参数（编译器不检查越界）。
+//   默认 --user-stack 128 足够用；别把它调到比最大槽位还小。本版没有 data
+//   段，不存在用户区与数据段争用的问题。
+const Stacker = hash("StructureStackerReverse")
+
+func main() {
+    for {
+        yield()
+        // 打印机类型 / 打印机名 / 堆叠机名 / 基线槽位
+        control(hash("StructureAutolathe"), hash("Autolathe A"), hash("Autolathe Stacker A"), 0)
+        control(hash("StructureAutolathe"), hash("Autolathe B"), hash("Autolathe Stacker B"), 1)
+        control(hash("StructureElectronicsPrinter"), hash("Electronics A"), hash("Electronics Stacker A"), 2)
+        control(hash("StructureElectronicsPrinter"), hash("Electronics B"), hash("Electronics Stacker B"), 3)
+        control(hash("StructureHydraulicPipeBender"), hash("Pipe Bender A"), hash("Pipe Stacker A"), 4)
+        control(hash("StructureHydraulicPipeBender"), hash("Pipe Bender B"), hash("Pipe Stacker B"), 5)
+        control(hash("StructureRocketManufactory"), hash("Rocket"), hash("Rocket Stacker"), 6)
+        control(hash("StructureToolManufactory"), hash("Tool"), hash("Tool Stacker"), 7)
+        control(hash("StructureSecurityPrinter"), hash("Security"), hash("Security Stacker"), 8)
+    }
+}
+
+// control 处理一台「打印机 + 堆叠机」：
+//   ptype / pname  打印机预制体类型与设备名（同型号靠 pname 区分）
+//   sname          堆叠机设备名（类型固定 StructureStackerReverse）
+//   slot           该台的产量基线在持久栈 db.stack[slot]，每台一个唯一槽
+// 到量即清 Activate 停机；空闲时刷新基线并镜像 On。
+func control(ptype num, pname num, sname num, slot num) {
+    pa := batch.readName(ptype, pname, "ReferenceId", "Average")
+    st := batch.readName(Stacker, sname, "ReferenceId", "Average")
+    if isNaN(pa) || isNaN(st) {
+        return
+    }
+    if readById(pa, LogicType.Activate) != 0 {
+        if readById(pa, LogicType.ExportCount) - db.stack[slot] >= readById(st, LogicType.Setting) {
+            writeById(pa, LogicType.Activate, 0)
+        }
+    } else {
+        db.stack[slot] = readById(pa, LogicType.ExportCount)
+        writeById(st, LogicType.On, readById(pa, LogicType.On))
+    }
+}
