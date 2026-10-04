@@ -1,0 +1,144 @@
+// 打印机产量控制器（多机 · 按名字配对 · 排料保护 · 表驱动 loader 版）。
+//
+// 和 examples/自动打印机产量控制-多机-排料保护.icg 功能一样（Setting 保护 +
+// 排料收杆 + 主动吐料 + 到量停机），但配置放进 data 表、运行时 for 遍历：
+// 代码行数与台数无关，加机器只改数据。代价是要先跑一次 loader。
+//
+// 关键行为：
+//   1) 开口排料（打印机 Open=1）时把堆垛机 Setting 顶成 500、并切 Mode=1（扣住，
+//      不按 Setting/换料自动吐），排完（Reagents=0）由 IC 把 Open 收回 0；收杆
+//      让堆垛机把最后一块吐出来，下一 tick 走"刚关好"分支打开吐料。
+//   2) 正常打印时堆垛机 Mode=0（按 Setting 自动吐整摞，不会顶住打印机导致打不够）。
+//   3) 到量停机把"在制的一件"（CompletionRatio>0）也算进目标，正好 Setting 个。
+//   4) 吐料用 Activate=1，盯到内部槽 Slot 2(Inside Machine) 空了才停。
+//
+// 部署：ic10c build 生成 <file>.data.ic，先跑一次 loader，再烧 runtime。
+//
+// 持久栈布局（用户区）：
+//   每台状态 4 个槽（i*4）：[基线, 开口前 Setting 备份, 上一 tick 的 Open, 吐料标志]
+//   BOOT：本次加载后的第一 tick 标记，放在最顶（默认 127）
+// 加机器：Units 追加 3 个值、COUNT 加一即可；台数多到 i*4 碰到 BOOT 时把 BOOT 调大。
+const Stacker = hash("StructureStackerReverse")
+
+// 排料时把堆垛机 Setting 顶到的值。
+const EmitSetting = 500
+
+// 首次加载接管标记所在槽（用户栈顶）。
+const BOOT = 127
+
+// 每台配置占 3 个值；每台状态占 4 个槽。
+const CFG = 3
+const ST = 4
+
+data Units = [
+    // 打印机类型 / 打印机名 / 堆叠机名
+    hash("StructureAutolathe"),
+    hash("Autolathe A"),
+    hash("Autolathe Stacker A"),
+    hash("StructureAutolathe"),
+    hash("Autolathe B"),
+    hash("Autolathe Stacker B"),
+    hash("StructureElectronicsPrinter"),
+    hash("Electronics A"),
+    hash("Electronics Stacker A"),
+    hash("StructureElectronicsPrinter"),
+    hash("Electronics B"),
+    hash("Electronics Stacker B"),
+    hash("StructureHydraulicPipeBender"),
+    hash("Pipe Bender A"),
+    hash("Pipe Stacker A"),
+    hash("StructureHydraulicPipeBender"),
+    hash("Pipe Bender B"),
+    hash("Pipe Stacker B"),
+    hash("StructureRocketManufactory"),
+    hash("Rocket"),
+    hash("Rocket Stacker"),
+    hash("StructureToolManufactory"),
+    hash("Tool"),
+    hash("Tool Stacker"),
+    hash("StructureSecurityPrinter"),
+    hash("Security"),
+    hash("Security Stacker"),
+]
+
+const COUNT = 9  // 打印机台数
+
+func main() {
+    db.stack[BOOT] = 1  // 首 tick 接管现状，不信任上一版残留的备份
+    for {
+        yield()
+        for i := 0; i < COUNT; i++ {
+            control(i)
+        }
+        db.stack[BOOT] = 0
+    }
+}
+
+// control 处理第 i 台。
+func control(i num) {
+    cfg := i * CFG
+    pa := batch.readName(Units[cfg], Units[cfg + 1], "ReferenceId", "Average")
+    st := batch.readName(Stacker, Units[cfg + 2], "ReferenceId", "Average")
+    if isNaN(pa) || isNaN(st) {
+        return
+    }
+    base := i * ST
+    wasOpen := db.stack[base + 2]
+    open := readById(pa, LogicType.Open)
+    guardEmit(st, base, open)
+    active := readById(pa, LogicType.Activate)
+    done := readById(pa, LogicType.ExportCount) - db.stack[base]
+    if active != 0 {
+        // 取消打印有延迟，在制的那件也会完成，所以把它也算进目标
+        if done + (readById(pa, LogicType.CompletionRatio) > 0) >= readById(st, LogicType.Setting) {
+            writeById(pa, LogicType.Activate, 0)
+            active = 0
+        }
+    } else {
+        // 打印机空了、这一批也够数了才打开吐料，等整批都在堆垛机里再吐
+        if done >= readById(st, LogicType.Setting) {
+            db.stack[base + 3] = 1
+        }
+        db.stack[base] += done
+        writeById(st, LogicType.On, readById(pa, LogicType.On))
+    }
+    if open != 0 {
+        db.stack[base + 3] = 0
+        // 玩家拉杆 Open=1 排料；打印机内部 Reagents 空了就由 IC 收杆（置 0）
+        if readById(pa, LogicType.Reagents) == 0 {
+            writeById(pa, LogicType.Open, 0)
+        }
+    } else if db.stack[BOOT] == 0 && wasOpen != 0 {
+        db.stack[base + 3] = 1  // 刚关好：打开吐料
+    } else if db.stack[base + 3] != 0 && active == 0 && readByIdSlot(st, 2, Occupied) == 0 {
+        db.stack[base + 3] = 0  // 内部槽空了才停吐
+    }
+    // 堆垛机常驻 Mode=1：只攒着、听 Activate 才吐（这样在制那件会完成、到量
+    // 停机时也整批一次吐出，不会"1+其余"）
+    writeById(st, LogicType.Mode, 1)
+    writeById(st, LogicType.Activate, db.stack[base + 3])
+}
+
+// guardEmit 维护堆叠机 Setting：开口顶 500，闭口写回开口前的备份。
+func guardEmit(st num, base num, open num) {
+    saved := base + 1
+    prev := base + 2
+    if db.stack[BOOT] != 0 {
+        db.stack[prev] = open
+        if open == 0 {
+            db.stack[saved] = readById(st, LogicType.Setting)
+        }
+        return
+    }
+    if open != 0 {
+        writeById(st, LogicType.Setting, EmitSetting)
+        db.stack[prev] = 1
+    } else {
+        if db.stack[prev] != 0 {
+            writeById(st, LogicType.Setting, db.stack[saved])
+        } else {
+            db.stack[saved] = readById(st, LogicType.Setting)
+        }
+        db.stack[prev] = 0
+    }
+}
