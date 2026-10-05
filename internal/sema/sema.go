@@ -556,6 +556,7 @@ type evalState struct {
 	funcs  map[string]*FuncInfo
 	devs   map[string]string
 	data   map[string]*DataTable
+	dlen   map[string]int
 	pure   map[string]bool
 	scope  []map[string]float64
 	steps  int
@@ -748,6 +749,17 @@ func (ev *evalState) call(e *ast.CallExpr) (float64, bool) {
 		if len(e.Args) == 1 {
 			if s, ok := evalString(e.Args[0]); ok {
 				return float64(int32(builtin.Hash(s))), true
+			}
+		}
+		return 0, false
+	}
+	// len(<data table>) is the compile-time element count of the table.
+	if id.Name == "len" {
+		if len(e.Args) == 1 {
+			if a, ok := e.Args[0].(*ast.Ident); ok {
+				if n, ok := ev.dlen[a.Name]; ok {
+					return float64(n), true
+				}
 			}
 		}
 		return 0, false
@@ -1416,11 +1428,18 @@ const maxDataGen = StackSize
 // evalPending resolves the deferred consts (in declaration order, so a const
 // can reference an earlier one) and then the deferred data tables.
 func evalPending(info *Info, diags *diag.Bag, consts []pendingConst, tables []pendingTable) {
+	dlen := map[string]int{}
+	for _, pt := range tables {
+		if pt.decl.Values != nil {
+			dlen[pt.decl.Name.Name] = len(pt.decl.Values)
+		}
+	}
 	ev := &evalState{
 		consts: info.Consts,
 		funcs:  info.Funcs,
 		devs:   info.Devices,
 		data:   info.DataIndex,
+		dlen:   dlen,
 	}
 	for _, pc := range consts {
 		v, ok := ev.expr(pc.expr)

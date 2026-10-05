@@ -153,6 +153,7 @@ func init() {
 	add("hcf", 0, false, "hcf")
 
 	add("abs", 1, true, "abs")
+	add("len", 1, true, "len")
 	add("sgn", 1, true, "sgn")
 	add("sqrt", 1, true, "sqrt")
 	add("exp", 1, true, "exp")

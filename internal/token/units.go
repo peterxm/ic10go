@@ -1,6 +1,7 @@
 package token
 
 import (
+	"math"
 	"strconv"
 	"strings"
 )
@@ -33,9 +34,8 @@ var Units = []Unit{
 	{"min", func(v float64) float64 { return v * 60 }},
 	{"h", func(v float64) float64 { return v * 3600 }},
 	{"s", func(v float64) float64 { return v }},
-	// angle: readability only, no conversion (device angles are degrees; IC10
-	// trig takes radians, so convert explicitly when needed).
-	{"deg", func(v float64) float64 { return v }},
+	// angle -> rad (IC10 trig takes radians)
+	{"deg", func(v float64) float64 { return v * math.Pi / 180 }},
 	{"rad", func(v float64) float64 { return v }},
 	// ratio: 50% -> 0.5
 	{"pct", func(v float64) float64 { return v * 0.01 }},

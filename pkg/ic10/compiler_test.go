@@ -837,6 +837,17 @@ func main() {
 	}
 }
 
+func TestLenDataTable(t *testing.T) {
+	src := []byte("data T = [1, 2, 3, 4]\nconst N = len(T)\nfunc main() { d0.Setting = N }")
+	code, diags, err := ic10.Compile("t.icg", src)
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: err=%v diags=%v", err, diags.Diags)
+	}
+	if !strings.Contains(code, "Setting 4") {
+		t.Fatalf("len(T) should be 4:\n%s", code)
+	}
+}
+
 func TestSizeStackCustomLimit(t *testing.T) {
 	src := []byte(`func main() { d0.Setting = 1 }`)
 	rep, err := ic10.Size("t.icg", src, ic10.Options{UserStackLimit: 64})

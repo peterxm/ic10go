@@ -64,7 +64,7 @@ var pureBuiltins = []string{
 	"abs", "sgn", "sqrt", "exp", "log", "floor", "ceil", "round", "trunc", "rand",
 	"sin", "cos", "tan", "asin", "acos", "atan", "isNaN",
 	"pow", "atan2", "min", "max", "sla", "srl", "rol", "ror",
-	"ext", "ins", "clamp", "lerp",
+	"ext", "ins", "clamp", "lerp", "len",
 	"approx", "approxZero", "notApprox", "notApproxZero", "isNotNaN", "logicalNor",
 }
 

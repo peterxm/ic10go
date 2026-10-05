@@ -1,34 +1,28 @@
-// 打印机产量控制器（多机 · 按名字配对 · 排料保护 · 表驱动 loader 版）。
+// 打印机产量控制器（多机 · 按名字配对 · 表驱动 loader 版）。
 //
-// 和 examples/自动打印机产量控制-多机-排料保护.icg 功能一样（Setting 保护 +
-// 排料收杆 + 主动吐料 + 到量停机），但配置放进 data 表、运行时 for 遍历：
-// 代码行数与台数无关，加机器只改数据。代价是要先跑一次 loader。
+// 逻辑简单，重点在 tick 控制（IC 每 tick 只有 128 条，9 台一轮塞不下）：
+//   * 每台 ReferenceId 只在加载后第一 tick 解析一次并缓存 → 之后每 tick 0 次 lbn。
+//   * 每 tick 跑一遍 fastStep（开口 + 到量停机，最关键、要及时），约 9 台 ~70 条。
+//   * 每 tick 只跑 1 台的 slowStep（空闲后的零头/吐料/On），用游标轮转，9 tick 转完一轮。
+//   这样每轮循环 ~110 条，能压在 1 tick 内，fastStep 才真的“每 tick”。
 //
-// 关键行为：
-//   1) 开口排料（打印机 Open=1）时把堆垛机 Setting 顶成 500、并切 Mode=1（扣住，
-//      不按 Setting/换料自动吐），排完（Reagents=0）由 IC 把 Open 收回 0；收杆
-//      让堆垛机把最后一块吐出来，下一 tick 走"刚关好"分支打开吐料。
-//   2) 正常打印时堆垛机 Mode=0（按 Setting 自动吐整摞，不会顶住打印机导致打不够）。
-//   3) 到量停机把"在制的一件"（CompletionRatio>0）也算进目标，正好 Setting 个。
-//   4) 吐料用 Activate=1，盯到内部槽 Slot 2(Inside Machine) 空了才停。
+// 功能：
+//   * 正常打印：产量到 Setting 停打印机；堆垛机按 Setting 自动吐整摞。Setting 超物品
+//     堆叠上限（MaxQuantity）时自动吐只吐满的，零头用 Activate=1 顶出来。
+//   * 开口排料（Open=1）：持续 Activate=1 来一个吐一个（不攒，防多材料堵死）；打印机
+//     Reagents=0 后 IC 收杆。
 //
 // 部署：ic10c build 生成 <file>.data.ic，先跑一次 loader，再烧 runtime。
 //
-// 持久栈布局（用户区）：
-//   每台状态 4 个槽（i*4）：[基线, 开口前 Setting 备份, 上一 tick 的 Open, 吐料标志]
-//   BOOT：本次加载后的第一 tick 标记，放在最顶（默认 127）
-// 加机器：Units 追加 3 个值、COUNT 加一即可；台数多到 i*4 碰到 BOOT 时把 BOOT 调大。
+// 持久栈布局（用户区，每台 4 个槽，i*4）：[产量基线, 吐料标志, 打印机 id, 堆垛机 id]
+//   CUR / BOOT：slowStep 游标与首 tick 标记，放在最顶（125 / 127）
+// 加机器：Units 追加 3 个值、COUNT 加一；i*4 别碰到 CUR(125) 即可（约 ≤31 台）。
 const Stacker = hash("StructureStackerReverse")
 
-// 排料时把堆垛机 Setting 顶到的值。
-const EmitSetting = 500
-
-// 首次加载接管标记所在槽（用户栈顶）。
-const BOOT = 127
-
-// 每台配置占 3 个值；每台状态占 4 个槽。
-const CFG = 3
-const ST = 4
+const CUR = 125  // slowStep 轮转游标
+const BOOT = 127  // 首 tick 标记 / 解析 ReferenceId 的开关
+const CFG = 3  // 每台配置 3 个值
+const ST = 4  // 每台状态 4 个槽
 
 data Units = [
     // 打印机类型 / 打印机名 / 堆叠机名
@@ -56,91 +50,96 @@ data Units = [
     hash("StructureToolManufactory"),
     hash("Tool"),
     hash("Tool Stacker"),
-    hash("StructureSecurityPrinter"),
-    hash("Security"),
-    hash("Security Stacker"),
 ]
 
-const COUNT = 9  // 打印机台数
+// 加机器：Units 追加 3 个值即可，COUNT 由表长自动算出（len(Units)/CFG）。
+const COUNT = len(Units) / CFG  // 打印机台数（= 表长 / 每台 3 个值）
 
 func main() {
-    db.stack[BOOT] = 1  // 首 tick 接管现状，不信任上一版残留的备份
+    db.stack[BOOT] = 1
+    db.stack[CUR] = 0
     for {
         yield()
+        if db.stack[BOOT] != 0 {
+            for i := 0; i < COUNT; i++ {
+                resolve(i)
+            }
+        }
+        // 每 tick：开口 + 到量停机（最要紧）
         for i := 0; i < COUNT; i++ {
-            control(i)
+            fastStep(i)
+        }
+        // 每 tick 只做 1 台的空闲/吐料逻辑，游标轮转
+        slowStep(db.stack[CUR])
+        db.stack[CUR]++
+        if db.stack[CUR] >= COUNT {
+            db.stack[CUR] = 0
         }
         db.stack[BOOT] = 0
     }
 }
 
-// control 处理第 i 台。
-func control(i num) {
+// resolve：首 tick 解析并缓存 ReferenceId。
+func resolve(i num) {
     cfg := i * CFG
-    pa := batch.readName(Units[cfg], Units[cfg + 1], "ReferenceId", "Average")
-    st := batch.readName(Stacker, Units[cfg + 2], "ReferenceId", "Average")
+    base := i * ST
+    db.stack[base + 2] = batch.readName(Units[cfg], Units[cfg + 1], "ReferenceId", "Average")
+    db.stack[base + 3] = batch.readName(Stacker, Units[cfg + 2], "ReferenceId", "Average")
+}
+
+// fastStep：开口排料 + 到量停打印机（每 tick 跑）。
+func fastStep(i num) {
+    base := i * ST
+    pa := db.stack[base + 2]
+    st := db.stack[base + 3]
     if isNaN(pa) || isNaN(st) {
         return
     }
-    base := i * ST
-    wasOpen := db.stack[base + 2]
-    open := readById(pa, LogicType.Open)
-    guardEmit(st, base, open)
-    active := readById(pa, LogicType.Activate)
-    done := readById(pa, LogicType.ExportCount) - db.stack[base]
-    if active != 0 {
-        // 取消打印有延迟，在制的那件也会完成，所以把它也算进目标。
-        // done>0：第一件没做完前不许提前停，否则 Setting=1 会刚开工就停。
-        target := readById(st, LogicType.Setting)
-        if done >= target || (done > 0 && done + 1 >= target && readById(pa, LogicType.CompletionRatio) > 0) {
-            writeById(pa, LogicType.Activate, 0)
-            active = 0
-        }
-    } else {
-        // 打印机空了、这一批也够数了才打开吐料，等整批都在堆垛机里再吐
-        if done >= readById(st, LogicType.Setting) {
-            db.stack[base + 3] = 1
-        }
-        db.stack[base] += done
-        writeById(st, LogicType.On, readById(pa, LogicType.On))
-    }
-    if open != 0 {
-        db.stack[base + 3] = 0
-        // 玩家拉杆 Open=1 排料；打印机内部 Reagents 空了就由 IC 收杆（置 0）
+    if readById(pa, LogicType.Open) != 0 {
+        // 开口：持续强制排（Activate 无视数量），不攒，避免多种材料塞死
+        db.stack[base + 1] = 1
+        writeById(st, LogicType.Mode, 1)
+        writeById(st, LogicType.Activate, 1)
         if readById(pa, LogicType.Reagents) == 0 {
-            writeById(pa, LogicType.Open, 0)
+            writeById(pa, LogicType.Open, 0)  // 排空了，IC 收杆
         }
-    } else if db.stack[BOOT] == 0 && wasOpen != 0 {
-        db.stack[base + 3] = 1  // 刚关好：打开吐料
-    } else if db.stack[base + 3] != 0 && active == 0 && readByIdSlot(st, 2, Occupied) == 0 {
-        db.stack[base + 3] = 0  // 内部槽空了才停吐
+    } else if readById(pa, LogicType.Activate) != 0 && readById(pa, LogicType.ExportCount) - db.stack[base] >= readById(st, LogicType.Setting) {
+        writeById(pa, LogicType.Activate, 0)  // 到量立即停
     }
-    // 堆垛机常驻 Mode=1：只攒着、听 Activate 才吐（这样在制那件会完成、到量
-    // 停机时也整批一次吐出，不会"1+其余"）
-    writeById(st, LogicType.Mode, 1)
-    writeById(st, LogicType.Activate, db.stack[base + 3])
 }
 
-// guardEmit 维护堆叠机 Setting：开口顶 500，闭口写回开口前的备份。
-func guardEmit(st num, base num, open num) {
-    saved := base + 1
-    prev := base + 2
-    if db.stack[BOOT] != 0 {
-        db.stack[prev] = open
-        if open == 0 {
-            db.stack[saved] = readById(st, LogicType.Setting)
-        }
+// slowStep：空闲后的零头/吐料/On 镜像（每 tick 只处理 1 台）。
+func slowStep(i num) {
+    base := i * ST
+    pa := db.stack[base + 2]
+    st := db.stack[base + 3]
+    if isNaN(pa) || isNaN(st) {
         return
     }
-    if open != 0 {
-        writeById(st, LogicType.Setting, EmitSetting)
-        db.stack[prev] = 1
-    } else {
-        if db.stack[prev] != 0 {
-            writeById(st, LogicType.Setting, db.stack[saved])
-        } else {
-            db.stack[saved] = readById(st, LogicType.Setting)
-        }
-        db.stack[prev] = 0
+    if readById(pa, LogicType.Open) != 0 || readById(pa, LogicType.Activate) != 0 {
+        return  // 开口/打印中交给 fastStep
     }
+    done := readById(pa, LogicType.ExportCount) - db.stack[base]
+    // Setting 超过物品堆叠上限时，自动吐只吐满的，零头用 Activate 顶出来
+    maxq := readByIdSlot(st, 2, MaxQuantity)
+    setting := readById(st, LogicType.Setting)
+    if done >= setting && maxq > 0 && setting > maxq {
+        db.stack[base + 1] = 1
+    }
+    // 内部槽里是锭：直接排出，不做其它处理（锭不该被留着/切）
+    if readByIdSlot(st, 2, Class) == SlotClass.Ingot {
+        db.stack[base + 1] = 1
+    }
+    db.stack[base] += done
+    writeById(st, LogicType.On, readById(pa, LogicType.On))
+    // 正在吐：堆垛机内部槽空了就停
+    if db.stack[base + 1] != 0 && readByIdSlot(st, 2, Occupied) == 0 {
+        db.stack[base + 1] = 0
+    }
+    if db.stack[base + 1] != 0 {
+        writeById(st, LogicType.Mode, 1)
+    } else {
+        writeById(st, LogicType.Mode, 0)
+    }
+    writeById(st, LogicType.Activate, db.stack[base + 1])
 }

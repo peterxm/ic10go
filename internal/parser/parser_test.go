@@ -253,8 +253,8 @@ func TestParseUnits(t *testing.T) {
 		{"2min", 120},
 		{"1h", 3600},
 		{"90s", 90},
-		// angle: no conversion
-		{"180deg", 180},
+		// angle -> rad
+		{"180deg", 3.141592653589793},
 		{"1rad", 1},
 		// ratio
 		{"50%", 0.5},

@@ -480,7 +480,7 @@ func (c *typeChecker) checkCallArgs(call *ast.CallExpr, fi *FuncInfo) {
 
 func builtinResultType(name string) Type {
 	switch name {
-	case "hash", "read", "readDev", "ireg":
+	case "hash", "read", "readDev", "ireg", "len":
 		return Num
 	case "str":
 		return Str

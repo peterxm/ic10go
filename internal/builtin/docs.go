@@ -34,6 +34,7 @@ var Docs = map[string]Doc{
 	"isNaN": {"isNaN(x)", "1 if x is NaN else 0.", "x 是 NaN 时为 1，否则 0。"},
 
 	"hash": {"hash(\"...\")", "Compile-time CRC-32 of a string (IC10 HASH).", "编译期计算字符串的 CRC-32（IC10 HASH）。"},
+	"len":  {"len(table)", "Compile-time element count of a top-level data table.", "顶层 data 表的编译期元素个数。"},
 	"str":  {"str(\"...\")", "Display-string operand (IC10 STR).", "显示字符串操作数（IC10 STR）。"},
 	"raw":  {"raw(\"...\")", "Emit the argument verbatim as an IC10 operand.", "把参数原样作为 IC10 操作数输出。"},
 
