@@ -954,10 +954,28 @@ namespace Ic10Go.Testbench
         public static JArray FindDevices(string prefab, string name, int max)
         {
             var outp = new JArray();
-            UnityEngine.Object[] objs;
-            try { objs = UnityEngine.Resources.FindObjectsOfTypeAll(typeof(Thing)); }
-            catch { return outp; }
-            foreach (var ob in objs)
+            System.Collections.IEnumerable things = null;
+            try
+            {
+                var ty = typeof(Thing);
+                const BindingFlags sf = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+                object v = null;
+                var fi = ty.GetField("AllThings", sf);
+                if (fi != null) v = fi.GetValue(null);
+                if (v == null)
+                {
+                    var pi = ty.GetProperty("AllThings", sf);
+                    if (pi != null) v = pi.GetValue(null, null);
+                }
+                things = v as System.Collections.IEnumerable;
+            }
+            catch { }
+            if (things == null)
+            {
+                try { things = UnityEngine.Resources.FindObjectsOfTypeAll(typeof(Thing)); } catch { }
+            }
+            if (things == null) return outp;
+            foreach (var ob in things)
             {
                 var t = ob as Thing;
                 if (t == null || t.ReferenceId == 0) continue;
