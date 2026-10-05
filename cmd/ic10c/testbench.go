@@ -1008,9 +1008,25 @@ func benchDevices(addr string, chip any, nameFilter string, asJSON bool) int {
 	}
 	fmt.Printf("%-10s %-12s %-16s %-24s %8s %4s\n", "id", "prefab", "name", "type", "Setting", "On")
 	for _, d := range rows {
-		fmt.Printf("%-10v %-12v %-16v %-24v %8v %4v\n", d["id"], d["hash"], d["name"], d["type"], lg(d, "Setting"), lg(d, "On"))
+		fmt.Printf("%-10s %-12s %-16v %-24v %8s %4s\n", numStr(d["id"]), numStr(d["hash"]), d["name"], d["type"], numStr(lg(d, "Setting")), numStr(lg(d, "On")))
 	}
 	return 0
+}
+
+// numStr renders a JSON number as an integer when it is whole (so hashes/ids
+// don't print as 1.234e+09).
+func numStr(v any) string {
+	switch n := v.(type) {
+	case float64:
+		if n == math.Trunc(n) && !math.IsInf(n, 0) {
+			return strconv.FormatInt(int64(n), 10)
+		}
+		return strconv.FormatFloat(n, 'g', -1, 64)
+	case nil:
+		return ""
+	default:
+		return fmt.Sprint(v)
+	}
 }
 
 // benchFind enumerates world devices (like IC10 lb/lbn) filtered by --name /
@@ -1052,7 +1068,7 @@ func benchFind(addr, nameFilter, prefabArg string, asJSON bool) int {
 	}
 	fmt.Printf("%-9s %-13s %-18s %-30s %8s %4s\n", "id", "prefabHash", "name", "prefab", "Setting", "On")
 	for _, d := range rep.Devices {
-		fmt.Printf("%-9v %-13v %-18v %-30v %8v %4v\n", d["id"], lg(d, "PrefabHash"), d["name"], d["prefab"], lg(d, "Setting"), lg(d, "On"))
+		fmt.Printf("%-9s %-13s %-18v %-30v %8s %4s\n", numStr(d["id"]), numStr(lg(d, "PrefabHash")), d["name"], d["prefab"], numStr(lg(d, "Setting")), numStr(lg(d, "On")))
 	}
 	return 0
 }
