@@ -106,6 +106,19 @@ VSCode（可选，`sh editors/vscode/install.sh` 后重载窗口）：左侧 **I
 > 结论：**推代码、读寄存器 / 栈、手动单步**都有公开方法兜底，只有 `_Registers`/`_Stack`
 > 需要反射。这也是本方案把「确定性单步」从高风险降为中风险的原因。
 
+### 1.3 多人 / 权威写入相关 API（mod 0.5.4 起）
+
+游戏把「本地是否跑模拟」放在 `GameManager.RunSimulation`：单人 / 多人主机为 `true`，纯客户端为 `false`。
+客户端很多操作不是本地执行，而是把请求发给主机：
+
+| 行为 | 客户端 API | 主机侧 | 备注 |
+|---|---|---|---|
+| 交互类 logic（`Open`/`Mode`/`Activate`/`Lock`/`On`/`Color`） | `NetworkClient.Interact(interactable, state)` | `RequestInteractionToServer` → `OnServer.Interact(interactable, state)` | `Device.SetLogicValue(Open)` 在客户端走 `OnServer.Interact`，而它 `if(!RunSimulation) return`，**是空操作**；必须发交互消息 |
+| 普通值 logic（`Setting` 等） | `NetworkClient.SendToServer(new SetLogicFromClient{LogicId,LogicType,Value})` | 校验 `ISetable` + `CanLogicWrite` 后 `SetLogicValue` | 仅 **`ISetable` 设备**（Stacker / Transformer / Suit / LogicUnitBase …）；打印机等不实现 |
+| 推芯片源码 | `ProgrammableChip.SendUpdate()` | 分片消息 `IntegratedCircuitHeader` + `IntegratedCircuitUpdate`，收齐后 `SetSourceCode` 并同步 | 客户端还要发 loader 后**等主机跑一拍**再发 runtime |
+
+mod 按 `RunSimulation` 自动分流：主机 / 单人走原来的直接调用，客户端才走上面这些网络路径。
+
 ---
 
 ## 2. 总体架构
@@ -195,6 +208,8 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `set` | `{writes:[{port,logic,slot?,value}], force?:bool, pulse?:bool}` — `port` or `id` | `{applied:n}` |
 | `get` | `{reads:[{port,logic,slot?}]}` — `port` or `id` | `{values:[...]}` |
 | `device` | `{ids:[...]}` | `{devices:[{id,logic,slots,…}]}`（按 ReferenceId） |
+| `find` | `{name?, prefab?, max?}` | `{devices:[{id,name,prefab,logic,slots,…}]}`（扫世界设备；过滤用 `Thing.CustomName`，输出全 logic + 槽位） |
+| `net` | `{chip?}` | `{devices:[...]}`（**该芯片数据网络**的设备：`Device.DataCableNetwork.DataDeviceList`，即 `lb`/`lbn` 视角，接不接端口都能看） |
 | `writes` | `{clear?:bool, from?:int}` | `{writes:[{seq,id,device,logic,slot,value}], count}` |
 | `trace` | `{n:int}` | `{steps, hitCount, hits:[{pc,text,regs}]}`（逐条 `Execute(1)`，只回存储指令） |
 | `program` | `{}` | `{lines, code}`（芯片当前 IC10 源码） |
@@ -275,9 +290,14 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 - **chip 定位**：遍历 `CircuitHolders.AllCircuitHolders`（`ICircuitHolder`），拿 `ProgrammableChip`；
   名字用挂载的 `CircuitHousing` / `Thing` 的昵称或预制体名。`chip.select` 设默认。
 - **push**：`Reset()` → `SetSourceCode(code)`（主板则 `InputFinished`）→ 先逐个跑 `loaders`
-  （每块写完 `Execute` 到结束）→ 再写 runtime。
+  （每块写完 `Execute` 到结束）→ 再写 runtime。**客户端（`!RunSimulation`）**：改为
+  `SetSourceCode` + `ProgrammableChip.SendUpdate()` 把源码分片发给主机；loader 先发、等
+  ~0.8s 让主机跑一拍，再发 runtime（`SetSourceCode` 只复位代码、保留内存，数据段得以留存）。
 - **set/get**：`GetLogicableFromIndex(port)` → 按 logic 名读 / 写；logic 名到 `LogicType`
-  用内置表（与编译器同一份枚举）。槽位走 `slot` 参数。
+  用内置表（与编译器同一份枚举）。槽位走 `slot` 参数。设备可来自端口，也可按 `ReferenceId`
+  （`id`）——见 `device`/`find`/`net`。
+- **set（多人客户端）**：交互类 logic → `NetworkClient.Interact`；普通值（`ISetable`）→
+  `SetLogicFromClient`；主机 / 单人直接 `SetLogicValue`。
 - **state**：反射读 `_Registers` / `_Stack` / `_StackPointerIndex` / `_ReturnAddressIndex`，
   `get_LineNumber()`，`GetSourceCode()`；设备值经 `ICircuitHolder.GetLogicBindings()` 或逐端口读。
 - **run**：`mode:"step"` 时确认 `WorldManager.IsGamePaused`，循环 `chip.Execute(128)` N 次；
@@ -299,9 +319,14 @@ ic10c testbench hud [on|off|clear|X Y Z]    # 游戏内 HUD：自身坐标/朝�
 ic10c testbench program [--chip N]          # 打印芯片当前 IC10 源码（可重定向到文件）
 ic10c testbench push <file.icg> [--chip N] [--as NAME]  # 编译 + 上传（多芯片用 --as 选块；自动先跑 loader）
 ic10c testbench state [--chip N] [--all] [--json]
-ic10c testbench set d1.Setting=10 [...]      # 设置输入（--force 跳过只读校验；--pulse 先写 0 再写值，触发瞬态逻辑）
+ic10c testbench set d1.Setting=10 [...]      # 设置输入；也可按 ReferenceId：id:7030.Setting=2
+                                             # --force 跳过只读校验；--pulse 先写 0 再写值，触发瞬态逻辑
 ic10c testbench step [N]                     # 推进芯片 N 个 tick（暂停下）
 ic10c testbench ports                        # 诊断：端口/设备接线映射
+ic10c testbench devices [--name F]           # 列出设备（id/预制体/名字/Setting），区分同名
+ic10c testbench device --ids 1,2             # 按 ReferenceId 读设备（readById），接不接端口都行
+ic10c testbench net [--chip N]               # 该芯片数据网络上的设备（lb/lbn 视角，无需接线）
+ic10c testbench find [--name F] [--prefab P] # 扫描世界设备（类似 lb/lbn）
 ic10c testbench pause [on|off]               # 暂停 / 恢复游戏（确定性）
 ic10c testbench saves                        # 列出存档
 ic10c testbench load <name>                  # 载入存档（游戏 loadgame 命令）
@@ -408,7 +433,9 @@ Activity Bar「IC10」
 | `icg.bench.trackPlayer` | IC10: Track a Player | 标题栏：列出玩家（按距离）→ 选中后 `hud --player`，罗盘实时指向该玩家 |
 | `icg.bench.findAt` | IC10: Find Hosts by Position | 标题栏 🔍：输入 `X Y Z`（+可选半径）→ QuickPick（精确忽略小数 / 大致按距离），选中即切芯片 |
 | `icg.bench.filterNear` / `clearNear` | IC10: Only Hosts Near Me (±4) / Show All | 标题栏漏斗：只显示玩家 ±4 格内的 host（空心/实心图标切换） |
-| `icg.bench.setDevice` | IC10: Set Device Value | 树（点击某个 logic 值） |
+| `icg.bench.setDevice` | IC10: Set Device Value | 树 / 面板（点击某个 logic 值，端口或网络设备都行） |
+| `icg.bench.devices` | IC10: Find Devices | 视图标题 / 面板（`find` → 设备表） |
+| `icg.bench.queryIds` | IC10: Look up ReferenceIds in File | 视图标题 / 面板（扫描当前 `.icg` 里 `readById`/`writeById` 用到的 ReferenceId） |
 
 ### 7.3 Webview「Chip State」面板
 
@@ -417,6 +444,7 @@ Activity Bar「IC10」
 - **Registers**：网格（r0–r15 / ra / sp），等宽数字；值变化时短暂高亮（绿色淡出）。
 - **Stack**：默认**折叠**（`<details>`），展开后显示全部 512 槽，`sp` 行加色条。
 - **Devices**：每个设备一张**可折叠卡片**（`db` + `d0..d5`，空端口灰显 `empty`），带绑定标签与该设备的 logic 数量；展开看全部 logic，避免 `db` 那种几十条一次铺开。点击树里的 logic 可改输入；**面板里 logic 行同样可点击改值，行末 `⚡` 脉冲（写 0 再写 1）**。
+- **Network Devices**：`d0..d5` 下方列出**当前选中芯片的数据网络**上的设备（mod 的 `net`，即 `lb`/`lbn` 视角，**接不接端口都能看/改**）。每台一张可折叠卡片，显示完整 logic + 槽位（`Occupied`/`Quantity`/`Class`/…）；点击值可改、行末 `⚡` 脉冲，与端口设备同一套交互（多人客户端下写入自动走主机权威路径）。在左边树里切换芯片会一并刷新。
 - **Program**：当前行 + `line/total`。
 - **预制体名**：设备的 `PrefabHash` / `NameHash` / `OccupantHash` 值旁标注对应预制体名（反查表由 ic10c 通过 `ic10/prefabs` 请求提供）；点击名字可复制 `hash("Name")`。
 - **执行行高亮**：上传时记住 `build --json` 的 `lineMap`（IC10 行 → `.icg` 源码行），随 `state.line` 在 `.icg` 编辑器里高亮当前行（按指令近似）。可关（`icg.bench.highlightLine`）。
@@ -470,6 +498,7 @@ Activity Bar「IC10」
 | **M4 VSCode** | 命令 + 状态栏 + TreeView + Webview 面板 + 配置 | ✅ |
 | **M5 增强** | 暂停下单步（`Execute`）、`pause`、`world.*`（列存档/载入/autoload） | ✅ |
 | **M6 待办** | 多芯片场景文件（一个 scenario 驱动多块芯片）、场景自动 spawn | ⏳ |
+| **M7 多人** | 客户端权威写入（交互 / `ISetable`）、芯片代码同步上传、`net`/`find`/`device` 与面板 Network Devices | ✅ 专用服务器验证 |
 
 ---
 
@@ -511,6 +540,16 @@ Activity Bar「IC10」
 | `ingame-test-plan.md` §1/2.1/2.3/2.5/3.1/3.2/4.1/4.3 转为可跑场景（`testdata/bench/ingame/`，数值输入用 Logic Memory `d4`，打印机栈指令用 `d3`，另有 `printer.*` 构建器用例），真机 + VM 全通过（9/9） | ✅ |
 | 场景 `mem.json`（memory→LED，两个 case）+ `--diff` | ✅ 真机与 VM 都通过 |
 | 按钮 `Logic Button`（d2）：`Setting` 只读，随物理按下变化 | 只读（观察用） |
+
+**多人验证（2026-10-06，专用服务器 `CN MOMO GAMES`，客户端）**
+
+| 项 | 结果 |
+|---|---|
+| `net --chip 打印机momo` 列出该芯片数据网络 23 台设备（7 台打印机 + 堆垛机 + 灯 + 宿主） | ✅ |
+| 客户端 `push` 4 行测试程序 → 主机执行（Autolathe A `Open 0→1`、`Reagents 327→0`） | ✅ |
+| 客户端 `push` 恢复备份 → 回到 `122 lines fp=42974d46` | ✅ |
+| 客户端 `set id:264519.Open=1` → `Electronics A` `Open=1`、`Reagents 482→88`（交互通道生效） | ✅ |
+| 单人 `set id:1228.Open=1` → `Open=1` 保持、`Reagents 998→0` | ✅ |
 
 **已知限制**
 
@@ -610,13 +649,17 @@ Mono 调接口里的空实现会报这个（`state` 的读取会 `CanLogicRead` 
 ## 12. 免责声明 / Disclaimer
 
 本测试台（`ic10c testbench` + `tools/ingame-testbench` mod + VSCode 面板）与
-`tools/dumpgameapi` 都是**开发 / 测试工具**，用于在**单人 / 本地**环境里调试 IC10 程序
+`tools/dumpgameapi` 都是**开发 / 测试工具**，用于调试 IC10 程序
 （上传程序、读写设备、暂停下单步、读寄存器 / 栈、自动载入存档）。
 
-- **仅限单人 / 本地使用。** 测试台 mod 能读写设备状态、暂停世界、载入存档；在**多人服务器
-  上使用可能被视为作弊**，破坏他人体验，并可能违反游戏的服务条款。请不要在多人大厅 / 服务器
-  上启用或使用它。
-- **不修改游戏本体、不注入网络协议**；它只操作本机运行中的游戏实例，网络仅限 `127.0.0.1`。
+- **单人 / 本地**：全部功能可用，直接操作本机游戏实例。
+- **多人（含专用服务器）**：客户端支持读写设备与上传芯片代码——写入按游戏**自身的权威
+  路径**（`RequestInteractionToServer` / `SetLogicFromClient`）交给主机执行，`push` 用
+  `ProgrammableChip.SendUpdate()` 把源码同步给主机。**但这会真实改动服务器上的设备与芯片**：
+  请只在你**有权限**的服务器 / 自己的测试环境里使用；在公共服务器批量操作他人设备可能被
+  视为作弊或违反服务器规则。风险自负，作者不承担后果。
+- **不修改游戏本体、不注入网络协议**；mod 只在本机运行、只监听 `127.0.0.1`，跨主机通信走的是
+  游戏自带的网络消息，没有自定义协议。
 - `tools/dumpgameapi` 只在本地读取 `Assembly-CSharp.dll`（离线），不进入游戏、不影响任何会话；
   它的用途是让工具链在游戏更新后核对 API，**并非**用于作弊。
 - 作者不对因使用本工具导致的封禁、存档损坏或其它后果负责；使用即表示自行承担风险，并遵守

@@ -524,12 +524,14 @@ var Commands = []Command{
 				"  push <file.icg>           compile and upload (runs any loader first)\n" +
 				"  state                     registers / stack / devices\n" +
 				"  program                   print the chip's current IC10 source\n" +
-				"  set d1.Setting=10 ...     set device input values\n" +
+				"  set d1.Setting=10 ...     set device values (dN.Logic=value or id:N.Logic=value)\n" +
 				"  step [N]                  advance the chip N game ticks (paused)\n" +
 				"  ports                     dump how ports/devices are wired (diagnostic)\n" +
 				"  devices [--name F]        list devices (id/prefab/name/Setting) to tell same-name ones apart\n" +
 				"  device --ids 1,2          read devices by ReferenceId (readById), wired to a port or not\n" +
 				"  net [--chip NAME]         list devices on that chip's data network (the lb/lbn view)\n" +
+				"  find [--name F] [--prefab P]\n" +
+				"                            scan world devices (like lb/lbn) by name / prefab\n" +
 				"  pause [on|off]            pause / resume the game\n" +
 				"  run <scenario.json>       run a scenario and assert expectations\n" +
 				"  watch                     stream live state events\n" +
@@ -560,12 +562,14 @@ var Commands = []Command{
 				"  push <file.icg>           编译并上传（必要时先跑 loader）\n" +
 				"  state                     寄存器 / 栈 / 设备\n" +
 				"  program                   打印芯片当前 IC10 源码\n" +
-				"  set d1.Setting=10 ...     设置设备输入值\n" +
+				"  set d1.Setting=10 ...     设置设备值（dN.Logic=值 或 id:N.Logic=值）\n" +
 				"  step [N]                  推进芯片 N 个游戏 tick（暂停下）\n" +
 				"  ports                     诊断：打印端口/设备接线映射\n" +
 				"  devices [--name F]        列出设备（id/预制体/名字/Setting），区分同名设备\n" +
 				"  device --ids 1,2           按 ReferenceId 读设备（readById），接不接端口都行\n" +
 				"  net [--chip NAME]          列出该芯片数据网络上的设备（lb/lbn 视角）\n" +
+				"  find [--name F] [--prefab P]\n" +
+				"                            按名字/预制体扫描世界设备（类似 lb/lbn）\n" +
 				"  pause [on|off]            暂停 / 恢复游戏\n" +
 				"  run <scenario.json>       跑场景并断言期望值\n" +
 				"  watch                     持续推送实时状态事件\n" +
