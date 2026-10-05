@@ -528,6 +528,7 @@ var Commands = []Command{
 				"  step [N]                  advance the chip N game ticks (paused)\n" +
 				"  ports                     dump how ports/devices are wired (diagnostic)\n" +
 				"  devices [--name F]        list devices (id/prefab/name/Setting) to tell same-name ones apart\n" +
+				"  device --ids 1,2          read devices by ReferenceId (readById), wired to a port or not\n" +
 				"  pause [on|off]            pause / resume the game\n" +
 				"  run <scenario.json>       run a scenario and assert expectations\n" +
 				"  watch                     stream live state events\n" +
@@ -562,6 +563,7 @@ var Commands = []Command{
 				"  step [N]                  推进芯片 N 个游戏 tick（暂停下）\n" +
 				"  ports                     诊断：打印端口/设备接线映射\n" +
 				"  devices [--name F]        列出设备（id/预制体/名字/Setting），区分同名设备\n" +
+				"  device --ids 1,2           按 ReferenceId 读设备（readById），接不接端口都行\n" +
 				"  pause [on|off]            暂停 / 恢复游戏\n" +
 				"  run <scenario.json>       跑场景并断言期望值\n" +
 				"  watch                     持续推送实时状态事件\n" +
