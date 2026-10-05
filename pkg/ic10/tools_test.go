@@ -75,8 +75,13 @@ func TestStatsOf(t *testing.T) {
 	if s.RegsUsed != 1 {
 		t.Errorf("RegsUsed = %d, want 1", s.RegsUsed)
 	}
-	if s.Bytes != len("move r0 1\ns d0 On r0\n") {
-		t.Errorf("Bytes = %d", s.Bytes)
+	// A trailing newline is trimmed by the upload path, so it must not count.
+	if s.Bytes != len("move r0 1\ns d0 On r0") {
+		t.Errorf("Bytes = %d, want %d", s.Bytes, len("move r0 1\ns d0 On r0"))
+	}
+	// Extra / CRLF trailing newlines are trimmed too.
+	if got := ic10.StatsOf("move r0 1\r\n\r\n"); got.Bytes != len("move r0 1") || got.Lines != 1 {
+		t.Errorf("StatsOf(CRLF) = %+v, want bytes=%d lines=1", got, len("move r0 1"))
 	}
 }
 

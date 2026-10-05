@@ -728,7 +728,11 @@ class LspClient {
         const maxLine = cfg.maxLine > 0 ? cfg.maxLine : 90;
         const text = doc.getText();
         const lines = text.split('\n');
-        const bytes = Buffer.byteLength(text, 'utf8');
+        // Trailing newlines are trimmed on upload and are not stored on the
+        // chip, so they must not count against the byte / line limits.
+        const trimmed = text.replace(/(?:\r?\n)+$/, '');
+        const trimLines = trimmed === '' ? 0 : trimmed.split('\n').length;
+        const bytes = Buffer.byteLength(trimmed, 'utf8');
         const diags = [];
         if (bytes > maxBytes) {
             diags.push(
@@ -738,11 +742,11 @@ class LspClient {
                 )
             );
         }
-        if (lines.length > maxLines) {
+        if (trimLines > maxLines) {
             diags.push(
                 this.ic10Diag(
                     new vscode.Range(0, 0, 0, 0),
-                    t(`program has ${lines.length} lines, exceeding the ${maxLines}-line limit`, `程序有 ${lines.length} 行，超过 ${maxLines} 行上限`)
+                    t(`program has ${trimLines} lines, exceeding the ${maxLines}-line limit`, `程序有 ${trimLines} 行，超过 ${maxLines} 行上限`)
                 )
             );
         }

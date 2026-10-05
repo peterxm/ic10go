@@ -1088,10 +1088,12 @@ func Validate(code string) error {
 // limits falls back to the default.
 func ValidateWith(code string, limits Limits) error {
 	limits = limits.Resolve()
-	if len(code) > limits.Bytes {
-		return fmt.Errorf("script is %d bytes, exceeding the %d byte limit (see `ic10c stats` for the budget)", len(code), limits.Bytes)
+	// Trailing newlines are trimmed before upload and are not stored on the
+	// chip, so they do not count against the byte limit either.
+	trimmed := strings.TrimRight(code, "\r\n")
+	if len(trimmed) > limits.Bytes {
+		return fmt.Errorf("script is %d bytes, exceeding the %d byte limit (see `ic10c stats` for the budget)", len(trimmed), limits.Bytes)
 	}
-	trimmed := strings.TrimSuffix(code, "\n")
 	if trimmed == "" {
 		return nil
 	}

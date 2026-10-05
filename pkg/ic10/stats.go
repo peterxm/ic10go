@@ -17,9 +17,14 @@ type Stats struct {
 var regRe = regexp.MustCompile(`\br([0-9]+)\b`)
 
 // StatsOf computes statistics for IC10 code.
+//
+// A trailing newline is not part of the program the chip stores: the upload
+// path trims it and the game counts it as an empty last line, so the byte and
+// line counts ignore trailing newlines (and CRLFs) too. Without this the editor
+// reports one byte more than the chip shows.
 func StatsOf(code string) Stats {
-	s := Stats{Bytes: len(code)}
-	trimmed := strings.TrimSuffix(code, "\n")
+	trimmed := strings.TrimRight(code, "\r\n")
+	s := Stats{Bytes: len(trimmed)}
 	if trimmed != "" {
 		lines := strings.Split(trimmed, "\n")
 		s.Lines = len(lines)
