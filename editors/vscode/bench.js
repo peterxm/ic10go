@@ -2151,9 +2151,10 @@ ${note}${diffNote}
     }
 
     async setDevice(arg) {
-        if (!arg || !arg.port || !arg.logic) return;
+        if (!arg || !arg.logic || (!arg.port && !arg.id)) return;
+        const label = arg.port ? arg.port : ('id:' + arg.id);
         const input = await vscode.window.showInputBox({
-            title: t(`Set ${arg.port}.${arg.logic}`, `设置 ${arg.port}.${arg.logic}`),
+            title: t(`Set ${label}.${arg.logic}`, `设置 ${label}.${arg.logic}`),
             value: String(arg.value),
             prompt: t('New value', '新的值'),
         });
@@ -2166,10 +2167,15 @@ ${note}${diffNote}
         const c = await this.connect(false);
         if (!c) return;
         try {
-            const setArgs = { writes: [{ port: arg.port, logic: arg.logic, value }] };
+            const w = { logic: arg.logic, value };
+            if (arg.port) w.port = arg.port;
+            else w.id = Number(arg.id);
+            if (arg.slot !== undefined && arg.slot !== null && arg.slot !== '') w.slot = Number(arg.slot);
+            const setArgs = { writes: [w] };
             if (this.sel) setArgs.chip = this.sel;
             await c.call('set', setArgs);
             await this.refresh(false);
+            this.loadNetDevices();
         } catch (err) {
             vscode.window.showErrorMessage(t('IC10: set failed: ', 'IC10: 设置失败：') + err.message);
         }
@@ -2178,14 +2184,19 @@ ${note}${diffNote}
     // pulseDevice writes 0 then 1 so edge-triggered logic (e.g. a jetpack's
     // Activate) fires.
     async pulseDevice(arg) {
-        if (!arg || !arg.port || !arg.logic) return;
+        if (!arg || !arg.logic || (!arg.port && !arg.id)) return;
         const c = await this.connect(false);
         if (!c) return;
         try {
-            const req = { writes: [{ port: arg.port, logic: arg.logic, value: 1 }], pulse: true };
+            const w = { logic: arg.logic, value: 1 };
+            if (arg.port) w.port = arg.port;
+            else w.id = Number(arg.id);
+            if (arg.slot !== undefined && arg.slot !== null && arg.slot !== '') w.slot = Number(arg.slot);
+            const req = { writes: [w], pulse: true };
             if (this.sel) req.chip = this.sel;
             await c.call('set', req);
             await this.refresh(false);
+            this.loadNetDevices();
         } catch (err) {
             vscode.window.showErrorMessage(t('IC10: pulse failed: ', 'IC10: 脉冲失败：') + err.message);
         }
@@ -2421,8 +2432,8 @@ ${note}${diffNote}
         else if (m.type === 'run') this.runTicks(this.cfg().runTicks);
         else if (m.type === 'reset') this.reset();
         else if (m.type === 'copyHash' && m.name) this.copyHash(m.name);
-        else if (m.type === 'setDevice' && m.port && m.logic) this.setDevice({ port: m.port, logic: m.logic, value: m.value });
-        else if (m.type === 'pulse' && m.port && m.logic) this.pulseDevice({ port: m.port, logic: m.logic });
+        else if (m.type === 'setDevice' && m.logic && (m.port || m.id)) this.setDevice({ port: m.port, id: m.id, slot: m.slot, logic: m.logic, value: m.value });
+        else if (m.type === 'pulse' && m.logic && (m.port || m.id)) this.pulseDevice({ port: m.port, id: m.id, slot: m.slot, logic: m.logic });
     }
 
     // copyHash puts the source form of a prefab hash on the clipboard.
@@ -2447,8 +2458,9 @@ ${note}${diffNote}
         });
     }
 
-    // loadNetDevices refreshes the world device list (for scripts that address
-    // devices by ReferenceId / batch, not via a port) and re-renders the panel.
+    // loadNetDevices refreshes the selected chip's data-network device list (the
+    // lb/lbn view; devices reachable by ReferenceId even without port wiring) and
+    // re-renders the panel.
     async loadNetDevices() {
         if (!this.conn) {
             this.netDevices = [];
@@ -2625,12 +2637,12 @@ ${note}${diffNote}
     const p = el && el.closest ? el.closest('.pulse') : null;
     if (p) {
       const row = p.closest('tr.logicrow');
-      if (row) vscode.postMessage({ type: 'pulse', port: row.getAttribute('data-port'), logic: row.getAttribute('data-logic') });
+      if (row) vscode.postMessage({ type: 'pulse', port: row.getAttribute('data-port'), id: row.getAttribute('data-id'), slot: row.getAttribute('data-slot'), logic: row.getAttribute('data-logic') });
       return;
     }
     const r = el && el.closest ? el.closest('tr.logicrow') : null;
     if (r) {
-      vscode.postMessage({ type: 'setDevice', port: r.getAttribute('data-port'), logic: r.getAttribute('data-logic'), value: r.getAttribute('data-value') });
+      vscode.postMessage({ type: 'setDevice', port: r.getAttribute('data-port'), id: r.getAttribute('data-id'), slot: r.getAttribute('data-slot'), logic: r.getAttribute('data-logic'), value: r.getAttribute('data-value') });
       return;
     }
     const s = el && el.closest ? el.closest('summary') : null;
@@ -2785,14 +2797,18 @@ ${note}${diffNote}
         const dkeys = Object.keys(d.logic || {}).sort();
         const did = d.id !== undefined ? d.id : (d.name || d.prefab || '');
         const key = 'net:' + did;
+        const slotCount = d.slots && d.slots.length ? d.slots.length : 0;
         html += '<details class="dev"' + (openMap[key] ? ' open' : '') + ' data-key="' + key +
           '"><summary><span class="port">' + did + '</span> ' + (d.name || '') +
-          ' <span class="muted">' + (d.prefab || '') + '</span></summary>';
+          ' <span class="muted">' + esc(d.prefab || '') + '</span> <span class="pill">' + dkeys.length + ' logic' +
+          (slotCount ? ' · ' + slotCount + ' slots' : '') + '</span></summary>';
         if (dkeys.length) {
           html += '<table>';
           for (const k of dkeys) {
             next['net:' + did + '.' + k] = d.logic[k];
-            html += '<tr><td>' + k + '</td><td class="num">' + num(d.logic[k]) + hashTag(k, d.logic[k]) + '</td></tr>';
+            html += '<tr class="logicrow" data-id="' + did + '" data-logic="' + k + '" data-value="' + num(d.logic[k]) +
+              '" title="click to set"><td>' + k + '</td><td class="num">' + num(d.logic[k]) + hashTag(k, d.logic[k]) +
+              '</td><td class="act"><button class="pulse" title="pulse 0 then 1">⚡</button></td></tr>';
           }
           html += '</table>';
         }
@@ -2802,9 +2818,14 @@ ${note}${diffNote}
             '"><summary>Slots <span class="pill">' + d.slots.length + '</span></summary>';
           for (const s of d.slots) {
             const lk = Object.keys(s.logic || {}).sort();
-            html += '<table>';
-            for (const k of lk) html += '<tr><td>slot ' + s.index + ' ' + k + '</td><td class="num">' + num(s.logic[k]) + '</td></tr>';
-            html += '</table>';
+            const bits = [];
+            if (s.logic && s.logic.Occupied !== undefined) bits.push('Occupied=' + num(s.logic.Occupied));
+            if (s.logic && s.logic.Quantity !== undefined) bits.push('Quantity=' + num(s.logic.Quantity));
+            const skey2 = 'netslot:' + did + ':' + s.index;
+            html += '<details class="slot"' + (openMap[skey2] ? ' open' : '') + ' data-key="' + skey2 +
+              '"><summary>slot ' + s.index + (bits.length ? ' <span class="muted">' + bits.join('  ') + '</span>' : '') + '</summary><table>';
+            for (const k of lk) html += '<tr><td>' + k + '</td><td class="num">' + num(s.logic[k]) + hashTag(k, s.logic[k]) + '</td></tr>';
+            html += '</table></details>';
           }
           html += '</details>';
         }

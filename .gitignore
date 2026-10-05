@@ -56,3 +56,4 @@ coverage.txt
 !/ic10code/github/**
 /ic10code/github/**/*.ic10
 /ic10code/github/**/*.ic
+editors/vscode/*.vsix

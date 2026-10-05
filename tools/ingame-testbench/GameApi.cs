@@ -1179,16 +1179,30 @@ namespace Ic10Go.Testbench
             {
                 try { o["hash"] = lg.GetPrefabHash(); } catch { }
                 var vals = new JObject();
-                foreach (var name in new[] { "Setting", "On", "Ratio", "Value", "Channel0", "StackSize", "NameHash", "PrefabHash", "ReferenceId" })
+                foreach (LogicType t in Enum.GetValues(typeof(LogicType)))
                 {
-                    try
-                    {
-                        var t = (LogicType)Enum.Parse(typeof(LogicType), name, true);
-                        if (lg.CanLogicRead(t)) vals[name] = Num(lg.GetLogicValue(t));
-                    }
-                    catch { }
+                    if ((int)t == 0) continue;
+                    try { if (lg.CanLogicRead(t)) vals[t.ToString()] = Num(lg.GetLogicValue(t)); } catch { }
                 }
                 o["logic"] = vals;
+                int totalSlots = 0;
+                try { totalSlots = lg.TotalSlots; } catch { }
+                if (totalSlots > 0)
+                {
+                    var slots = new JArray();
+                    int n = Math.Min(totalSlots, 16);
+                    for (int i = 0; i < n; i++)
+                    {
+                        var slot = new JObject { ["index"] = i, ["logic"] = new JObject() };
+                        foreach (LogicSlotType st in Enum.GetValues(typeof(LogicSlotType)))
+                        {
+                            if ((int)st == 0) continue;
+                            try { if (lg.CanLogicRead(st, i)) slot["logic"][st.ToString()] = Num(lg.GetLogicValue(st, i)); } catch { }
+                        }
+                        slots.Add(slot);
+                    }
+                    if (slots.Count > 0) o["slots"] = slots;
+                }
             }
             var probe = ProbeProps(dev);
             if (probe != null) o["probe"] = probe;
