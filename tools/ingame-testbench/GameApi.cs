@@ -1248,11 +1248,42 @@ namespace Ic10Go.Testbench
             try
             {
                 if (!force && !dev.CanLogicWrite(t)) throw new BenchError("unknown-logic", logic + " is not writable on this device (use force)");
+
+                // In multiplayer a client does not simulate the world. Device
+                // SetLogicValue for action logics (Open, Mode, Activate, Lock,
+                // On) routes through OnServer.Interact, which returns immediately
+                // unless GameManager.RunSimulation is true, so the write silently
+                // does nothing. The host only honours writes it receives as a
+                // SetLogicFromClient message, so relay through the network there.
+                if (!GameManager.RunSimulation && TryRefId(dev, out long refId))
+                {
+                    if (pulse) NetworkClient.SendToServer(new SetLogicFromClient { LogicId = refId, LogicType = t, Value = 0.0 });
+                    NetworkClient.SendToServer(new SetLogicFromClient { LogicId = refId, LogicType = t, Value = value });
+                    return;
+                }
+
                 if (pulse) dev.SetLogicValue(t, 0.0); // rising edge for momentary logic
                 dev.SetLogicValue(t, value);
             }
             catch (BenchError) { throw; }
             catch (Exception ex) { throw new BenchError("internal", "write " + logic + ": " + ex.Message); }
+        }
+
+        /// <summary>The device's ReferenceId (what SetLogicFromClient expects).
+        /// Static worlds and hosts are simulated locally, so this is only used to
+        /// relay client writes to the host.</summary>
+        private static bool TryRefId(object dev, out long id)
+        {
+            id = 0;
+            try
+            {
+                if (dev is Thing th) { id = Convert.ToInt64(th.ReferenceId); return id != 0; }
+                var p = dev.GetType().GetProperty("ReferenceId");
+                if (p == null) return false;
+                id = Convert.ToInt64(p.GetValue(dev));
+                return id != 0;
+            }
+            catch { return false; }
         }
 
         /// <summary>The chip's _Registers array (r0..r15, sp, ra), or null.</summary>
