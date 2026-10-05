@@ -855,6 +855,11 @@ namespace Ic10Go.Testbench
             // trim it (and from the one-time loaders) before loading the source.
             code = (code ?? "").TrimEnd('\r', '\n');
 
+            // A dedicated-server client does not run the chip; it can only upload
+            // source, which the host compiles and executes. SendUpdate() relays the
+            // current source there (IntegratedCircuitHeader/Update fragments).
+            bool client = !GameManager.RunSimulation;
+
             int loaderOps = 0;
             if (loaders != null)
             {
@@ -862,14 +867,30 @@ namespace Ic10Go.Testbench
                 {
                     if (string.IsNullOrEmpty(loader)) continue;
                     chip.SetSourceCode(loader.TrimEnd('\r', '\n'));
-                    int ops = Math.Max(4096, LineCount(loader) * 16);
-                    loaderOps += ops;
-                    chip.Execute(ops); // bounded: loaders are straight-line stores
+                    if (client)
+                    {
+                        // Upload the loader and give the host a moment to run it, so
+                        // the data-segment stores land before we replace it with the
+                        // runtime (SetSourceCode keeps memory, resets code only).
+                        try { chip.SendUpdate(); } catch { }
+                        System.Threading.Thread.Sleep(800);
+                    }
+                    else
+                    {
+                        int ops = Math.Max(4096, LineCount(loader) * 16);
+                        loaderOps += ops;
+                        chip.Execute(ops); // bounded: loaders are straight-line stores
+                    }
                 }
             }
 
             chip.Reset();
             chip.SetSourceCode(code);
+            if (client)
+            {
+                try { chip.SendUpdate(); } catch { }
+                System.Threading.Thread.Sleep(400); // let the host apply the runtime
+            }
 
             var o = new JObject
             {
