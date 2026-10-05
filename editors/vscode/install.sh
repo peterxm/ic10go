@@ -22,14 +22,9 @@ version=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$he
 # pointing at a deleted directory.
 if command -v code >/dev/null 2>&1; then
     vsix=""
-    # Reuse a pre-built vsix when present (editors/vscode/ or repo dist/).
-    for cand in "$here/icg-$version.vsix" "$here/../../dist/icg-$version.vsix"; do
-        if [ -f "$cand" ]; then
-            vsix=$cand
-            break
-        fi
-    done
-    if [ -z "$vsix" ] && command -v npx >/dev/null 2>&1; then
+    # Always repackage so a stale pre-built vsix can't shadow the source.
+    if command -v npx >/dev/null 2>&1; then
+        rm -f "$here/icg-$version.vsix"
         ( cd "$here" && npx --yes @vscode/vsce package --allow-missing-repository --no-rewrite-relative-links >/dev/null 2>&1 ) || true
         [ -f "$here/icg-$version.vsix" ] && vsix="$here/icg-$version.vsix"
     fi

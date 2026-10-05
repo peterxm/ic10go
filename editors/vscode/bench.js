@@ -2406,11 +2406,12 @@ ${note}${diffNote}
         if (this.cfg().watchOnOpen && !this.watching) this.toggleWatch();
         this.ensurePrefabs();
         this.renderPanel();
+        this.loadNetDevices();
     }
 
     onPanelMessage(m) {
         if (!m) return;
-        if (m.type === 'refresh') this.refresh(true);
+        if (m.type === 'refresh') { this.refresh(true); this.loadNetDevices(); }
         else if (m.type === 'devices') this.showDevices();
         else if (m.type === 'queryIds') this.queryIds();
         else if (m.type === 'watch') this.toggleWatch();
@@ -2441,7 +2442,25 @@ ${note}${diffNote}
             watching: this.watching,
             prefabs: this.prefabs || {},
             runTicks: this.cfg().runTicks,
+            netDevices: this.netDevices || [],
         });
+    }
+
+    // loadNetDevices refreshes the world device list (for scripts that address
+    // devices by ReferenceId / batch, not via a port) and re-renders the panel.
+    async loadNetDevices() {
+        if (!this.conn) {
+            this.netDevices = [];
+            this.renderPanel();
+            return;
+        }
+        try {
+            const r = await this.conn.call('find', {});
+            this.netDevices = r.devices || [];
+        } catch {
+            this.netDevices = [];
+        }
+        this.renderPanel();
     }
 
     panelHtml() {
@@ -2756,6 +2775,18 @@ ${note}${diffNote}
         html += '</details>';
       }
       html += '</section>';
+    }
+    if (m.netDevices && m.netDevices.length) {
+      const nds = m.netDevices;
+      html += '<section><h2>Network Devices <span class="pill">' + nds.length + '</span></h2>';
+      html += '<table><tr><th>id</th><th>name</th><th>prefab</th><th>Setting</th><th>On</th></tr>';
+      for (const d of nds) {
+        const lg = d.logic || {};
+        html += '<tr><td class="port">' + d.id + '</td><td>' + (d.name || '') +
+          '</td><td class="muted">' + (d.prefab || '') + '</td><td class="num">' + num(lg.Setting) +
+          '</td><td class="num">' + num(lg.On) + '</td></tr>';
+      }
+      html += '</table></section>';
     }
     if (st.errors && (st.errors.code || st.errors.compilation)) {
       html = '<section><h2>Error</h2><p>' + (st.errors.code || '') + ' line ' + st.errors.line + '</p></section>' + html;
