@@ -1255,11 +1255,27 @@ namespace Ic10Go.Testbench
                 // unless GameManager.RunSimulation is true, so the write silently
                 // does nothing. The host only honours writes it receives as a
                 // SetLogicFromClient message, so relay through the network there.
-                if (!GameManager.RunSimulation && TryRefId(dev, out long refId))
+                if (!GameManager.RunSimulation)
                 {
-                    if (pulse) NetworkClient.SendToServer(new SetLogicFromClient { LogicId = refId, LogicType = t, Value = 0.0 });
-                    NetworkClient.SendToServer(new SetLogicFromClient { LogicId = refId, LogicType = t, Value = value });
-                    return;
+                    // Interaction logics (Open/Mode/Activate/Lock/On/Color) are
+                    // driven by an Interactable. On a client, Device.SetLogicValue
+                    // routes through OnServer.Interact, which is a no-op, so send
+                    // the interaction to the host instead (RequestInteractionToServer).
+                    var action = InteractableFor(t);
+                    if (action.HasValue && dev is Thing it && TryFindInteractable(it, action.Value, out var ia))
+                    {
+                        if (pulse) NetworkClient.Interact(ia, 0);
+                        NetworkClient.Interact(ia, (int)Math.Round(value));
+                        return;
+                    }
+                    // Plain values (Setting, ...) work on the host only for
+                    // ISetable devices; relay as SetLogicFromClient.
+                    if (TryRefId(dev, out long refId))
+                    {
+                        if (pulse) NetworkClient.SendToServer(new SetLogicFromClient { LogicId = refId, LogicType = t, Value = 0.0 });
+                        NetworkClient.SendToServer(new SetLogicFromClient { LogicId = refId, LogicType = t, Value = value });
+                        return;
+                    }
                 }
 
                 if (pulse) dev.SetLogicValue(t, 0.0); // rising edge for momentary logic
@@ -1284,6 +1300,36 @@ namespace Ic10Go.Testbench
                 return id != 0;
             }
             catch { return false; }
+        }
+
+        /// <summary>Map an interaction logic to the device Interactable that
+        /// drives it, or null for plain value logic.</summary>
+        private static InteractableType? InteractableFor(LogicType t)
+        {
+            switch (t)
+            {
+                case LogicType.Open: return InteractableType.Open;
+                case LogicType.Mode: return InteractableType.Mode;
+                case LogicType.Activate: return InteractableType.Activate;
+                case LogicType.Lock: return InteractableType.Lock;
+                case LogicType.On: return InteractableType.OnOff;
+                case LogicType.Color: return InteractableType.Color;
+                default: return null;
+            }
+        }
+
+        /// <summary>The device's Interactable whose action matches (e.g. Open).</summary>
+        private static bool TryFindInteractable(Thing thing, InteractableType type, out Interactable found)
+        {
+            found = null;
+            var list = thing.Interactables;
+            if (list == null) return false;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var ia = list[i];
+                if (ia != null && ia.Action == type) { found = ia; return true; }
+            }
+            return false;
         }
 
         /// <summary>The chip's _Registers array (r0..r15, sp, ra), or null.</summary>
