@@ -36,6 +36,7 @@ func cmdTestbench(args []string) int {
 	playerName := ""
 	atArg := ""
 	nameFilter := ""
+	prefabArg := ""
 	idsArg := ""
 	radius := 0.0
 	offset := 0.0
@@ -107,6 +108,11 @@ func cmdTestbench(args []string) int {
 			i++
 		case strings.HasPrefix(a, "--name="):
 			nameFilter = strings.TrimPrefix(a, "--name=")
+		case a == "--prefab" && i+1 < len(args):
+			prefabArg = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--prefab="):
+			prefabArg = strings.TrimPrefix(a, "--prefab=")
 		case a == "--ids" && i+1 < len(args):
 			idsArg = args[i+1]
 			i++
@@ -192,6 +198,8 @@ func cmdTestbench(args []string) int {
 		return benchDevices(addr, chip, nameFilter, asJSON)
 	case "device":
 		return benchDeviceById(addr, idsArg, asJSON)
+	case "find":
+		return benchFind(addr, nameFilter, prefabArg, asJSON)
 	case "pause":
 		return benchPause(addr, rest, asJSON)
 	case "run":
@@ -1001,6 +1009,50 @@ func benchDevices(addr string, chip any, nameFilter string, asJSON bool) int {
 	fmt.Printf("%-10s %-12s %-16s %-24s %8s %4s\n", "id", "prefab", "name", "type", "Setting", "On")
 	for _, d := range rows {
 		fmt.Printf("%-10v %-12v %-16v %-24v %8v %4v\n", d["id"], d["hash"], d["name"], d["type"], lg(d, "Setting"), lg(d, "On"))
+	}
+	return 0
+}
+
+// benchFind enumerates world devices (like IC10 lb/lbn) filtered by --name /
+// --prefab, so devices not wired to a port can be inspected.
+func benchFind(addr, nameFilter, prefabArg string, asJSON bool) int {
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	a := map[string]any{}
+	if nameFilter != "" {
+		a["name"] = nameFilter
+	}
+	if prefabArg != "" {
+		a["prefab"] = prefabArg
+	}
+	raw, err := c.Call("find", a)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if asJSON {
+		fmt.Println(string(raw))
+		return 0
+	}
+	var rep struct {
+		Devices []map[string]any `json:"devices"`
+	}
+	if json.Unmarshal(raw, &rep) != nil {
+		fmt.Println(string(raw))
+		return 0
+	}
+	lg := func(d map[string]any, k string) any {
+		if m, ok := d["logic"].(map[string]any); ok {
+			return m[k]
+		}
+		return nil
+	}
+	fmt.Printf("%-9s %-13s %-18s %-30s %8s %4s\n", "id", "prefabHash", "name", "prefab", "Setting", "On")
+	for _, d := range rep.Devices {
+		fmt.Printf("%-9v %-13v %-18v %-30v %8v %4v\n", d["id"], lg(d, "PrefabHash"), d["name"], d["prefab"], lg(d, "Setting"), lg(d, "On"))
 	}
 	return 0
 }

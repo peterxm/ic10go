@@ -40,6 +40,7 @@ namespace Ic10Go.Testbench
                 case "set": return Set(args);
                 case "get": return Get(args);
                 case "device": return Device(args);
+                case "find": return Find(args);
                 case "trace": return Trace(args);
                 case "program": return ProgramCmd(args);
                 case "writes": return Writes(args);
@@ -262,6 +263,17 @@ namespace Ic10Go.Testbench
                 arr.Add(e);
             }
             return new JObject { ["devices"] = arr };
+        }
+
+        /// <summary>find {prefab?, name?, max?} enumerates world devices (like IC10
+        /// lb/lbn would match on the network) so devices not wired to a port can be
+        /// inspected.</summary>
+        private static JObject Find(JObject args)
+        {
+            string prefab = args["prefab"] != null ? args["prefab"].ToString() : null;
+            string name = args["name"] != null ? args["name"].ToString() : null;
+            int max = args["max"] != null ? (int)args["max"] : 0;
+            return new JObject { ["devices"] = GameApi.FindDevices(prefab, name, max) };
         }
 
         /// <summary>writes {clear?, from?} returns the device logic writes the

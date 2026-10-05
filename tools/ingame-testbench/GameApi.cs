@@ -947,6 +947,30 @@ namespace Ic10Go.Testbench
             return e;
         }
 
+        /// <summary>Enumerate world devices (any ILogicable with a ReferenceId),
+        /// optionally filtered by PrefabName / display-name substring, and describe
+        /// each. Bridges IC10's lb/lbn (find devices by type + name) for debugging
+        /// devices that are not wired to a port.</summary>
+        public static JArray FindDevices(string prefab, string name, int max)
+        {
+            var outp = new JArray();
+            UnityEngine.Object[] objs;
+            try { objs = UnityEngine.Resources.FindObjectsOfTypeAll(typeof(Thing)); }
+            catch { return outp; }
+            foreach (var ob in objs)
+            {
+                var t = ob as Thing;
+                if (t == null || t.ReferenceId == 0) continue;
+                if (!(t is ILogicable)) continue;
+                if (!string.IsNullOrEmpty(prefab) && t.PrefabName != prefab) continue;
+                if (!string.IsNullOrEmpty(name) &&
+                    (t.name == null || t.name.IndexOf(name, System.StringComparison.OrdinalIgnoreCase) < 0)) continue;
+                outp.Add(DescribeLogicable(t));
+                if (max > 0 && outp.Count >= max) break;
+            }
+            return outp;
+        }
+
         /// <summary>The host's port binding labels (db, d0..d5) from GetLogicBindings.</summary>
         private static string[] BindingLabels(ICircuitHolder holder)
         {
