@@ -981,8 +981,12 @@ namespace Ic10Go.Testbench
                 if (t == null || t.ReferenceId == 0) continue;
                 if (!(t is ILogicable)) continue;
                 if (!string.IsNullOrEmpty(prefab) && t.PrefabName != prefab) continue;
-                if (!string.IsNullOrEmpty(name) &&
-                    (t.name == null || t.name.IndexOf(name, System.StringComparison.OrdinalIgnoreCase) < 0)) continue;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    var cn = GetMember(t, "CustomName");
+                    var disp = cn != null && cn.ToString() != "" ? cn.ToString() : t.name;
+                    if (disp == null || disp.IndexOf(name, System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                }
                 outp.Add(DescribeLogicable(t));
                 if (max > 0 && outp.Count >= max) break;
             }
@@ -1146,7 +1150,9 @@ namespace Ic10Go.Testbench
             if (thing != null)
             {
                 o["prefab"] = thing.PrefabName;
-                o["name"] = thing.name;
+                var cn = GetMember(thing, "CustomName");
+                var cns = cn != null ? cn.ToString() : "";
+                o["name"] = cns != "" ? cns : thing.name;
                 o["id"] = thing.ReferenceId;
             }
             var lg = dev as ILogicable;
