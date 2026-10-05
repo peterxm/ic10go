@@ -2411,6 +2411,8 @@ ${note}${diffNote}
     onPanelMessage(m) {
         if (!m) return;
         if (m.type === 'refresh') this.refresh(true);
+        else if (m.type === 'devices') this.showDevices();
+        else if (m.type === 'queryIds') this.queryIds();
         else if (m.type === 'watch') this.toggleWatch();
         else if (m.type === 'pause') this.togglePause();
         else if (m.type === 'step') this.runTicks(1);
@@ -2569,6 +2571,8 @@ ${note}${diffNote}
   <button id="reset">Reset</button>
   <button id="watch">Watch</button>
   <button id="refresh">Refresh</button>
+  <button id="devices">${t('Devices', '查设备')}</button>
+  <button id="findids">${t('IDs', '反查ID')}</button>
 </header>
 <main id="main"><p class="empty">Not connected.</p></main>
 <script nonce="${nonce}">
@@ -2583,6 +2587,8 @@ ${note}${diffNote}
   });
   document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
   document.getElementById('watch').addEventListener('click', () => vscode.postMessage({ type: 'watch' }));
+  document.getElementById('devices').addEventListener('click', () => vscode.postMessage({ type: 'devices' }));
+  document.getElementById('findids').addEventListener('click', () => vscode.postMessage({ type: 'queryIds' }));
   document.getElementById('pause').addEventListener('click', () => vscode.postMessage({ type: 'pause' }));
   document.getElementById('step').addEventListener('click', () => vscode.postMessage({ type: 'step' }));
   document.getElementById('run').addEventListener('click', () => vscode.postMessage({ type: 'run' }));
