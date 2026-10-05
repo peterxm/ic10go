@@ -561,6 +561,7 @@ var Commands = []Command{
 				"  set d1.Setting=10 ...     设置设备输入值\n" +
 				"  step [N]                  推进芯片 N 个游戏 tick（暂停下）\n" +
 				"  ports                     诊断：打印端口/设备接线映射\n" +
+				"  devices [--name F]        列出设备（id/预制体/名字/Setting），区分同名设备\n" +
 				"  pause [on|off]            暂停 / 恢复游戏\n" +
 				"  run <scenario.json>       跑场景并断言期望值\n" +
 				"  watch                     持续推送实时状态事件\n" +
