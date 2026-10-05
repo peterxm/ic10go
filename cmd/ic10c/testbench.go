@@ -35,6 +35,7 @@ func cmdTestbench(args []string) int {
 	programFile := ""
 	playerName := ""
 	atArg := ""
+	nameFilter := ""
 	radius := 0.0
 	offset := 0.0
 	offsetSet := false
@@ -100,6 +101,11 @@ func cmdTestbench(args []string) int {
 			i++
 		case a == "--json":
 			asJSON = true
+		case a == "--name" && i+1 < len(args):
+			nameFilter = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--name="):
+			nameFilter = strings.TrimPrefix(a, "--name=")
 		case a == "--raw":
 			rawPush = true
 		case a == "--legacy-by-id":
@@ -176,6 +182,8 @@ func cmdTestbench(args []string) int {
 		return benchStep(addr, chip, n, asJSON)
 	case "ports":
 		return benchPorts(addr, chip, asJSON)
+	case "devices":
+		return benchDevices(addr, chip, nameFilter, asJSON)
 	case "pause":
 		return benchPause(addr, rest, asJSON)
 	case "run":
@@ -918,6 +926,74 @@ func benchPorts(addr string, chip any, asJSON bool) int {
 	}
 	b, _ := json.MarshalIndent(v, "", "  ")
 	fmt.Println(string(b))
+	return 0
+}
+
+// benchDevices lists the chip's bound + network devices with id/prefab/name and a
+// few logic values, so same-named devices (e.g. two "mem1") can be told apart.
+func benchDevices(addr string, chip any, nameFilter string, asJSON bool) int {
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	args := map[string]any{}
+	if chip != nil {
+		args["chip"] = chip
+	}
+	raw, err := c.Call("ports", args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if asJSON {
+		fmt.Println(string(raw))
+		return 0
+	}
+	var rep struct {
+		Devices       []map[string]any `json:"devices"`
+		InputNetwork1 []map[string]any `json:"inputNetwork1"`
+	}
+	if json.Unmarshal(raw, &rep) != nil {
+		fmt.Println(string(raw))
+		return 0
+	}
+	seen := map[string]bool{}
+	var rows []map[string]any
+	add := func(d map[string]any) {
+		if d == nil {
+			return
+		}
+		if f := nameFilter; f != "" && !strings.Contains(fmt.Sprint(d["name"]), f) {
+			return
+		}
+		id := fmt.Sprint(d["id"])
+		if seen[id] {
+			return
+		}
+		seen[id] = true
+		rows = append(rows, d)
+	}
+	for _, d := range rep.Devices {
+		add(d)
+	}
+	for _, d := range rep.InputNetwork1 {
+		add(d)
+	}
+	if len(rows) == 0 {
+		fmt.Println("(no devices; try --json to see the raw ports report)")
+		return 0
+	}
+	lg := func(d map[string]any, key string) any {
+		if m, ok := d["logic"].(map[string]any); ok {
+			return m[key]
+		}
+		return nil
+	}
+	fmt.Printf("%-10s %-12s %-16s %-24s %8s %4s\n", "id", "prefab", "name", "type", "Setting", "On")
+	for _, d := range rows {
+		fmt.Printf("%-10v %-12v %-16v %-24v %8v %4v\n", d["id"], d["hash"], d["name"], d["type"], lg(d, "Setting"), lg(d, "On"))
+	}
 	return 0
 }
 

@@ -527,6 +527,7 @@ var Commands = []Command{
 				"  set d1.Setting=10 ...     set device input values\n" +
 				"  step [N]                  advance the chip N game ticks (paused)\n" +
 				"  ports                     dump how ports/devices are wired (diagnostic)\n" +
+				"  devices [--name F]        list devices (id/prefab/name/Setting) to tell same-name ones apart\n" +
 				"  pause [on|off]            pause / resume the game\n" +
 				"  run <scenario.json>       run a scenario and assert expectations\n" +
 				"  watch                     stream live state events\n" +

@@ -1112,7 +1112,7 @@ namespace Ic10Go.Testbench
             {
                 try { o["hash"] = lg.GetPrefabHash(); } catch { }
                 var vals = new JObject();
-                foreach (var name in new[] { "Setting", "On", "Ratio", "Value", "Channel0", "StackSize" })
+                foreach (var name in new[] { "Setting", "On", "Ratio", "Value", "Channel0", "StackSize", "NameHash", "PrefabHash", "ReferenceId" })
                 {
                     try
                     {
