@@ -36,6 +36,7 @@ func cmdTestbench(args []string) int {
 	playerName := ""
 	atArg := ""
 	nameFilter := ""
+	idsArg := ""
 	radius := 0.0
 	offset := 0.0
 	offsetSet := false
@@ -106,6 +107,11 @@ func cmdTestbench(args []string) int {
 			i++
 		case strings.HasPrefix(a, "--name="):
 			nameFilter = strings.TrimPrefix(a, "--name=")
+		case a == "--ids" && i+1 < len(args):
+			idsArg = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--ids="):
+			idsArg = strings.TrimPrefix(a, "--ids=")
 		case a == "--raw":
 			rawPush = true
 		case a == "--legacy-by-id":
@@ -184,6 +190,8 @@ func cmdTestbench(args []string) int {
 		return benchPorts(addr, chip, asJSON)
 	case "devices":
 		return benchDevices(addr, chip, nameFilter, asJSON)
+	case "device":
+		return benchDeviceById(addr, idsArg, asJSON)
 	case "pause":
 		return benchPause(addr, rest, asJSON)
 	case "run":
@@ -994,6 +1002,47 @@ func benchDevices(addr string, chip any, nameFilter string, asJSON bool) int {
 	for _, d := range rows {
 		fmt.Printf("%-10v %-12v %-16v %-24v %8v %4v\n", d["id"], d["hash"], d["name"], d["type"], lg(d, "Setting"), lg(d, "On"))
 	}
+	return 0
+}
+
+// benchDeviceById reads one or more devices by ReferenceId (like readById /
+// writeById in a script), regardless of whether they are wired to a port.
+func benchDeviceById(addr, idsArg string, asJSON bool) int {
+	if idsArg == "" {
+		fmt.Fprintln(os.Stderr, "usage: ic10c testbench device --ids 123,456")
+		return 2
+	}
+	var ids []int
+	for _, s := range strings.Split(idsArg, ",") {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+			ids = append(ids, n)
+		}
+	}
+	if len(ids) == 0 {
+		fmt.Fprintln(os.Stderr, "ic10c: --ids wants a comma-separated list of ReferenceIds")
+		return 2
+	}
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	raw, err := c.Call("device", map[string]any{"ids": ids})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if asJSON {
+		fmt.Println(string(raw))
+		return 0
+	}
+	var v any
+	if json.Unmarshal(raw, &v) != nil {
+		fmt.Println(string(raw))
+		return 0
+	}
+	b, _ := json.MarshalIndent(v, "", "  ")
+	fmt.Println(string(b))
 	return 0
 }
 
