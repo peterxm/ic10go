@@ -373,6 +373,16 @@
         "icon": "$(symbol-structure)"
       },
       {
+        "command": "icg.bench.devices",
+        "title": "%cmd.bench.devices%",
+        "icon": "$(circuit-board)"
+      },
+      {
+        "command": "icg.bench.queryIds",
+        "title": "%cmd.bench.queryIds%",
+        "icon": "$(search)"
+      },
+      {
         "command": "icg.bench.writes",
         "title": "%cmd.bench.writes%",
         "icon": "$(output)"

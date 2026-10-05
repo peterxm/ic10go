@@ -59,6 +59,8 @@
   "cmd.bench.runTicks": "IC10 Go: 运行 N tick",
   "cmd.bench.reset": "IC10 Go: 重置芯片",
   "cmd.bench.ports": "IC10 Go: 查看端口接线",
+  "cmd.bench.devices": "IC10 Go: 按名字查设备",
+  "cmd.bench.queryIds": "IC10 Go: 反查本文件里的 ReferenceId",
   "cmd.bench.writes": "IC10 Go: 查看设备写序列",
   "cmd.bench.compare": "IC10 Go: 多芯片对比",
   "cmd.bench.exportStack": "IC10 Go: 导出栈数据（loader）",

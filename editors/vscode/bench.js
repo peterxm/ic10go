@@ -876,6 +876,8 @@ class Bench {
         cmd('icg.bench.runTicks', () => this.runTicks(this.cfg().runTicks));
         cmd('icg.bench.reset', () => this.reset());
         cmd('icg.bench.ports', () => this.showPorts());
+        cmd('icg.bench.devices', () => this.showDevices());
+        cmd('icg.bench.queryIds', () => this.queryIds());
         cmd('icg.bench.writes', () => this.showWrites(false));
         cmd('icg.bench.compare', () => this.showCompare());
         cmd('icg.bench.exportStack', () => this.exportStack());
@@ -1503,6 +1505,89 @@ class Bench {
                 if (m && m.type === 'refresh') this.showPorts();
             });
         }
+    }
+
+    // Network devices that a script addresses by ReferenceId / batch (lb/lbn),
+    // even when they are not wired to a port. Runs `find` and shows a picker.
+    async showDevices() {
+        const c = await this.connect(false);
+        if (!c) return;
+        const name = await vscode.window.showInputBox({
+            prompt: t('Filter by device name (optional)', '按设备名过滤（可留空）'),
+            placeHolder: 'mem1',
+        });
+        if (name === undefined) return;
+        const args = name ? { name } : {};
+        let r;
+        try {
+            r = await c.call('find', args);
+        } catch (err) {
+            this.client.output.appendLine(`IC10 bench find failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('IC10: find failed. See the "IC10 Go" output.', 'IC10: 查询设备失败，详见 "IC10 Go" 输出面板。'));
+            return;
+        }
+        const devs = r.devices || [];
+        if (!devs.length) {
+            vscode.window.showInformationMessage(t('IC10: no devices found.', 'IC10: 没找到设备。'));
+            return;
+        }
+        const items = devs.map((d) => {
+            const lg = d.logic || {};
+            const num = (v) => (typeof v === 'number' && isFinite(v) ? String(Math.trunc(v)) : v == null ? '' : String(v));
+            return {
+                label: `$(circuit-board) ${d.id}  ${d.name || d.prefab || ''}`,
+                description: d.prefab,
+                detail: `PrefabHash=${num(lg.PrefabHash)} Setting=${num(lg.Setting)} On=${num(lg.On)}`,
+                id: d.id,
+            };
+        });
+        const pick = await vscode.window.showQuickPick(items, {
+            title: t(`IC10 devices (${devs.length})`, `IC10 设备（${devs.length}）`),
+            matchOnDetail: true,
+        });
+        if (!pick) return;
+        await vscode.env.clipboard.writeText(String(pick.id));
+        vscode.window.showInformationMessage(t(`ReferenceId ${pick.id} copied.`, `已复制 ReferenceId ${pick.id}。`));
+    }
+
+    // Scan the active editor for ReferenceIds / hashes and look each up with the
+    // mod's `device` command (works for devices not wired to a port).
+    async queryIds() {
+        const c = await this.connect(false);
+        if (!c) return;
+        const ed = vscode.window.activeTextEditor;
+        if (!ed) {
+            vscode.window.showInformationMessage(t('IC10: open a .icg file first.', 'IC10: 先打开一个 .icg 文件。'));
+            return;
+        }
+        const text = ed.document.getText();
+        const ids = new Set();
+        const re = /\b(?:readById|writeById|clrById|readByIdSlot|writeByIdSlot|deviceById)\s*\(\s*(\d+)/g;
+        let m;
+        while ((m = re.exec(text))) ids.add(Number(m[1]));
+        if (!ids.size) {
+            vscode.window.showInformationMessage(t('IC10: no numeric ReferenceIds found in this file.', 'IC10: 当前文件里没找到数字 ReferenceId。'));
+            return;
+        }
+        let r;
+        try {
+            r = await c.call('device', { ids: [...ids] });
+        } catch (err) {
+            this.client.output.appendLine(`IC10 bench device failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('IC10: device lookup failed. See the "IC10 Go" output.', 'IC10: 反查设备失败，详见 "IC10 Go" 输出面板。'));
+            return;
+        }
+        const items = (r.devices || []).map((d) => ({
+            label: `$(circuit-board) ${d.id}  ${d.name || d.prefab || ''}`,
+            description: d.present === false ? t('not found', '未找到') : d.prefab,
+            id: d.id,
+        }));
+        const pick = await vscode.window.showQuickPick(items, {
+            title: t('IC10: devices referenced by this file', 'IC10: 本文件引用的设备'),
+        });
+        if (!pick) return;
+        await vscode.env.clipboard.writeText(String(pick.id));
+        vscode.window.showInformationMessage(t(`ReferenceId ${pick.id} copied.`, `已复制 ReferenceId ${pick.id}。`));
     }
 
     portsHtml(r) {

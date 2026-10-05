@@ -59,6 +59,8 @@
   "cmd.bench.runTicks": "IC10 Go: Run Ticks",
   "cmd.bench.reset": "IC10 Go: Reset Chip",
   "cmd.bench.ports": "IC10 Go: Show Port Wiring",
+  "cmd.bench.devices": "IC10 Go: Find Devices (by name)",
+  "cmd.bench.queryIds": "IC10 Go: Look up ReferenceIds in this file",
   "cmd.bench.writes": "IC10 Go: Show Device Writes",
   "cmd.bench.compare": "IC10 Go: Compare Chips",
   "cmd.bench.exportStack": "IC10 Go: Export Stack as Loader",
