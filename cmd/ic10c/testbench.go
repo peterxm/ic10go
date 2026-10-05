@@ -1375,7 +1375,7 @@ func benchState(addr string, chip any, all, asJSON bool) int {
 
 func benchSet(addr string, chip any, args []string, force, pulse, asJSON bool) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "ic10c: usage: ic10c testbench set [--force] [--pulse] d1.Setting=10 ...")
+		fmt.Fprintln(os.Stderr, "ic10c: usage: ic10c testbench set [--force] [--pulse] d1.Setting=10 id:7030.Setting=2 ...")
 		return 2
 	}
 	writes := make([]testbench.DeviceWrite, 0, len(args))
@@ -1713,7 +1713,20 @@ func parseWrite(s string) (testbench.DeviceWrite, bool) {
 	if err != nil {
 		return testbench.DeviceWrite{}, false
 	}
-	port, logic, err := splitPortLogic(s[:eq])
+	key := s[:eq]
+	if len(key) > 3 && strings.EqualFold(key[:3], "id:") {
+		rest := key[3:]
+		dot := strings.IndexByte(rest, '.')
+		if dot <= 0 || dot == len(rest)-1 {
+			return testbench.DeviceWrite{}, false
+		}
+		id, err := strconv.Atoi(rest[:dot])
+		if err != nil {
+			return testbench.DeviceWrite{}, false
+		}
+		return testbench.DeviceWrite{ID: &id, Logic: rest[dot+1:], Value: v}, true
+	}
+	port, logic, err := splitPortLogic(key)
 	if err != nil {
 		return testbench.DeviceWrite{}, false
 	}

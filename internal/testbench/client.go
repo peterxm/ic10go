@@ -425,6 +425,7 @@ type PushResult struct {
 // DeviceWrite sets one device logic value.
 type DeviceWrite struct {
 	Port  string  `json:"port"`
+	ID    *int    `json:"id,omitempty"`
 	Logic string  `json:"logic"`
 	Slot  *int    `json:"slot,omitempty"`
 	Value float64 `json:"value"`
