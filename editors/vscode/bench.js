@@ -1148,6 +1148,7 @@ class Bench {
             this.persistSel();
             await c.call('chip.select', { chip: this.sel });
             await this.refresh(false);
+            this.loadNetDevices();
         } catch (err) {
             vscode.window.showErrorMessage(t('IC10: select chip failed: ', 'IC10: 选择芯片失败：') + err.message);
         }
@@ -2780,14 +2781,36 @@ ${note}${diffNote}
     if (m.netDevices && m.netDevices.length) {
       const nds = m.netDevices;
       html += '<section><h2>Network Devices <span class="pill">' + nds.length + '</span></h2>';
-      html += '<table><tr><th>id</th><th>name</th><th>prefab</th><th>Setting</th><th>On</th></tr>';
       for (const d of nds) {
-        const lg = d.logic || {};
-        html += '<tr><td class="port">' + d.id + '</td><td>' + (d.name || '') +
-          '</td><td class="muted">' + (d.prefab || '') + '</td><td class="num">' + num(lg.Setting) +
-          '</td><td class="num">' + num(lg.On) + '</td></tr>';
+        const dkeys = Object.keys(d.logic || {}).sort();
+        const did = d.id !== undefined ? d.id : (d.name || d.prefab || '');
+        const key = 'net:' + did;
+        html += '<details class="dev"' + (openMap[key] ? ' open' : '') + ' data-key="' + key +
+          '"><summary><span class="port">' + did + '</span> ' + (d.name || '') +
+          ' <span class="muted">' + (d.prefab || '') + '</span></summary>';
+        if (dkeys.length) {
+          html += '<table>';
+          for (const k of dkeys) {
+            next['net:' + did + '.' + k] = d.logic[k];
+            html += '<tr><td>' + k + '</td><td class="num">' + num(d.logic[k]) + hashTag(k, d.logic[k]) + '</td></tr>';
+          }
+          html += '</table>';
+        }
+        if (d.slots && d.slots.length) {
+          const skey = 'netslots:' + did;
+          html += '<details class="slots"' + (openMap[skey] ? ' open' : '') + ' data-key="' + skey +
+            '"><summary>Slots <span class="pill">' + d.slots.length + '</span></summary>';
+          for (const s of d.slots) {
+            const lk = Object.keys(s.logic || {}).sort();
+            html += '<table>';
+            for (const k of lk) html += '<tr><td>slot ' + s.index + ' ' + k + '</td><td class="num">' + num(s.logic[k]) + '</td></tr>';
+            html += '</table>';
+          }
+          html += '</details>';
+        }
+        html += '</details>';
       }
-      html += '</table></section>';
+      html += '</section>';
     }
     if (st.errors && (st.errors.code || st.errors.compilation)) {
       html = '<section><h2>Error</h2><p>' + (st.errors.code || '') + ' line ' + st.errors.line + '</p></section>' + html;
