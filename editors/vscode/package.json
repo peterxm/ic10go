@@ -583,6 +583,16 @@
           "group": "navigation@12"
         },
         {
+          "command": "icg.bench.devices",
+          "when": "view == icg.bench",
+          "group": "navigation@12.5"
+        },
+        {
+          "command": "icg.bench.queryIds",
+          "when": "view == icg.bench",
+          "group": "navigation@12.6"
+        },
+        {
           "command": "icg.bench.writes",
           "when": "view == icg.bench",
           "group": "navigation@13"
