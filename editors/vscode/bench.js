@@ -2455,7 +2455,8 @@ ${note}${diffNote}
             return;
         }
         try {
-            const r = await this.conn.call('find', {});
+            const args = this.sel ? { chip: this.sel } : {};
+            const r = await this.conn.call('net', args);
             this.netDevices = r.devices || [];
         } catch {
             this.netDevices = [];

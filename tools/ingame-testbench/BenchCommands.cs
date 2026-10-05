@@ -41,6 +41,7 @@ namespace Ic10Go.Testbench
                 case "get": return Get(args);
                 case "device": return Device(args);
                 case "find": return Find(args);
+                case "net": return Net(args);
                 case "trace": return Trace(args);
                 case "program": return ProgramCmd(args);
                 case "writes": return Writes(args);
@@ -274,6 +275,14 @@ namespace Ic10Go.Testbench
             string name = args["name"] != null ? args["name"].ToString() : null;
             int max = args["max"] != null ? (int)args["max"] : 0;
             return new JObject { ["devices"] = GameApi.FindDevices(prefab, name, max) };
+        }
+
+        /// <summary>net {chip?} lists the devices on the selected chip's data cable
+        /// network (lb/lbn view), even if none are wired to a port.</summary>
+        private static JObject Net(JObject args)
+        {
+            var h = ResolveChip(args["chip"]);
+            return new JObject { ["devices"] = GameApi.NetworkDevices(h.Holder) };
         }
 
         /// <summary>writes {clear?, from?} returns the device logic writes the

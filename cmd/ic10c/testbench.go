@@ -200,6 +200,8 @@ func cmdTestbench(args []string) int {
 		return benchDeviceById(addr, idsArg, asJSON)
 	case "find":
 		return benchFind(addr, nameFilter, prefabArg, asJSON)
+	case "net":
+		return benchNet(addr, chip, asJSON)
 	case "pause":
 		return benchPause(addr, rest, asJSON)
 	case "run":
@@ -1045,6 +1047,47 @@ func benchFind(addr, nameFilter, prefabArg string, asJSON bool) int {
 		a["prefab"] = prefabArg
 	}
 	raw, err := c.Call("find", a)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if asJSON {
+		fmt.Println(string(raw))
+		return 0
+	}
+	var rep struct {
+		Devices []map[string]any `json:"devices"`
+	}
+	if json.Unmarshal(raw, &rep) != nil {
+		fmt.Println(string(raw))
+		return 0
+	}
+	lg := func(d map[string]any, k string) any {
+		if m, ok := d["logic"].(map[string]any); ok {
+			return m[k]
+		}
+		return nil
+	}
+	fmt.Printf("%-9s %-13s %-18s %-30s %8s %4s\n", "id", "prefabHash", "name", "prefab", "Setting", "On")
+	for _, d := range rep.Devices {
+		fmt.Printf("%-9s %-13s %-18v %-30v %8s %4s\n", numStr(d["id"]), numStr(lg(d, "PrefabHash")), d["name"], d["prefab"], numStr(lg(d, "Setting")), numStr(lg(d, "On")))
+	}
+	return 0
+}
+
+// benchNet lists the devices on the selected chip's data cable network (the
+// lb/lbn view), even when nothing is wired to a port.
+func benchNet(addr string, chip any, asJSON bool) int {
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	args := map[string]any{}
+	if chip != nil {
+		args["chip"] = chip
+	}
+	raw, err := c.Call("net", args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1

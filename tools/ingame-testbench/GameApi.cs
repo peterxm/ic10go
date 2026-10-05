@@ -993,6 +993,25 @@ namespace Ic10Go.Testbench
             return outp;
         }
 
+        /// <summary>The data-cable-network device list of a chip's host device
+        /// (what lb/lbn see on that network), for debugging without port wiring.</summary>
+        public static JArray NetworkDevices(object holder)
+        {
+            var outp = new JArray();
+            if (holder == null) return outp;
+            var net = GetMember(holder, "DataCableNetwork") ?? GetMember(holder, "CableNetwork");
+            if (net == null) return outp;
+            var list = GetMember(net, "DataDeviceList") ?? GetMember(net, "_dataDeviceList");
+            var arr = list as System.Collections.IEnumerable;
+            if (arr == null) return outp;
+            foreach (var d in arr)
+            {
+                if (d == null) continue;
+                outp.Add(DescribeLogicable(d));
+            }
+            return outp;
+        }
+
         /// <summary>The host's port binding labels (db, d0..d5) from GetLogicBindings.</summary>
         private static string[] BindingLabels(ICircuitHolder holder)
         {
