@@ -85,9 +85,20 @@ examples/…-表驱动.icg: ... worst-case 129 instructions [EXCEEDS 128]
 
 ### 编辑器诊断
 
-除了状态栏，LSP 还会在**超限段的支配循环源码行**发一条 **Information** 级诊断（code
-`tick-budget`）：`worst case between two yields is more than 128 instructions; a loop spans ticks`。
-之所以用 Information 而不是 Warning：很多长驻循环本来就该跨 tick，这不是错误，只是提醒。
+除了状态栏，LSP 会对**每个超限段**发一条 **Information** 级诊断（code `tick-budget`），锚在
+**支配循环的源码行**，并带上数字与相关位置：
+
+```text
+worst case between two yields exceeds 128 instructions, so the tick is cut mid-loop.
+tick body starts at source line 63, ends at the next yield (source line 62).
+dominant loop at source line 69: body 26 × 8 iterations ≈ 182 instructions.
+run `ic10c tick --path` for the worst-case path.
+```
+
+- `relatedInformation` 指向**支配循环头**（"dominant loop header (body 26, 8 iterations)"）和
+  **tick 体起点**（"tick body starts here"），可在 Problems 面板里点跳。
+- 多芯片时每块芯片的超限段各一条。
+- 之所以用 Information 而不是 Warning：很多长驻循环本来就该跨 tick，这不是错误，只是提醒。
 
 > 原生 IC10 若依赖一次性数据 loader（`get db …` 读数据段），VM 里没跑 loader 会提前跳过程序
 > （输出会标注 `halted after 1 tick`）。要动态跑这类程序，用 `.icg` 让 `run`/`tick --run` 自动先跑

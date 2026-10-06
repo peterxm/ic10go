@@ -1558,30 +1558,35 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 	notify(w, "icg/stats", payload)
 }
 
-// tickDiagnostic reports, as an information diagnostic, a worst-case tick that
-// exceeds the game's per-tick instruction budget: a loop between two yields
-// spans ticks. It anchors on the dominant loop's source line (or the segment
-// start) and returns nil when nothing exceeds or the mapping is unknown.
-func tickDiagnostic(compiled ic10.Result) *lspDiagnostic {
-	var worst *tick.Segment
-	srcLine := 0
+// tickDiagnostics reports, as information diagnostics, worst-case ticks that
+// exceed the game's per-tick instruction budget: a loop between two yields
+// spans ticks. One diagnostic per overrunning segment, anchored on the dominant
+// loop's source line (or the segment start), with the numbers and a related
+// location for the tick body. Returns nil when nothing exceeds.
+func tickDiagnostics(compiled ic10.Result, uri string) []lspDiagnostic {
+	type hit struct {
+		seg  tick.Segment
+		loop *tick.Loop
+	}
+	var hits []hit
 	analyze := func(code string, lineMap []int) {
 		rep, err := tick.AnalyzeOpts(code, tick.Options{Limit: tick.DefaultLimit, LineMap: lineMap})
 		if err != nil {
 			return
 		}
 		for i := range rep.Segments {
-			s := &rep.Segments[i]
+			s := rep.Segments[i]
 			if !s.Exceeds {
 				continue
 			}
-			if worst == nil || s.Cost > worst.Cost {
-				worst = s
-				srcLine = s.DominantSource
-				if srcLine == 0 {
-					srcLine = s.Source
+			h := hit{seg: s}
+			for j := range rep.Loops {
+				if rep.Loops[j].Header == s.Dominant {
+					lp := rep.Loops[j]
+					h.loop = &lp
 				}
 			}
+			hits = append(hits, h)
 		}
 	}
 	if len(compiled.Chips) > 0 {
@@ -1591,21 +1596,66 @@ func tickDiagnostic(compiled ic10.Result) *lspDiagnostic {
 	} else {
 		analyze(compiled.Code, compiled.LineMap)
 	}
-	if worst == nil {
+	if len(hits) == 0 {
 		return nil
 	}
-	line := 0
-	if srcLine > 0 {
-		line = srcLine - 1 // LSP lines are 0-based
+	at := func(line int) lspRange {
+		i := 0
+		if line > 0 {
+			i = line - 1 // LSP lines are 0-based
+		}
+		return lspRange{Start: lspPosition{Line: i}, End: lspPosition{Line: i}}
 	}
-	return &lspDiagnostic{
-		Range:    lspRange{Start: lspPosition{Line: line}, End: lspPosition{Line: line}},
-		Severity: 3, // Information: exceeding a tick is often intentional
-		Source:   "ic10c",
-		Code:     "tick-budget",
-		Message: fmt.Sprintf("worst case between two yields is more than %d instructions; a loop spans ticks (run `ic10c tick --path`)",
-			tick.DefaultLimit),
+	tripsText := func(lp *tick.Loop) string {
+		if lp != nil && lp.Trips > 0 {
+			return strconv.Itoa(lp.Trips)
+		}
+		return "?"
 	}
+	out := make([]lspDiagnostic, 0, len(hits))
+	for _, h := range hits {
+		anchor := h.seg.Source
+		if h.loop != nil && h.loop.Source > 0 {
+			anchor = h.loop.Source
+		}
+		var msg strings.Builder
+		fmt.Fprintf(&msg, "worst case between two yields exceeds %d instructions, so the tick is cut mid-loop.", tick.DefaultLimit)
+		if h.seg.Source > 0 {
+			fmt.Fprintf(&msg, "\ntick body starts at source line %d", h.seg.Source)
+			if h.seg.Barrier >= 0 && h.seg.BarrierSource > 0 {
+				fmt.Fprintf(&msg, ", ends at the next yield (source line %d)", h.seg.BarrierSource)
+			}
+			msg.WriteString(".")
+		}
+		if h.loop != nil {
+			fmt.Fprintf(&msg, "\ndominant loop at source line %d: body %d × %s iterations ≈ %d instructions.",
+				h.loop.Source, h.loop.Body, tripsText(h.loop), h.seg.DominantCost)
+		}
+		msg.WriteString("\nrun `ic10c tick --path` for the worst-case path.")
+		d := lspDiagnostic{
+			Range:    at(anchor),
+			Severity: 3, // Information: exceeding a tick is often intentional
+			Source:   "ic10c",
+			Code:     "tick-budget",
+			Message:  msg.String(),
+		}
+		var related []relatedInfo
+		if h.loop != nil && h.loop.Source > 0 {
+			related = append(related, relatedInfo{
+				Location: map[string]any{"uri": uri, "range": at(h.loop.Source)},
+				Message:  fmt.Sprintf("dominant loop header (body %d, %s iterations)", h.loop.Body, tripsText(h.loop)),
+			})
+		}
+		if h.seg.Source > 0 && h.seg.Source != anchor {
+			related = append(related, relatedInfo{
+				Location: map[string]any{"uri": uri, "range": at(h.seg.Source)},
+				Message:  "tick body starts here",
+			})
+		}
+		d.RelatedInformation = related
+		out = append(out, d)
+	}
+	return out
 }
 
 // loaderLineCount reports the total line count of the one-time loader chunks.
