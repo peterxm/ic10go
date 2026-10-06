@@ -293,6 +293,22 @@ VSCode 为设置 `icg.libDirs`（同时作用于语言服务器与编译/运行�
 D3b（真正嵌套外提、保存 `ra`）未做，也不再需要：D3a 已覆盖“非叶子被多处复用”，且无
 `ra` 风险。
 
+**修复（2026-10-06）**：两处会让外提产物语义出错的问题（`testdata/cli` 的
+`D3a: 与全内联语义一致` 一直失败）：
+
+- **外提体没被发射**：驱动循环 `for _, name := range l.pending` 在进入时固定了长度，
+  而发射一个外提体会遇到新的外提被调者（非叶子体里调用了另一个外提函数），这些名字被
+  追加到 `l.pending` 却不在迭代范围内 → 函数体从未发射，`jal` 落到空块（`move r0 r0`）。
+  改用 worklist（`for i := 0; i < len(l.pending); i++`）。
+- **结果寄存器被下一次调用冲掉**：`outlineCall` 之后复制 `tmp = func$ret`，但 `ir.Call`
+  没把 `func$ret` 记为「调用定义」，加上 regalloc 里一处特例**强行删除** `tmp` 与
+  `func$ret` 的干涉边并合并 —— 于是 `f(x) + f(x+1)` 里第一次调用的结果在第二次调用时被
+  覆盖（产物出现 `add r0 r2 r2`）。修法：`ir.Call`/`ir.BrCall` 新增 `Result *Reg`，
+  `ir.TermDefs` 把它计入活跃性，删除那处不安全的合并特例。回归测试
+  `TestOutlineResultAcrossCalls`（修复前失败）。
+- 代价：语料仅 `testdata/bench/ingame/s50_nonleaf_outline.icg` 从 23→25 行（正确性优先）；
+  examples 17 个文件行数不变。
+
 **触发条件**：`import`（P2）催生的“分层库 + 非叶子 helper 多处复用”。两者都可作为候选
 方案由 size model 取更短者，行数上不会变差。
 

@@ -151,9 +151,12 @@ func Lower(info *sema.Info, diags *diag.Bag, opts Options) *ir.Function {
 	l.b.SetBlock(end)
 	l.b.SetTerm(&ir.Ret{})
 
-	// Emit the bodies of outlined functions once, after the main flow.
-	for _, name := range l.pending {
-		l.lowerOutlined(name)
+	// Emit the bodies of outlined functions once, after the main flow. Lowering
+	// one body can discover another outlined callee (a non-leaf body calls an
+	// outlined function), so use a worklist: a slice range would freeze the
+	// length and silently drop those bodies.
+	for i := 0; i < len(l.pending); i++ {
+		l.lowerOutlined(l.pending[i])
 	}
 
 	for name, pos := range l.labelUse {
@@ -2711,7 +2714,7 @@ func (l *lowerer) outlineCall(id *ast.Ident, fi *sema.FuncInfo, args []ast.Expr,
 		l.b.Emit(&ir.Assign{Dst: of.params[i], Src: vals[i]})
 	}
 	ret := l.newBlock()
-	l.b.SetTerm(&ir.Call{Target: of.entry, Return: ret, Nested: l.inOutlineBody})
+	l.b.SetTerm(&ir.Call{Target: of.entry, Return: ret, Nested: l.inOutlineBody, Result: of.result})
 	l.b.SetBlock(ret)
 	if needResult {
 		// Copy the result out of the function's fixed result register: a later

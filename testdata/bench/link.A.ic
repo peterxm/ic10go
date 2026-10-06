@@ -1,0 +1,5 @@
+move r0 0
+yield
+add r0 r0 1
+s d5:0 Channel0 r0
+j 1

@@ -72,6 +72,46 @@ func TestOutlineNonLeaf(t *testing.T) {
 	}
 }
 
+// A helper outlined and called twice, with BOTH results combined. The first
+// result must survive the second call: the outlined call defines its shared
+// result register, so a value copied out of it interferes with the next call
+// and must not coalesce into it. Regression for the D3a result-clobber bug.
+const outlineResultSumSrc = `
+func f(x num) num {
+    return x*2 + x*3 + x*5 + 1
+}
+
+func main() {
+    for i := 0; i < 4; i++ {
+        d0.Setting = f(d1.Setting) + f(d1.Setting + 1)
+    }
+}
+`
+
+func TestOutlineResultAcrossCalls(t *testing.T) {
+	t.Setenv("IC10C_NO_OPT", "")
+	t.Setenv("IC10C_NO_OUTLINE", "")
+	out, diags, err := ic10.CompileResult("t.icg", []byte(outlineResultSumSrc), ic10.Options{})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("default compile failed: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(out.Code, "jal ") {
+		t.Fatalf("f was not outlined:\n%s", out.Code)
+	}
+	t.Setenv("IC10C_NO_OUTLINE", "1")
+	plain, diags, err := ic10.CompileResult("t.icg", []byte(outlineResultSumSrc), ic10.Options{})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("no-outline compile failed: %v %v", diags.Diags, err)
+	}
+	init := deviceInit(7)
+	want, wantErr := runWrites(plain.Code, init)
+	got, gotErr := runWrites(out.Code, init)
+	if gotErr != wantErr || strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("outlined result was clobbered (err %v vs %v)\n--- outlined ---\n%v\n--- inlined ---\n%v\n--- outlined code ---\n%s",
+			gotErr, wantErr, got, want, out.Code)
+	}
+}
+
 // A device-parameter helper called with different device constants. Outlining
 // shares one body (ports passed as numbers, IC10 drN) instead of inlining it at
 // each call site.

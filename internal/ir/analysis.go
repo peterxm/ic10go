@@ -107,6 +107,23 @@ func TermUses(t Term) []*Reg {
 	return regs
 }
 
+// TermDefs returns the registers a terminator defines. Outlined calls define
+// their result register: without this a value copied out of it is treated as
+// dead across the next call (which rewrites it) and both coalesce.
+func TermDefs(t Term) []*Reg {
+	switch v := t.(type) {
+	case *Call:
+		if v.Result != nil {
+			return []*Reg{v.Result}
+		}
+	case *BrCall:
+		if v.Result != nil {
+			return []*Reg{v.Result}
+		}
+	}
+	return nil
+}
+
 // Liveness computes block-level live-in/live-out sets. The CFG (block Succs)
 // must be up to date; call BuildCFG first if the CFG changed.
 func Liveness(fn *Function) (in, out map[*Block]map[*Reg]bool) {
@@ -130,6 +147,9 @@ func Liveness(fn *Function) (in, out map[*Block]map[*Reg]bool) {
 			if !d[r] {
 				u[r] = true
 			}
+		}
+		for _, r := range TermDefs(b.Term) {
+			d[r] = true
 		}
 		use[b], def[b] = u, d
 	}

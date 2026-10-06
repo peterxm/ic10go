@@ -5,7 +5,6 @@ package regalloc
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"ic10go/internal/ir"
 )
@@ -221,36 +220,6 @@ func colorGraph(fn *ir.Function, g map[*ir.Reg]map[*ir.Reg]bool, palette []int) 
 		delete(cadj, b)
 		parent[b] = a
 	}
-	// copySrc[d] = s when every definition of d is a copy from the same source
-	// register s (d is read-only apart from those copies).
-	copySrc := map[*ir.Reg]*ir.Reg{}
-	{
-		seen := map[*ir.Reg]bool{}
-		bad := map[*ir.Reg]bool{}
-		uniq := map[*ir.Reg]*ir.Reg{}
-		for _, blk := range fn.Blocks {
-			for _, ins := range blk.Instrs {
-				d := ir.DefOf(ins)
-				if d == nil {
-					continue
-				}
-				if a, ok := ins.(*ir.Assign); ok {
-					if sr, ok := a.Src.(*ir.Reg); ok && (!seen[d] || uniq[d] == sr) {
-						uniq[d] = sr
-						seen[d] = true
-						continue
-					}
-				}
-				bad[d] = true
-				seen[d] = true
-			}
-		}
-		for d, sr := range uniq {
-			if !bad[d] {
-				copySrc[d] = sr
-			}
-		}
-	}
 	for _, blk := range fn.Blocks {
 		for _, ins := range blk.Instrs {
 			a, ok := ins.(*ir.Assign)
@@ -266,15 +235,10 @@ func colorGraph(fn *ir.Function, g map[*ir.Reg]map[*ir.Reg]bool, palette []int) 
 				continue
 			}
 			if cadj[rd][rs] {
-				// A register whose every definition is a copy of an outlined
-				// call's result register (func$ret) is safe to coalesce even
-				// across an interference edge: it is never written except by
-				// those copies, so sharing the result register is safe.
-				if copySrc[a.Dst] == nil || !strings.Contains(s.Name, "$") {
-					continue
-				}
-				delete(cadj[rd], rs)
-				delete(cadj[rs], rd)
+				// Interfering copies are not coalesced. (An outlined call's
+				// result register is now a real def of the call, so a value
+				// copied out of it before another call correctly interferes.)
+				continue
 			}
 			union(rd, rs)
 		}

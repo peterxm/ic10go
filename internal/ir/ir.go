@@ -408,6 +408,11 @@ type Call struct {
 	// jal overwrites ra, so the code generator saves it (push ra) before the
 	// call and restores it (pop ra) at the continuation.
 	Nested bool
+	// Result is the callee's result register (outlined calls only). The call
+	// defines it, so liveness must include it: otherwise a value copied out of
+	// it before the next call looks dead and coalesces into the shared register,
+	// which the next call then clobbers.
+	Result *Reg
 }
 
 // JmpRA jumps to the return address register (IC10 "j ra").
@@ -456,6 +461,7 @@ type BrCall struct {
 	Target *Block // callee entry
 	Return *Block // continuation / fall-through
 	Nested bool   // see Call.Nested
+	Result *Reg   // see Call.Result
 }
 
 func (*Jmp) isTerm()          {}
