@@ -1,14 +1,17 @@
-# 打印机栈指令（PrinterInstruction）
+# 设备栈指令（Printer / Sorter）
 
-> 支持栈指令的机器：**Autolathe / Electronics Printer / Hydraulic Pipe Bender /
-> Tool Manufactory / Security Printer / Rocket Manufactory**（以及用于查看交易数据的
-> Medium Satellite Dish，走另一套 `TraderInstruction`）。
+> 有些机器内部有一段 **「栈程序」**：IC 用 `put(设备, 地址, 值)` 写入、`get(设备, 地址)` 读取，
+> 机器自己解释执行这段栈。每一条槽是一个整数，**低 8 位是 OP 码**，其余位是参数字段。
+> 本文覆盖两类：
 >
-> 打印机内部有一段 **64 槽的「栈程序」**：IC 用 `put(printer, 地址, 值)` 写入、`get(printer, 地址)`
-> 读取；打印机空闲时**循环遍历**这段栈并解释执行。每一条槽是一个整数，**低 8 位是 OP 码**，
-> 其余位是参数字段。
+> - **打印机栈（`PrinterInstruction`，§1–§5）**：Autolathe / Electronics Printer /
+>   Hydraulic Pipe Bender / Tool Manufactory / Security Printer / Rocket Manufactory，
+>   64 槽（`PrinterStack.Size`）。
+> - **分拣器栈（`SorterInstruction`，§6）**：Logic Sorter，32 槽（`SorterStack.Size`）。
 >
-> 关联：[`spec.md` §8.7](spec.md)（`printer.*` 构建器）、[`target-ic10.md`](target-ic10.md)
+> （另外 Medium Satellite Dish 用 `TraderInstruction` 的另一套，不在本文。）
+>
+> 关联：[`spec.md` §8.7](spec.md)（`printer.*` / `sorter.*` 构建器）、[`target-ic10.md`](target-ic10.md)
 > （枚举与常量）、`Stationeers_IC10_参考文档.md`（附：内部栈编程）。
 
 ---
@@ -137,3 +140,72 @@ if readById(pa, LogicType.Activate) != 0 {
 > 真机上验证过：`executeRecipe` + `stackPointer` 写进栈后打印机会自己开印（`ExportCount` 涨、
 > `Reagents` 降）；清栈后停止；`get(54)` 能读到缺失反应物。多机时**名字必须 A/B 区分**，
 > 否则解析不到对应设备。
+
+---
+
+## 6. 分拣器栈（Logic Sorter）
+
+Logic Sorter 内部有 **32 槽（`SorterStack.Size`）**，每槽一条**过滤条件**。物品经过时，
+分拣器把它和栈里所有条件比对，再按 `Mode` 决定怎么分流。同样是「整数指令、低 8 位 OP」。
+
+### 6.1 指令一览
+
+| OP | 指令 | 参数位段 | 作用 |
+|---|---|---|---|
+| 0 | `None` | — | 空操作（清槽） |
+| 1 | `FilterPrefabHashEquals` | `PREFAB_HASH` int32 @8–39 | 物品预制体 hash **相等**才匹配 |
+| 2 | `FilterPrefabHashNotEquals` | `PREFAB_HASH` int32 @8–39 | 预制体 hash **不等**才匹配 |
+| 3 | `FilterSortingClassCompare` | `OP`(条件) byte8 @8–15，`CLASS` uint16 @16–31 | 按**分类**（`SortingClass`）比较 |
+| 4 | `FilterSlotTypeCompare` | `OP`(条件) byte8 @8–15，`CLASS` uint16 @16–31 | 按**槽类型**（`SlotClass`）比较 |
+| 5 | `FilterQuantityCompare` | `OP`(条件) byte8 @8–15，`QUANTITY` uint16 @16–31 | 按**数量**比较 |
+| 6 | `LimitNextExecutionByCount` | `COUNT` int32 @8–39 | 限制下一条执行**次数**（用一定次数后失效） |
+
+**条件运算 `OP`**（`ConditionOperation`）：`Equals`(0) / `Greater`(1) / `Less`(2) / `NotEquals`(3)。
+
+### 6.2 Mode（配合栈生效）
+
+分拣器的 `Mode`（`LogicType.Mode`）决定栈里多个条件怎么组合：
+
+| Mode | 含义 |
+|---|---|
+| `All`(0，默认) | **所有**条件都匹配才通过 |
+| `Any`(1) | **至少一个**匹配就通过 |
+| `None`(2) | 条件**全不匹配**才通过 |
+
+> 分类多种物品时靠切换 `Mode` 来表达「这组条件」。例如 `FilterPrefabHashEquals` 想反转输出侧，
+> 可在 `Any`(1) 与 `None`(2) 之间切换。
+
+### 6.3 `.icg` 构建器
+
+```go
+put(s, 0, sorter.filterPrefabHash(hash("ItemIronOre")))             // hash<<8 | 1
+put(s, 1, sorter.filterPrefabHashNotEquals(hash("ItemGold")))       // hash<<8 | 2
+put(s, 2, sorter.filterSortingClass(Equals, SortingClass.Ores))     // class<<16 | op<<8 | 3
+put(s, 3, sorter.filterSlotType(Greater, SlotClass.Battery))        // class<<16 | op<<8 | 4
+put(s, 4, sorter.filterQuantity(Less, 10))                          // qty<<16   | op<<8 | 5
+put(s, 5, sorter.limitNextExecutionByCount(5))                      // count<<8  | 6
+```
+
+- 条件常量取 `Equals`/`Greater`/`Less`/`NotEquals`（0/1/2/3）；分类/槽位取
+  `SortingClass.*`（0–10）/ `SlotClass.*`（0–43）。
+- 常量参数同样有**位宽校验**（`filterQuantity` 的数量 16 位等）。
+
+### 6.4 例：只分拣铁矿石
+
+```go
+const S = d0  // Logic Sorter
+func main() {
+    for {
+        yield()
+        put(S, 0, sorter.filterPrefabHash(hash("ItemIronOre")))
+        writeById(S, LogicType.Mode, 0)   // All：只有铁矿石通过
+    }
+}
+```
+
+### 6.5 注意
+
+- 分拣器**没有 `StackPointer`/`ExecuteRecipe`** 这类“执行”指令，栈就是一组**过滤条件**，
+  物品经过时逐条比对；要改分类规则就重写相应槽并设 `Mode`。
+- `LimitNextExecutionByCount` 用来让某个条件**只生效若干次**（数量/批次限制）。
+- 占满 32 槽前记得清没用的槽（写 `None`），否则旧条件继续参与比对。

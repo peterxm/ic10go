@@ -214,7 +214,7 @@ go test ./...
 | [`docs/vm-improvements.md`](docs/vm-improvements.md) | 测试用 IC10 虚拟机（`internal/vm`）改进计划（P1–P5） |
 | [`docs/tail-merge.md`](docs/tail-merge.md) | 尾块合并与寄存器颜色：气闸控制案例（`--merge-renamed-tails`，默认关闭） |
 | [`docs/tick-budget.md`](docs/tick-budget.md) | 每 tick 指令预算分析：`ic10c tick`，按 yield/sleep 分段的最坏路径 + 循环迭代次数（含真机验证） |
-| [`docs/printer-stack.md`](docs/printer-stack.md) | 打印机栈指令（`PrinterInstruction`）：64 槽程序、各 OP 用途、`printer.*` 构建器、三种用法与坑 |
+| [`docs/stack-instructions.md`](docs/stack-instructions.md) | 设备栈指令：打印机栈（`PrinterInstruction`，64 槽）+ 分拣器栈（`SorterInstruction`，32 槽）：各 OP 用途、`printer.*`/`sorter.*` 构建器、用法与坑 |
 
 > IC10 指令完整参考（`Stationeers_IC10_参考文档.md`）为第三方资料，仅本地保留、未随仓库分发。
 >
