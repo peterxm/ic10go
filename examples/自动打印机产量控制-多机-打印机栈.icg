@@ -21,21 +21,11 @@ const Stacker = hash("StructureStackerReverse")
 const QTY = 50  // 每轮打印数量
 
 data Printers = [
-    hash("StructureAutolathe"),
     hash("StructureElectronicsPrinter"),
-    hash("StructureHydraulicPipeBender"),
-    hash("StructureRocketManufactory"),
-    hash("StructureToolManufactory"),
-    hash("StructureSecurityPrinter"),
 ]
 
 data Stackers = [
-    hash("Autolathe Stacker"),
-    hash("Electronics Stacker"),
-    hash("Pipe Stacker"),
-    hash("Rocket Stacker"),
-    hash("Tool Stacker"),
-    hash("Security Stacker"),
+    hash("Autolathe Stacker A"),
 ]
 
 const COUNT = len(Printers)
