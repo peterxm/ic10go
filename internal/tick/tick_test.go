@@ -86,6 +86,53 @@ func TestTickLoopNotReported(t *testing.T) {
 	}
 }
 
+func TestSourceMapAndDominant(t *testing.T) {
+	src := "yield\nmove r0 0\nadd r0 r0 1\nblt r0 4 2\nj 0\n"
+	// 1-based IC10 line -> source line.
+	lineMap := []int{0, 10, 11, 12, 13, 14}
+	rep, err := AnalyzeOpts(src, Options{Limit: 128, LineMap: lineMap})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rep.Segments[1].Source; got != 11 {
+		t.Fatalf("segment source = %d, want 11", got)
+	}
+	if len(rep.Loops) != 1 || rep.Loops[0].Source != 12 {
+		t.Fatalf("loop source = %+v, want header source 12", rep.Loops)
+	}
+	if rep.Segments[1].Dominant != 2 || rep.Segments[1].DominantSource != 12 {
+		t.Fatalf("dominant = %d (src %d), want 2 (src 12)",
+			rep.Segments[1].Dominant, rep.Segments[1].DominantSource)
+	}
+	if len(rep.Segments[1].SourcePath) != len(rep.Segments[1].Path) {
+		t.Fatalf("sourcePath length %d != path %d", len(rep.Segments[1].SourcePath), len(rep.Segments[1].Path))
+	}
+}
+
+func TestDominantOnExceed(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("yield\n")       // 0
+	b.WriteString("move r0 0\n")   // 1
+	b.WriteString("bge r0 8 23\n") // 2 header/exit -> 23 (hcf)
+	for i := 0; i < 18; i++ {
+		b.WriteString("add r1 r1 1\n")
+	}
+	b.WriteString("add r0 r0 1\n") // 21
+	b.WriteString("j 2\n")         // 22
+	b.WriteString("hcf\n")         // 23
+	rep, err := Analyze(b.String(), 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seg := rep.Segments[1]
+	if !seg.Exceeds {
+		t.Fatalf("expected exceed:\n%s", rep)
+	}
+	if seg.Dominant != 2 || seg.DominantCost <= 100 {
+		t.Fatalf("dominant = %d cost %d, want header 2 and a large cost", seg.Dominant, seg.DominantCost)
+	}
+}
+
 func TestUnknownTripIsStillBounded(t *testing.T) {
 	// A self-loop with no detectable induction still must terminate the DP.
 	rep, err := Analyze("yield\nmove r0 1\nj 1\n", 128)

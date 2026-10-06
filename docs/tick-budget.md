@@ -22,6 +22,7 @@ ic10c tick firmware.ic                 # 原生 IC10 直接分析（不编译）
 ic10c tick --path printer.icg          # 打印最坏路径（IC10 行号）
 ic10c tick --limit 64 slow.icg         # 换一个预算对照（默认 128）
 ic10c tick --run 20 printer.icg        # 再用内置 VM 跑 20 tick，报实测每 tick 指令数
+ic10c tick --run 20 --set d4.Setting=1 printer.icg   # --run 前给设备设初值（可重复）
 ic10c tick --strict firmware.ic        # 有分段超限则退出码 1（可接 CI）
 ic10c tick --json printer.icg          # 机器可读
 ```
@@ -41,11 +42,29 @@ examples/…-表驱动.icg: per-tick budget: limit 128, 122 instructions
   worst case: a loop between yields can exceed the budget, so the chip resumes mid-loop on the next tick.
 ```
 
-- **tick segment**：两个 tick 边界之间的一段。`L6 -> yield L5` 表示从第 6 行跑到第 5 行的
-  `yield` 结束本次 tick。`worst-case` 是这一段任意路径上的最大指令数（≥ 128 就 `EXCEEDS`）。
+- **tick segment**：两个 tick 边界之间的一段。`L6 (src L63) -> yield L5 (src L62)` 表示从第 6 行
+  跑到第 5 行的 `yield` 结束本次 tick（括号里是 `.icg` 源码行，`--json` 为 `source`/`barrierSource`）。
+  `worst-case` 是这一段任意路径上的最大指令数（≥ 128 就 `EXCEEDS`）。
+- **归因**：超限的段尾会附 `<- dominated by loop L29 (src L69) (~182 instr)`，指出是哪个循环
+  撑爆的（最坏路径上该循环头执行次数 × 一圈行数的最大值）。
 - **loop**：识别到的自然循环：`body` 是一圈的最坏指令数，`x N iterations` 是识别出的
   迭代次数（`?` 表示没识别出常量上界）。
-- `--path` 给出实际的最坏指令序列（IC10 行号，0 基），可直接对着反汇编/产物看是哪几行。
+- `--path`：`.icg` 给出映射后的**源码行**序列（`sourcePath`），原生 IC10 给出 0 基 IC10 行号。
+
+### 多芯片
+
+`.icg` 里用 `chip` 声明多块芯片时，`tick` 会**逐块分析**并分别输出：
+
+```text
+mc.icg chip ChipA: per-tick budget: limit 128, 6 instructions
+  tick segment 0: L1 (src L1) -> yield L1 (src L1)  worst-case 1 instructions [fits]
+  ...
+mc.icg chip ChipB: per-tick budget: limit 128, 7 instructions
+  tick segment 1: L2 (src L2) -> (program end)  worst-case 126 instructions [fits]
+  loop L4..L7 (header L4 (src L2)): body 4 x 30 iterations
+```
+
+`--json` 每块芯片一条文档（带 `chip` 字段）；`build --json` 顶层的 `tick` 取最坏的一块。
 
 ### 动态实测（`--run N`）
 
@@ -60,6 +79,15 @@ examples/…-表驱动.icg: ... worst-case 129 instructions [EXCEEDS 128]
 
 这里 `avg ~101` 对应源码注释里的「约 110 条」（空闲路径），而 `max 128` 说明**确实有 tick
 撞到预算被切开**——和静态结论一致。
+
+想跑不同输入，用 `--set name.logic=value`（可重复，也支持 `name.slot[i].logic=value`）在
+`--run` 前给设备设初值。
+
+### 编辑器诊断
+
+除了状态栏，LSP 还会在**超限段的支配循环源码行**发一条 **Information** 级诊断（code
+`tick-budget`）：`worst case between two yields is more than 128 instructions; a loop spans ticks`。
+之所以用 Information 而不是 Warning：很多长驻循环本来就该跨 tick，这不是错误，只是提醒。
 
 > 原生 IC10 若依赖一次性数据 loader（`get db …` 读数据段），VM 里没跑 loader 会提前跳过程序
 > （输出会标注 `halted after 1 tick`）。要动态跑这类程序，用 `.icg` 让 `run`/`tick --run` 自动先跑

@@ -1057,6 +1057,7 @@ func cmdTick(args []string) int {
 	dataLayout := ""
 	unsafe := false
 	autoTable := false
+	var sets []string
 	var files []string
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; a {
@@ -1066,6 +1067,15 @@ func cmdTick(args []string) int {
 			showPath = true
 		case "--strict":
 			strict = true
+		case "--set":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "ic10c: --set needs name.logic=value")
+				return 2
+			}
+			set := args[i+1]
+			i++
+			// splitLibArgs already gave us --lib; keep --set here.
+			sets = append(sets, set)
 		case "--run":
 			if i+1 >= len(args) {
 				fmt.Fprintln(os.Stderr, "ic10c: --run needs a tick count")
@@ -1112,6 +1122,12 @@ func cmdTick(args []string) int {
 		return 2
 	}
 	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, Imports: true, LibDirs: libDirs}
+	type unit struct {
+		chip    string
+		code    string
+		loaders []string
+		lineMap []int
+	}
 	status := 0
 	for _, file := range files {
 		data, err := os.ReadFile(file)
@@ -1119,10 +1135,9 @@ func cmdTick(args []string) int {
 			fmt.Fprintln(os.Stderr, "ic10c:", err)
 			return 1
 		}
-		var loaders []string
-		code := string(data)
+		ic10Hint(file)
+		var units []unit
 		if strings.HasSuffix(file, ".icg") {
-			ic10Hint(file)
 			compiled, diags, err := ic10.CompileResult(file, data, opts)
 			if rc := report(source.NewFile(file, data), diags); rc != 0 {
 				return rc
@@ -1131,42 +1146,57 @@ func cmdTick(args []string) int {
 				fmt.Fprintln(os.Stderr, "ic10c:", err)
 				return 1
 			}
-			code = compiled.Code
-			loaders = compiled.Loaders
+			for _, ch := range compiled.Chips {
+				units = append(units, unit{chip: ch.Name, code: ch.Code, loaders: ch.Loaders, lineMap: ch.LineMap})
+			}
+			if len(units) == 0 { // defensive: single-chip result always has one
+				units = append(units, unit{code: compiled.Code, loaders: compiled.Loaders, lineMap: compiled.LineMap})
+			}
 		} else {
-			ic10Hint(file)
+			units = append(units, unit{code: string(data)})
 		}
-		rep, err := tick.Analyze(code, limit)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "ic10c:", err)
-			return 1
-		}
-		if asJSON {
-			out := struct {
-				File string `json:"file"`
-				*tick.Report
-			}{File: file, Report: rep}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(out); err != nil {
+		for _, u := range units {
+			rep, err := tick.AnalyzeOpts(u.code, tick.Options{Limit: limit, LineMap: u.lineMap})
+			if err != nil {
 				fmt.Fprintln(os.Stderr, "ic10c:", err)
 				return 1
 			}
-		} else {
-			fmt.Printf("%s: %s", file, rep.String())
-			if showPath {
-				for i, s := range rep.Segments {
-					fmt.Printf("  segment %d path: %v\n", i, s.Path)
+			name := file
+			if u.chip != "" {
+				name = file + " chip " + u.chip
+			}
+			if asJSON {
+				out := struct {
+					File string `json:"file"`
+					Chip string `json:"chip,omitempty"`
+					*tick.Report
+				}{File: file, Chip: u.chip, Report: rep}
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				if err := enc.Encode(out); err != nil {
+					fmt.Fprintln(os.Stderr, "ic10c:", err)
+					return 1
+				}
+			} else {
+				fmt.Printf("%s: %s", name, rep.String())
+				if showPath {
+					for i, s := range rep.Segments {
+						if len(s.SourcePath) > 0 {
+							fmt.Printf("  segment %d source path (1-based .icg lines): %v\n", i, s.SourcePath)
+						} else {
+							fmt.Printf("  segment %d path (0-based IC10 lines): %v\n", i, s.Path)
+						}
+					}
 				}
 			}
-		}
-		for _, s := range rep.Segments {
-			if s.Exceeds {
-				status = 1
+			for _, s := range rep.Segments {
+				if s.Exceeds {
+					status = 1
+				}
 			}
-		}
-		if runTicks > 0 {
-			measureTicks(code, loaders, runTicks, limit)
+			if runTicks > 0 {
+				measureTicks(u.code, u.loaders, runTicks, limit, sets)
+			}
 		}
 	}
 	if !strict {
@@ -1178,7 +1208,7 @@ func cmdTick(args []string) int {
 // measureTicks runs the program in the built-in VM (which models the game's
 // 128-instruction tick) and reports the measured instructions per tick. It
 // complements the static worst case: exact for the paths actually taken.
-func measureTicks(code string, loaders []string, ticks, limit int) {
+func measureTicks(code string, loaders []string, ticks, limit int, sets []string) {
 	m := vm.New()
 	m.TickLimit = limit // match the budget under test
 	for _, ld := range loaders {
@@ -1194,6 +1224,18 @@ func measureTicks(code string, loaders []string, ticks, limit int) {
 	if err := m.Load(code); err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return
+	}
+	for _, s := range sets {
+		name, logic, slot, hasSlot, value, ok := parseSet(s)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "ic10c: bad --set %q (want name.logic=value)\n", s)
+			return
+		}
+		if hasSlot {
+			m.SetSlot(name, slot, logic, value)
+		} else {
+			m.Set(name, logic, value)
+		}
 	}
 	c := &tickCounter{}
 	m.Trace = c

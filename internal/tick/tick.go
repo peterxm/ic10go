@@ -36,6 +36,16 @@ const maxTrackedLoops = 8
 // keeps the analysis linear in the program size.
 const maxDPStates = 200000
 
+// Options configures Analyze.
+type Options struct {
+	// Limit is the per-tick instruction budget (0 = DefaultLimit).
+	Limit int
+	// LineMap maps a 1-based IC10 line to the 1-based source line it came from
+	// (0 = unknown). When set, segments and loops also report their source line,
+	// and the worst-case path carries a parallel source-line list.
+	LineMap []int
+}
+
 // Segment is one yield/sleep-delimited run of the program.
 type Segment struct {
 	Start    int   `json:"start"`              // 0-based line of the first instruction
@@ -44,16 +54,26 @@ type Segment struct {
 	Exceeds  bool  `json:"exceeds"`            // Cost > Limit (the exact count is unknown)
 	Path     []int `json:"path,omitempty"`     // one worst-case path (line numbers)
 	Indirect bool  `json:"indirect,omitempty"` // a computed branch target was hit
+
+	// Source* are filled when Options.LineMap is set: the 1-based source line of
+	// Start / Barrier / the dominant loop header, and the mapped worst-case path.
+	Source         int   `json:"source,omitempty"`
+	BarrierSource  int   `json:"barrierSource,omitempty"`
+	SourcePath     []int `json:"sourcePath,omitempty"`
+	Dominant       int   `json:"dominant,omitempty"`       // 0-based header of the loop that dominates this segment (-1 = none)
+	DominantSource int   `json:"dominantSource,omitempty"` // source line of Dominant
+	DominantCost   int   `json:"dominantCost,omitempty"`   // estimated instructions from that loop
 }
 
 // Loop is a natural loop found in the program (informational).
 type Loop struct {
-	Header int `json:"header"` // 0-based line of the loop header (branch back target)
-	Latch  int `json:"latch"`  // 0-based line of the branch that jumps back
-	Start  int `json:"start"`  // lowest line in the loop body
-	End    int `json:"end"`    // highest line in the loop body
-	Body   int `json:"body"`   // worst-case instructions in one iteration
-	Trips  int `json:"trips"`  // detected constant trip count, or 0 when unknown
+	Header int `json:"header"`           // 0-based line of the loop header (branch back target)
+	Latch  int `json:"latch"`            // 0-based line of the branch that jumps back
+	Start  int `json:"start"`            // lowest line in the loop body
+	End    int `json:"end"`              // highest line in the loop body
+	Body   int `json:"body"`             // worst-case instructions in one iteration
+	Trips  int `json:"trips"`            // detected constant trip count, or 0 when unknown
+	Source int `json:"source,omitempty"` // 1-based source line of Header (with Options.LineMap)
 }
 
 // Report is the analysis result.
@@ -82,17 +102,34 @@ type node struct {
 // Analyze parses src as IC10 and reports its per-tick budget. limit <= 0 uses
 // DefaultLimit.
 func Analyze(src string, limit int) (*Report, error) {
-	if limit <= 0 {
-		limit = DefaultLimit
+	return AnalyzeOpts(src, Options{Limit: limit})
+}
+
+// AnalyzeOpts is Analyze with explicit options.
+func AnalyzeOpts(src string, opts Options) (*Report, error) {
+	if opts.Limit <= 0 {
+		opts.Limit = DefaultLimit
 	}
 	prog, err := vm.Parse(src)
 	if err != nil {
 		return nil, err
 	}
-	return analyzeProg(prog, limit)
+	return analyzeProg(prog, opts)
 }
 
-func analyzeProg(prog *vm.Program, limit int) (*Report, error) {
+func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
+	limit := opts.Limit
+	srcOf := func(line int) int {
+		// line is 0-based; LineMap is 1-based.
+		if len(opts.LineMap) == 0 || line < 0 {
+			return 0
+		}
+		i := line + 1
+		if i >= len(opts.LineMap) {
+			return 0
+		}
+		return opts.LineMap[i]
+	}
 	instrs := prog.Instrs
 	lines := make([]int, 0, len(instrs))
 	for i, ins := range instrs {
@@ -329,6 +366,8 @@ func analyzeProg(prog *vm.Program, limit int) (*Report, error) {
 		return res
 	}
 
+	rep.Loops = findLoops(nodes, lines, dom, &rep.Indirect)
+
 	for _, st := range starts {
 		if _, ok := nodes[st]; !ok {
 			continue
@@ -369,10 +408,38 @@ func analyzeProg(prog *vm.Program, limit int) (*Report, error) {
 		if seg.Indirect {
 			rep.Indirect = true
 		}
+		// Attribute the worst case: the loop that contributes the most along the
+		// reconstructed path (visits to its header times its body size).
+		visits := map[int]int{}
+		for _, ln := range seg.Path {
+			visits[ln]++
+		}
+		seg.Dominant = -1
+		for _, lp := range rep.Loops {
+			if v := visits[lp.Header]; v > 0 && v*lp.Body > seg.DominantCost {
+				seg.Dominant, seg.DominantCost = lp.Header, v*lp.Body
+			}
+		}
+		// Source mapping (for .icg callers that pass a LineMap).
+		seg.Source = srcOf(seg.Start)
+		if seg.Barrier >= 0 {
+			seg.BarrierSource = srcOf(seg.Barrier)
+		}
+		if seg.Dominant >= 0 {
+			seg.DominantSource = srcOf(seg.Dominant)
+		}
+		if len(opts.LineMap) > 0 && len(seg.Path) > 0 {
+			seg.SourcePath = make([]int, len(seg.Path))
+			for i, ln := range seg.Path {
+				seg.SourcePath[i] = srcOf(ln)
+			}
+		}
 		rep.Segments = append(rep.Segments, seg)
 	}
 
-	rep.Loops = findLoops(nodes, lines, dom, &rep.Indirect)
+	for i := range rep.Loops {
+		rep.Loops[i].Source = srcOf(rep.Loops[i].Header)
+	}
 	return rep, nil
 }
 
@@ -850,7 +917,7 @@ func (r *Report) String() string {
 	for i, s := range r.Segments {
 		bar := " -> (program end)"
 		if s.Barrier >= 0 {
-			bar = fmt.Sprintf(" -> yield L%d", s.Barrier+1)
+			bar = " -> yield " + loc(s.Barrier, s.BarrierSource)
 		} else if s.Exceeds {
 			bar = fmt.Sprintf(" -> (no yield within %d)", r.Limit)
 		}
@@ -859,17 +926,30 @@ func (r *Report) String() string {
 			status = fmt.Sprintf("EXCEEDS %d", r.Limit)
 			anyExceeds = true
 		}
-		fmt.Fprintf(&b, "  tick segment %d: L%d%s  worst-case %d instructions [%s]\n", i, s.Start+1, bar, s.Cost, status)
+		fmt.Fprintf(&b, "  tick segment %d: %s%s  worst-case %d instructions [%s]", i, loc(s.Start, s.Source), bar, s.Cost, status)
+		if s.Exceeds && s.Dominant >= 0 {
+			fmt.Fprintf(&b, "  <- dominated by loop %s (~%d instr)", loc(s.Dominant, s.DominantSource), s.DominantCost)
+		}
+		b.WriteByte('\n')
 	}
 	for _, l := range r.Loops {
 		trips := "?"
 		if l.Trips > 0 {
 			trips = strconv.Itoa(l.Trips)
 		}
-		fmt.Fprintf(&b, "  loop L%d..L%d (header L%d): body %d x %s iterations\n", l.Start+1, l.End+1, l.Header+1, l.Body, trips)
+		fmt.Fprintf(&b, "  loop %s..%s (header %s): body %d x %s iterations\n",
+			loc(l.Start, 0), loc(l.End, 0), loc(l.Header, l.Source), l.Body, trips)
 	}
 	if anyExceeds {
 		b.WriteString("  worst case: a loop between yields can exceed the budget, so the chip resumes mid-loop on the next tick.\n")
 	}
 	return b.String()
+}
+
+// loc renders an IC10 line, adding its source line when known.
+func loc(ic10, source int) string {
+	if source > 0 {
+		return fmt.Sprintf("L%d (src L%d)", ic10+1, source)
+	}
+	return fmt.Sprintf("L%d", ic10+1)
 }

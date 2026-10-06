@@ -428,17 +428,27 @@ var Commands = []Command{
 				"recognisable bound are capped by the budget and reported as\n" +
 				"exceeding it. Both compiled .icg output and hand-written IC10 work.\n\n" +
 				"With --run N it also runs N ticks in the built-in VM and prints the\n" +
-				"measured instructions per tick (exact for the paths actually taken).",
+				"measured instructions per tick (exact for the paths actually taken);\n" +
+				"--set gives devices an initial value first.\n\n" +
+				"Multi-chip sources are analysed per chip. For .icg the report also shows\n" +
+				"each segment/loop's source line, and an overrunning segment names the\n" +
+				"loop that dominates it.",
 			ZH: "编译文件（或按原始 IC10 读取），对每个由 yield/sleep 分段的区间，报告\n" +
 				"到达下一个 tick 边界的最坏路径指令数。\n\n" +
 				"游戏每 tick 最多执行 128 条，超过就会跨到下一 tick，「每 tick 跑一遍\n" +
 				"这个循环」的前提就不成立。可识别的计数循环给出迭代次数；识别不了的\n" +
 				"按预算封顶并标记超限。.icg 编译产物与手写 IC10 都支持。\n\n" +
 				"加 --run N 还会用内置 VM 跑 N 个 tick，报告实测每 tick 指令数\n" +
-				"（对实际走到的路径精确）。",
+				"（对实际走到的路径精确）；--set 先给设备设初值。\n\n" +
+				"多芯片源码按芯片分别分析。.icg 的报告还会给每个段/循环标注源码行，\n" +
+				"超限的段会指出是哪个循环撑爆的。",
 		},
-		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, maxLinesFlag, maxBytesFlag, maxLineFlag, libDirsFlag, tickLimitFlag, tickRunFlag, tickPathFlag, tickStrictFlag, jsonOutFlag, commonHelp},
-		Examples: []string{"ic10c tick printer.icg", "ic10c tick --path blink.icg", "ic10c tick --run 20 firmware.ic", "ic10c tick --strict firmware.ic"},
+		Flags: []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, maxLinesFlag, maxBytesFlag, maxLineFlag, libDirsFlag, tickLimitFlag, tickRunFlag, tickPathFlag, tickStrictFlag, jsonOutFlag,
+			{Long: "--set", Arg: "name.logic=v", Desc: text{
+				EN: "value to set on a device before the --run VM (repeatable)",
+				ZH: "运行 --run 前给设备设置初值（可重复）",
+			}}, commonHelp},
+		Examples: []string{"ic10c tick printer.icg", "ic10c tick --path blink.icg", "ic10c tick --run 20 --set d4.Setting=1 firmware.ic", "ic10c tick --strict firmware.ic"},
 	},
 	{
 		Name: "size", Args: "<file.icg>",

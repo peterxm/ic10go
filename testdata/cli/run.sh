@@ -219,6 +219,13 @@ eq "tick: 不超限" "$(jqr "$j" '.tick.exceeds')" "false"
 has "tick: CLI 报告" "$("$IC10C" tick "$TEST_DIR/tick.icg" 2>/dev/null)" "per-tick budget"
 "$IC10C" tick --strict --limit 4 "$TEST_DIR/tick.icg" >/dev/null 2>&1
 eq "tick: --strict 超限退出码" "$?" "1"
+cat > "$TEST_DIR/tickmc.icg" <<'EOF'
+chip ChipA { func main() { for { yield(); d0.Setting = 1 } } }
+chip ChipB { func main() { for { yield(); for i := 0; i < 30; i++ { d2.Setting = 3 } } } }
+EOF
+tickmc=$("$IC10C" tick "$TEST_DIR/tickmc.icg" 2>/dev/null)
+has "tick: 多芯片 ChipA" "$tickmc" "chip ChipA"
+has "tick: 多芯片 ChipB" "$tickmc" "chip ChipB"
 
 # ---------------------------------------------------------------- 8 设备/槽位
 echo ">>> 8 设备访问"

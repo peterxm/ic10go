@@ -1558,6 +1558,56 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 	notify(w, "icg/stats", payload)
 }
 
+// tickDiagnostic reports, as an information diagnostic, a worst-case tick that
+// exceeds the game's per-tick instruction budget: a loop between two yields
+// spans ticks. It anchors on the dominant loop's source line (or the segment
+// start) and returns nil when nothing exceeds or the mapping is unknown.
+func tickDiagnostic(compiled ic10.Result) *lspDiagnostic {
+	var worst *tick.Segment
+	srcLine := 0
+	analyze := func(code string, lineMap []int) {
+		rep, err := tick.AnalyzeOpts(code, tick.Options{Limit: tick.DefaultLimit, LineMap: lineMap})
+		if err != nil {
+			return
+		}
+		for i := range rep.Segments {
+			s := &rep.Segments[i]
+			if !s.Exceeds {
+				continue
+			}
+			if worst == nil || s.Cost > worst.Cost {
+				worst = s
+				srcLine = s.DominantSource
+				if srcLine == 0 {
+					srcLine = s.Source
+				}
+			}
+		}
+	}
+	if len(compiled.Chips) > 0 {
+		for _, ch := range compiled.Chips {
+			analyze(ch.Code, ch.LineMap)
+		}
+	} else {
+		analyze(compiled.Code, compiled.LineMap)
+	}
+	if worst == nil {
+		return nil
+	}
+	line := 0
+	if srcLine > 0 {
+		line = srcLine - 1 // LSP lines are 0-based
+	}
+	return &lspDiagnostic{
+		Range:    lspRange{Start: lspPosition{Line: line}, End: lspPosition{Line: line}},
+		Severity: 3, // Information: exceeding a tick is often intentional
+		Source:   "ic10c",
+		Code:     "tick-budget",
+		Message: fmt.Sprintf("worst case between two yields is more than %d instructions; a loop spans ticks (run `ic10c tick --path`)",
+			tick.DefaultLimit),
+	}
+}
+
 // loaderLineCount reports the total line count of the one-time loader chunks.
 func loaderLineCount(loaders []string) int {
 	n := 0

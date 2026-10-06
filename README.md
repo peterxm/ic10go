@@ -127,10 +127,11 @@ ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] [--spill db|st
                               # 行 / 字节 / 寄存器预算 + 峰值活跃 / 溢出槽（多芯片按芯片分组；含 loader 预算）+ 栈预算（stack user 个数/上限，默认固定 128；--dynamic-stack 动态边界，越界报错；--redundant-device-writes 删除重复设备写）
 ic10c size   <file.icg>       # 按函数拆分行预算（找最占行数的函数）
 ic10c graph  [--level source|ir] [--func NAME] [--no-lines] [-o FILE] <file.icg>
-ic10c tick   [--limit N] [--run N] [--path] [--strict] [--json] <file.icg|file.ic>
-                               # 每 tick / 每个循环的最坏指令数（游戏每 tick 最多 128 条）：按 yield/sleep
-                               # 分段统计最坏路径指令数，标出超限区间与循环迭代次数；--run N 再用内置 VM 实测每 tick。
-                               # .icg 与原生 IC10 都支持；编辑器状态栏也显示。见 docs/tick-budget.md
+ic10c tick   [--limit N] [--run N] [--set dev.logic=v] [--path] [--strict] [--json] <file.icg|file.ic>
+                               # 每 tick / 每个循环的最坏指令数（游戏每 tick 最多 128 条）：按 yield/sleep 分段统计
+                               # 最坏路径指令数，标注 .icg 源码行与「撑爆的循环」；多芯片分块报告。
+                               # --run N 用内置 VM 实测每 tick（--set 设初值）。.icg 与原生 IC10 都支持；
+                               # VSCode 状态栏 + Information 诊断也显示。见 docs/tick-budget.md
                               # 控制流图（Mermaid；默认源码级，--level ir 为 IR 基本块）
 ic10c fmt    [-w] <file>      # 格式化源码（.icg 或原生 .ic/.ic10）
 ic10c disasm <file.ic>        # 反汇编注释旧 IC10
