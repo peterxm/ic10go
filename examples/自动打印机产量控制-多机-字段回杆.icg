@@ -7,8 +7,8 @@
 // 首 tick：解析 id；设堆垛机 Mode=1 / Output=1。
 // 每 tick 逐台：
 //   * On 镜像：堆垛机 On = 打印机 On；
-//   * 吐料：有料且（内部是锭 或 打印机在打且已装满）且 Output=0 → 堆垛机 Activate=1；
-//           内部槽空了 → Activate=0（回杆）；
+//   * 吐料：堆垛机内部槽有打印物（Occupied>0）→ Activate=1 吐；
+//           吐空（Occupied=0）→ Activate=0（杆回原位）；
 //   * 到量停：打印机在打时，endCount = 触发时 ExportCount + 堆垛机 Setting；
 //           ExportCount 追平 endCount → 打印机 Activate=0，endCount 清零（下次触发重算）。
 //
@@ -59,7 +59,6 @@ func initOne(i num) {
     db.stack[base + 1] = batch.readName(Stacker, Units[cfg + 2], "ReferenceId", "Maximum")
     if !isNaN(db.stack[base + 1]) {
         writeById(db.stack[base + 1], LogicType.Mode, 1)
-        writeById(db.stack[base + 1], LogicType.Output, 1)
     }
 }
 
@@ -75,20 +74,11 @@ func step(i num) {
     exp := readById(pa, LogicType.ExportCount)
     on := readById(pa, LogicType.On)
     if on > 0 {
-        occ := readByIdSlot(st, 2, Occupied)
-        if occ <= 0 {
-            // 内部槽空了：吐完料，把杆拉回原位
-            writeById(st, LogicType.Activate, 0)
+        // 堆垛机内部槽有打印物就吐（Activate=1），吐空（Occupied=0）就把杆拉回原位（0）
+        if readByIdSlot(st, 2, Occupied) > 0 {
+            writeById(st, LogicType.Activate, 1)
         } else {
-            // 有料：是锭，或打印机在打且已装满 → 拉杆吐料（Output=0 时才动手）
-            cls := readByIdSlot(st, 2, SortingClass)
-            qty := readByIdSlot(st, 2, Quantity)
-            maxq := readByIdSlot(st, 2, MaxQuantity)
-            if cls == SlotClass.Ingot || (act > 0 && qty >= maxq) {
-                if readById(st, LogicType.Output) == 0 {
-                    writeById(st, LogicType.Activate, 1)
-                }
-            }
+            writeById(st, LogicType.Activate, 0)
         }
         // 到量停：触发时记 endCount，追平即停并清零
         if act > 0 {
