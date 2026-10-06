@@ -21,7 +21,6 @@ const QTY = 50  // 每轮打印数量
 
 const CUR = 125   // slowStep 轮转游标
 const BOOT = 127  // 首 tick：解析 ReferenceId
-const INST = 64   // 每台「已装栈」标志：db.stack[INST + i]
 const CFG = 3     // 打印机类型 / 打印机名 / 堆垛机名
 const ST = 4      // [触发基线, 吐料标志, 打印机 id, 堆垛机 id]
 
@@ -32,8 +31,6 @@ data Units = [
     hash("StructureElectronicsPrinter"), hash("Electronics B"), hash("Electronics Stacker B"),
     hash("StructureHydraulicPipeBender"), hash("Pipe Bender A"), hash("Pipe Stacker A"),
     hash("StructureHydraulicPipeBender"), hash("Pipe Bender B"), hash("Pipe Stacker B"),
-    hash("StructureRocketManufactory"), hash("Rocket"), hash("Rocket Stacker"),
-    hash("StructureToolManufactory"), hash("Tool"), hash("Tool Stacker"),
 ]
 
 const COUNT = len(Units) / CFG
@@ -46,7 +43,6 @@ func main() {
         if db.stack[BOOT] != 0 {
             for i := 0; i < COUNT; i++ {
                 resolve(i)
-                db.stack[INST + i] = 0
             }
         }
         // 每 tick：触发/到量/缺料（每台）
@@ -79,22 +75,18 @@ func fastStep(i num) {
     if isNaN(pa) || isNaN(st) {
         return
     }
+    // 打印机栈槽 0 非 0 = 已装程序（executeRecipe）；0 = 空（none）。
     if readById(pa, LogicType.Activate) != 0 {
-        if db.stack[INST + i] == 0 {
+        if get(pa, 0) == 0 {
             // 首次触发：装栈程序并启动，记录本轮基线
             install(pa)
             db.stack[base] = readById(pa, LogicType.ExportCount)
-            db.stack[INST + i] = 1
         } else if readById(pa, LogicType.ExportCount) - db.stack[base] >= readById(st, LogicType.Setting) {
-            // 到量：清栈 + 停机
-            clearStack(pa)
-            writeById(pa, LogicType.Activate, 0)
-            db.stack[INST + i] = 0
+            writeById(pa, LogicType.Activate, 0) // 到量：先停机，下一 tick 统一清栈
         }
-    } else if db.stack[INST + i] != 0 {
-        // 用户中途松手：清栈
+    } else if get(pa, 0) != 0 {
+        // 到量停机后 / 用户中途松手：清栈
         clearStack(pa)
-        db.stack[INST + i] = 0
     }
     // 缺料：槽 54 = 第一个 MissingRecipeReagent（OP | 数量<<8 | 反应物 hash<<16）
     miss := get(pa, PrinterStack.MissingRecipeReagent)
@@ -139,18 +131,14 @@ func slowStep(i num) {
     writeById(st, LogicType.Activate, db.stack[base + 1])
 }
 
-// install：把打印任务写进打印机栈并启动。
+// install：把「打印 QTY 个当前配方」写进栈槽 0 并从 0 开始执行。
 func install(pa num) {
-    put(pa, 0, printer.waitUntilNextValid())
-    put(pa, 1, printer.executeRecipe(QTY, readById(pa, LogicType.RecipeHash)))
+    put(pa, 0, printer.executeRecipe(QTY, readById(pa, LogicType.RecipeHash)))
     put(pa, PrinterStack.StackPointer, printer.stackPointer(0))
 }
 
-// clearStack：清掉栈程序（no-op），让打印机空转不打印。
+// clearStack：把栈槽 0 清成 no-op 并从头开始，打印机空转不打印。
 func clearStack(pa num) {
     put(pa, 0, printer.none())
-    put(pa, 1, printer.none())
-    put(pa, 2, printer.none())
-    put(pa, 3, printer.none())
     put(pa, PrinterStack.StackPointer, printer.stackPointer(0))
 }
