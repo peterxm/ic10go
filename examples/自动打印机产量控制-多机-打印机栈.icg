@@ -1,0 +1,136 @@
+// 打印机产量控制器（多机 · 打印机栈版）。
+//
+// 与字段版（Activate/ExportCount）的区别：打印任务不再靠 IC 每 tick 盯着字段，
+// 而是写进打印机自己的「栈程序」，由打印机解释执行：
+//   槽 0..53   指令（printer.* 打包：低 8 位 OP + 参数）
+//   槽 54..62  打印机回填的「缺失反应物」条目
+//   槽 63      StackPointer（写入后从该槽开始执行）
+// 打印机空闲时会循环遍历栈；缺料时若前面有 WaitUntilNextValid 就会等。
+//
+// 每台打印机的栈程序（首 tick 写一次，之后打印机自己循环）：
+//   0: WaitUntilNextValid()            缺料就等，不硬打
+//   1: ExecuteRecipe(QTY, Units[item]) 打印 QTY 个（quantity 每件递减）
+//   63: StackPointer(0)                从槽 0 开始
+//
+// 每 tick 的 IC 只做两件事：
+//   * fastStep：读槽 54 的缺失反应物，把它从打印机排出（排料保护）；每 tick 每台。
+//   * slowStep：堆垛机排料（Mode/Activate/On/Setting），每 tick 1 台、游标轮转。
+//
+// 部署：ic10c build 生成 <file>.data.ic，先跑一次 loader，再烧 runtime。
+//
+// 持久栈布局（用户区，每台 4 槽 i*4）：[产量基线, 吐料标志, 打印机 id, 堆垛机 id]
+//   CUR / BOOT：slowStep 游标 / 首 tick 标记（125 / 127）
+const Stacker = hash("StructureStackerReverse")
+const QTY = 50  // 每台每轮打印数量
+
+const CUR = 125
+const BOOT = 127
+const CFG = 4  // 打印机类型 / 打印机名 / 堆垛机名 / 物品 hash
+const ST = 4   // 每台状态 4 个槽
+
+data Units = [
+    // 打印机类型 / 打印机名 / 堆叠机名 / 打印物品
+    hash("StructureAutolathe"), hash("Autolathe A"), hash("Autolathe Stacker A"), hash("ItemCableCoil"),
+    hash("StructureAutolathe"), hash("Autolathe B"), hash("Autolathe Stacker B"), hash("ItemCableCoil"),
+    hash("StructureElectronicsPrinter"), hash("Electronics A"), hash("Electronics Stacker A"), hash("ItemAdvancedCircuit"),
+    hash("StructureElectronicsPrinter"), hash("Electronics B"), hash("Electronics Stacker B"), hash("ItemAdvancedCircuit"),
+    hash("StructureHydraulicPipeBender"), hash("Pipe Bender A"), hash("Pipe Stacker A"), hash("ItemPipe"),
+    hash("StructureHydraulicPipeBender"), hash("Pipe Bender B"), hash("Pipe Stacker B"), hash("ItemPipe"),
+    hash("StructureToolManufactory"), hash("Tool"), hash("Tool Stacker"), hash("ItemDrill"),
+]
+
+// COUNT 由表长自动算出（len(Units)/CFG）；加一台追加一行 4 个值即可。
+const COUNT = len(Units) / CFG
+
+func main() {
+    db.stack[BOOT] = 1
+    db.stack[CUR] = 0
+    for {
+        yield()
+        if db.stack[BOOT] != 0 {
+            for i := 0; i < COUNT; i++ {
+                resolve(i)
+                initStack(i)
+            }
+        }
+        // 每 tick：缺料排料（每台）
+        for i := 0; i < COUNT; i++ {
+            fastStep(i)
+        }
+        // 每 tick：1 台的堆垛机排料，游标轮转
+        slowStep(db.stack[CUR])
+        db.stack[CUR]++
+        if db.stack[CUR] >= COUNT {
+            db.stack[CUR] = 0
+        }
+        db.stack[BOOT] = 0
+    }
+}
+
+// resolve：首 tick 解析并缓存 ReferenceId。
+func resolve(i num) {
+    cfg := i * CFG
+    base := i * ST
+    db.stack[base + 2] = batch.readName(Units[cfg], Units[cfg + 1], "ReferenceId", "Average")
+    db.stack[base + 3] = batch.readName(Stacker, Units[cfg + 2], "ReferenceId", "Average")
+}
+
+// initStack：把打印任务写进打印机栈并启动（首 tick 一次）。
+func initStack(i num) {
+    cfg := i * CFG
+    base := i * ST
+    pa := db.stack[base + 2]
+    if isNaN(pa) {
+        return
+    }
+    put(pa, 0, printer.waitUntilNextValid())
+    put(pa, 1, printer.executeRecipe(QTY, Units[cfg + 3]))
+    put(pa, PrinterStack.StackPointer, printer.stackPointer(0))
+}
+
+// fastStep：缺料时把缺失的反应物从打印机排出（每 tick 每台）。
+func fastStep(i num) {
+    base := i * ST
+    pa := db.stack[base + 2]
+    if isNaN(pa) {
+        return
+    }
+    // 槽 54 = 第一个 MissingRecipeReagent（OP | 数量<<8 | 反应物 hash<<16）。
+    miss := get(pa, PrinterStack.MissingRecipeReagent)
+    if miss != 0 {
+        put(pa, 3, printer.ejectReagent(miss >> 16))
+    }
+}
+
+// slowStep：堆垛机排料（每 tick 只跑 1 台）。
+func slowStep(i num) {
+    base := i * ST
+    pa := db.stack[base + 2]
+    st := db.stack[base + 3]
+    if isNaN(pa) || isNaN(st) {
+        return
+    }
+    done := readById(pa, LogicType.ExportCount) - db.stack[base]
+    // Setting 超过物品堆叠上限时，只吐满的，零头用 Activate 顶出来
+    maxq := readByIdSlot(st, 2, MaxQuantity)
+    setting := readById(st, LogicType.Setting)
+    if done >= setting && maxq > 0 && setting > maxq {
+        db.stack[base + 1] = 1
+    }
+    // 内部槽里是锭：直接排出（锭不该被留着/切）
+    if readByIdSlot(st, 2, Class) == SlotClass.Ingot {
+        db.stack[base + 1] = 1
+    }
+    db.stack[base] += done
+    writeById(st, LogicType.On, readById(pa, LogicType.On))
+    // 正在吐：堆垛机内部槽空了就停
+    if db.stack[base + 1] != 0 && readByIdSlot(st, 2, Occupied) == 0 {
+        db.stack[base + 1] = 0
+    }
+    if db.stack[base + 1] != 0 {
+        writeById(st, LogicType.Mode, 1)
+    } else {
+        writeById(st, LogicType.Mode, 0)
+    }
+    writeById(st, LogicType.Activate, db.stack[base + 1])
+}
