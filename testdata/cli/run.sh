@@ -201,6 +201,25 @@ code=$(jqr "$(json "$TEST_DIR/loop.icg")" .code)
 has "loop: for range" "$code" "bge r0 10"
 has "loop: 条件循环" "$code" "blez"
 
+# ---------------------------------------------------------------- 7b 每 tick 预算
+echo ">>> 7b 每 tick 指令预算"
+cat > "$TEST_DIR/tick.icg" <<'EOF'
+func main() {
+    for {
+        yield()
+        for i := 0; i < 3; i++ {
+            d0.Setting = i
+        }
+    }
+}
+EOF
+j=$(json "$TEST_DIR/tick.icg")
+eq "tick: limit" "$(jqr "$j" '.tick.limit')" "128"
+eq "tick: 不超限" "$(jqr "$j" '.tick.exceeds')" "false"
+has "tick: CLI 报告" "$("$IC10C" tick "$TEST_DIR/tick.icg" 2>/dev/null)" "per-tick budget"
+"$IC10C" tick --strict --limit 4 "$TEST_DIR/tick.icg" >/dev/null 2>&1
+eq "tick: --strict 超限退出码" "$?" "1"
+
 # ---------------------------------------------------------------- 8 设备/槽位
 echo ">>> 8 设备访问"
 cat > "$TEST_DIR/device.icg" <<'EOF'

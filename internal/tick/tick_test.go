@@ -66,6 +66,26 @@ func TestLoopExceeds(t *testing.T) {
 	}
 }
 
+func TestTickLoopNotReported(t *testing.T) {
+	// yield; r0=0; do { r0+=1 } while r0<4; j 0
+	// The outer loop spans the yield (the tick loop) and must not be listed; the
+	// inner counting loop is.
+	src := "yield\nmove r0 0\nadd r0 r0 1\nblt r0 4 2\nj 0\n"
+	rep, err := Analyze(src, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Loops) != 1 {
+		t.Fatalf("loops = %d, want 1 (only the inner loop):\n%s", len(rep.Loops), rep)
+	}
+	if rep.Loops[0].Header != 2 || rep.Loops[0].Trips != 4 {
+		t.Fatalf("loop = %+v, want header 2 trips 4", rep.Loops[0])
+	}
+	if rep.Segments[1].Exceeds {
+		t.Fatalf("segment should fit:\n%s", rep)
+	}
+}
+
 func TestUnknownTripIsStillBounded(t *testing.T) {
 	// A self-loop with no detectable induction still must terminate the DP.
 	rep, err := Analyze("yield\nmove r0 1\nj 1\n", 128)

@@ -66,12 +66,16 @@ type Report struct {
 }
 
 type node struct {
-	line     int
-	op       string
-	args     []string
-	succ     []int
-	barrier  bool
-	halt     bool
+	line    int
+	op      string
+	args    []string
+	succ    []int // successors within a tick (barrier/halt nodes have none)
+	barrier bool
+	halt    bool
+	// dsucc adds the barrier continuation (the instruction after yield/sleep) so
+	// dominance and loop detection see the whole program, not a graph cut at
+	// every tick boundary. The bounded walk uses succ, not dsucc.
+	dsucc    []int
 	indirect bool
 }
 
@@ -202,6 +206,17 @@ func analyzeProg(prog *vm.Program, limit int) (*Report, error) {
 		}
 	}
 
+	// The dominance/loop CFG adds the barrier continuation, so a loop that spans
+	// a yield (e.g. `for { yield(); ... }`) is seen whole.
+	for _, n := range nodes {
+		n.dsucc = n.succ
+		if n.barrier {
+			if c := next(n.line); c >= 0 && len(n.succ) == 0 {
+				n.dsucc = []int{c}
+			}
+		}
+	}
+
 	rep := &Report{Limit: limit, Lines: len(lines)}
 
 	// Segments: start at the entry and after every barrier.
@@ -228,7 +243,7 @@ func analyzeProg(prog *vm.Program, limit int) (*Report, error) {
 	}
 	var backs []backEdge
 	for _, u := range lines {
-		for _, v := range nodes[u].succ {
+		for _, v := range nodes[u].dsucc {
 			if _, ok := nodes[v]; !ok {
 				continue
 			}
@@ -242,7 +257,7 @@ func analyzeProg(prog *vm.Program, limit int) (*Report, error) {
 			// runs trips times.
 			c := t
 			if t > 0 && isConditional(nodes[u].op) {
-				for _, s := range nodes[u].succ {
+				for _, s := range nodes[u].dsucc {
 					if !set[s] {
 						c = t - 1 // exits on this branch
 						break
@@ -381,7 +396,7 @@ func findLoops(nodes map[int]*node, lines []int, dom map[int]map[int]bool, indir
 	byHeader := map[int]map[int]bool{}
 	var headers []int
 	for _, u := range lines {
-		for _, v := range nodes[u].succ {
+		for _, v := range nodes[u].dsucc {
 			if _, ok := nodes[v]; !ok {
 				continue
 			}
@@ -403,6 +418,12 @@ func findLoops(nodes map[int]*node, lines []int, dom map[int]map[int]bool, indir
 	var loops []Loop
 	for _, h := range headers {
 		set := naturalLoop(nodes, h, byHeader[h])
+		// A loop that contains a yield/sleep spans ticks: it is the tick loop, and
+		// the per-segment report already covers its worst case. Only report loops
+		// that can run to completion inside one tick.
+		if containsBarrier(nodes, set) {
+			continue
+		}
 		l := Loop{Header: h, Trips: 0}
 		l.Start, l.End = h, h
 		for x := range set {
@@ -444,7 +465,7 @@ func loopBody(nodes map[int]*node, set map[int]bool, header int, latches map[int
 		}
 		onPath[i] = true
 		best := 0
-		for _, s := range nodes[i].succ {
+		for _, s := range nodes[i].dsucc {
 			if !set[s] || s == header {
 				continue // don't follow the back edge
 			}
@@ -487,7 +508,7 @@ func naturalLoop(nodes map[int]*node, h int, latches map[int]bool) map[int]bool 
 func preds(nodes map[int]*node, v int) []int {
 	var out []int
 	for u, n := range nodes {
-		for _, s := range n.succ {
+		for _, s := range n.dsucc {
 			if s == v {
 				out = append(out, u)
 				break
@@ -507,7 +528,7 @@ func dominators(nodes map[int]*node, entry int) map[int]map[int]bool {
 	// every node for predecessors on each pass.
 	predsOf := make(map[int][]int, len(nodes))
 	for u, n := range nodes {
-		for _, s := range n.succ {
+		for _, s := range n.dsucc {
 			if _, ok := nodes[s]; ok {
 				predsOf[s] = append(predsOf[s], u)
 			}
@@ -648,17 +669,17 @@ func detectTrips(nodes map[int]*node, set map[int]bool, header int) int {
 		for x := range set {
 			n := nodes[x]
 			cond, _, _, ok := ic10asm.BranchInfo(n.op)
-			if !ok || len(n.succ) != 2 {
+			if !ok || len(n.dsucc) != 2 {
 				continue
 			}
-			if set[n.succ[0]] == set[n.succ[1]] {
+			if set[n.dsucc[0]] == set[n.dsucc[1]] {
 				continue // both inside (no exit) or both outside (no back edge)
 			}
 			cmp, ok := compareFn(cond, n.args, c.reg)
 			if !ok {
 				continue
 			}
-			continueOnTaken := set[n.succ[0]]
+			continueOnTaken := set[n.dsucc[0]]
 			cont := cmp
 			if !continueOnTaken {
 				cont = func(v float64) bool { return !cmp(v) }
@@ -676,6 +697,16 @@ func detectTrips(nodes map[int]*node, set map[int]bool, header int) int {
 		}
 	}
 	return 0
+}
+
+// containsBarrier reports whether any node in set ends a tick (yield/sleep/hcf).
+func containsBarrier(nodes map[int]*node, set map[int]bool) bool {
+	for x := range set {
+		if n := nodes[x]; n != nil && (n.barrier || n.halt) {
+			return true
+		}
+	}
+	return false
 }
 
 func isConditional(op string) bool {
