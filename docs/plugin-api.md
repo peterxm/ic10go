@@ -34,6 +34,7 @@ ic10c build --json <file.icg>
   },
   "stats":  { "lines": 53, "bytes": 1004, "maxLine": 35, "regs": 10 },
   "limits": { "lines": 128, "bytes": 4096, "maxLine": 90, "regs": 16 },
+  "tick":   { "limit": 128, "cost": 131, "exceeds": true, "loops": 2, "segments": 3 },
   "diagnostics": [
     {
       "severity": "warning",
@@ -68,6 +69,7 @@ ic10c build --json <file.icg>
 | `data.layout` | `top` 或 `middle`。 |
 | `stats` | 行 / 字节 / 最长行 / 引用到的寄存器数。 |
 | `limits` | 编译器校验所用的 IC10 上限（默认 128 / 4096 / 90，寄存器恒为 16）。可用 `--max-lines` / `--max-bytes` / `--max-line` 或 `IC10C_MAX_LINES` / `IC10C_MAX_BYTES` / `IC10C_MAX_LINE` 覆盖，以跟随游戏变化；这里的值就是本次构建实际生效的值。 |
+| `tick` | 每 tick 指令预算分析（见 [`tick-budget.md`](tick-budget.md)）：`cost` = 两个 `yield`/`sleep` 之间最坏路径的指令数（`exceeds=true` 时被预算封顶，只知超过 `limit`）；`loops` / `segments` 为识别到的循环与分段数。多芯片取最坏的一块。 |
 | `diagnostics[]` | 诊断列表，按源码位置排序。 |
 
 ### 一次性设置写入（`data.setup`）

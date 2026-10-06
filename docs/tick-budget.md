@@ -21,6 +21,7 @@ ic10c tick printer.icg                 # 编译 .icg 后分析
 ic10c tick firmware.ic                 # 原生 IC10 直接分析（不编译）
 ic10c tick --path printer.icg          # 打印最坏路径（IC10 行号）
 ic10c tick --limit 64 slow.icg         # 换一个预算对照（默认 128）
+ic10c tick --run 20 printer.icg        # 再用内置 VM 跑 20 tick，报实测每 tick 指令数
 ic10c tick --strict firmware.ic        # 有分段超限则退出码 1（可接 CI）
 ic10c tick --json printer.icg          # 机器可读
 ```
@@ -45,6 +46,38 @@ examples/…-表驱动.icg: per-tick budget: limit 128, 122 instructions
 - **loop**：识别到的自然循环：`body` 是一圈的最坏指令数，`x N iterations` 是识别出的
   迭代次数（`?` 表示没识别出常量上界）。
 - `--path` 给出实际的最坏指令序列（IC10 行号，0 基），可直接对着反汇编/产物看是哪几行。
+
+### 动态实测（`--run N`）
+
+静态分析给的是「所有路径」的最坏上界；`--run N` 用内置 VM（`internal/vm`，同一套 128 条
+tick 模型）跑 N 个 tick，报**实测**的每 tick 指令数。两者互补：静态覆盖所有路径（可能包含
+只发生一次的分支），动态只覆盖实际走到的路径，但对动态界循环也是精确的。
+
+```text
+examples/…-表驱动.icg: ... worst-case 129 instructions [EXCEEDS 128]
+  dynamic: 12 ticks, max 128 instructions/tick, avg 101.1 (limit 128)  (a tick hit the budget: the loop spans ticks)
+```
+
+这里 `avg ~101` 对应源码注释里的「约 110 条」（空闲路径），而 `max 128` 说明**确实有 tick
+撞到预算被切开**——和静态结论一致。
+
+> 原生 IC10 若依赖一次性数据 loader（`get db …` 读数据段），VM 里没跑 loader 会提前跳过程序
+> （输出会标注 `halted after 1 tick`）。要动态跑这类程序，用 `.icg` 让 `run`/`tick --run` 自动先跑
+> loader，或先手动安装数据段。
+
+---
+
+## 编辑器集成（LSP / VSCode）
+
+LSP 每次编译都会把最坏 tick 数放进 `icg/stats`（`tickLimit` / `tickCost` / `tickExceeds`），
+VSCode 状态栏显示：
+
+```text
+IC10: 122/128 行 · 1572/4096 字节 · … · 每 tick >128
+```
+
+鼠标悬停给出说明与 `ic10c tick --path` 提示。这样改代码时就能立刻看到「这个循环还能不能塞进
+一个 tick」，不必手动跑命令。
 
 ---
 

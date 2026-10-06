@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -1052,6 +1053,7 @@ func cmdTick(args []string) int {
 	asJSON := false
 	showPath := false
 	strict := false
+	runTicks := 0
 	dataLayout := ""
 	unsafe := false
 	autoTable := false
@@ -1064,6 +1066,18 @@ func cmdTick(args []string) int {
 			showPath = true
 		case "--strict":
 			strict = true
+		case "--run":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "ic10c: --run needs a tick count")
+				return 2
+			}
+			n, err := strconv.Atoi(args[i+1])
+			if err != nil || n <= 0 {
+				fmt.Fprintln(os.Stderr, "ic10c: bad --run", args[i+1])
+				return 2
+			}
+			runTicks = n
+			i++
 		case "--limit":
 			if i+1 >= len(args) {
 				fmt.Fprintln(os.Stderr, "ic10c: --limit needs a value")
@@ -1105,6 +1119,7 @@ func cmdTick(args []string) int {
 			fmt.Fprintln(os.Stderr, "ic10c:", err)
 			return 1
 		}
+		var loaders []string
 		code := string(data)
 		if strings.HasSuffix(file, ".icg") {
 			ic10Hint(file)
@@ -1117,6 +1132,7 @@ func cmdTick(args []string) int {
 				return 1
 			}
 			code = compiled.Code
+			loaders = compiled.Loaders
 		} else {
 			ic10Hint(file)
 		}
@@ -1149,11 +1165,75 @@ func cmdTick(args []string) int {
 				status = 1
 			}
 		}
+		if runTicks > 0 {
+			measureTicks(code, loaders, runTicks, limit)
+		}
 	}
 	if !strict {
 		status = 0
 	}
 	return status
+}
+
+// measureTicks runs the program in the built-in VM (which models the game's
+// 128-instruction tick) and reports the measured instructions per tick. It
+// complements the static worst case: exact for the paths actually taken.
+func measureTicks(code string, loaders []string, ticks, limit int) {
+	m := vm.New()
+	for _, ld := range loaders {
+		if strings.TrimSpace(ld) == "" {
+			continue
+		}
+		if err := m.Load(ld); err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c: loader:", err)
+			return
+		}
+		_ = m.Run(1 << 16) // loaders are straight-line stores
+	}
+	if err := m.Load(code); err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return
+	}
+	c := &tickCounter{}
+	m.Trace = c
+	prev, max, sum, ran, halted := 0, 0, 0, 0, 0
+	for t := 0; t < ticks; t++ {
+		if err := m.RunTicks(1); err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c: run:", err)
+			return
+		}
+		n := c.n - prev
+		prev = c.n
+		sum += n
+		ran++
+		if n > max {
+			max = n
+		}
+		if m.Halted || m.PC < 0 || m.PC >= len(m.Program.Instrs) {
+			halted = t + 1
+			break
+		}
+	}
+	avg := 0.0
+	if ran > 0 {
+		avg = float64(sum) / float64(ran)
+	}
+	note := ""
+	switch {
+	case halted > 0:
+		note = fmt.Sprintf("  (halted after %d tick(s); a raw IC10 program that needs its data loader may stop early)", halted)
+	case max >= limit:
+		note = "  (a tick hit the budget: the loop spans ticks)"
+	}
+	fmt.Printf("  dynamic: %d ticks, max %d instructions/tick, avg %.1f (limit %d)%s\n", ran, max, avg, limit, note)
+}
+
+// tickCounter counts instructions via the VM's trace (one line each).
+type tickCounter struct{ n int }
+
+func (c *tickCounter) Write(p []byte) (int, error) {
+	c.n += bytes.Count(p, []byte("\n"))
+	return len(p), nil
 }
 
 func cmdStats(args []string) int {

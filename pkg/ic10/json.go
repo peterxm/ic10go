@@ -5,6 +5,7 @@ import (
 
 	"ic10go/internal/diag"
 	"ic10go/internal/source"
+	"ic10go/internal/tick"
 )
 
 // APIVersion is the version of the machine-readable interface (the JSON
@@ -97,6 +98,17 @@ type ChipJSON struct {
 	LineMap []int `json:"lineMap,omitempty"`
 }
 
+// TickInfo is the per-tick instruction budget analysis (see `ic10c tick`): the
+// worst-case instructions between two yield/sleep boundaries and whether any
+// segment exceeds the budget. The worst chip wins for a multi-chip program.
+type TickInfo struct {
+	Limit    int  `json:"limit"`
+	Cost     int  `json:"cost"`
+	Exceeds  bool `json:"exceeds"`
+	Loops    int  `json:"loops"`
+	Segments int  `json:"segments"`
+}
+
 // BuildResult is the JSON document emitted by `ic10c build --json`. It is a
 // superset of `ic10c stats` and carries the compiled code, the optional data
 // loader and any diagnostics.
@@ -109,6 +121,7 @@ type BuildResult struct {
 	Chips      []ChipJSON  `json:"chips"`
 	Stats      Stats       `json:"stats"`
 	Limits     Limits      `json:"limits"`
+	Tick       *TickInfo   `json:"tick,omitempty"`
 	// LineMap maps a 1-based runtime IC10 line to the 1-based .icg source line
 	// it came from (0 when unknown). It mirrors the first chip.
 	LineMap     []int        `json:"lineMap,omitempty"`
@@ -191,7 +204,33 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 	res.Lines = splitLines(compiled.Code)
 	res.Stats = StatsOf(compiled.Code)
 	res.LineMap = compiled.LineMap
+	res.Tick = tickInfo(compiled.Code)
+	if multi {
+		for _, ch := range compiled.Chips {
+			if t := tickInfo(ch.Code); t != nil && (res.Tick == nil || t.Cost > res.Tick.Cost || (t.Exceeds && !res.Tick.Exceeds)) {
+				res.Tick = t
+			}
+		}
+	}
 	return res, nil
+}
+
+// tickInfo analyses one program's per-tick budget, or nil on error.
+func tickInfo(code string) *TickInfo {
+	rep, err := tick.Analyze(code, tick.DefaultLimit)
+	if err != nil {
+		return nil
+	}
+	info := &TickInfo{Limit: rep.Limit, Loops: len(rep.Loops), Segments: len(rep.Segments)}
+	for _, s := range rep.Segments {
+		if s.Cost > info.Cost {
+			info.Cost = s.Cost
+		}
+		if s.Exceeds {
+			info.Exceeds = true
+		}
+	}
+	return info
 }
 
 // BuildJSONSource is BuildJSON for a string source.

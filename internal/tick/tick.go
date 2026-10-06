@@ -27,6 +27,15 @@ import (
 // DefaultLimit is the game's per-tick instruction budget (ProgrammableChip).
 const DefaultLimit = 128
 
+// maxTrackedLoops bounds how many loop back edges carry an iteration count in
+// the bounded walk. Loops beyond it simply rely on the budget cap.
+const maxTrackedLoops = 8
+
+// maxDPStates caps the bounded walk's state space (the product of the tracked
+// loop iteration counts). Additional loops fall back to the budget cap, which
+// keeps the analysis linear in the program size.
+const maxDPStates = 200000
+
 // Segment is one yield/sleep-delimited run of the program.
 type Segment struct {
 	Start    int   `json:"start"`              // 0-based line of the first instruction
@@ -211,54 +220,65 @@ func analyzeProg(prog *vm.Program, limit int) (*Report, error) {
 	// once it has run its course. Loops without a known trip count are still
 	// bounded by the remaining budget, so an unbounded loop is reported as
 	// exceeding the budget (its worst case is genuinely unbounded).
-	edgeTrip := map[[2]int]int{}
-	edgeIdx := map[[2]int]int{}
-	var tracked int
-	{
-		dom := dominators(nodes, lines[0])
-		for _, u := range lines {
-			for _, v := range nodes[u].succ {
-				if _, ok := nodes[v]; !ok {
-					continue
-				}
-				if !dom[u][v] {
-					continue
-				}
-				e := [2]int{u, v}
-				set := naturalLoop(nodes, v, map[int]bool{u: true})
-				t := detectTrips(nodes, set, v)
-				// How many times this back edge itself is taken: a latch that is
-				// the loop's exit check runs trips-1 times, a plain jump at the
-				// bottom runs trips times.
-				cap := t
-				if t > 0 && isConditional(nodes[u].op) {
-					for _, s := range nodes[u].succ {
-						if !set[s] {
-							cap = t - 1 // exits on this branch
-							break
-						}
+	dom := dominators(nodes, lines[0])
+	type backEdge struct {
+		e    [2]int
+		trip int // detected trip count (0 = unknown)
+		cap  int // how many times this edge itself is taken
+	}
+	var backs []backEdge
+	for _, u := range lines {
+		for _, v := range nodes[u].succ {
+			if _, ok := nodes[v]; !ok {
+				continue
+			}
+			if !dom[u][v] {
+				continue
+			}
+			set := naturalLoop(nodes, v, map[int]bool{u: true})
+			t := detectTrips(nodes, set, v)
+			// How many times this back edge itself is taken: a latch that is the
+			// loop's exit check runs trips-1 times, a plain jump at the bottom
+			// runs trips times.
+			c := t
+			if t > 0 && isConditional(nodes[u].op) {
+				for _, s := range nodes[u].succ {
+					if !set[s] {
+						c = t - 1 // exits on this branch
+						break
 					}
 				}
-				if cap < 0 {
-					cap = 0
-				}
-				edgeTrip[e] = cap
-				if t > 0 {
-					edgeIdx[e] = tracked
-					tracked++
-				}
 			}
+			if c < 0 {
+				c = 0
+			}
+			backs = append(backs, backEdge{e: [2]int{u, v}, trip: t, cap: c})
 		}
+	}
+	// Carry iteration counts only while the walk's state space (the product of
+	// the counts) stays small; the rest rely on the budget cap.
+	sort.Slice(backs, func(i, j int) bool { return backs[i].cap < backs[j].cap })
+	edgeTrip := map[[2]int]int{}
+	edgeIdx := map[[2]int]int{}
+	tracked, product := 0, 1
+	for _, b := range backs {
+		edgeTrip[b.e] = b.cap
+		if b.trip <= 0 || tracked >= maxTrackedLoops || product*(b.cap+1) > maxDPStates {
+			continue
+		}
+		edgeIdx[b.e] = tracked
+		tracked++
+		product *= b.cap + 1
 	}
 
 	type dpKey struct {
 		i, rem int
-		counts string
+		counts [maxTrackedLoops]byte
 	}
 	memo := map[dpKey]int{}
 	choice := map[dpKey]int{}
-	var steps func(i, rem int, counts []byte) int
-	steps = func(i, rem int, counts []byte) int {
+	var steps func(i, rem int, counts [maxTrackedLoops]byte) int
+	steps = func(i, rem int, counts [maxTrackedLoops]byte) int {
 		n := nodes[i]
 		if rem <= 0 {
 			return 0
@@ -266,7 +286,7 @@ func analyzeProg(prog *vm.Program, limit int) (*Report, error) {
 		if n.barrier || n.halt || len(n.succ) == 0 {
 			return 1 // the terminal instruction itself counts
 		}
-		key := dpKey{i, rem, string(counts)}
+		key := dpKey{i, rem, counts}
 		if v, ok := memo[key]; ok {
 			return v
 		}
@@ -276,13 +296,11 @@ func analyzeProg(prog *vm.Program, limit int) (*Report, error) {
 				continue
 			}
 			e := [2]int{i, s}
-			nc := counts
+			nc := counts // arrays are values: this is already a copy
 			if bi, ok := edgeIdx[e]; ok {
 				if int(counts[bi]) >= edgeTrip[e] {
 					continue // the loop has run all its iterations
 				}
-				nc = make([]byte, len(counts))
-				copy(nc, counts)
 				nc[bi]++
 			}
 			v := steps(s, rem-1, nc)
@@ -300,14 +318,14 @@ func analyzeProg(prog *vm.Program, limit int) (*Report, error) {
 		if _, ok := nodes[st]; !ok {
 			continue
 		}
-		cost := steps(st, limit+1, make([]byte, tracked))
+		cost := steps(st, limit+1, [maxTrackedLoops]byte{})
 		seg := Segment{Start: st, Barrier: -1, Cost: cost}
 		if cost > limit {
 			seg.Exceeds = true
 		}
 		// Reconstruct the worst-case path and find its terminal barrier.
 		cur, rem := st, limit+1
-		counts := make([]byte, tracked)
+		counts := [maxTrackedLoops]byte{}
 		for cur >= 0 && rem > 0 {
 			seg.Path = append(seg.Path, cur)
 			n, ok := nodes[cur]
@@ -324,7 +342,7 @@ func analyzeProg(prog *vm.Program, limit int) (*Report, error) {
 			if n.halt || len(n.succ) == 0 {
 				break
 			}
-			to, ok := choice[dpKey{cur, rem, string(counts)}]
+			to, ok := choice[dpKey{cur, rem, counts}]
 			if !ok || to < 0 {
 				break
 			}
@@ -339,7 +357,7 @@ func analyzeProg(prog *vm.Program, limit int) (*Report, error) {
 		rep.Segments = append(rep.Segments, seg)
 	}
 
-	rep.Loops = findLoops(nodes, lines, limit, &rep.Indirect)
+	rep.Loops = findLoops(nodes, lines, dom, &rep.Indirect)
 	return rep, nil
 }
 
@@ -358,10 +376,7 @@ func dedup(xs []int) []int {
 
 // findLoops finds natural loops (back edges via dominance) and, for each, the
 // worst-case one-iteration body size and, best effort, a constant trip count.
-func findLoops(nodes map[int]*node, lines []int, limit int, indirect *bool) []Loop {
-	entry := lines[0]
-	dom := dominators(nodes, entry)
-
+func findLoops(nodes map[int]*node, lines []int, dom map[int]map[int]bool, indirect *bool) []Loop {
 	// Group back-edge latches by header.
 	byHeader := map[int]map[int]bool{}
 	var headers []int
@@ -488,6 +503,16 @@ func dominators(nodes map[int]*node, entry int) map[int]map[int]bool {
 		all = append(all, i)
 	}
 	sort.Ints(all)
+	// Precompute predecessors once: the fixpoint below would otherwise re-scan
+	// every node for predecessors on each pass.
+	predsOf := make(map[int][]int, len(nodes))
+	for u, n := range nodes {
+		for _, s := range n.succ {
+			if _, ok := nodes[s]; ok {
+				predsOf[s] = append(predsOf[s], u)
+			}
+		}
+	}
 	dom := map[int]map[int]bool{}
 	dom[entry] = map[int]bool{entry: true}
 	for _, n := range all {
@@ -507,7 +532,7 @@ func dominators(nodes map[int]*node, entry int) map[int]map[int]bool {
 				continue
 			}
 			var newSet map[int]bool
-			for _, p := range preds(nodes, n) {
+			for _, p := range predsOf[n] {
 				if _, ok := dom[p]; !ok {
 					continue
 				}

@@ -1465,6 +1465,11 @@ class LspClient {
                 : `${p.stackUser}/${p.stackUserLimit}`;
             text += t(` · stack ${stack}`, ` · 栈 ${stack}`);
         }
+        if (p.tickLimit) {
+            text += p.tickExceeds
+                ? t(` · tick >${p.tickLimit}`, ` · 每 tick >${p.tickLimit}`)
+                : t(` · tick ${p.tickCost}/${p.tickLimit}`, ` · 每 tick ${p.tickCost}/${p.tickLimit}`);
+        }
         if (p.chips) {
             text += t(` · ${p.chips} chips`, ` · ${p.chips} 块芯片`);
         }
@@ -1482,6 +1487,13 @@ class LspClient {
                 '需要一次性装载器：先装到 IC 上运行一次，再装主代码'));
         }
         if (p.dataWarn) tips.push(p.dataWarn);
+        if (p.tickLimit) {
+            tips.push(p.tickExceeds
+                ? t(`worst-case between two yields is > ${p.tickLimit} instructions: the loop spans ticks (run \`ic10c tick --path\` for the path)`,
+                    `两个 yield 之间的最坏路径 > ${p.tickLimit} 条：循环会跨 tick（用 \`ic10c tick --path\` 看路径）`)
+                : t(`worst-case between two yields: ${p.tickCost}/${p.tickLimit} instructions`,
+                    `两个 yield 之间的最坏路径：${p.tickCost}/${p.tickLimit} 条`));
+        }
         if (p.stackUnbounded) tips.push(t('push depth is unbounded', 'push 深度无界'));
         if (p.stackUser !== undefined) {
             const mode = p.stackDynamic ? t('dynamic', '动态') : t('fixed', '固定');

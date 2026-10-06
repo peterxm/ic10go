@@ -200,6 +200,11 @@ var tickStrictFlag = Flag{Long: "--strict", Desc: text{
 	ZH: "有区间超限时以退出码 1 结束",
 }}
 
+var tickRunFlag = Flag{Long: "--run", Arg: "N", Desc: text{
+	EN: "also run N ticks in the built-in VM and report the measured instructions per tick",
+	ZH: "再用内置 VM 跑 N 个 tick，报告实测每 tick 指令数",
+}}
+
 var jsonOutFlag = Flag{Long: "--json", Desc: text{
 	EN: "machine-readable JSON output",
 	ZH: "机器可读的 JSON 输出",
@@ -421,15 +426,19 @@ var Commands = []Command{
 				"loop once per tick\" design no longer holds. Counting loops (a single\n" +
 				"add/sub induction register) get their trip count; loops without a\n" +
 				"recognisable bound are capped by the budget and reported as\n" +
-				"exceeding it. Both compiled .icg output and hand-written IC10 work.",
+				"exceeding it. Both compiled .icg output and hand-written IC10 work.\n\n" +
+				"With --run N it also runs N ticks in the built-in VM and prints the\n" +
+				"measured instructions per tick (exact for the paths actually taken).",
 			ZH: "编译文件（或按原始 IC10 读取），对每个由 yield/sleep 分段的区间，报告\n" +
 				"到达下一个 tick 边界的最坏路径指令数。\n\n" +
 				"游戏每 tick 最多执行 128 条，超过就会跨到下一 tick，「每 tick 跑一遍\n" +
 				"这个循环」的前提就不成立。可识别的计数循环给出迭代次数；识别不了的\n" +
-				"按预算封顶并标记超限。.icg 编译产物与手写 IC10 都支持。",
+				"按预算封顶并标记超限。.icg 编译产物与手写 IC10 都支持。\n\n" +
+				"加 --run N 还会用内置 VM 跑 N 个 tick，报告实测每 tick 指令数\n" +
+				"（对实际走到的路径精确）。",
 		},
-		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, maxLinesFlag, maxBytesFlag, maxLineFlag, libDirsFlag, tickLimitFlag, tickPathFlag, tickStrictFlag, jsonOutFlag, commonHelp},
-		Examples: []string{"ic10c tick printer.icg", "ic10c tick --path blink.icg", "ic10c tick --strict firmware.ic"},
+		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, maxLinesFlag, maxBytesFlag, maxLineFlag, libDirsFlag, tickLimitFlag, tickRunFlag, tickPathFlag, tickStrictFlag, jsonOutFlag, commonHelp},
+		Examples: []string{"ic10c tick printer.icg", "ic10c tick --path blink.icg", "ic10c tick --run 20 firmware.ic", "ic10c tick --strict firmware.ic"},
 	},
 	{
 		Name: "size", Args: "<file.icg>",

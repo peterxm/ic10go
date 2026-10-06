@@ -20,6 +20,7 @@ import (
 	"ic10go/internal/parser"
 	"ic10go/internal/sema"
 	"ic10go/internal/source"
+	"ic10go/internal/tick"
 	"ic10go/internal/token"
 	"ic10go/pkg/ic10"
 )
@@ -1473,17 +1474,45 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 			}
 		}
 	}
+	// Worst-case instructions between two tick boundaries (the game runs at
+	// most 128 per tick); the editor shows it next to the other budgets.
+	tickLimit := tick.DefaultLimit
+	tickCost, tickExceeds := 0, false
+	analyzeTick := func(code string) {
+		rep, err := tick.Analyze(code, tickLimit)
+		if err != nil {
+			return
+		}
+		for _, seg := range rep.Segments {
+			if seg.Cost > tickCost {
+				tickCost = seg.Cost
+			}
+			if seg.Exceeds {
+				tickExceeds = true
+			}
+		}
+	}
+	analyzeTick(compiled.Code)
+	if multi {
+		for _, ch := range compiled.Chips {
+			analyzeTick(ch.Code)
+		}
+	}
+
 	limits := ic10.LimitsFor(ic10.Options{})
 	payload := map[string]any{
-		"uri":        uri,
-		"lines":      st.Lines,
-		"bytes":      st.Bytes,
-		"maxLineLen": st.MaxLineLen,
-		"regs":       st.RegsUsed,
-		"maxLines":   limits.Lines,
-		"maxBytes":   limits.Bytes,
-		"maxLineMax": limits.MaxLine,
-		"maxRegs":    16,
+		"uri":         uri,
+		"lines":       st.Lines,
+		"bytes":       st.Bytes,
+		"maxLineLen":  st.MaxLineLen,
+		"regs":        st.RegsUsed,
+		"maxLines":    limits.Lines,
+		"maxBytes":    limits.Bytes,
+		"maxLineMax":  limits.MaxLine,
+		"maxRegs":     16,
+		"tickLimit":   tickLimit,
+		"tickCost":    tickCost,
+		"tickExceeds": tickExceeds,
 	}
 	if multi {
 		payload["chips"] = len(compiled.Chips)
