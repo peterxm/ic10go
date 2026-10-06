@@ -51,7 +51,7 @@ func main() {
     }
 }
 
-// initOne：解析并初始化一台（堆垛机 Mode=1 / Output=1）。
+// initOne：解析并初始化一台（堆垛机 Mode=1）。
 func initOne(i num) {
     cfg := i * CFG
     base := i * ST
