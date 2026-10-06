@@ -22,6 +22,7 @@ import (
 	"ic10go/internal/minify"
 	"ic10go/internal/parser"
 	"ic10go/internal/source"
+	"ic10go/internal/tick"
 	"ic10go/internal/version"
 	"ic10go/internal/vm"
 	"ic10go/pkg/ic10"
@@ -113,6 +114,8 @@ parse:
 		return cmdMinify(args)
 	case "stats":
 		return cmdStats(args)
+	case "tick":
+		return cmdTick(args)
 	case "size":
 		return cmdSize(args)
 	case "graph":
@@ -1039,6 +1042,118 @@ func cmdMinify(args []string) int {
 		fmt.Print(out)
 	}
 	return 0
+}
+
+// cmdTick reports the worst-case number of IC10 instructions executed between
+// two tick boundaries (yield/sleep) — the game runs at most 128 per tick.
+func cmdTick(args []string) int {
+	args, libDirs := splitLibArgs(args)
+	limit := tick.DefaultLimit
+	asJSON := false
+	showPath := false
+	strict := false
+	dataLayout := ""
+	unsafe := false
+	autoTable := false
+	var files []string
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; a {
+		case "--json":
+			asJSON = true
+		case "--path":
+			showPath = true
+		case "--strict":
+			strict = true
+		case "--limit":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "ic10c: --limit needs a value")
+				return 2
+			}
+			n, err := strconv.Atoi(args[i+1])
+			if err != nil || n <= 0 {
+				fmt.Fprintln(os.Stderr, "ic10c: bad --limit", args[i+1])
+				return 2
+			}
+			limit = n
+			i++
+		case "--data-layout":
+			if i+1 < len(args) {
+				dataLayout = args[i+1]
+				i++
+			}
+		case "--unsafe":
+			unsafe = true
+		case "--auto-table":
+			autoTable = true
+		default:
+			if strings.HasPrefix(a, "-") {
+				fmt.Fprintln(os.Stderr, "ic10c: unknown flag", a)
+				return 2
+			}
+			files = append(files, a)
+		}
+	}
+	if len(files) == 0 {
+		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "tick"))
+		return 2
+	}
+	opts := ic10.Options{DataLayout: dataLayout, Unsafe: unsafe, AutoTable: autoTable, Imports: true, LibDirs: libDirs}
+	status := 0
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		code := string(data)
+		if strings.HasSuffix(file, ".icg") {
+			ic10Hint(file)
+			compiled, diags, err := ic10.CompileResult(file, data, opts)
+			if rc := report(source.NewFile(file, data), diags); rc != 0 {
+				return rc
+			}
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "ic10c:", err)
+				return 1
+			}
+			code = compiled.Code
+		} else {
+			ic10Hint(file)
+		}
+		rep, err := tick.Analyze(code, limit)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		if asJSON {
+			out := struct {
+				File string `json:"file"`
+				*tick.Report
+			}{File: file, Report: rep}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(out); err != nil {
+				fmt.Fprintln(os.Stderr, "ic10c:", err)
+				return 1
+			}
+		} else {
+			fmt.Printf("%s: %s", file, rep.String())
+			if showPath {
+				for i, s := range rep.Segments {
+					fmt.Printf("  segment %d path: %v\n", i, s.Path)
+				}
+			}
+		}
+		for _, s := range rep.Segments {
+			if s.Exceeds {
+				status = 1
+			}
+		}
+	}
+	if !strict {
+		status = 0
+	}
+	return status
 }
 
 func cmdStats(args []string) int {

@@ -98,6 +98,8 @@ j 1
 **M5 已完成**：测试用最小 IC10 解释器 `internal/vm`（寄存器 / 栈 / 设备 / 槽位 / 通道 / 批量 / 分支 / 标签与绝对行号），配套端到端语义测试与常量折叠差分测试；并经 `ic10c run` 暴露给用户调试。健壮性/保真：操作数与栈越界返回错误（不 panic）、`pi`/`deg2rad` 等游戏常量、`LineNumber`、确定性 `rand`、`rmap`、可选严格设备语义（见 [`docs/vm-improvements.md`](docs/vm-improvements.md)）。
 **M4 已完成**：`ic10c stats`（行/字节/寄存器/栈预算）、`ic10c graph`（源码级控制流图 → Mermaid，`--level ir` 为 IR 基本块）、`ic10c fmt`（格式化，支持 `-w`，保留注释/分组/空行/`data` 表；原生 `.ic`/`.ic10` 重排并对齐列，`--no-align` 关闭）、`ic10c disasm`（旧 IC10 反汇编注释）、`ic10c decompile`（IC10 → `.icg`，支持 `-s` 结构化）、`ic10c minify`（压缩现有 IC10 行数）、`ic10c run`（内置 VM 执行）、`ic10c lsp`（诊断 / 上下文补全 / 格式化 / hover / 定义 / 大纲 / 折叠 / 引用 / 重命名 / 参数提示 / 快速修复（`unknown logic type` / `unknown slot type` / `unknown enum` 的 did-you-mean 建议）/ 语义高亮 / 预算内联 / 预制体 hash 补全（`hash("…")` 内与 hash 型实参，参数位按类型补全）与反查 / Wiki 文档链接；`.ic`/`.ic10` 原生指令补全、说明、未知指令诊断）、VSCode 扩展（`.icg` 与 `.ic`/`.ic10` 支持、片段、编译预览并自动处理数据段安装代码、VM 运行、反编译/压缩/注释命令）。
 **M6 已完成**：**多芯片**——一个 `.icg` 用 `chip 名字 { ... }` 声明多块芯片，各编译成独立程序（各自 128 行 / 4 KiB 预算与 loader；顶层 `const`/`data`/`func` 为公共区，chip 内可遮蔽）；`bus 名字 { 槽位 num ... }`（最多 8 槽，槽位下标即通道号）+ 每 chip `use 名字 on dev:conn` 默认访问点、`Bus.槽位[dev][conn]` 内联覆盖（唯一写者校验，`run` 按槽位自动接线）；CLI 按芯片写文件 / `--chip NAME` / JSON `chips[]` / `stats` 分组；VM `World` 多芯片同 tick 锁步；LSP 按光标所在 chip 隔离补全与签名，VSCode 编译命令弹芯片选择。另：超行数时把一次性设置写入外提到 loader，并支持新气体比例逻辑类型。
+**每 tick 指令预算分析**：`ic10c tick`——按 `yield`/`sleep` 分段，给出每个区间**最坏路径**的指令数（游戏每 tick 最多 128 条）与每个循环的迭代次数；`.icg` 与原生 IC10 都支持，见 [`docs/tick-budget.md`](docs/tick-budget.md)。
+
 **测试台编辑器已完成**（VSCode）：上传 `.icg` / 从芯片**下载源码**、**单步 / 运行 N tick / 重置**、实时寄存器 / 栈 / 设备、**执行行高亮**（编译产物 `lineMap`，`build --json` 新增字段，见 [`docs/plugin-api.md`](docs/plugin-api.md)）、`PrefabHash` / `NameHash` / `OccupantHash` **反查预制体名**（LSP `ic10/prefabs`，点击复制 `hash("Name")`）、面板内**改值 / 脉冲**与过滤、**设备写序列**（Harmony trace，可设基线对比）、**端口接线**、**多芯片并排对比**；选中芯片与实时开关用 `workspaceState` 持久化。**定位**：host 悬停显示世界坐标与**程序指纹 `fp`**（重启不变）；分组预算「有芯片·有代码 / 有芯片·无代码 / 无芯片」；标题栏**按坐标找**（精确忽略小数 / 大致半径）、**只看身边 ±4**、右键 **Track in Game**（游戏内 HUD 罗盘：自身坐标/朝向 + 目标距离方向）。
 
 当前可用：
@@ -125,6 +127,9 @@ ic10c stats  [--data-layout top|middle] [--unsafe] [--auto-table] [--spill db|st
                               # 行 / 字节 / 寄存器预算 + 峰值活跃 / 溢出槽（多芯片按芯片分组；含 loader 预算）+ 栈预算（stack user 个数/上限，默认固定 128；--dynamic-stack 动态边界，越界报错；--redundant-device-writes 删除重复设备写）
 ic10c size   <file.icg>       # 按函数拆分行预算（找最占行数的函数）
 ic10c graph  [--level source|ir] [--func NAME] [--no-lines] [-o FILE] <file.icg>
+ic10c tick   [--limit N] [--path] [--strict] [--json] <file.icg|file.ic>
+                               # 每 tick / 每个循环的最坏指令数（游戏每 tick 最多 128 条）：按 yield/sleep
+                               # 分段统计最坏路径指令数，标出超限区间与循环迭代次数；.icg 与原生 IC10 都支持。见 docs/tick-budget.md
                               # 控制流图（Mermaid；默认源码级，--level ir 为 IR 基本块）
 ic10c fmt    [-w] <file>      # 格式化源码（.icg 或原生 .ic/.ic10）
 ic10c disasm <file.ic>        # 反汇编注释旧 IC10
@@ -206,6 +211,7 @@ go test ./...
 | [`docs/register-banks.md`](docs/register-banks.md) | 间接寄存器（`rrN`）与「寄存器当数组」：118 案例、编译期折叠、能否自动降级 |
 | [`docs/vm-improvements.md`](docs/vm-improvements.md) | 测试用 IC10 虚拟机（`internal/vm`）改进计划（P1–P5） |
 | [`docs/tail-merge.md`](docs/tail-merge.md) | 尾块合并与寄存器颜色：气闸控制案例（`--merge-renamed-tails`，默认关闭） |
+| [`docs/tick-budget.md`](docs/tick-budget.md) | 每 tick 指令预算分析：`ic10c tick`，按 yield/sleep 分段的最坏路径 + 循环迭代次数（含真机验证） |
 
 > IC10 指令完整参考（`Stationeers_IC10_参考文档.md`）为第三方资料，仅本地保留、未随仓库分发。
 >

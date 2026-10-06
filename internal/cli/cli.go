@@ -185,6 +185,26 @@ var libDirsFlag = Flag{Long: "--lib", Arg: "DIR", Desc: text{
 	ZH: "在导入文件所在目录之后，额外搜索导入的目录（可重复）",
 }}
 
+var tickLimitFlag = Flag{Long: "--limit", Arg: "N", Desc: text{
+	EN: "per-tick instruction budget to check against (default 128)",
+	ZH: "对照的每 tick 指令预算（默认 128）",
+}}
+
+var tickPathFlag = Flag{Long: "--path", Desc: text{
+	EN: "print the worst-case instruction path (IC10 line numbers)",
+	ZH: "打印最坏路径（IC10 行号）",
+}}
+
+var tickStrictFlag = Flag{Long: "--strict", Desc: text{
+	EN: "exit with status 1 when a segment exceeds the budget",
+	ZH: "有区间超限时以退出码 1 结束",
+}}
+
+var jsonOutFlag = Flag{Long: "--json", Desc: text{
+	EN: "machine-readable JSON output",
+	ZH: "机器可读的 JSON 输出",
+}}
+
 // Commands is the ordered command table.
 var Commands = []Command{
 	{
@@ -388,6 +408,28 @@ var Commands = []Command{
 		},
 		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, dynamicStackFlag, userStackFlag, maxLinesFlag, maxBytesFlag, maxLineFlag, redundantDeviceWritesFlag, mergeRenamedTailsFlag, extractSetupFlag, libDirsFlag, commonHelp},
 		Examples: []string{"ic10c stats blink.icg", "ic10c stats --user-stack 128 blink.icg", "ic10c stats --max-lines 200 blink.icg"},
+	},
+	{
+		Name: "tick", Args: "[--limit N] [--path] [--strict] [--json] <file.icg|file.ic>",
+		Summary: text{EN: "report worst-case instructions per tick / loop", ZH: "报告每 tick / 每个循环的最坏指令数"},
+		Long: text{
+			EN: "Compile the file (or read it as raw IC10) and, for every yield/sleep-\n" +
+				"delimited segment, report the worst-case number of IC10 instructions\n" +
+				"along any path to the next tick boundary.\n\n" +
+				"The game runs a chip for at most 128 instructions per tick, so a\n" +
+				"segment over that budget spills into the next tick and a \"run this\n" +
+				"loop once per tick\" design no longer holds. Counting loops (a single\n" +
+				"add/sub induction register) get their trip count; loops without a\n" +
+				"recognisable bound are capped by the budget and reported as\n" +
+				"exceeding it. Both compiled .icg output and hand-written IC10 work.",
+			ZH: "编译文件（或按原始 IC10 读取），对每个由 yield/sleep 分段的区间，报告\n" +
+				"到达下一个 tick 边界的最坏路径指令数。\n\n" +
+				"游戏每 tick 最多执行 128 条，超过就会跨到下一 tick，「每 tick 跑一遍\n" +
+				"这个循环」的前提就不成立。可识别的计数循环给出迭代次数；识别不了的\n" +
+				"按预算封顶并标记超限。.icg 编译产物与手写 IC10 都支持。",
+		},
+		Flags:    []Flag{dataLayoutFlag, unsafeFlag, autoTableFlag, maxLinesFlag, maxBytesFlag, maxLineFlag, libDirsFlag, tickLimitFlag, tickPathFlag, tickStrictFlag, jsonOutFlag, commonHelp},
+		Examples: []string{"ic10c tick printer.icg", "ic10c tick --path blink.icg", "ic10c tick --strict firmware.ic"},
 	},
 	{
 		Name: "size", Args: "<file.icg>",
