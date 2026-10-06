@@ -1180,6 +1180,7 @@ func cmdTick(args []string) int {
 // complements the static worst case: exact for the paths actually taken.
 func measureTicks(code string, loaders []string, ticks, limit int) {
 	m := vm.New()
+	m.TickLimit = limit // match the budget under test
 	for _, ld := range loaders {
 		if strings.TrimSpace(ld) == "" {
 			continue
