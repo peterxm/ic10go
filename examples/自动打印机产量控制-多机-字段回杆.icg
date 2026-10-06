@@ -1,0 +1,108 @@
+// 打印机 + 堆垛机控制器（字段版 · 多机 · A/B 区分 · 吐完回杆）。
+//
+// 由原生 IC10（push/pop 共享栈版）转成结构化 .icg，并补上一条：
+//   * 堆垛机内部槽空（Occupied=0）→ 把 Activate 拉回 0（吐完料，杆回原位）。
+//
+// 每台状态（db.stack，每台 3 槽 i*3）：[打印机 id, 堆垛机 id, endCount]
+// 首 tick：解析 id；设堆垛机 Mode=1 / Output=1。
+// 每 tick 逐台：
+//   * On 镜像：堆垛机 On = 打印机 On；
+//   * 吐料：有料且（内部是锭 或 打印机在打且已装满）且 Output=0 → 堆垛机 Activate=1；
+//           内部槽空了 → Activate=0（回杆）；
+//   * 到量停：打印机在打时，endCount = 触发时 ExportCount + 堆垛机 Setting；
+//           ExportCount 追平 endCount → 打印机 Activate=0，endCount 清零（下次触发重算）。
+//
+// 加一台：Units 追加 3 个值、COUNT 自动算；i*3 别撞到别的槽。
+
+const Stacker = hash("StructureStackerReverse")
+const CFG = 3 // 打印机类型 / 打印机名 / 堆垛机名
+const ST = 3  // [打印机 id, 堆垛机 id, endCount]
+
+data Units = [
+    hash("StructureAutolathe"), hash("Autolathe A"), hash("Autolathe Stacker A"),
+    hash("StructureAutolathe"), hash("Autolathe B"), hash("Autolathe Stacker B"),
+    hash("StructureElectronicsPrinter"), hash("Electronics A"), hash("Electronics Stacker A"),
+    hash("StructureElectronicsPrinter"), hash("Electronics B"), hash("Electronics Stacker B"),
+    hash("StructureHydraulicPipeBender"), hash("Pipe Bender A"), hash("Pipe Stacker A"),
+    hash("StructureHydraulicPipeBender"), hash("Pipe Bender B"), hash("Pipe Stacker B"),
+    hash("StructureToolManufactory"), hash("Tool"), hash("Tool Stacker"),
+]
+
+const COUNT = len(Units) / CFG
+
+func main() {
+    // 首轮：解析并初始化（每 2 台让一次 tick）
+    for i := 0; i < COUNT; i = i + 2 {
+        initOne(i)
+        if i + 1 < COUNT {
+            initOne(i + 1)
+        }
+        yield()
+    }
+    // 主循环：每 2 台让一次 tick（IC 每 tick 只有 128 条）
+    for {
+        for i := 0; i < COUNT; i = i + 2 {
+            step(i)
+            if i + 1 < COUNT {
+                step(i + 1)
+            }
+            yield()
+        }
+    }
+}
+
+// initOne：解析并初始化一台（堆垛机 Mode=1 / Output=1）。
+func initOne(i num) {
+    cfg := i * CFG
+    base := i * ST
+    db.stack[base + 0] = batch.readName(Units[cfg], Units[cfg + 1], "ReferenceId", "Maximum")
+    db.stack[base + 1] = batch.readName(Stacker, Units[cfg + 2], "ReferenceId", "Maximum")
+    if !isNaN(db.stack[base + 1]) {
+        writeById(db.stack[base + 1], LogicType.Mode, 1)
+        writeById(db.stack[base + 1], LogicType.Output, 1)
+    }
+}
+
+// step：单台一轮控制（到量停 + 吐料 + 回杆 + On 镜像）。
+func step(i num) {
+    base := i * ST
+    pa := db.stack[base + 0]
+    st := db.stack[base + 1]
+    if isNaN(pa) || isNaN(st) {
+        return
+    }
+    act := readById(pa, LogicType.Activate)
+    exp := readById(pa, LogicType.ExportCount)
+    on := readById(pa, LogicType.On)
+    if on > 0 {
+        occ := readByIdSlot(st, 2, Occupied)
+        if occ <= 0 {
+            // 内部槽空了：吐完料，把杆拉回原位
+            writeById(st, LogicType.Activate, 0)
+        } else {
+            // 有料：是锭，或打印机在打且已装满 → 拉杆吐料（Output=0 时才动手）
+            cls := readByIdSlot(st, 2, SortingClass)
+            qty := readByIdSlot(st, 2, Quantity)
+            maxq := readByIdSlot(st, 2, MaxQuantity)
+            if cls == SlotClass.Ingot || (act > 0 && qty >= maxq) {
+                if readById(st, LogicType.Output) == 0 {
+                    writeById(st, LogicType.Activate, 1)
+                }
+            }
+        }
+        // 到量停：触发时记 endCount，追平即停并清零
+        if act > 0 {
+            if db.stack[base + 2] == 0 {
+                db.stack[base + 2] = exp + readById(st, LogicType.Setting)
+            }
+            if db.stack[base + 2] <= exp {
+                writeById(pa, LogicType.Activate, 0)
+                db.stack[base + 2] = 0
+            }
+        } else {
+            db.stack[base + 2] = 0
+        }
+    }
+    // On 镜像
+    writeById(st, LogicType.On, on)
+}

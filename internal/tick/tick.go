@@ -150,9 +150,19 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		return -1
 	}
 
-	// Return sites of call-like jumps (jal / -al branches): the instruction that
-	// follows them. An indirect jr falls back to these so outlined returns are
-	// modelled approximately.
+	resolveTarget := func(cur int, s string) (int, bool) {
+		if l, ok := prog.Labels[s]; ok {
+			return l, true
+		}
+		if v, err := strconv.Atoi(s); err == nil {
+			return v, true
+		}
+		return 0, false
+	}
+
+	// Return sites of call-like jumps (jal / -al) and hand-rolled / tail calls
+	// (`move ra <line>`). An indirect `j ra` / `jr` connects to these rather than
+	// every line, so outlined functions don't explode the walk.
 	var calls []int
 	for _, i := range lines {
 		ins := instrs[i]
@@ -162,16 +172,13 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		}
 		if _, _, withRA, ok := ic10asm.BranchInfo(ins.Op); ok && withRA {
 			calls = append(calls, next(i))
+			continue
 		}
-	}
-	resolveTarget := func(cur int, s string) (int, bool) {
-		if l, ok := prog.Labels[s]; ok {
-			return l, true
+		if ins.Op == "move" && len(ins.Args) == 2 && ins.Args[0] == "ra" {
+			if t, ok := resolveTarget(i, ins.Args[1]); ok {
+				calls = append(calls, t)
+			}
 		}
-		if v, err := strconv.Atoi(s); err == nil {
-			return v, true
-		}
-		return 0, false
 	}
 
 	nodes := make(map[int]*node, len(lines))
@@ -186,6 +193,11 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		case ins.Op == "j":
 			if t, ok := resolveTarget(i, ins.Args[0]); ok {
 				n.succ = []int{t}
+			} else if ins.Args[0] == "ra" && len(calls) > 0 {
+				// `j ra` is an outlined-function return: connect to the call
+				// return sites instead of every line.
+				n.succ = append([]int(nil), calls...)
+				n.indirect = true
 			} else {
 				n.indirect = true
 			}
