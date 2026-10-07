@@ -45,6 +45,9 @@ function activate(context) {
     context.subscriptions.push(
         vscode.commands.registerCommand('icg.graph', () => client.showCfg())
     );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('icg.tick', () => client.showTick())
+    );
     // Re-analyse open .icg files when any .icg file changes on disk, so editing
     // an imported file refreshes the documents that import it.
     const watcher = vscode.workspace.createFileSystemWatcher('**/*.icg');
@@ -477,8 +480,8 @@ class LspClient {
     // It prefers the document's own directory so relative `import`s resolve the
     // same way they do in the editor, falling back to the OS temp dir for
     // untitled or read-only documents.
-    async withTempFile(doc, fn) {
-        const name = `icg-${process.pid}-${Date.now()}.icg`;
+    async withTempFile(doc, fn, ext = '.icg') {
+        const name = `icg-${process.pid}-${Date.now()}${ext}`;
         let tmp = path.join(os.tmpdir(), name);
         const onDisk = doc.uri && doc.uri.scheme === 'file' && doc.fileName;
         if (onDisk) {
@@ -713,6 +716,93 @@ class LspClient {
             });
             await vscode.commands.executeCommand('markdown.showPreview', preview.uri);
         });
+    }
+
+    // showTick runs the per-tick budget analysis (`ic10c tick --json`) and lists
+    // every segment and loop in a QuickPick; selecting an entry jumps to the
+    // source line. Works for .icg and native .ic/.ic10.
+    async showTick() {
+        const editor = vscode.window.activeTextEditor;
+        const id = editor && editor.document.languageId;
+        if (!editor || (id !== 'icg' && id !== 'ic10')) {
+            vscode.window.showWarningMessage(
+                t('IC10 Go: open a .icg or .ic10 file first.', 'IC10 Go: 请先打开一个 .icg 或 .ic10 文件。')
+            );
+            return;
+        }
+        const doc = editor.document;
+        const ext = id === 'ic10' ? '.ic10' : '.icg';
+        await this.withTempFile(doc, async (tmp) => {
+            const res = await this.execCli(['tick', '--json', ...this.libArgs(), tmp]);
+            const reports = [];
+            for (const line of (res.stdout || '').split('\n')) {
+                const s = line.trim();
+                if (!s) continue;
+                try {
+                    reports.push(JSON.parse(s));
+                } catch (err) {
+                    // ignore non-JSON chatter (e.g. the raw-IC10 hint on stderr)
+                }
+            }
+            if (reports.length === 0) {
+                this.output.appendLine(`=== tick failed ===\n${res.stderr || res.stdout}`);
+                this.output.show(true);
+                vscode.window.showErrorMessage(
+                    t('IC10 Go: tick analysis failed. See the "IC10 Go" output.', 'IC10 Go: 每 tick 分析失败，详见 "IC10 Go" 输出面板。')
+                );
+                return;
+            }
+            const items = [];
+            let anyExceeds = false;
+            for (const rep of reports) {
+                const chip = rep.chip ? t(`chip ${rep.chip}: `, `芯片 ${rep.chip}：`) : '';
+                const limit = rep.limit;
+                for (const seg of rep.segments || []) {
+                    if (seg.exceeds) anyExceeds = true;
+                    const cost = seg.exceeds ? `>${limit}` : `${seg.cost}`;
+                    const mark = seg.exceeds ? '$(warning)' : '$(pass)';
+                    const start = seg.source > 0 ? seg.source : seg.start + 1;
+                    items.push({
+                        label: `${mark} ${chip}${t('segment from line', '分段 起点')} ${start} · ${cost}/${limit}`,
+                        detail: seg.exceeds
+                            ? t('worst case between two yields exceeds a tick', '两个 yield 之间的最坏路径超过一个 tick')
+                            : t('fits in one tick', '可放进一个 tick'),
+                        line: start,
+                    });
+                }
+                for (const lp of rep.loops || []) {
+                    const body = lp.bodyMin !== undefined && lp.bodyMin !== lp.body ? `${lp.bodyMin}..${lp.body}` : `${lp.body}`;
+                    const trips = lp.trips > 0 ? `${lp.trips}` : '?';
+                    const spans = lp.spans ? t(' [spans ticks]', '（跨 tick）') : '';
+                    const where = lp.source > 0 ? `L${lp.source}` : `line ${lp.header + 1}`;
+                    items.push({
+                        label: `$(sync) ${chip}${t('loop', '循环')} ${where}`,
+                        detail: t(
+                            `${body} instructions x ${trips} iterations (best..worst)${spans}`,
+                            `每圈 ${body} 条 × ${trips} 次（最快..最慢）${spans}`
+                        ),
+                        line: lp.source > 0 ? lp.source : lp.header + 1,
+                    });
+                }
+            }
+            if (items.length === 0) {
+                vscode.window.showInformationMessage(t('IC10 Go: no loops found.', 'IC10 Go: 未发现循环。'));
+                return;
+            }
+            const header = anyExceeds
+                ? t('IC10 Go: per-tick budget (some loops exceed)', 'IC10 Go: 每 tick 指令预算（有循环超限）')
+                : t('IC10 Go: per-tick budget', 'IC10 Go: 每 tick 指令预算');
+            const pick = await vscode.window.showQuickPick(items, {
+                title: header,
+                placeHolder: t('Select a loop or segment to jump to its line', '选择循环或分段，跳转到对应源码行'),
+                matchOnDetail: true,
+            });
+            if (!pick) return;
+            const pos = new vscode.Position(Math.max(0, pick.line - 1), 0);
+            const sel = new vscode.Selection(pos, pos);
+            editor.selection = sel;
+            editor.revealRange(sel, vscode.TextEditorRevealType.InCenter);
+        }, ext);
     }
 
     // -- native IC10 (.ic / .ic10) -----------------------------------------

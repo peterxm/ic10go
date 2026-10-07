@@ -212,6 +212,7 @@ const expected = [
     'icg.minify',
     'icg.disasm',
     'icg.graph',
+    'icg.tick',
     'icg.restartServer',
     'icg.bench.connect',
     'icg.bench.disconnect',
