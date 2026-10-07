@@ -56,8 +56,10 @@ var knownUnsupported = map[string]string{}
 // port-equivalence test (invalid IC10: the source uses an undefined `hash`
 // register, which would not assemble in-game).
 var knownUnsupportedPorts = map[string]string{
-	"oreSorter":    "source uses an undefined `hash` register (invalid IC10)",
-	"sorterSample": "source uses an undefined `hash` register (invalid IC10)",
+	"oreSorter":      "source uses an undefined `hash` register (invalid IC10)",
+	"sorterSample":   "source uses an undefined `hash` register (invalid IC10)",
+	"solverLarge":    "over the 128-line budget and publishes to the housing stack without `shared-stack`",
+	"solverLargeRAW": "over the 128-line budget and publishes to the housing stack without `shared-stack`",
 }
 
 // skipKnownUnsupported skips a corpus file listed in knownUnsupported.

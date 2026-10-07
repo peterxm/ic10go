@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -12,6 +13,24 @@ import (
 	"ic10go/internal/vm"
 	"ic10go/pkg/ic10"
 )
+
+// housingStackWrite matches a write to the housing/user stack: put(db, N, ...),
+// db.stack[N] = ..., or poke(N, ...). The single-chip default is private-stack,
+// which deletes such writes when the program never reads them back, so a port
+// that publishes to db without `// icg: shared-stack` can silently drop its
+// outputs.
+var housingStackWrite = regexp.MustCompile(`put\(\s*db\s*,|db\.stack\s*\[[0-9]+\]\s*=[^=]|poke\s*\(`)
+
+// housingStackHint logs a port that writes the housing stack but does not carry
+// the shared-stack pragma, since its db writes may be removed.
+func housingStackHint(t *testing.T, port, src string) {
+	t.Helper()
+	if strings.Contains(src, "shared-stack") || !housingStackWrite.MatchString(src) {
+		return
+	}
+	t.Logf("%s writes the housing stack (db) but has no `// icg: shared-stack`; the single-chip private-stack default may delete those writes. Add the pragma if they are outputs (see solverLarge).",
+		filepath.Base(port))
+}
 
 // portSetup gives both the original and the ported script the same devices and
 // values so their observable behaviour can be compared.
@@ -89,6 +108,7 @@ func TestIc10CodePorts(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			housingStackHint(t, port, string(newSrc))
 			// The ported scripts are real-world IC10 that predate the user
 			// stack partition, so compile them with the dynamic boundary.
 			compiled, diags, err := ic10.CompileWithOptions(port, newSrc, ic10.Options{DynamicStack: true})
