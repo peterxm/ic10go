@@ -103,6 +103,9 @@ type Options struct {
 	NoPopBank bool
 	// NoGlobalProp disables cross-block copy propagation.
 	NoGlobalProp bool
+	// NoLICM disables loop-invariant code motion. Off by default; the compiler
+	// tries both and keeps the shorter runtime.
+	NoLICM bool
 	// RedundantDeviceWrites removes a constant device write that repeats the
 	// previous write to the same device+logic, saving lines but changing the
 	// observable write sequence. Off by default.
@@ -517,11 +520,12 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			best, haveBest = r, true
 		}
 	}
-	run := func(outline map[string]bool, inlineConstArgs, noFold, noMem2Reg, noPopBank, noGlobalProp, forceNoOpt bool) {
+	run := func(outline map[string]bool, inlineConstArgs, noFold, noMem2Reg, noPopBank, noLICM, noGlobalProp, forceNoOpt bool) {
 		o := opts
 		o.NoFoldDataReads = noFold
 		o.NoMem2Reg = noMem2Reg
 		o.NoPopBank = noPopBank
+		o.NoLICM = noLICM
 		o.NoGlobalProp = noGlobalProp
 		// Lower each variant into its own diagnostics bag: a variant the size
 		// model discards (e.g. one that trips an internal error on an awkward
@@ -636,16 +640,24 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	if !opts.NoPopBank && probe != nil && probe.PopBankApplied {
 		popBanks = append(popBanks, true)
 	}
+	// Loop-invariant code motion can lengthen a program, so try both when the
+	// program actually has a loop.
+	licms := []bool{opts.NoLICM}
+	if !opts.NoLICM && probe != nil && opt.HasLoops(probe) {
+		licms = append(licms, true)
+	}
 	for _, outline := range outlines {
 		for _, noFold := range folds {
 			for _, noMem2Reg := range mem2regs {
 				for _, noPopBank := range popBanks {
-					for _, noGlobalProp := range []bool{false, true} {
-						run(outline, false, noFold, noMem2Reg, noPopBank, noGlobalProp, false)
-						// A plan can both share the body and specialise constant calls;
-						// try the specialising variant too and keep the shorter.
-						if len(outline) > 0 {
-							run(outline, true, noFold, noMem2Reg, noPopBank, noGlobalProp, false)
+					for _, noLICM := range licms {
+						for _, noGlobalProp := range []bool{false, true} {
+							run(outline, false, noFold, noMem2Reg, noPopBank, noLICM, noGlobalProp, false)
+							// A plan can both share the body and specialise constant calls;
+							// try the specialising variant too and keep the shorter.
+							if len(outline) > 0 {
+								run(outline, true, noFold, noMem2Reg, noPopBank, noLICM, noGlobalProp, false)
+							}
 						}
 					}
 				}
@@ -657,9 +669,9 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	// costs more lines than it saves. When that happened, also build an
 	// unoptimised program and keep whichever is shorter.
 	if !noOpt && sawSpill {
-		run(nil, false, false, false, false, false, true)
+		run(nil, false, false, false, false, false, false, true)
 		if len(plan) > 0 {
-			run(plan, false, false, false, false, false, true)
+			run(plan, false, false, false, false, false, false, true)
 		}
 	}
 	// Each candidate re-runs lowering, so warnings can repeat; keep one copy.
@@ -956,6 +968,7 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, in
 	fn.PrivateStack = opts.PrivateStack
 	fn.NoMem2Reg = opts.NoMem2Reg
 	fn.NoGlobalProp = opts.NoGlobalProp
+	fn.NoLICM = opts.NoLICM
 	fn.RedundantDeviceWrites = opts.RedundantDeviceWrites
 	if !noOpt {
 		if err := opt.Optimize(fn); err != nil {

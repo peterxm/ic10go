@@ -861,3 +861,62 @@ func TestConstPropAcrossLoop(t *testing.T) {
 		t.Fatal("constant not propagated into the loop body's store")
 	}
 }
+
+func TestFuseBranchThroughCopy(t *testing.T) {
+	// The lowerer materialises a comparison then copies it to the variable
+	// (`t = a < b; x = t; if x`); the branch fuses through that copy.
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	c := b.NewReg("cmp")
+	x := b.NewReg("x")
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	b.Emit(&ir.Load{Dst: a, Dev: "d0", Logic: "On"})
+	b.Emit(&ir.Cmp{Cond: ir.Lt, Dst: c, A: a, B: &ir.Const{V: 5}})
+	b.Emit(&ir.Assign{Dst: x, Src: c})
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: x, Then: thenB, Else: elseB})
+	b.SetBlock(thenB)
+	b.SetTerm(&ir.Ret{})
+	b.SetBlock(elseB)
+	b.SetTerm(&ir.Ret{})
+	fn := b.Fn()
+	if err := Optimize(fn); err != nil {
+		t.Fatal(err)
+	}
+	for _, blk := range fn.Blocks {
+		for _, ins := range blk.Instrs {
+			if _, isCmp := ins.(*ir.Cmp); isCmp {
+				t.Fatalf("comparison not folded into the branch through the copy")
+			}
+		}
+	}
+}
+
+func TestFuseIsSetValueBranch(t *testing.T) {
+	// `t = isSet(d0); x = t; if x` becomes a BrSet (bdse/bdns).
+	b := ir.NewBuilder("f")
+	c := b.NewReg("t")
+	x := b.NewReg("x")
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	b.Emit(&ir.Builtin{Name: "isSet", Dst: c, Args: []ir.Value{&ir.Device{Name: "d0"}}})
+	b.Emit(&ir.Assign{Dst: x, Src: c})
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: x, Then: thenB, Else: elseB})
+	b.SetBlock(thenB)
+	b.SetTerm(&ir.Ret{})
+	b.SetBlock(elseB)
+	b.SetTerm(&ir.Ret{})
+	fn := b.Fn()
+	if err := Optimize(fn); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, blk := range fn.Blocks {
+		if _, ok := blk.Term.(*ir.BrSet); ok {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("isSet value branch not fused to BrSet")
+	}
+}

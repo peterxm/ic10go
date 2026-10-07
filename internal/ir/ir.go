@@ -553,6 +553,10 @@ type Function struct {
 	// tries both and keeps the shorter runtime, so the pass cannot make a
 	// program longer.
 	NoGlobalProp bool
+	// NoLICM disables loop-invariant code motion. Hoisting can lengthen a
+	// program (a new preheader block), so the compiler tries both and keeps the
+	// shorter runtime.
+	NoLICM bool
 	// RedundantDeviceWrites enables removing a constant device write that
 	// repeats the previous write to the same device+logic. It changes the
 	// observable write sequence, so it is off by default.

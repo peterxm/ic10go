@@ -640,6 +640,35 @@ func factsEqual(a, b map[*ir.Reg]ir.Value) bool {
 // constProp propagates constants across basic blocks. A register is known to
 // hold a constant at a block entry only if it holds the same constant on every
 // incoming path.
+// HasLoops reports whether fn has a cycle reachable from the entry (a back
+// edge), so callers can skip loop-only passes when there is no loop.
+func HasLoops(fn *ir.Function) bool {
+	fn.BuildCFG()
+	const (
+		white = 0
+		grey  = 1
+		black = 2
+	)
+	state := map[*ir.Block]int{}
+	var find func(b *ir.Block) bool
+	find = func(b *ir.Block) bool {
+		state[b] = grey
+		for _, s := range b.Succs {
+			switch state[s] {
+			case grey:
+				return true
+			case white:
+				if find(s) {
+					return true
+				}
+			}
+		}
+		state[b] = black
+		return false
+	}
+	return fn.Entry != nil && find(fn.Entry)
+}
+
 // reversePostorder lists the blocks reachable from the entry in reverse
 // postorder, so a forward dataflow fixpoint converges in one pass per nesting
 // level instead of one pass per fact.
@@ -2260,29 +2289,69 @@ func fuseBranches(fn *ir.Function) bool {
 		if !ok || uses[r] != 1 {
 			continue
 		}
-		idx, cmp := -1, (*ir.Cmp)(nil)
-		for i, ins := range b.Instrs {
-			d := ir.DefOf(ins)
-			if d != r {
-				continue
+		probe := func(target *ir.Reg) (int, *ir.Cmp, *ir.Builtin, bool) {
+			for i, ins := range b.Instrs {
+				if ir.DefOf(ins) != target {
+					continue
+				}
+				switch v := ins.(type) {
+				case *ir.Cmp:
+					return i, v, nil, true
+				case *ir.Builtin:
+					if (v.Name == "isSet" || v.Name == "isUnset") && len(v.Args) == 1 {
+						if _, isDev := v.Args[0].(*ir.Device); isDev {
+							return i, nil, v, true
+						}
+					}
+				}
+				return i, nil, nil, false // some other instruction defines it
 			}
-			c, isCmp := ins.(*ir.Cmp)
-			if !isCmp {
-				idx = -2 // some other instruction defines it
-				break
-			}
-			idx, cmp = i, c
+			return -1, nil, nil, false
 		}
-		if idx < 0 || cmp == nil {
+		idx, cmp, set, ok := probe(r)
+		copyIdx, copySrc := -1, (*ir.Reg)(nil)
+		if !ok && idx > 0 {
+			// The lowerer materialises a value then copies it to the variable
+			// (`t = cmp(...); x = t`); look through that copy.
+			if a2, isAssign := b.Instrs[idx].(*ir.Assign); isAssign {
+				if s, isReg := a2.Src.(*ir.Reg); isReg && uses[s] == 1 {
+					if j, c, bs, ok2 := probe(s); ok2 && j == idx-1 {
+						idx, cmp, set, copyIdx, copySrc = j, c, bs, idx, s
+						ok = true
+					}
+				}
+			}
+		}
+		if !ok {
 			continue
 		}
-		newCond := cmp.Cond
-		if cond == ir.Zero {
-			newCond = newCond.Invert()
+		if set != nil {
+			// `x = isSet(d); if x` -> `bdse d` / `bdns d`.
+			dev := set.Args[0].(*ir.Device)
+			devSet := set.Name == "isSet"
+			if cond == ir.Zero {
+				devSet = !devSet
+			}
+			b.Term = &ir.BrSet{Dev: dev.Name, Set: devSet, Then: br.Then, Else: br.Else}
+		} else {
+			newCond := cmp.Cond
+			if cond == ir.Zero {
+				newCond = newCond.Invert()
+			}
+			br.Cond, br.A, br.B = newCond, cmp.A, cmp.B
 		}
-		br.Cond, br.A, br.B = newCond, cmp.A, cmp.B
-		b.Instrs = append(b.Instrs[:idx], b.Instrs[idx+1:]...)
+		kept := b.Instrs[:0]
+		for i, ins := range b.Instrs {
+			if i == idx || i == copyIdx {
+				continue
+			}
+			kept = append(kept, ins)
+		}
+		b.Instrs = kept
 		uses[r]--
+		if copySrc != nil {
+			uses[copySrc]--
+		}
 		changed = true
 	}
 
@@ -2617,6 +2686,9 @@ type loop struct {
 
 // licm hoists pure, loop-invariant computations out of natural loops.
 func licm(fn *ir.Function) bool {
+	if fn.NoLICM {
+		return false
+	}
 	fn.BuildCFG()
 	// A call (jal) can modify any variable and returns via "j ra" to any call
 	// site. ir.Successors deliberately omits those return edges, so the loop
