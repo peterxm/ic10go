@@ -1502,7 +1502,9 @@ func benchRun(addr, file string, chip any, stableIns bool, libDirs []string, lim
 	defer c.Close()
 
 	// A testbench wants control over ticks: pause the world for the run (the
-	// chip is stepped with ProgrammableChip.Execute) and restore it after.
+	// chip is stepped with ProgrammableChip.Execute). The automatic resume does
+	// not take effect in game, so the world stays paused; resume it manually
+	// (`pause off`).
 	resume := benchPauseForRun(c)
 	defer resume()
 

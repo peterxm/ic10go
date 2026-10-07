@@ -331,9 +331,12 @@ ic10c testbench pause [on|off]               # 暂停 / 恢复游戏（确定性
 ic10c testbench saves                        # 列出存档
 ic10c testbench load <name>                  # 载入存档（游戏 loadgame 命令）
 ic10c testbench world                        # 游戏状态 / 当前世界 / 暂停
-ic10c testbench run <scenario.json> [--diff] # 跑场景并断言
+ic10c testbench run <scenario.json> [--diff] # 跑场景并断言（会先暂停；**跑完保持暂停**，需 `pause off`）
 ic10c testbench watch [--json]               # 持续打印 state 事件
 ```
+
+> **暂停不会自动恢复**：`run` / `step` 为保证确定性会 `pause on`，但自动 `pause off`
+> 在真机不生效；测完请手动 `ic10c testbench pause off`（或按游戏的暂停键）。
 
 连接地址：`--addr 127.0.0.1:7800` 或环境变量 `IC10_BENCH_ADDR`。
 

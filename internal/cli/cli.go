@@ -607,9 +607,10 @@ var Commands = []Command{
 				"  world                     game state / current world / paused\n\n" +
 				"`run` compiles scenario.program with scenario.args, uploads it, then runs\n" +
 				"each case (set / run ticks / expect). It pauses the world for a deterministic\n" +
-				"run and restores it afterwards. With --diff the same cases also run in the\n" +
-				"built-in VM for comparison (it models the same per-tick budget: a tick\n" +
-				"ends at yield/sleep, or after 128 instructions).\n\n" +
+				"run and **leaves it paused** (the automatic resume does not take effect in\n" +
+				"game), so resume manually with `pause off`. With --diff the same cases also\n" +
+				"run in the built-in VM for comparison (it models the same per-tick budget: a\n" +
+				"tick ends at yield/sleep, or after 128 instructions).\n\n" +
 				"The mod lives in tools/ingame-testbench; see docs/ingame-testbench.md.",
 			ZH: "通过 NDJSON/TCP（默认 127.0.0.1:7800）与游戏内运行的 ic10go-testbench\n" +
 				"mod 通信：上传编译好的程序到芯片、读写设备值、单步执行，并读取寄存器、\n" +
@@ -644,7 +645,8 @@ var Commands = []Command{
 				"  load <name>               载入存档（游戏的 loadgame 命令）\n" +
 				"  world                     游戏状态 / 当前世界 / 暂停\n\n" +
 				"`run` 会用 scenario.args 编译 scenario.program，上传后逐个 case 执行\n" +
-				"（set / run 若干 tick / expect）。为保证确定性会先暂停世界，结束后恢复。\n" +
+				"（set / run 若干 tick / expect）。为保证确定性会先暂停世界，**跑完保持暂停**\n" +
+				"（自动恢复在真机不生效），需手动 `pause off` 恢复。\n" +
 				"加 --diff 会用内置 VM 跑同一组 case 做对比（VM 用同样的 tick 模型：\n" +
 				"一 tick 到 yield/sleep 结束，或满 128 条指令）。\n\n" +
 				"mod 源码在 tools/ingame-testbench；协议见 docs/ingame-testbench.md。",
