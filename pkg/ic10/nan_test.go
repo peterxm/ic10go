@@ -46,3 +46,33 @@ func TestFuseNaNOr(t *testing.T) {
 		t.Fatalf("|| of isNaN not short-circuited:\n%s", code)
 	}
 }
+
+// An ordering comparison whose operands may be NaN must not be negated:
+// IC10's `bge` is not `!(blt)` when an operand is NaN (the game is IEEE). A
+// batched read can be NaN (no matching device), a `nan` literal is NaN; a
+// single-device read or an integer loop counter is a number and keeps the
+// shorter negated form.
+func TestOrderingBranchNaNSafe(t *testing.T) {
+	for _, src := range []string{
+		"func main() {\n    for {\n        yield()\n        if batch.read(hash(\"X\"), \"Setting\", \"Sum\") > 100 { d1.On = 1 }\n    }\n}\n",
+		"func main() {\n    for {\n        yield()\n        if nan < 1 { d1.On = 1 }\n    }\n}\n",
+	} {
+		code, diags, err := ic10.Compile("t.icg", []byte(src))
+		if err != nil || diags.HasErrors() {
+			t.Fatalf("compile %q: err=%v diags=%v", src, err, diags.Diags)
+		}
+		if strings.Contains(code, "ble ") || strings.Contains(code, "bge ") {
+			t.Fatalf("%q: ordering branch negated for a possibly-NaN operand:\n%s", src, code)
+		}
+	}
+
+	// An integer loop counter is provably not NaN, so the negated form is exact.
+	code, diags, err := ic10.Compile("t.icg", []byte(
+		"func main() {\n    for i := 0; i < 5; i++ {\n        d0.Setting = i\n        yield()\n    }\n}\n"))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: err=%v diags=%v", err, diags.Diags)
+	}
+	if !strings.Contains(code, "bge ") {
+		t.Fatalf("want the negated bge for an integer loop condition:\n%s", code)
+	}
+}

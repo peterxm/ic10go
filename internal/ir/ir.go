@@ -387,6 +387,18 @@ func (c Cond) Invert() Cond {
 	return c
 }
 
+// Invertible reports whether Invert(c) is a true logical negation. It fails for
+// NaN (no inverse instruction) and for the ordering conditions under NaN:
+// `!(a < b)` is true when a is NaN but `a >= b` is false. The equality and zero
+// conditions are exact.
+func (c Cond) Invertible() bool {
+	switch c {
+	case Lt, Le, Gt, Ge, NaN:
+		return false
+	}
+	return true
+}
+
 // Term is defined in term.go (with Successors/Uses/Redirect/Key).
 
 type Jmp struct{ Target *Block }

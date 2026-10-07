@@ -616,9 +616,8 @@ func (g *gen) expr(depth int) string {
 		// A slot read by ReferenceId (IC10 `ls r? rN i slt`).
 		return fmt.Sprintf("readByIdSlot(%s, %d, %s)", g.devId(), g.rng.Intn(4), g.slotType())
 	case 18:
-		// A guaranteed-NaN value, confined to an isNaN argument so it does not
-		// leak into comparisons (where !(a>b) != a<=b for NaN).
-		return "isNaN(nan)"
+		// NaN often flows into comparisons and isNaN.
+		return "nan"
 	case 19:
 		return fmt.Sprintf("isNaN(%s)", g.expr(depth-1))
 	case 20:

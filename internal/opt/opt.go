@@ -2342,11 +2342,13 @@ func fuseBranches(fn *ir.Function) bool {
 				b.Term = dev
 			}
 		} else {
-			newCond := cmp.Cond
+			// Fold the comparison into the branch. For a zero test, swap the
+			// targets instead of inverting the condition: IC10's `!(a < b)` is
+			// not `a >= b` when a is NaN.
 			if cond == ir.Zero {
-				newCond = newCond.Invert()
+				br.Then, br.Else = br.Else, br.Then
 			}
-			br.Cond, br.A, br.B = newCond, cmp.A, cmp.B
+			br.Cond, br.A, br.B = cmp.Cond, cmp.A, cmp.B
 		}
 		kept := b.Instrs[:0]
 		for i, ins := range b.Instrs {
@@ -2445,10 +2447,6 @@ func fuseBranches(fn *ir.Function) bool {
 			continue
 		}
 		isMax := combine.Op == ir.Max
-		// `min` (`&&`) inverts c1; a NaN predicate has no inverse.
-		if !isMax && (c1.cond == ir.NaN || c2.cond == ir.NaN) {
-			continue
-		}
 		// min(c1,c2) is c1&&c2, max(c1,c2) is c1||c2. `holds` is the block the
 		// terminator reaches when the whole combination is true.
 		holds, fails := br.Then, br.Else
@@ -2456,18 +2454,15 @@ func fuseBranches(fn *ir.Function) bool {
 			holds, fails = br.Else, br.Then
 		}
 		mid := fn.NewBlock()
-		// c1 decides early: a false c1 fails a `&&`; a true c1 satisfies a `||`.
+		// Never invert the operand conditions (IC10's `!(a < b)` is not `a >= b`
+		// under NaN): choose the target instead. c1 decides early (a false c1
+		// fails a `&&`; a true c1 satisfies a `||`), then c2 decides the rest.
 		if isMax {
 			b.Term = &ir.Br{Cond: c1.cond, A: c1.a, B: c1.b, Then: holds, Else: mid}
 		} else {
-			b.Term = &ir.Br{Cond: c1.cond.Invert(), A: c1.a, B: c1.b, Then: fails, Else: mid}
+			b.Term = &ir.Br{Cond: c1.cond, A: c1.a, B: c1.b, Then: mid, Else: fails}
 		}
-		// c2 decides the rest. Prefer the inverted form for layout, except NaN.
-		if c2.cond == ir.NaN {
-			mid.Term = &ir.Br{Cond: c2.cond, A: c2.a, B: c2.b, Then: holds, Else: fails}
-		} else {
-			mid.Term = &ir.Br{Cond: c2.cond.Invert(), A: c2.a, B: c2.b, Then: fails, Else: holds}
-		}
+		mid.Term = &ir.Br{Cond: c2.cond, A: c2.a, B: c2.b, Then: holds, Else: fails}
 		changed = true
 	}
 	if changed {

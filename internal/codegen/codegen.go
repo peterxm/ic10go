@@ -94,6 +94,11 @@ type line struct {
 	// src is the 1-based .icg source line this line was lowered from, or 0 when
 	// unknown. It feeds the source line map.
 	src int
+	// safeInvert marks a conditional branch whose negation is exact for every
+	// input (an equality/zero test, or an ordering test on provably-NaN-free
+	// operands). Only such branches may be rewritten to the negated form when
+	// folding a following jump.
+	safeInvert bool
 }
 
 // haltMarker is the IR-level sentinel a halt block jumps to. It is a marker,
@@ -199,7 +204,8 @@ func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, e
 // and by Layout (used for the control-flow graph).
 func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bool) ([]*ir.Block, []line, map[*ir.Block]int) {
 	fn.BuildCFG()
-	blocks := rpo(fn)
+	nf := nanFreeRegs(fn)
+	blocks := rpoOrdered(fn, nf)
 	// Blocks that a call returns to must be laid out right after the call and
 	// therefore stay in place even if they only halt.
 	retBlocks := map[*ir.Block]bool{}
@@ -332,7 +338,7 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 				if s := fn.SrcTerms[b.Term]; s > 0 {
 					src = s
 				}
-				if ls, ok := foldLoadTerminator(instrs, idx, b.Term, next, uses, colors, src, b.Func); ok {
+				if ls, ok := foldLoadTerminator(instrs, idx, b.Term, next, uses, colors, src, b.Func, nf); ok {
 					lines = append(lines, ls...)
 					termDone = true
 					continue
@@ -444,20 +450,26 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 		case *ir.Br:
 			thenNext := t.Then == next
 			elseNext := t.Else == next
+			inv := branchInvertible(t, nf)
+			emitBr := func(text string, target *ir.Block) {
+				add(text, target, b.Func)
+				lines[len(lines)-1].safeInvert = inv
+			}
 			switch {
-			case t.Cond == ir.NaN:
-				// IC10 has only `bnan` (no branch-if-not-NaN), so always branch
-				// on the NaN edge and jump to Else when needed.
-				add(branchText(t.Cond, t.A, t.B, colors)+" ", t.Then, b.Func)
+			case !inv:
+				// No exact inverse (NaN, or `!(a < b)` != `a >= b` when an
+				// operand may be NaN): branch on the condition directly and jump
+				// to Else when it is not the next block.
+				emitBr(branchText(t.Cond, t.A, t.B, colors)+" ", t.Then)
 				if !elseNext {
 					add("j ", t.Else, b.Func)
 				}
 			case elseNext:
-				add(branchText(t.Cond, t.A, t.B, colors)+" ", t.Then, b.Func)
+				emitBr(branchText(t.Cond, t.A, t.B, colors)+" ", t.Then)
 			case thenNext:
-				add(branchText(t.Cond.Invert(), t.A, t.B, colors)+" ", t.Else, b.Func)
+				emitBr(branchText(t.Cond.Invert(), t.A, t.B, colors)+" ", t.Else)
 			default:
-				add(branchText(t.Cond, t.A, t.B, colors)+" ", t.Then, b.Func)
+				emitBr(branchText(t.Cond, t.A, t.B, colors)+" ", t.Then)
 				add("j ", t.Else, b.Func)
 			}
 		case *ir.BrApprox:
@@ -866,7 +878,7 @@ func branchTextFolded(c ir.Cond, a, b ir.Value, loaded *ir.Reg, operand string, 
 // into its branch terminator, so the load line disappears:
 // `u = sp; bgtz u L` -> `bgtz sp L`. It mirrors foldLoadOperand for terminators
 // (only plain Br; the approximate/valid forms take device operands).
-func foldLoadTerminator(instrs []ir.Instr, i int, term ir.Term, next *ir.Block, uses map[*ir.Reg]int, colors map[*ir.Reg]int, src int, fn string) ([]line, bool) {
+func foldLoadTerminator(instrs []ir.Instr, i int, term ir.Term, next *ir.Block, uses map[*ir.Reg]int, colors map[*ir.Reg]int, src int, fn string, nf map[*ir.Reg]bool) ([]line, bool) {
 	operand, loaded, ci, ok := loadOperand(instrs, i, uses, colors)
 	if !ok || ci != len(instrs) {
 		return nil, false
@@ -882,12 +894,13 @@ func foldLoadTerminator(instrs []ir.Instr, i int, term ir.Term, next *ir.Block, 
 	if !isLoaded(br.A) && !isLoaded(br.B) {
 		return nil, false
 	}
+	inv := branchInvertible(br, nf)
 	mk := func(c ir.Cond, target *ir.Block) line {
-		return line{text: branchTextFolded(c, br.A, br.B, loaded, operand, colors) + " ", target: target, fn: fn, src: src}
+		return line{text: branchTextFolded(c, br.A, br.B, loaded, operand, colors) + " ", target: target, fn: fn, src: src, safeInvert: inv}
 	}
 	switch {
-	case br.Cond == ir.NaN:
-		// No branch-if-not-NaN: branch on the NaN edge.
+	case !inv:
+		// No exact inverse: branch on the condition directly.
 		if br.Else == next {
 			return []line{mk(br.Cond, br.Then)}, true
 		}
@@ -1118,6 +1131,9 @@ func removeRedundantJumps(lines []line, start map[*ir.Block]int) ([]line, map[*i
 		if br.target == nil || j.target == nil || j.table || !strings.HasPrefix(j.text, "j ") {
 			continue
 		}
+		if !br.safeInvert {
+			continue
+		}
 		inv, ok := invertBranch(br.text)
 		if !ok {
 			continue
@@ -1125,7 +1141,7 @@ func removeRedundantJumps(lines []line, start map[*ir.Block]int) ([]line, map[*i
 		if start[br.target] != i+2 {
 			continue
 		}
-		lines[i] = line{text: inv, target: j.target, fn: br.fn}
+		lines[i] = line{text: inv, target: j.target, fn: br.fn, safeInvert: true}
 		removed[i+1] = true
 		redirect[i+1] = j.target
 		i++
@@ -1274,6 +1290,43 @@ func brDev(dev string, ptr ir.Value, colors map[*ir.Reg]int) string {
 		return dev
 	}
 	return valueText(ptr, colors)
+}
+
+// successorsFor returns a terminator's successors in layout preference order,
+// taking NaN-freeness into account: a branch whose condition cannot be negated
+// lays its else edge out as the fall-through, so the codegen can branch on the
+// condition directly with one instruction.
+func successorsFor(t ir.Term, nf map[*ir.Reg]bool) []*ir.Block {
+	if br, ok := t.(*ir.Br); ok {
+		if br.Cond == ir.NaN || !branchInvertible(br, nf) {
+			return []*ir.Block{br.Then, br.Else}
+		}
+	}
+	return t.Successors()
+}
+
+// rpoOrdered is rpo with a NaN-aware successor preference.
+func rpoOrdered(fn *ir.Function, nf map[*ir.Reg]bool) []*ir.Block {
+	var order []*ir.Block
+	visited := map[*ir.Block]bool{}
+	var dfs func(*ir.Block)
+	dfs = func(b *ir.Block) {
+		if b == nil || visited[b] {
+			return
+		}
+		visited[b] = true
+		if b.Term != nil {
+			for _, s := range successorsFor(b.Term, nf) {
+				dfs(s)
+			}
+		}
+		order = append(order, b)
+	}
+	dfs(fn.Entry)
+	for i, j := 0, len(order)-1; i < j; i, j = i+1, j-1 {
+		order[i], order[j] = order[j], order[i]
+	}
+	return order
 }
 
 // rpo returns the reachable blocks in reverse post-order, which tends to place
