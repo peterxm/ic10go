@@ -26,7 +26,7 @@ func cmdTestbench(args []string) int {
 	}
 
 	addr := testbench.Addr()
-	stableIns, asJSON, all, diff := false, false, false, false
+	stableIns, asJSON, all, diff, nanSafe := false, false, false, false, false
 	force := false
 	pulse := false
 	dataAccessStack := false
@@ -137,6 +137,8 @@ func cmdTestbench(args []string) int {
 			diff = true
 		case a == "--stable-ins":
 			stableIns = true
+		case a == "--nan-safe":
+			nanSafe = true
 		case a == "-h" || a == "--help":
 			if h, ok := cli.CommandHelp(lang, "testbench"); ok {
 				fmt.Print(h)
@@ -179,7 +181,7 @@ func cmdTestbench(args []string) int {
 		if len(rest) > 0 {
 			file = rest[0]
 		}
-		return benchPush(addr, file, chip, asName, stableIns, dataAccessStack, legacyByID, libDirs, lim, asJSON, rawPush)
+		return benchPush(addr, file, chip, asName, stableIns, nanSafe, dataAccessStack, legacyByID, libDirs, lim, asJSON, rawPush)
 	case "state":
 		return benchState(addr, chip, all, asJSON)
 	case "program":
@@ -209,7 +211,7 @@ func cmdTestbench(args []string) int {
 		if len(rest) > 0 {
 			file = rest[0]
 		}
-		return benchRun(addr, file, chip, stableIns, libDirs, lim, diff, asJSON)
+		return benchRun(addr, file, chip, stableIns, nanSafe, libDirs, lim, diff, asJSON)
 	case "watch":
 		return benchWatch(addr, chip, interval, count, asJSON)
 	case "saves":
@@ -1157,7 +1159,7 @@ func benchDeviceById(addr, idsArg string, asJSON bool) int {
 	return 0
 }
 
-func benchPush(addr, file string, chip any, asName string, stableIns, dataAccessStack, legacyByID bool, libDirs []string, lim limitArgs, asJSON, raw bool) int {
+func benchPush(addr, file string, chip any, asName string, stableIns, nanSafe, dataAccessStack, legacyByID bool, libDirs []string, lim limitArgs, asJSON, raw bool) int {
 	if file == "" {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "testbench"))
 		return 2
@@ -1176,6 +1178,7 @@ func benchPush(addr, file string, chip any, asName string, stableIns, dataAccess
 	} else {
 		opts := ic10.Options{
 			StableInsOrder:  stableIns,
+			NaNSafe:         nanSafe,
 			DataAccessStack: dataAccessStack,
 			LegacyByID:      legacyByID,
 			MaxLines:        lim.lines,
@@ -1462,7 +1465,7 @@ func benchPauseForRun(c *testbench.Client) func() {
 	}
 }
 
-func benchRun(addr, file string, chip any, stableIns bool, libDirs []string, lim limitArgs, diff, asJSON bool) int {
+func benchRun(addr, file string, chip any, stableIns, nanSafe bool, libDirs []string, lim limitArgs, diff, asJSON bool) int {
 	if file == "" {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "testbench"))
 		return 2
@@ -1480,6 +1483,7 @@ func benchRun(addr, file string, chip any, stableIns bool, libDirs []string, lim
 		return 2
 	}
 	opts.StableInsOrder = opts.StableInsOrder || stableIns
+	opts.NaNSafe = opts.NaNSafe || nanSafe
 	prog := sc.Program
 	if !filepath.IsAbs(prog) {
 		prog = filepath.Join(filepath.Dir(file), prog)
@@ -1613,6 +1617,8 @@ func benchOptions(flags []string, lim limitArgs, libDirs []string) (ic10.Options
 		switch a := flags[i]; {
 		case a == "--stable-ins":
 			opts.StableInsOrder = true
+		case a == "--nan-safe":
+			opts.NaNSafe = true
 		case a == "--rel-jump":
 			opts.RelJump = true
 		case a == "--legacy-by-id":

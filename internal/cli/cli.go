@@ -588,7 +588,7 @@ var Commands = []Command{
 				"                            --at X Y Z: find hosts by position; --range N\n" +
 				"  hud [on|off|clear|X Y Z]  in-game overlay: your position/heading and a\n" +
 				"                            tracked target (--chip NAME to track a chip)\n" +
-				"  push <file.icg>           compile and upload (runs any loader first)\n" +
+				"  push <file.icg>           compile and upload (runs any loader first; build flags like --nan-safe apply)\n" +
 				"  state                     registers / stack / devices\n" +
 				"  program                   print the chip's current IC10 source\n" +
 				"  set d1.Setting=10 ...     set device values (dN.Logic=value or id:N.Logic=value)\n" +
@@ -627,7 +627,7 @@ var Commands = []Command{
 				"                            --at X Y Z：按坐标找芯片；--range N 再列大致位置\n" +
 				"  hud [on|off|clear|X Y Z]  游戏内罗盘：自身坐标/朝向 + 追踪目标坐标\n" +
 				"                            （--chip NAME 追踪某块芯片；F8 开关、F9 清目标）\n" +
-				"  push <file.icg>           编译并上传（必要时先跑 loader）\n" +
+				"  push <file.icg>           编译并上传（必要时先跑 loader；可用 --nan-safe 等构建开关）\n" +
 				"  state                     寄存器 / 栈 / 设备\n" +
 				"  program                   打印芯片当前 IC10 源码\n" +
 				"  set d1.Setting=10 ...     设置设备值（dN.Logic=值 或 id:N.Logic=值）\n" +

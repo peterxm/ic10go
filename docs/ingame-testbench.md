@@ -317,7 +317,7 @@ ic10c testbench locate --program <file.ic>  # 哪块芯片在跑这份程序（�
 ic10c testbench locate --at X Y Z [--range N]  # 按坐标找：精确（四舍五入，忽略小数）+ N 格内的大致位置
 ic10c testbench hud [on|off|clear|X Y Z]    # 游戏内 HUD：自身坐标/朝向 + 追踪目标（--chip 追踪芯片；--player 追踪玩家；--offset 校准朝向）
 ic10c testbench program [--chip N]          # 打印芯片当前 IC10 源码（可重定向到文件）
-ic10c testbench push <file.icg> [--chip N] [--as NAME]  # 编译 + 上传（多芯片用 --as 选块；自动先跑 loader）
+ic10c testbench push <file.icg> [--chip N] [--as NAME] [--stable-ins] [--nan-safe]  # 编译 + 上传
 ic10c testbench state [--chip N] [--all] [--json]
 ic10c testbench set d1.Setting=10 [...]      # 设置输入；也可按 ReferenceId：id:7030.Setting=2
                                              # --force 跳过只读校验；--pulse 先写 0 再写值，触发瞬态逻辑
