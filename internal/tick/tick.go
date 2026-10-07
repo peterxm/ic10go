@@ -998,12 +998,16 @@ func (r *Report) String() string {
 		if l.Trips > 0 {
 			trips = strconv.Itoa(l.Trips)
 		}
+		spans := ""
+		if l.Spans {
+			spans = " (spans ticks)"
+		}
 		body := fmt.Sprintf("%d", l.Body)
 		if l.BodyMin != l.Body {
 			body = fmt.Sprintf("%d..%d", l.BodyMin, l.Body)
 		}
-		fmt.Fprintf(&b, "  loop %s..%s (header %s): body %s x %s iterations\n",
-			loc(l.Start, 0), loc(l.End, 0), loc(l.Header, l.Source), body, trips)
+		fmt.Fprintf(&b, "  loop %s..%s (header %s): body %s x %s iterations%s\n",
+			loc(l.Start, 0), loc(l.End, 0), loc(l.Header, l.Source), body, trips, spans)
 	}
 	if anyExceeds {
 		b.WriteString("  worst case: a loop between yields can exceed the budget, so the chip resumes mid-loop on the next tick.\n")
