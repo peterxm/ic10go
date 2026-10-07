@@ -97,6 +97,10 @@ type Options struct {
 	// compares both variants when the source has constant user slots and keeps
 	// the shorter runtime.
 	NoMem2Reg bool
+	// NoPopBank disables folding a run of consecutive pop() into one `pop rrN`
+	// loop. Off by default; the compiler compares both variants when the source
+	// has such a run and keeps the shorter runtime.
+	NoPopBank bool
 	// NoGlobalProp disables cross-block copy propagation.
 	NoGlobalProp bool
 	// RedundantDeviceWrites removes a constant device write that repeats the
@@ -513,10 +517,11 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			best, haveBest = r, true
 		}
 	}
-	run := func(outline map[string]bool, inlineConstArgs, noFold, noMem2Reg, noGlobalProp, forceNoOpt bool) {
+	run := func(outline map[string]bool, inlineConstArgs, noFold, noMem2Reg, noPopBank, noGlobalProp, forceNoOpt bool) {
 		o := opts
 		o.NoFoldDataReads = noFold
 		o.NoMem2Reg = noMem2Reg
+		o.NoPopBank = noPopBank
 		o.NoGlobalProp = noGlobalProp
 		// Lower each variant into its own diagnostics bag: a variant the size
 		// model discards (e.g. one that trips an internal error on an awkward
@@ -620,22 +625,28 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	if info.DataSize > 0 {
 		folds = append(folds, true)
 	}
-	// User-stack promotion only applies to private, constant user slots; probe
-	// with a cheap lowering (no optimisation) to avoid extra compiles.
+	// User-stack promotion and pop-bank folding only apply in specific shapes;
+	// probe with a cheap lowering (no optimisation) to avoid extra compiles.
+	probe := lowerAndOptimize(info, opts, nil, false, noCheck, true, &diag.Bag{})
 	mem2regs := []bool{false}
-	if probe := lowerAndOptimize(info, opts, nil, false, noCheck, true, &diag.Bag{}); probe != nil &&
-		probe.PrivateStack && probe.UserStackManual > 0 && !probe.UserStackDynamic {
+	if probe != nil && probe.PrivateStack && probe.UserStackManual > 0 && !probe.UserStackDynamic {
 		mem2regs = append(mem2regs, true)
+	}
+	popBanks := []bool{opts.NoPopBank}
+	if !opts.NoPopBank && probe != nil && probe.PopBankApplied {
+		popBanks = append(popBanks, true)
 	}
 	for _, outline := range outlines {
 		for _, noFold := range folds {
 			for _, noMem2Reg := range mem2regs {
-				for _, noGlobalProp := range []bool{false, true} {
-					run(outline, false, noFold, noMem2Reg, noGlobalProp, false)
-					// A plan can both share the body and specialise constant calls;
-					// try the specialising variant too and keep the shorter.
-					if len(outline) > 0 {
-						run(outline, true, noFold, noMem2Reg, noGlobalProp, false)
+				for _, noPopBank := range popBanks {
+					for _, noGlobalProp := range []bool{false, true} {
+						run(outline, false, noFold, noMem2Reg, noPopBank, noGlobalProp, false)
+						// A plan can both share the body and specialise constant calls;
+						// try the specialising variant too and keep the shorter.
+						if len(outline) > 0 {
+							run(outline, true, noFold, noMem2Reg, noPopBank, noGlobalProp, false)
+						}
 					}
 				}
 			}
@@ -646,9 +657,9 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	// costs more lines than it saves. When that happened, also build an
 	// unoptimised program and keep whichever is shorter.
 	if !noOpt && sawSpill {
-		run(nil, false, false, false, false, true)
+		run(nil, false, false, false, false, false, true)
 		if len(plan) > 0 {
-			run(plan, false, false, false, false, true)
+			run(plan, false, false, false, false, false, true)
 		}
 	}
 	// Each candidate re-runs lowering, so warnings can repeat; keep one copy.
@@ -935,6 +946,7 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, in
 		RecordBus: opts.recordBus,
 		// The folding decision depends on the effective per-line limit.
 		MaxLineLen: opts.editorLimits().LineLen,
+		NoPopBank:  opts.NoPopBank,
 	})
 	if diags.HasErrors() {
 		return nil

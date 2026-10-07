@@ -208,6 +208,7 @@ Ret
 | 常量查表内联 | `T[const]` 直接内联为字面量；与不折叠的产物比较取 runtime 更短者（`--unsafe`/`--no-data-check` 下不折叠） |
 | 用户栈提升（mem2reg） | 仅 `private-stack`：常量用户槽提升为虚拟寄存器，删除其 `get`/`put`/`poke`；寄存器与栈一样跨 tick 保留 |
 | push/pop 消除 | 仅 `private-stack`：同块内成对 `push`/`pop` 删除并把被压值转发给 `pop` 目标（块内不得有 `peek`/动态栈访问） |
+| pop 批量折叠（bank） | 连续 **≥5** 个 `pop()` 时降为 IC10 `rrN` 惯用法：占一段连续物理寄存器，发 `move rC start` / `pop rrC` / `add rC rC 1` / `ble rC last body`（4 行，任意 N）。只对**单函数**程序生效（无外提函数）——`reserveRegs` 是按函数记录的，别的函数分配器不会知道要避开。寄存器保留可能加重另一些值的溢出，故编译器比较两种产物取更短者（内部 `NoPopBank`） |
 | 重复设备写消除 | `--redundant-device-writes`（默认关闭）：删除同一段直落代码内重复的同值常量设备写；改变可观测写序列 |
 | 小循环展开 | 常量次数、无调用、体小的 `for` 循环展开，使 `Table[i]` 等常量下标折叠为单条 `get` |
 | 跳转表派发 | `--jump-table`（默认关闭）：稠密整数 `switch`（≥8 case、简单 case 体）降为 `jr` 计算跳转 + `j` 表，约每 case 省 1 行 |

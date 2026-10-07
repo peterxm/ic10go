@@ -56,6 +56,9 @@ type Options struct {
 	// dataConst), so folding cannot push a line over the limit. Zero uses the
 	// conservative 90-character default.
 	MaxLineLen int
+	// NoPopBank disables folding a run of consecutive pop() into one `pop rrN`
+	// bank loop. The compiler tries both and keeps the shorter.
+	NoPopBank bool
 }
 
 // emitDataCheck verifies the persistent data segment is installed: it reads the
@@ -358,12 +361,126 @@ func (l *lowerer) ensure() {
 }
 
 func (l *lowerer) lowerStmts(list []ast.Stmt) {
-	for i, s := range list {
+	for i := 0; i < len(list); i++ {
 		l.ensure()
 		l.noteLoopLabel(list, i)
-		l.lowerStmt(s)
+		if n, ok := l.tryPopBank(list, i); ok {
+			i += n - 1
+			l.pendingLoopLabel = ""
+			continue
+		}
+		l.lowerStmt(list[i])
 		l.pendingLoopLabel = ""
 	}
+}
+
+// popBankMin is the smallest run of consecutive pop() the compiler folds into
+// one `pop rrN` loop. Four pops break even (four lines either way), so five is
+// the first length that saves a line.
+const popBankMin = 5
+
+// tryPopBank folds a run of `x := pop()` at list[i:] into IC10's rrN idiom: a
+// counter walks a bank of consecutive physical registers and a loop pops into
+// rrCounter. It reports the number of statements consumed. The fold only runs
+// for single-function programs (no outlining): reserving physical registers is
+// per-function, so a second function's allocator would not know to keep them
+// free.
+func (l *lowerer) tryPopBank(list []ast.Stmt, i int) (int, bool) {
+	if l.opts.NoPopBank || len(l.opts.Outline) > 0 || l.inOutlineBody {
+		return 0, false
+	}
+	var names []string
+	for j := i; j < len(list); j++ {
+		nm, ok := popAssignName(list[j])
+		if !ok {
+			break
+		}
+		names = append(names, nm)
+	}
+	if len(names) < popBankMin {
+		return 0, false
+	}
+	base, ok := l.reservePopBank(len(names))
+	if !ok {
+		return 0, false
+	}
+	// counter := base; do { pop into rrCounter; counter++ } while counter <= last
+	// A bottom-tested loop so the codegen emits the IC10 idiom in four lines:
+	// `move rC base` / `pop rrC` / `add rC rC 1` / `ble rC last body`.
+	last := &ir.Const{V: float64(base + len(names) - 1)}
+	counter := l.b.NewReg("popidx")
+	l.b.Emit(&ir.Assign{Dst: counter, Src: &ir.Const{V: float64(base)}})
+	body := l.newBlock()
+	done := l.newBlock()
+	l.b.SetTerm(&ir.Jmp{Target: body}) // elided: body is the layout successor
+	l.b.SetBlock(body)
+	tmp := l.b.NewReg("poptmp")
+	l.b.Emit(&ir.Builtin{Name: "pop", Dst: tmp})
+	l.b.Emit(&ir.StoreIndirect{Ptr: counter, Src: tmp})
+	l.b.Emit(&ir.Bin{Op: ir.Add, Dst: counter, A: counter, B: &ir.Const{V: 1}})
+	l.b.SetTerm(&ir.Br{Cond: ir.Le, A: counter, B: last, Then: body, Else: done})
+	l.b.SetBlock(done)
+	for k, nm := range names {
+		l.bind(nm, &ir.Const{Raw: "r" + strconv.Itoa(base+k)})
+	}
+	l.b.Fn().PopBankApplied = true
+	return len(names), true
+}
+
+// popAssignName matches `x := pop()` / `x = pop()` and returns x.
+func popAssignName(s ast.Stmt) (string, bool) {
+	a, ok := s.(*ast.AssignStmt)
+	if !ok || (a.Op != token.Define && a.Op != token.Assign) {
+		return "", false
+	}
+	id, ok := a.Lhs.(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	call, ok := a.Rhs.(*ast.CallExpr)
+	if !ok {
+		return "", false
+	}
+	fn, ok := call.Fun.(*ast.Ident)
+	if !ok || fn.Name != "pop" || len(call.Args) != 0 {
+		return "", false
+	}
+	return id.Name, true
+}
+
+// reservePopBank finds n consecutive physical registers to use as a pop bank
+// and marks them reserved. It stays below 15, the stack-spill scratch register.
+func (l *lowerer) reservePopBank(n int) (int, bool) {
+	fn := l.b.Fn()
+	if n <= 0 || n > 14 {
+		return 0, false
+	}
+scan:
+	for base := 0; base+n-1 < 15; base++ {
+		for r := base; r < base+n; r++ {
+			if fn.ReservedRegs[r] {
+				continue scan
+			}
+		}
+		for r := base; r < base+n; r++ {
+			fn.ReservedRegs[r] = true
+		}
+		return base, true
+	}
+	return 0, false
+}
+
+// physRegIndex reports the physical register number of a constant operand that
+// names one (e.g. a bank variable bound to `r5`).
+func physRegIndex(c *ir.Const) (int, bool) {
+	if c == nil || c.Raw == "" || c.Raw[0] != 'r' || len(c.Raw) < 2 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(c.Raw[1:])
+	if err != nil || n < 0 || n > 15 {
+		return 0, false
+	}
+	return n, true
 }
 
 func (l *lowerer) lowerBlock(b *ast.BlockStmt) {
@@ -646,7 +763,11 @@ func (l *lowerer) lowerAssign(s *ast.AssignStmt) {
 			l.diags.Errorf(id.Pos(), "undefined variable %q", id.Name)
 			return
 		}
-		if _, isConst := v.(*ir.Const); isConst {
+		if c, isConst := v.(*ir.Const); isConst {
+			if n, isPhys := physRegIndex(c); isPhys {
+				l.b.Emit(&ir.StoreIndirect{Ptr: &ir.Const{V: float64(n)}, Src: l.lowerExpr(s.Rhs)})
+				return
+			}
 			l.diags.Errorf(id.Pos(), "cannot assign to constant %q", id.Name)
 			return
 		}
@@ -758,6 +879,13 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 			}
 			l.diags.Errorf(t.Pos(), "undefined variable %q", t.Name)
 			return
+		}
+		if c, isConst := v.(*ir.Const); isConst {
+			if n, isPhys := physRegIndex(c); isPhys {
+				// A pop-bank variable: write the physical register directly.
+				l.b.Emit(&ir.StoreIndirect{Ptr: &ir.Const{V: float64(n)}, Src: val})
+				return
+			}
 		}
 		r, ok := v.(*ir.Reg)
 		if !ok {

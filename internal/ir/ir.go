@@ -516,6 +516,10 @@ type Function struct {
 	// (IC10 rrN via ireg/setIreg, declared with reserveRegs). The allocator
 	// never colours a virtual register there, so indirect access is safe.
 	ReservedRegs [16]bool
+	// PopBankApplied is set when lowering folded a run of consecutive pop() into
+	// one `pop rrN` bank loop. The compiler uses it to decide whether trying the
+	// pop-bank-disabled variant is worth an extra compile.
+	PopBankApplied bool
 	// UserStackManual is the highest user stack slot touched by an explicit
 	// absolute access (db.stack[addr], poke, get/put db), stored as slot+1.
 	// UserStackDynamic is set when such an address is not a compile-time
