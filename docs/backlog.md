@@ -374,6 +374,10 @@ move sp r0
 `knownUnsupported` 因此清空；真机逐写 A/B（`solverLarge`，去掉等待分支以便确定）
 **0 差异**。
 
+> **2026-10 复跑**（`testdata/bench/ab/ab_trace.py`，把等待分支 `beqz r0 0` 等长换成 `clr db`
+> 以自驱动 + 每轮清栈）：`solverLarge` 对照 193/193、A/B 前 183 条 **0 差异**；
+> `traderSolver` 对照 134/134、A/B 前 127 条 **0 差异**。D4/D5 的折叠也一并被这两个样本覆盖。
+
 ### D7 设备参数外提（drN）🚧
 
 **问题**：带设备实参的调用**强制内联**（`hasDeviceOrDataArg`），设备 helper 被调 K 次就
