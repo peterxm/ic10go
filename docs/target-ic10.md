@@ -130,8 +130,7 @@
 | `batch.write` | `sb` |
 | `batch.writeName` | `sbn` |
 | `batch.writeSlot` | `sbs` |
-| `isSet(d)` | `sdse` |
-| `isUnset(d)` | `sdns` |
+| `isSet(d)` | `sdse`（**条件位置**折成 `bdns`：省掉 sdse）；`isUnset(d)` → `sdns` / 条件 `bdse` |
 | `get / put / clr / rmap` | 同名指令 |
 | `dN.stack[addr]` / `id.stack[addr]` | `get` / `put`（device 操作数接受端口 / id / 寄存器） |
 | `getd(id, addr)` / `putd(id, addr, v)` | 统一 `get` / `put`（独立的 `getd`/`putd` 已弃用） |

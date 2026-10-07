@@ -189,6 +189,7 @@
 | **P4** | D4 | 特殊寄存器（`sp`/`ra`）算术**两地址折叠** | 省行 | 小 | ✅ |
 | **P4** | D5 | **空分支清理**（目标即下一行） | 省行 | 小 | ✅ |
 | **P4** | D6 | 间接寄存器操作数折叠（`rrN` 目标/源） | 省行 | 小 | ✅ |
+| **P4** | D8 | 折叠扩展：分支/`Cmp` 操作数、`isSet`→`bdse`、`pop`→`rrN`、`constProp` 跨循环、`licm` 取更短 | 省行 | 小 | ✅ |
 | **P5** | B3 | 小记录**多返回值**（非容器） | 表达力 | 中-大 | ✅ |
 | **P6** | A3 | 编译期字符串（拼接 + hash） | 表达力 | 中 | ✅ |
 
@@ -421,6 +422,31 @@ move sp r0
 全量 `go test ./...`、`./build.sh assert`（58/58）绿。
 
 **现状**：D7（运行期设备端口、设备 helper 外提、`drN` 冗余读消除、尾调用）已全部实现。
+
+---
+
+### D8 折叠扩展：分支/`Cmp`、`isSet`、`pop`-bank、`constProp` 跨循环 ✅
+
+**问题**：D4/D6 的操作数折叠只覆盖算术、设备写、内建、`select`；分支与比较的操作数、
+`isSet` 条件、连续 `pop` 都还没折。
+
+**方案与实测**（语料 `examples` + `testdata/programs` + `ic10code`，`v0.8.43 → v0.8.44`）：
+
+- **分支 / `Cmp` 操作数折叠**（`codegen.foldLoadTerminator` / `foldLoadOperand`）：
+  `u = sp; bgtz u L` → `bgtz sp L`，`u = ireg(rrP); beqz u L` → `beqz rrP L`，
+  `u = sp; d = u > 5` → `sgt d sp 5`。**−16 行**。
+- **跨过一次拷贝**：折叠跳过降低器为变量产生的一次拷贝（`v = sp; x = v; poke x 1` →
+  `poke sp 1`；比较结果先拷贝再分支同理），兑现 D6 里 `poke`/`put`/`get` 的说法。
+- **常量代入分支终止符**：`a := 1; if a < 5` → 无条件（原来常量到不了 `foldBranches`）。**−5 行**。
+- **`constProp` 定点修复**：must 分析**从 ⊤ 起步 + RPO 顺序迭代**，事实才能跨回边（循环里的
+  常量被折进循环体）；RPO 把迭代数压到 O(嵌套深度)，否则随机差分超时。**−25 行**。
+- **`isSet`/`isUnset` → `bdse`/`bdns`**：`branchCond` 新增 `BrSet` 终止符，条件位置省掉 `sdse`
+  （`!` 自动取反；作为值仍是 `sdse`/`sdns`）。**−52 行**。
+- **`pop` 批量折叠（bank）**：连续 ≥5 个 `pop()` → `move rC base` / `pop rrC` / `add` / `ble`（4 行任意 N）。
+- **`licm` 开/关取更短**：外提新增 preheader 可能变长，试两种取更短（有循环时才试）。**−6 行**。
+- **私有栈 mem2reg 别名安全**：`pop`/`peek` 与绝对用户槽共用内存，修掉了「`poke` 被删、`pop` 读到 0」。
+
+累计 **−106 行**（`v0.8.43` 之后 0 个文件变长）；随机差分（优化 vs `IC10C_NO_OPT`）通过。
 
 ---
 

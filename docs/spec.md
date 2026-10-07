@@ -619,11 +619,14 @@ ReferenceId `readByIdSlot(id, i, slt)` / `writeByIdSlot(id, i, slt, v)`（`ls rN
 ### 7.5 设备状态查询
 
 ```go
-if isSet(d0) { ... }            // sdse
-if isUnset(d0) { ... }          // sdns
+if isSet(d0) { ... }            // bdns d0：条件位置直接按设备 Set 分支（省掉 sdse）
+if isUnset(d0) { ... }          // bdse d0
 if isLoadValid(d0, "Temperature") { ... }   // 设备支持读取该 logicType（bdnvl 取反）
 if isStoreValid(d0, "On") { ... }           // 设备支持写入该 logicType（bdnvs 取反）
 ```
+
+> `isSet` / `isUnset` 作为**条件**时折成 `bdns` / `bdse`（`!` 会自动取反）；作为**值**
+> （`x := isSet(d)`）时才是 `sdse` / `sdns`。
 
 > `isLoadValid` / `isStoreValid` 只能在 `if` / `for` 条件中使用（IC10 无对应的置寄存器指令）。
 
