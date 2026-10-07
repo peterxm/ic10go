@@ -520,7 +520,7 @@ func warnTickBudget(name, code string, lineMap []int, diags *diag.Bag) {
 		}
 		seen[line] = true
 		diags.WarnfCode("tick-budget", source.Pos{File: name, Line: line, Col: 1},
-			"this loop can exceed the %d-instruction tick budget; the chip resumes mid-loop on the next tick (see `ic10c tick`)", tick.DefaultLimit)
+			"the worst-case path between two yields exceeds the %d-instruction tick budget; the chip resumes mid-loop on the next tick (see `ic10c tick`)", tick.DefaultLimit)
 	}
 }
 

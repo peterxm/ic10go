@@ -96,6 +96,7 @@ type node struct {
 	op      string
 	args    []string
 	succ    []int // successors within a tick (barrier/halt nodes have none)
+	weight  int   // instruction cost of the node (0 = 1); a summarized call costs 1 + the callee
 	barrier bool
 	halt    bool
 	// dsucc adds the barrier continuation (the instruction after yield/sleep) so
@@ -321,6 +322,125 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		nodes[i] = n
 	}
 
+	// Outlined functions: `jal f` / `j ra` (and the `-al` conditional-call forms)
+	// are calls and returns. The `ra` analysis below is context-insensitive, so a
+	// callee reached from several sites would have its `j ra` connect to every
+	// return site and invent a phantom loop (reported as an unbounded segment).
+	// Summarise each callee instead: a call becomes a straight-line step that
+	// costs the callee's worst case and returns to the site after the call, so
+	// the callee body stays out of the caller's CFG. A callee that loops, yields,
+	// or contains a nested call is left as-is (the conservative path).
+	callTarget := func(n *node) (int, bool) {
+		if n.op == "jal" && len(n.args) == 1 {
+			return resolveTarget(n.line, n.args[0])
+		}
+		if cond, _, withRA, ok := ic10asm.BranchInfo(n.op); ok && withRA {
+			if ti := ic10asm.TargetIndex(cond); ti < len(n.args) {
+				return resolveTarget(n.line, n.args[ti])
+			}
+		}
+		return 0, false
+	}
+	// A callee to summarise must be self-contained: it may branch and loop-free
+	// fall through to `j ra`, but must not call another function or jump into one
+	// (a tail call would return elsewhere). Collect the call entries first.
+	callEntries := map[int]bool{}
+	for _, i := range lines {
+		if t, ok := callTarget(nodes[i]); ok {
+			callEntries[t] = true
+		}
+	}
+	type fnInfo struct {
+		cost int
+		ok   bool
+	}
+	fnCache := map[int]fnInfo{}
+	var summarize func(entry int) (int, bool)
+	summarize = func(entry int) (int, bool) {
+		if info, done := fnCache[entry]; done {
+			return info.cost, info.ok
+		}
+		if _, ok := nodes[entry]; !ok {
+			fnCache[entry] = fnInfo{}
+			return 0, false
+		}
+		memo := map[int]int{}
+		onPath := map[int]bool{}
+		cyc := false
+		var walk func(i int) (int, bool)
+		walk = func(i int) (int, bool) {
+			if onPath[i] {
+				cyc = true // a loop in the body: not summarisable
+				return 0, false
+			}
+			n, ok := nodes[i]
+			if !ok {
+				return 0, false
+			}
+			if n.raReturn {
+				return 1, true // `j ra`: the callee returns
+			}
+			if v, ok := memo[i]; ok {
+				return v, true
+			}
+			if n.barrier || n.halt || len(n.succ) == 0 {
+				return 0, false
+			}
+			if _, isCall := callTarget(n); isCall {
+				return 0, false // nested call: not modelled
+			}
+			if n.op == "j" {
+				if t, ok := resolveTarget(i, n.args[0]); ok && callEntries[t] {
+					return 0, false // tail call into another function
+				}
+			}
+			onPath[i] = true
+			best := 0
+			for _, s := range n.succ {
+				if _, ok := nodes[s]; !ok {
+					continue
+				}
+				v, ok := walk(s)
+				if !ok {
+					// A path that does not return: the callee cannot be
+					// summarised soundly (it might not come back at all).
+					delete(onPath, i)
+					return 0, false
+				}
+				if v > best {
+					best = v
+				}
+			}
+			delete(onPath, i)
+			memo[i] = 1 + best
+			return 1 + best, true
+		}
+		v, ok := walk(entry)
+		if cyc || !ok {
+			fnCache[entry] = fnInfo{}
+			return 0, false
+		}
+		fnCache[entry] = fnInfo{cost: v, ok: true}
+		return v, true
+	}
+	for _, i := range lines {
+		n := nodes[i]
+		t, isCall := callTarget(n)
+		if !isCall {
+			continue
+		}
+		cost, ok := summarize(t)
+		if !ok {
+			continue
+		}
+		if nxt := next(i); nxt >= 0 {
+			n.succ = []int{nxt}
+		} else {
+			n.succ = nil
+		}
+		n.weight = 1 + cost
+	}
+
 	// Refine `j ra` / `jr ra` returns by propagating the possible constant values
 	// of `ra` forward. Connecting every such return to *all* call return sites
 	// can invent a loop when a return site sits inside the return's own
@@ -428,6 +548,36 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		}
 	}
 
+	// An outlined body that nothing reaches (every call to it was summarised
+	// away) must not contribute edges: a stray `j ra` would otherwise look like
+	// a predecessor of its return site and pollute dominance, hiding the real
+	// loop. Drop the edges of unreachable nodes.
+	reach := map[int]bool{}
+	stack := []int{lines[0]}
+	for len(stack) > 0 {
+		u := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if reach[u] {
+			continue
+		}
+		reach[u] = true
+		n := nodes[u]
+		if n == nil {
+			continue
+		}
+		stack = append(stack, n.succ...)
+		if n.barrier {
+			if c := next(u); c >= 0 {
+				stack = append(stack, c)
+			}
+		}
+	}
+	for _, i := range lines {
+		if n := nodes[i]; n != nil && !reach[i] {
+			n.succ = nil
+		}
+	}
+
 	// The dominance/loop CFG adds the barrier continuation, so a loop that spans
 	// a yield (e.g. `for { yield(); ... }`) is seen whole.
 	for _, n := range nodes {
@@ -520,8 +670,9 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		if rem <= 0 {
 			return 0
 		}
+		w := nodeCost(n)
 		if n.barrier || n.halt || len(n.succ) == 0 {
-			return 1 // the terminal instruction itself counts
+			return w // the terminal instruction itself counts
 		}
 		key := dpKey{i, rem, counts}
 		if v, ok := memo[key]; ok {
@@ -540,12 +691,12 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 				}
 				nc[bi]++
 			}
-			v := steps(s, rem-1, nc)
+			v := steps(s, rem-w, nc)
 			if v > best {
 				best, bestTo = v, s
 			}
 		}
-		res := 1 + best
+		res := w + best
 		memo[key] = res
 		choice[key] = bestTo
 		return res
@@ -558,10 +709,13 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 			continue
 		}
 		cost := steps(st, limit+1, [maxTrackedLoops]byte{})
-		seg := Segment{Start: st, Barrier: -1, Cost: cost}
 		if cost > limit {
-			seg.Exceeds = true
+			// The exact count is unknown once it exceeds the budget (the walk
+			// stops there); report limit+1, the documented "exceeds" marker.
+			cost = limit + 1
 		}
+		seg := Segment{Start: st, Barrier: -1, Cost: cost}
+		seg.Exceeds = cost > limit
 		// Reconstruct the worst-case path and find its terminal barrier.
 		cur, rem := st, limit+1
 		counts := [maxTrackedLoops]byte{}
@@ -588,7 +742,8 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 			if bi, ok := edgeIdx[[2]int{cur, to}]; ok {
 				counts[bi]++
 			}
-			cur, rem = to, rem-1
+			rem -= nodeCost(n)
+			cur = to
 		}
 		if seg.Indirect {
 			rep.Indirect = true
@@ -710,6 +865,18 @@ func findLoops(nodes map[int]*node, lines []int, dom map[int]map[int]bool, indir
 	return loops
 }
 
+// nodeCost is the instruction cost of a node: 1, or the summarized callee cost
+// of a rewritten call.
+func nodeCost(n *node) int {
+	if n == nil {
+		return 1
+	}
+	if n.weight > 0 {
+		return n.weight
+	}
+	return 1
+}
+
 // loopBody is the worst-case instructions from the header to a latch along
 // edges inside the loop (one iteration, excluding the back edge).
 func loopBody(nodes map[int]*node, set map[int]bool, header int, latches map[int]bool) int {
@@ -718,7 +885,7 @@ func loopBody(nodes map[int]*node, set map[int]bool, header int, latches map[int
 	var walk func(i int) int
 	walk = func(i int) int {
 		if latches[i] {
-			return 1
+			return nodeCost(nodes[i])
 		}
 		if v, ok := memo[i]; ok {
 			return v
@@ -737,8 +904,8 @@ func loopBody(nodes map[int]*node, set map[int]bool, header int, latches map[int
 			}
 		}
 		onPath[i] = false
-		memo[i] = 1 + best
-		return 1 + best
+		memo[i] = nodeCost(nodes[i]) + best
+		return nodeCost(nodes[i]) + best
 	}
 	return walk(header)
 }
@@ -751,7 +918,7 @@ func loopBodyMin(nodes map[int]*node, set map[int]bool, header int, latches map[
 	var walk func(i int) int
 	walk = func(i int) int {
 		if latches[i] {
-			return 1
+			return nodeCost(nodes[i])
 		}
 		if v, ok := memo[i]; ok {
 			return v
@@ -770,8 +937,8 @@ func loopBodyMin(nodes map[int]*node, set map[int]bool, header int, latches map[
 			}
 		}
 		onPath[i] = false
-		memo[i] = 1 + best
-		return 1 + best
+		memo[i] = nodeCost(nodes[i]) + best
+		return nodeCost(nodes[i]) + best
 	}
 	return walk(header)
 }

@@ -186,6 +186,40 @@ func TestNoPhantomReturnLoop(t *testing.T) {
 	}
 }
 
+// TestMultiCallSiteSummary pins the fix for an outlined function called from
+// several sites: the `ra` analysis is context-insensitive, so `j ra` used to
+// connect to every return site and invent a phantom loop, reporting the segment
+// as unbounded. Each callee is summarised now, so a call is one step that costs
+// the callee and returns to the site after the call.
+func TestMultiCallSiteSummary(t *testing.T) {
+	src := "yield\n" + // 0
+		"jal 7\n" + // 1  (ra = 2)
+		"jal 7\n" + // 2  (ra = 3)
+		"j 0\n" + // 3
+		"hcf\n" + // 4
+		"hcf\n" + // 5
+		"hcf\n" + // 6
+		"s d0 Setting 1\n" + // 7  (callee)
+		"j ra\n" // 8
+	rep, err := Analyze(src, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seg := rep.Segments[len(rep.Segments)-1]
+	if seg.Exceeds {
+		t.Fatalf("multi-call segment reported unbounded:\n%s", rep)
+	}
+	// Two calls (each 1 + the 2-instruction callee) + `j 0` + the yield itself.
+	if seg.Cost != 8 {
+		t.Fatalf("segment cost = %d, want 8:\n%s", seg.Cost, rep)
+	}
+	for _, l := range rep.Loops {
+		if l.Header == 7 {
+			t.Fatalf("phantom loop at the callee:\n%s", rep)
+		}
+	}
+}
+
 func TestUnknownTripIsStillBounded(t *testing.T) {
 	// A self-loop with no detectable induction still must terminate the DP.
 	rep, err := Analyze("yield\nmove r0 1\nj 1\n", 128)

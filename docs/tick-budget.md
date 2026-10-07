@@ -37,10 +37,10 @@ ic10c tick --json printer.icg          # 机器可读
 `tick-budget`），锚在支配循环的源码行，**不影响退出码**：
 
 ```text
-examples/打印机控制.icg:37:1: warning: this loop can exceed the 128-instruction tick budget; the chip resumes mid-loop on the next tick (see `ic10c tick`)
+examples/打印机控制.icg:25:1: warning: the worst-case path between two yields exceeds the 128-instruction tick budget; the chip resumes mid-loop on the next tick (see `ic10c tick`)
 ```
 
-**默认关闭**：几乎每个多机 / 长驻控制程序都会命中（语料 153 个 `.icg` 里 **63 个**），默认打印太吵。
+**默认关闭**：几乎每个多机 / 长驻控制程序都会命中（语料 153 个 `.icg` 里 **62 个**），默认打印太吵。
 该开关传给 `Options.WarnTickBudget`。`build --json` 无论加不加都会在顶层 `tick` 字段给出结构化摘要
 （`{limit, cost, exceeds, loops, segments}`，多芯片取最坏的一块），加 `--tick-warn` 时另带这条诊断。
 编辑器用自己的分析（见下「编辑器诊断」）；库调用默认关，以免在不显示诊断的场景重复分析。
@@ -171,6 +171,12 @@ IC10: 122/128 行 · 1572/4096 字节 · … · 每 tick >128
      对 `ra` 做一遍前向常量传播，`j ra` 只连到该处 `ra` 可能取到的返回点；算不出来才回退到
      「所有返回点」。否则 `jal f` 紧跟的 `move ra r` / `j ra` 续接段会与返回点接出回边，
      凭空造出一个**从不执行**的循环（把本来 fits 的程序报成 `EXCEEDS`）。
+   - **被调函数摘要**（`jal` / `-al` 的目标）：先算「入口 → `j ra`」的最坏代价，只接受
+     loop-free、无嵌套调用、无 tail-call、且每条路径都返回的函数。调用点改写成一条
+     「代价 = 1 + 摘要」的直线指令，`succ` 指向调用后的下一条，函数体不再进入调用者 CFG。
+     否则**同一函数被多个调用点**调用时（outline 后的常见形态），`ra` 的并集收窄不了，
+     `j ra` 会接出幻影回边、把整段报成「无界」——见 [`backlog.md`](backlog.md) E3（`打印机控制`：
+     7 台从「无界」到真实的 267）。
 3. **分段**：入口，以及每个 `yield`/`sleep` 之后的指令，各是一个分段起点。分段 = 从起点
    出发、不穿过边界所能到达的节点集合。
 4. **最坏路径 DP**：`f(节点, 剩余预算) = 1 + max(后继的 f(·, 剩余-1))`，到边界节点计 1。
