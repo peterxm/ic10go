@@ -33,6 +33,15 @@ coverage.txt
 # Local design notes (not distributed)
 /docs/architecture-improvement-plan.md
 /docs/community-captures.md
+/docs/backlog.md
+/docs/sicc-comparison.md
+/docs/ingame-test-plan.md
+/docs/vm-improvements.md
+
+# Personal playthrough / experiment notes (kept locally only)
+/docs/chips/Stationeers-交易玩法总结.md
+/docs/chips/天线芯片-解算实验记录.md
+/docs/chips/交易天线接线图.md
 
 # ic10code/: only the author's own (Chinese-named) scripts are tracked;
 # the rest is third-party community code kept locally only.
