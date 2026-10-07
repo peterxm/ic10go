@@ -153,6 +153,21 @@ func (t *BrValid) Key() string {
 		"|" + blockKey(t.Valid) + "|" + blockKey(t.Invalid)
 }
 
+func (t *BrSet) Successors() []*Block { return []*Block{t.Else, t.Then} }
+func (t *BrSet) Uses() []Value        { return nil }
+func (t *BrSet) Redirect(from, to *Block) {
+	if t.Then == from {
+		t.Then = to
+	}
+	if t.Else == from {
+		t.Else = to
+	}
+}
+func (t *BrSet) Key() string {
+	return "brset|" + t.Dev + "|" + strconv.FormatBool(t.Set) +
+		"|" + blockKey(t.Then) + "|" + blockKey(t.Else)
+}
+
 func (t *BrApprox) Successors() []*Block { return []*Block{t.Else, t.Then} }
 func (t *BrApprox) Uses() []Value        { return []Value{t.A, t.B, t.Tol} }
 func (t *BrApprox) Redirect(from, to *Block) {
@@ -212,6 +227,7 @@ func (t *Goto) RewriteUses(func(Value) Value)    {}
 func (t *Call) RewriteUses(func(Value) Value)    {}
 func (t *JmpRA) RewriteUses(func(Value) Value)   {}
 func (t *BrValid) RewriteUses(func(Value) Value) {}
+func (t *BrSet) RewriteUses(func(Value) Value)   {}
 
 func (t *JmpDyn) RewriteUses(rewrite func(Value) Value) {
 	if t.Target != nil {

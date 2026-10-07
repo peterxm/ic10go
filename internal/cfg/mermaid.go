@@ -91,6 +91,8 @@ func edgesOf(blk *ir.Block) []edge {
 		return []edge{{t.Target, "call"}, {t.Return, "fallthrough"}}
 	case *ir.BrValid:
 		return []edge{{t.Valid, "valid"}, {t.Invalid, "invalid"}}
+	case *ir.BrSet:
+		return []edge{{t.Then, "then"}, {t.Else, "else"}}
 	case *ir.BrApprox:
 		return []edge{{t.Then, "then"}, {t.Else, "else"}}
 	case *ir.BrApproxZero:
@@ -120,6 +122,11 @@ func termSummary(t ir.Term) string {
 			return "bdnvs"
 		}
 		return "bdnvl"
+	case *ir.BrSet:
+		if x.Set {
+			return "bdse"
+		}
+		return "bdns"
 	case *ir.BrApprox:
 		if x.Negate {
 			return "bna"

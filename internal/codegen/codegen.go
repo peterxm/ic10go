@@ -141,6 +141,8 @@ func fallsThroughTo(prev, b *ir.Block) bool {
 		return t.Then == b || t.Else == b
 	case *ir.BrValid:
 		return t.Valid == b || t.Invalid == b
+	case *ir.BrSet:
+		return t.Then == b || t.Else == b
 	}
 	return false
 }
@@ -423,6 +425,20 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 			add(m+" "+t.Dev+" "+t.Logic+" ", t.Invalid, b.Func)
 			if t.Valid != next {
 				add("j ", t.Valid, b.Func)
+			}
+		case *ir.BrSet:
+			thenM, elseM := "bdse", "bdns"
+			if !t.Set {
+				thenM, elseM = "bdns", "bdse"
+			}
+			switch {
+			case t.Else == next:
+				add(thenM+" "+t.Dev+" ", t.Then, b.Func)
+			case t.Then == next:
+				add(elseM+" "+t.Dev+" ", t.Else, b.Func)
+			default:
+				add(thenM+" "+t.Dev+" ", t.Then, b.Func)
+				add("j ", t.Else, b.Func)
 			}
 		case *ir.Br:
 			thenNext := t.Then == next

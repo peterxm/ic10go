@@ -435,6 +435,15 @@ type BrValid struct {
 	Invalid *Block
 }
 
+// BrSet branches on a device's "set" state (IC10 bdse/bdns). Set selects which
+// branch is taken when the device is set: Then when Set, Else otherwise.
+type BrSet struct {
+	Dev  string
+	Set  bool
+	Then *Block
+	Else *Block
+}
+
 // BrApprox branches when a ≈ b within tol (IC10 bap) or, when Negate is set,
 // when a is not ≈ b (IC10 bna). It takes three operands, so it cannot use Br.
 type BrApprox struct {
@@ -472,6 +481,7 @@ func (*Call) isTerm()         {}
 func (*JmpRA) isTerm()        {}
 func (*JmpDyn) isTerm()       {}
 func (*BrValid) isTerm()      {}
+func (*BrSet) isTerm()        {}
 func (*BrApprox) isTerm()     {}
 func (*BrApproxZero) isTerm() {}
 func (*BrCall) isTerm()       {}

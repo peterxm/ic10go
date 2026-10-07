@@ -1667,6 +1667,21 @@ func (l *lowerer) branchCond(e ast.Expr, thenB, elseB *ir.Block) {
 					Invalid: invalid,
 				})
 				return
+			case "isSet", "isUnset":
+				// if isSet(d) { } -> bdse/bdns d (no separate sdse line).
+				if len(call.Args) != 1 {
+					break
+				}
+				dev, ok := l.deviceName(call.Args[0])
+				if !ok {
+					break
+				}
+				set := id.Name == "isSet"
+				if neg {
+					set = !set
+				}
+				l.b.SetTerm(&ir.BrSet{Dev: dev, Set: set, Then: thenB, Else: elseB})
+				return
 			case "approx", "notApprox":
 				if len(call.Args) == 3 {
 					l.b.SetTerm(&ir.BrApprox{

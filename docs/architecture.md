@@ -355,6 +355,7 @@ VS Code `icg.redundantDeviceWrites`）会删除**同一段直落代码**内、�
 |--------|------|
 | `a + b` | `add d a b` |
 | `if a < b { ... }` | `bge a b Lelse` + body |
+| `if isSet(d) { ... }` | `bdns d Lelse` + body（`isUnset`/`!` 取反为 `bdse`；省掉一条 `sdse`） |
 | `if c { x = 1 } else { x = 0 }` | `select x c 1 0` |
 | `c ? a : b` | `select d c a b` |
 | `!a` | `seqz d a` |
