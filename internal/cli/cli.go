@@ -140,6 +140,11 @@ var nanSafeFlag = Flag{Long: "--nan-safe", Desc: text{
 	ZH: "生成对 NaN 正确的比较：操作数可能为 NaN 时不对 `< <= > >=` 取反（更长；游戏里 NaN 下 `!(a<b)` 不是 `a>=b`）；默认关闭",
 }}
 
+var tickWarnFlag = Flag{Long: "--tick-warn", Desc: text{
+	EN: "warn on stderr when a loop's worst case between two yields exceeds the 128-instruction per-tick budget",
+	ZH: "循环最坏一圈超过每 tick 128 条指令预算时在 stderr 告警（默认关闭）",
+}}
+
 var spillFlag = Flag{Long: "--spill", Arg: "db|stack", Desc: text{
 	EN: "register spill storage: get/put db (default, 1 line per load) or peek/poke stack (5 lines, fallback)",
 	ZH: "寄存器溢出存放：get/put db（默认，每次加载 1 行）或 peek/poke 栈（5 行，回退）",
@@ -273,6 +278,7 @@ var Commands = []Command{
 			relJumpFlag,
 			legacyByIDFlag,
 			nanSafeFlag,
+			tickWarnFlag,
 			spillFlag,
 			dynamicStackFlag,
 			userStackFlag,

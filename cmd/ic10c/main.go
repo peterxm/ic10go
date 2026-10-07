@@ -259,6 +259,7 @@ func cmdBuild(args []string) int {
 	fast := false
 	relJump := false
 	nanSafe := false
+	tickWarn := false
 	legacyByID := false
 	dataAccessStack := false
 	spillStack := false
@@ -286,6 +287,8 @@ func cmdBuild(args []string) int {
 			legacyByID = true
 		case "--nan-safe":
 			nanSafe = true
+		case "--tick-warn":
+			tickWarn = true
 		case "--unsafe":
 			unsafe = true
 		case "--auto-table":
@@ -391,6 +394,7 @@ func cmdBuild(args []string) int {
 		MaxLineLen:            lim.line,
 		Imports:               true,
 		LibDirs:               libDirs,
+		WarnTickBudget:        tickWarn,
 	}
 
 	data, err := os.ReadFile(files[0])

@@ -191,6 +191,8 @@
 | **P4** | D6 | 间接寄存器操作数折叠（`rrN` 目标/源） | 省行 | 小 | ✅ |
 | **P4** | D8 | 折叠扩展：分支/`Cmp` 操作数、`isSet`→`bdse`、`pop`→`rrN`、`constProp` 跨循环、`licm` 取更短 | 省行 | 小 | ✅ |
 | **P4** | D9 | `\|\|`/`&&` 短路穿透变量拷贝（`opt` 看穿 `x = cmp`） | 省行 | 小 | ✅ |
+| **P4** | E1 | 每 tick 超预算：**编译期 warning**（`ic10c build`） | tick 正确性 | 小 | ✅ |
+| **P4** | E2 | 每 tick 超预算：**自动拆相**（评估中） | tick 正确性 | 大 | ⬜ |
 | **P5** | B3 | 小记录**多返回值**（非容器） | 表达力 | 中-大 | ✅ |
 | **P6** | A3 | 编译期字符串（拼接 + hash） | 表达力 | 中 | ✅ |
 
@@ -491,6 +493,28 @@ if c == 3 || full { … }
 （`"A" + "B"`，可嵌套），在编译期折叠：`hash("Structure" + "GasSensor")` 得到与
 `hash("StructureGasSensor")` 相同的 CRC-32，`str("Re" + "ady!")` 输出 `STR("Ready!")`。
 更完整的文本库（查找/切片/parse）未做。
+
+---
+
+## E — 每 tick 预算（`ic10c tick` 主题）
+
+游戏每 tick 最多执行 128 条；一个循环一圈超过它就会**跨 tick 被切开**，时序随之改变
+（详见 [`tick-budget.md`](tick-budget.md)）。`ic10c tick` 与编辑器已有完整分析，本组把它带进编译期。
+
+### E1 编译期 warning ✅
+
+`ic10c build --tick-warn` 对每个**超限的支配循环**在 stderr 打一条警告（诊断 code `tick-budget`，
+锚在支配循环的源码行，**不影响退出码**）；`build --json` 无论加不加都在顶层 `tick` 字段给出结构化
+摘要（`{limit, cost, exceeds, loops, segments}`）。该开关传给 `Options.WarnTickBudget`，**默认关**：
+语料 153 个 `.icg` 里 **63 个**会命中（多在多机/长驻控制程序），默认打印太吵。编辑器用自己更丰富的
+Information 诊断（`internal/lsp`）；库调用默认关，以免在不显示诊断的场景重复跑分析。
+
+### E2 自动拆相 ⬜（待评估）
+
+把「每 tick 全跑」的过长循环自动拆成快/慢两相（或自动插 `yield`），本质是**自动生成一个小状态机**。
+难点：判断哪些副作用能在不同 tick 间安全错开、跨 tick 保留中间状态（要占寄存器/栈）、以及
+`yield` 位置对时序的影响。`examples/自动打印机产量控制-多机-排料保护-表驱动.icg` 是手写范例
+（`fastStep`/`slowStep`）。先评估可行性与实际收益，再决定是否实现。
 
 ---
 

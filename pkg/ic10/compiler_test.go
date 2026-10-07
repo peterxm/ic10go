@@ -238,6 +238,41 @@ func TestLoopWithoutYieldWarns(t *testing.T) {
 	}
 }
 
+// A loop that can run more than the per-tick instruction budget between yields
+// gets a tick-budget warning when Options.WarnTickBudget is set (the chip
+// resumes mid-loop), but still compiles. It is off by default.
+func TestTickBudgetWarning(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		warn bool
+	}{
+		{"over", "func main() {\n    for {\n        yield()\n        c := 0\n        for i := 0; i < 200; i++ {\n            c += d0.Temperature\n        }\n        d1.Setting = c\n    }\n}\n", true},
+		{"fits", "func main() {\n    for {\n        yield()\n        d1.Setting = d0.Temperature\n    }\n}\n", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, diags, err := ic10.CompileWithOptions("t.icg", []byte(tc.src), ic10.Options{WarnTickBudget: true})
+			if err != nil || diags.HasErrors() {
+				t.Fatalf("compile: %v %v", diags.Diags, err)
+			}
+			got := false
+			for _, d := range diags.Diags {
+				if d.Code == "tick-budget" {
+					got = true
+				}
+			}
+			if got != tc.warn {
+				t.Fatalf("tick-budget = %v, want %v (diags=%+v)", got, tc.warn, diags.Diags)
+			}
+			// Off by default: a plain Compile must not run the analysis.
+			if _, def, _ := ic10.Compile("t.icg", []byte(tc.src)); len(def.Diags) != 0 {
+				t.Fatalf("default Compile produced diagnostics: %+v", def.Diags)
+			}
+		})
+	}
+}
+
 func TestUnknownLogicTypeWarns(t *testing.T) {
 	_, diags, _ := ic10.Compile("test.icg", []byte("func main() { d0.Temperatur = 1 }\n"))
 	if diags.HasErrors() {

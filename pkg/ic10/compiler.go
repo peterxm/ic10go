@@ -19,6 +19,7 @@ import (
 	"ic10go/internal/regalloc"
 	"ic10go/internal/sema"
 	"ic10go/internal/source"
+	"ic10go/internal/tick"
 )
 
 // NumRegs is the number of general-purpose IC10 CPU registers.
@@ -77,6 +78,14 @@ type Options struct {
 	// an `isNaN` guard). Off by default: the shorter negated form is used and
 	// the program is expected to handle NaN (e.g. from `batch.read`) itself.
 	NaNSafe bool
+
+	// WarnTickBudget adds a warning when a loop's worst-case instruction count
+	// between two yields exceeds the game's 128-instruction per-tick budget, so
+	// the tick is cut mid-loop (see `ic10c tick`). Off by default (nearly every
+	// long-running program trips it): it runs the tick analysis on the compiled
+	// code, and the editor already reports the same condition from its own
+	// analysis. `ic10c build --tick-warn` turns it on.
+	WarnTickBudget bool
 
 	// SpillStack keeps register spills in the IC stack with a peek/poke
 	// save-restore sequence (5 lines per load, reserves r15 as scratch). The
@@ -421,6 +430,9 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 		if err != nil {
 			return res, diags, err
 		}
+		if opts.WarnTickBudget {
+			warnTickBudget(name, res.Code, res.LineMap, diags)
+		}
 		dl, derr := dataLoaderFor(info, opts)
 		if derr != nil {
 			return Result{}, diags, derr
@@ -454,6 +466,9 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			continue
 		}
 		res, err := compileInfo(info, opts, cdiags)
+		if err == nil && opts.WarnTickBudget {
+			warnTickBudget(name, res.Code, res.LineMap, cdiags)
+		}
 		mergeDiags(diags, cdiags)
 		if err != nil {
 			if firstErr == nil {
@@ -476,6 +491,37 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 		return Result{}, diags, firstErr
 	}
 	return Result{Code: results[0].Code, LineMap: results[0].LineMap, Loader: results[0].Loader, Loaders: results[0].Loaders, Chips: results, Setup: results[0].Setup}, diags, firstErr
+}
+
+// warnTickBudget adds a warning for each yield-delimited run whose worst-case
+// instruction count exceeds the per-tick budget. The game pauses a chip after
+// 128 instructions (tick.DefaultLimit), so such a loop resumes mid-iteration on
+// the next tick; the warning points at the dominant loop's source line (see
+// `ic10c tick`).
+func warnTickBudget(name, code string, lineMap []int, diags *diag.Bag) {
+	if code == "" {
+		return
+	}
+	rep, err := tick.AnalyzeOpts(code, tick.Options{Limit: tick.DefaultLimit, LineMap: lineMap})
+	if err != nil {
+		return
+	}
+	seen := map[int]bool{}
+	for _, s := range rep.Segments {
+		if !s.Exceeds {
+			continue
+		}
+		line := s.DominantSource
+		if line == 0 {
+			line = s.Source
+		}
+		if line == 0 || seen[line] {
+			continue
+		}
+		seen[line] = true
+		diags.WarnfCode("tick-budget", source.Pos{File: name, Line: line, Col: 1},
+			"this loop can exceed the %d-instruction tick budget; the chip resumes mid-loop on the next tick (see `ic10c tick`)", tick.DefaultLimit)
+	}
 }
 
 // busUse records which chips read and write one bus slot.

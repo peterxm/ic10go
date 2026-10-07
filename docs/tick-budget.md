@@ -31,6 +31,20 @@ ic10c tick --json printer.icg          # 机器可读
 分析的是**编译后的最终 IC10**（已包含寄存器分配、溢出、优化后的真实行数）。
 `.ic` / `.ic10`（或其它后缀）按原生 IC10 解析。
 
+### 编译时提醒（`ic10c build --tick-warn`）
+
+`ic10c build --tick-warn` 会对**每个超限的支配循环**在 stderr 打一条警告（诊断 code
+`tick-budget`），锚在支配循环的源码行，**不影响退出码**：
+
+```text
+examples/打印机控制.icg:37:1: warning: this loop can exceed the 128-instruction tick budget; the chip resumes mid-loop on the next tick (see `ic10c tick`)
+```
+
+**默认关闭**：几乎每个多机 / 长驻控制程序都会命中（语料 153 个 `.icg` 里 **63 个**），默认打印太吵。
+该开关传给 `Options.WarnTickBudget`。`build --json` 无论加不加都会在顶层 `tick` 字段给出结构化摘要
+（`{limit, cost, exceeds, loops, segments}`，多芯片取最坏的一块），加 `--tick-warn` 时另带这条诊断。
+编辑器用自己的分析（见下「编辑器诊断」）；库调用默认关，以免在不显示诊断的场景重复分析。
+
 ### 输出
 
 ```text
