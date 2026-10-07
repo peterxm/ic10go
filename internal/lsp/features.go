@@ -1498,6 +1498,7 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 				"body":    lp.Body,
 				"bodyMin": lp.BodyMin,
 				"trips":   lp.Trips,
+				"spans":   lp.Spans,
 			})
 		}
 	}
@@ -1723,6 +1724,17 @@ func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 	return out
 }
 
+// spansSuffix marks a loop that contains a yield/sleep and so spans ticks.
+func spansSuffix(spans, zh bool) string {
+	if !spans {
+		return ""
+	}
+	if zh {
+		return "（跨 tick）"
+	}
+	return " (spans ticks)"
+}
+
 // tickLoopList summarises every loop (best..worst per iteration × trips) as one
 // information diagnostic, anchored at the first loop's line. Native IC10 has no
 // other place to show the full list.
@@ -1739,18 +1751,19 @@ func tickLoopList(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 			if lp.BodyMin != lp.Body {
 				body = fmt.Sprintf("%d..%d", lp.BodyMin, lp.Body)
 			}
-			trips := "?"
-			if lp.Trips > 0 {
-				trips = strconv.Itoa(lp.Trips)
-			}
 			where := fmt.Sprintf("line %d", lp.Header+1)
 			if lp.Source > 0 {
 				where = fmt.Sprintf("L%d", lp.Source)
 			}
-			if zh {
-				lines = append(lines, fmt.Sprintf("源码 %s：每圈 %s 条 × %s 次", where, body, trips))
-			} else {
-				lines = append(lines, fmt.Sprintf("%s: %s x %s", where, body, trips))
+			switch {
+			case zh && lp.Trips > 0:
+				lines = append(lines, fmt.Sprintf("源码 %s：每圈 %s 条 × %d 次%s", where, body, lp.Trips, spansSuffix(lp.Spans, true)))
+			case zh:
+				lines = append(lines, fmt.Sprintf("源码 %s：每圈 %s 条 × 迭代次数未知%s", where, body, spansSuffix(lp.Spans, true)))
+			case lp.Trips > 0:
+				lines = append(lines, fmt.Sprintf("%s: %s x %d iterations%s", where, body, lp.Trips, spansSuffix(lp.Spans, false)))
+			default:
+				lines = append(lines, fmt.Sprintf("%s: %s x unknown iterations%s", where, body, spansSuffix(lp.Spans, false)))
 			}
 			if first == 0 && lp.Source > 0 {
 				first = lp.Source
@@ -1760,9 +1773,9 @@ func tickLoopList(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 	if len(lines) == 0 {
 		return nil
 	}
-	head := "循环分析（每圈 最快..最慢 条 × 迭代次数）："
+	head := fmt.Sprintf("循环分析：共 %d 个循环（每圈 最快..最慢 条）：", len(lines))
 	if !zh {
-		head = "Loop analysis (best..worst instructions per iteration x trips):"
+		head = fmt.Sprintf("Loop analysis: %d loop(s) (best..worst instructions per iteration):", len(lines))
 	}
 	msg := head + "\n" + strings.Join(lines, "\n")
 	line := 0
@@ -1801,6 +1814,7 @@ func (s *Server) publishNativeStats(w *bufio.Writer, uri, text string) {
 				"body":    lp.Body,
 				"bodyMin": lp.BodyMin,
 				"trips":   lp.Trips,
+				"spans":   lp.Spans,
 			})
 		}
 	}

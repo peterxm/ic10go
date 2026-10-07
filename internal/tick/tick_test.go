@@ -66,20 +66,32 @@ func TestLoopExceeds(t *testing.T) {
 	}
 }
 
-func TestTickLoopNotReported(t *testing.T) {
+func TestTickLoopReported(t *testing.T) {
 	// yield; r0=0; do { r0+=1 } while r0<4; j 0
-	// The outer loop spans the yield (the tick loop) and must not be listed; the
-	// inner counting loop is.
+	// The outer loop spans the yield (the tick loop) and is listed with Spans=true;
+	// the inner counting loop is listed too.
 	src := "yield\nmove r0 0\nadd r0 r0 1\nblt r0 4 2\nj 0\n"
 	rep, err := Analyze(src, 128)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rep.Loops) != 1 {
-		t.Fatalf("loops = %d, want 1 (only the inner loop):\n%s", len(rep.Loops), rep)
+	if len(rep.Loops) != 2 {
+		t.Fatalf("loops = %d, want 2 (outer tick loop + inner):\n%s", len(rep.Loops), rep)
 	}
-	if rep.Loops[0].Header != 2 || rep.Loops[0].Trips != 4 {
-		t.Fatalf("loop = %+v, want header 2 trips 4", rep.Loops[0])
+	var inner, outer *Loop
+	for i := range rep.Loops {
+		switch rep.Loops[i].Header {
+		case 0:
+			outer = &rep.Loops[i]
+		case 2:
+			inner = &rep.Loops[i]
+		}
+	}
+	if outer == nil || !outer.Spans {
+		t.Fatalf("outer tick loop missing or not Spans: %+v", rep.Loops)
+	}
+	if inner == nil || inner.Trips != 4 {
+		t.Fatalf("inner loop = %+v, want header 2 trips 4", rep.Loops)
 	}
 	if rep.Segments[1].Exceeds {
 		t.Fatalf("segment should fit:\n%s", rep)
@@ -97,8 +109,14 @@ func TestSourceMapAndDominant(t *testing.T) {
 	if got := rep.Segments[1].Source; got != 11 {
 		t.Fatalf("segment source = %d, want 11", got)
 	}
-	if len(rep.Loops) != 1 || rep.Loops[0].Source != 12 {
-		t.Fatalf("loop source = %+v, want header source 12", rep.Loops)
+	var inner *Loop
+	for i := range rep.Loops {
+		if rep.Loops[i].Header == 2 {
+			inner = &rep.Loops[i]
+		}
+	}
+	if inner == nil || inner.Source != 12 {
+		t.Fatalf("loop source = %+v, want a loop with header source 12", rep.Loops)
 	}
 	if rep.Segments[1].Dominant != 2 || rep.Segments[1].DominantSource != 12 {
 		t.Fatalf("dominant = %d (src %d), want 2 (src 12)",

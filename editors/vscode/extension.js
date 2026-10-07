@@ -1499,8 +1499,9 @@ class LspClient {
                     : `${lp.body}`;
                 const where = lp.source ? `src L${lp.source}` : `line ${lp.header}`;
                 const trips = lp.trips > 0 ? `${lp.trips}` : '?';
-                tips.push(t(`loop ${where}: ${body} instructions x ${trips} iterations (best..worst per iteration)`,
-                    `循环 ${where}：每圈 ${body} 条 × ${trips} 次（最快..最慢）`));
+                const spans = lp.spans ? t(' [spans ticks]', '（跨 tick）') : '';
+                tips.push(t(`loop ${where}: ${body} instructions x ${trips} iterations (best..worst per iteration)${spans}`,
+                    `循环 ${where}：每圈 ${body} 条 × ${trips} 次（最快..最慢）${spans}`));
             }
         }
         if (p.stackUnbounded) tips.push(t('push depth is unbounded', 'push 深度无界'));

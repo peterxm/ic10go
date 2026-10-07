@@ -67,14 +67,15 @@ type Segment struct {
 
 // Loop is a natural loop found in the program (informational).
 type Loop struct {
-	Header  int `json:"header"`           // 0-based line of the loop header (branch back target)
-	Latch   int `json:"latch"`            // 0-based line of the branch that jumps back
-	Start   int `json:"start"`            // lowest line in the loop body
-	End     int `json:"end"`              // highest line in the loop body
-	Body    int `json:"body"`             // worst-case (longest) instructions in one iteration
-	BodyMin int `json:"bodyMin"`          // best-case (shortest) instructions in one iteration
-	Trips   int `json:"trips"`            // detected constant trip count, or 0 when unknown
-	Source  int `json:"source,omitempty"` // 1-based source line of Header (with Options.LineMap)
+	Header  int  `json:"header"`           // 0-based line of the loop header (branch back target)
+	Latch   int  `json:"latch"`            // 0-based line of the branch that jumps back
+	Start   int  `json:"start"`            // lowest line in the loop body
+	End     int  `json:"end"`              // highest line in the loop body
+	Body    int  `json:"body"`             // worst-case (longest) instructions in one iteration
+	BodyMin int  `json:"bodyMin"`          // best-case (shortest) instructions in one iteration
+	Trips   int  `json:"trips"`            // detected constant trip count, or 0 when unknown
+	Spans   bool `json:"spans,omitempty"`  // the loop contains a yield/sleep and so spans ticks
+	Source  int  `json:"source,omitempty"` // 1-based source line of Header (with Options.LineMap)
 }
 
 // Report is the analysis result.
@@ -151,12 +152,27 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		return -1
 	}
 
+	// norm moves a resolved target onto the next real instruction: a label sits
+	// on a blank/comment line of its own, but only instruction lines have nodes.
+	norm := func(t int) (int, bool) {
+		if t < 0 {
+			return 0, false
+		}
+		for t < len(instrs) && instrs[t] == nil {
+			t++
+		}
+		if t >= len(instrs) {
+			return 0, false
+		}
+		return t, true
+	}
+
 	resolveTarget := func(cur int, s string) (int, bool) {
 		if l, ok := prog.Labels[s]; ok {
-			return l, true
+			return norm(l)
 		}
 		if v, err := strconv.Atoi(s); err == nil {
-			return v, true
+			return norm(v)
 		}
 		return 0, false
 	}
@@ -210,7 +226,11 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 			}
 		case ins.Op == "jr":
 			if v, err := strconv.Atoi(ins.Args[0]); err == nil {
-				n.succ = []int{i + v}
+				if t, ok := norm(i + v); ok {
+					n.succ = []int{t}
+				} else {
+					n.indirect = true
+				}
 			} else if len(calls) > 0 {
 				n.succ = append([]int(nil), calls...)
 				n.indirect = true
@@ -224,7 +244,7 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 				var tok bool
 				if relative {
 					if v, err := strconv.Atoi(ins.Args[ti]); err == nil {
-						target, tok = i+v, true
+						target, tok = norm(i + v)
 					}
 				} else {
 					target, tok = resolveTarget(i, ins.Args[ti])
@@ -498,13 +518,7 @@ func findLoops(nodes map[int]*node, lines []int, dom map[int]map[int]bool, indir
 	var loops []Loop
 	for _, h := range headers {
 		set := naturalLoop(nodes, h, byHeader[h])
-		// A loop that contains a yield/sleep spans ticks: it is the tick loop, and
-		// the per-segment report already covers its worst case. Only report loops
-		// that can run to completion inside one tick.
-		if containsBarrier(nodes, set) {
-			continue
-		}
-		l := Loop{Header: h, Trips: 0}
+		l := Loop{Header: h, Trips: 0, Spans: containsBarrier(nodes, set)}
 		l.Start, l.End = h, h
 		for x := range set {
 			if x < l.Start {
