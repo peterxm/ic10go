@@ -90,3 +90,28 @@ func TestOrderingBranchNaNDefault(t *testing.T) {
 		t.Fatalf("want the shorter negated form by default:\n%s", code)
 	}
 }
+
+// `if isNaN(x) { body }` must run the body when x is NaN, in both modes: a NaN
+// branch is never negated (there is no branch-if-not-NaN).
+func TestFuseNaNBodyRunsOnNaN(t *testing.T) {
+	for _, opts := range []ic10.Options{{}, {NaNSafe: true}} {
+		res, diags, err := ic10.CompileResult("t.icg", []byte(
+			"func main() {\n    x := nan\n    r := 0\n    if isNaN(x) { r = r + 10 }\n    d0.On = r\n    yield()\n}\n"), opts)
+		if err != nil || diags.HasErrors() {
+			t.Fatalf("opts %+v: compile: err=%v diags=%v", opts, err, diags.Diags)
+		}
+		got, runErr := runWrites(res.Code, nil)
+		if runErr {
+			t.Fatalf("opts %+v: run error:\n%s", opts, res.Code)
+		}
+		found := false
+		for _, w := range got {
+			if w == "d0.On=10" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("opts %+v: isNaN(nan) body did not run; writes=%v\n%s", opts, got, res.Code)
+		}
+	}
+}

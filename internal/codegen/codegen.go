@@ -466,7 +466,13 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID, n
 		case *ir.Br:
 			thenNext := t.Then == next
 			elseNext := t.Else == next
-			inv := ni == nil || ni.branchInvertible(b, t)
+			// `inv` reports whether the branch may be negated: equality and
+			// zero tests always, a NaN test never, and an ordering test when the
+			// NaNSafe analysis proved the operands (or that check is disabled).
+			inv := t.Cond.Invertible()
+			if !inv && t.Cond != ir.NaN {
+				inv = ni == nil || ni.branchInvertible(b, t)
+			}
 			emitBr := func(text string, target *ir.Block) {
 				add(text, target, b.Func)
 				lines[len(lines)-1].safeInvert = inv
@@ -911,7 +917,10 @@ func foldLoadTerminator(instrs []ir.Instr, i int, blk *ir.Block, next *ir.Block,
 	if !isLoaded(br.A) && !isLoaded(br.B) {
 		return nil, false
 	}
-	inv := ni == nil || ni.branchInvertible(blk, br)
+	inv := br.Cond.Invertible()
+	if !inv && br.Cond != ir.NaN {
+		inv = ni == nil || ni.branchInvertible(blk, br)
+	}
 	mk := func(c ir.Cond, target *ir.Block) line {
 		return line{text: branchTextFolded(c, br.A, br.B, loaded, operand, colors) + " ", target: target, fn: fn, src: src, safeInvert: inv}
 	}
