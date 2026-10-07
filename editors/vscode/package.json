@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.50",
+  "version": "0.7.51",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -25,6 +25,7 @@
     "onCommand:icg.disasm",
     "onCommand:icg.graph",
     "onCommand:icg.tick",
+    "onCommand:icg.tickPanel",
     "onCommand:icg.restartServer",
     "onView:icg.bench",
     "onCommand:icg.bench.connect",
@@ -290,6 +291,11 @@
         "command": "icg.tick",
         "title": "%cmd.tick%",
         "icon": "$(pulse)"
+      },
+      {
+        "command": "icg.tickPanel",
+        "title": "%cmd.tickPanel%",
+        "icon": "$(graph)"
       },
       {
         "command": "icg.restartServer",

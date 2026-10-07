@@ -48,6 +48,9 @@ function activate(context) {
     context.subscriptions.push(
         vscode.commands.registerCommand('icg.tick', () => client.showTick())
     );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('icg.tickPanel', () => client.showTickPanel())
+    );
     // Re-analyse open .icg files when any .icg file changes on disk, so editing
     // an imported file refreshes the documents that import it.
     const watcher = vscode.workspace.createFileSystemWatcher('**/*.icg');
@@ -830,6 +833,155 @@ class LspClient {
             editor.selection = sel;
             editor.revealRange(sel, vscode.TextEditorRevealType.InCenter);
         }, ext);
+    }
+
+    // showTickPanel opens a persistent panel listing every segment and loop of
+    // the active file (refreshed on save / editor switch); clicking a row jumps
+    // to the source line.
+    async showTickPanel() {
+        const editor = vscode.window.activeTextEditor;
+        const id = editor && editor.document.languageId;
+        if (!editor || (id !== 'icg' && id !== 'ic10')) {
+            vscode.window.showWarningMessage(
+                t('IC10 Go: open a .icg or .ic10 file first.', 'IC10 Go: 请先打开一个 .icg 或 .ic10 文件。')
+            );
+            return;
+        }
+        this.tickDoc = editor.document;
+        if (!this.tickPanel) {
+            this.tickPanel = vscode.window.createWebviewPanel(
+                'icg.tick',
+                t('IC10: per-tick budget', 'IC10：每 tick 指令预算'),
+                vscode.ViewColumn.Beside,
+                { enableScripts: true, retainContextWhenHidden: true }
+            );
+            const subs = [];
+            this.tickPanel.onDidDispose(() => {
+                this.tickPanel = undefined;
+                for (const s of subs) s.dispose();
+            });
+            this.tickPanel.webview.onDidReceiveMessage((m) => {
+                if (!m) return;
+                if (m.type === 'jump') this.jumpToLine(m.line);
+                else if (m.type === 'refresh') this.refreshTick();
+            });
+            subs.push(
+                vscode.workspace.onDidSaveTextDocument((d) => {
+                    if (this.tickPanel && this.tickDoc && d.uri.toString() === this.tickDoc.uri.toString()) this.refreshTick();
+                })
+            );
+            subs.push(
+                vscode.window.onDidChangeActiveTextEditor((e) => {
+                    if (!this.tickPanel || !e) return;
+                    const lid = e.document.languageId;
+                    if (lid === 'icg' || lid === 'ic10') {
+                        this.tickDoc = e.document;
+                        this.refreshTick();
+                    }
+                })
+            );
+        }
+        this.tickPanel.reveal(vscode.ViewColumn.Beside);
+        await this.refreshTick();
+    }
+
+    async jumpToLine(line) {
+        const doc = this.tickDoc;
+        if (!doc) return;
+        const pos = new vscode.Position(Math.max(0, (line || 1) - 1), 0);
+        const ed = await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preserveFocus: false });
+        ed.selection = new vscode.Selection(pos, pos);
+        ed.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+    }
+
+    async refreshTick() {
+        if (!this.tickPanel || !this.tickDoc) return;
+        const doc = this.tickDoc;
+        const panel = this.tickPanel;
+        const ext = doc.languageId === 'ic10' ? '.ic10' : '.icg';
+        await this.withTempFile(doc, async (tmp) => {
+            const res = await this.execCli(['tick', '--json', ...this.libArgs(), tmp]);
+            if (panel !== this.tickPanel) return; // closed while running
+            const reports = this.parseJSONStream(res.stdout);
+            const name = doc.uri && doc.uri.scheme === 'file' ? path.basename(doc.fileName || '') : '';
+            panel.webview.html = this.tickHtml(reports, reports.length ? name : res.stderr || t('no data', '无数据'));
+        }, ext);
+    }
+
+    // tickHtml renders the per-tick report: one block per chip with a segments
+    // table and a loops table; rows carry data-line and post a jump message.
+    tickHtml(reports, subtitle) {
+        const nonce = String(Date.now()) + Math.random().toString(36).slice(2);
+        const esc = (s) =>
+            String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        let body = '';
+        for (const rep of reports) {
+            const chip = rep.chip ? t(`chip ${rep.chip}`, `芯片 ${rep.chip}`) : '';
+            const segRows = (rep.segments || [])
+                .map((s) => {
+                    const start = s.source > 0 ? s.source : s.start + 1;
+                    const cost = s.exceeds ? `>${rep.limit}` : `${s.cost}`;
+                    const dom = s.dominantSource > 0 ? `L${s.dominantSource}` : '–';
+                    const cls = s.exceeds ? 'bad' : 'ok';
+                    const label = s.exceeds ? t('exceeds', '超限') : 'fits';
+                    return `<tr class="click" data-line="${start}"><td>L${start}</td><td class="num">${cost} / ${rep.limit}</td><td class="${cls}">${label}</td><td>${dom}</td></tr>`;
+                })
+                .join('');
+            const loopRows = (rep.loops || [])
+                .map((lp) => {
+                    const line = lp.source > 0 ? lp.source : lp.header + 1;
+                    const bodyTxt = lp.bodyMin !== undefined && lp.bodyMin !== lp.body ? `${lp.bodyMin}..${lp.body}` : `${lp.body}`;
+                    const trips = lp.trips > 0 ? `${lp.trips}` : '?';
+                    const spans = lp.spans ? t('yes', '是') : '';
+                    return `<tr class="click" data-line="${line}"><td>L${line}</td><td class="num">${bodyTxt}</td><td class="num">${trips}</td><td>${spans}</td></tr>`;
+                })
+                .join('');
+            body += `<section>
+  <h2>${chip ? esc(chip) + ' · ' : ''}<span class="muted">${esc(subtitle)} · ${t('limit', '预算')} ${rep.limit}</span></h2>
+  <h3>${t('Segments', '分段')}</h3>
+  <table><thead><tr><th>${t('start', '起点')}</th><th>${t('instructions', '指令')}</th><th>${t('status', '状态')}</th><th>${t('dominant loop', '支配循环')}</th></tr></thead><tbody>${segRows || '<tr><td colspan="4" class="muted">–</td></tr>'}</tbody></table>
+  <h3>${t('Loops', '循环')}</h3>
+  <table><thead><tr><th>${t('line', '行')}</th><th>${t('best..worst per iteration', '每圈 最快..最慢')}</th><th>${t('iterations', '迭代')}</th><th>${t('spans ticks', '跨 tick')}</th></tr></thead><tbody>${loopRows || '<tr><td colspan="4" class="muted">–</td></tr>'}</tbody></table>
+</section>`;
+        }
+        if (reports.length === 0) {
+            body = `<p class="err">${esc(subtitle || t('no data', '无数据'))}</p>`;
+        }
+        return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); margin: 0; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); }
+  header .title { font-weight: 600; }
+  main { padding: 8px 16px 40px; }
+  h2 { font-size: 1.05em; margin: 14px 0 6px; }
+  h3 { font-size: .95em; margin: 12px 0 4px; color: var(--vscode-descriptionForeground); }
+  table { width: 100%; max-width: 680px; border-collapse: collapse; }
+  th, td { text-align: left; padding: 3px 10px; border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.2)); }
+  th { color: var(--vscode-descriptionForeground); font-weight: 500; }
+  td.num { text-align: right; font-family: var(--vscode-editor-font-family, monospace); font-variant-numeric: tabular-nums; }
+  tr.click { cursor: pointer; }
+  tr.click:hover td { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.12)); }
+  .bad { color: var(--vscode-errorForeground, #f14c4c); }
+  .ok { color: var(--vscode-charts-green, #3fb950); }
+  .muted { color: var(--vscode-descriptionForeground); }
+  .err { color: var(--vscode-errorForeground, #f14c4c); padding: 12px; }
+  button { font-family: inherit; font-size: inherit; color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); border-radius: 5px; padding: 3px 10px; cursor: pointer; }
+</style></head>
+<body>
+<header><span class="title">${t('Per-tick instruction budget', '每 tick 指令预算')}</span><button id="refresh">${t('Refresh', '刷新')}</button></header>
+<main>${body}</main>
+<script nonce="${nonce}">
+  const vscode = acquireVsCodeApi();
+  document.addEventListener('click', (e) => {
+    const tr = e.target && e.target.closest ? e.target.closest('tr[data-line]') : null;
+    if (tr) { vscode.postMessage({ type: 'jump', line: Number(tr.getAttribute('data-line')) }); return; }
+    if (e.target && e.target.id === 'refresh') vscode.postMessage({ type: 'refresh' });
+  });
+</script>
+</body></html>`;
     }
 
     // -- native IC10 (.ic / .ic10) -----------------------------------------

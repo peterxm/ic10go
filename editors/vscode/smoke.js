@@ -68,6 +68,7 @@ const mock = {
         onDidOpenTextDocument: disposable,
         onDidChangeTextDocument: disposable,
         onDidCloseTextDocument: disposable,
+        onDidSaveTextDocument: disposable,
         onDidChangeConfiguration: disposable,
         getConfiguration: () => ({ get: (k) => (k === 'bench.autoConnect' ? false : undefined) }),
         createFileSystemWatcher: () => ({
@@ -91,6 +92,7 @@ const mock = {
     Uri: { parse: (s) => s },
     Range: class {},
     Position: class {},
+    Selection: class {},
     CompletionItem: class {},
     MarkdownString: class {},
     Hover: class {},
@@ -213,6 +215,7 @@ const expected = [
     'icg.disasm',
     'icg.graph',
     'icg.tick',
+    'icg.tickPanel',
     'icg.restartServer',
     'icg.bench.connect',
     'icg.bench.disconnect',

@@ -43,6 +43,7 @@
   "cmd.restartServer": "IC10 Go: Restart Language Server",
   "cmd.graph": "IC10 Go: Show CFG (Mermaid)",
   "cmd.tick": "IC10 Go: Per-tick budget & loops",
+  "cmd.tickPanel": "IC10 Go: Open the per-tick budget panel",
   "cmd.bench.push": "IC10 Go: Upload to Game",
   "cmd.bench.pull": "IC10 Go: Download from Game",
   "cmd.bench.connect": "IC10 Go: Connect to Game Testbench",
