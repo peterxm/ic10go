@@ -40,7 +40,7 @@ ic10c tick --json printer.icg          # 机器可读
 examples/打印机控制.icg:25:1: warning: the worst-case path between two yields exceeds the 128-instruction tick budget; the chip resumes mid-loop on the next tick (see `ic10c tick`)
 ```
 
-**默认关闭**：几乎每个多机 / 长驻控制程序都会命中（语料 153 个 `.icg` 里 **62 个**），默认打印太吵。
+**默认关闭**：几乎每个多机 / 长驻控制程序都会命中（语料 153 个 `.icg` 里 **61 个**），默认打印太吵。
 该开关传给 `Options.WarnTickBudget`。`build --json` 无论加不加都会在顶层 `tick` 字段给出结构化摘要
 （`{limit, cost, exceeds, loops, segments}`，多芯片取最坏的一块），加 `--tick-warn` 时另带这条诊断。
 编辑器用自己的分析（见下「编辑器诊断」）；库调用默认关，以免在不显示诊断的场景重复分析。

@@ -341,9 +341,10 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		}
 		return 0, false
 	}
-	// A callee to summarise must be self-contained: it may branch and loop-free
-	// fall through to `j ra`, but must not call another function or jump into one
-	// (a tail call would return elsewhere). Collect the call entries first.
+	// A callee to summarise must be self-contained: it may branch and loop, but
+	// must not call another function or jump into one (a tail call would return
+	// elsewhere). Calls already rewritten count as straight-line steps, so a
+	// nested call is summarised first and its caller retried next round.
 	callEntries := map[int]bool{}
 	for _, i := range lines {
 		if t, ok := callTarget(nodes[i]); ok {
@@ -355,90 +356,87 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		ok   bool
 	}
 	fnCache := map[int]fnInfo{}
-	var summarize func(entry int) (int, bool)
-	summarize = func(entry int) (int, bool) {
+	summarize := func(entry int) (int, bool) {
 		if info, done := fnCache[entry]; done {
 			return info.cost, info.ok
 		}
 		if _, ok := nodes[entry]; !ok {
-			fnCache[entry] = fnInfo{}
 			return 0, false
 		}
-		memo := map[int]int{}
-		onPath := map[int]bool{}
-		cyc := false
-		var walk func(i int) (int, bool)
-		walk = func(i int) (int, bool) {
-			if onPath[i] {
-				cyc = true // a loop in the body: not summarisable
-				return 0, false
+		// Build the callee's own CFG: reachable from the entry, stopping at
+		// `j ra` (a terminal here, so the walk returns) and bailing on anything
+		// that does not return inside one tick (a barrier/halt, a nested call
+		// that is not summarised yet, or a tail call into another function).
+		sub := map[int]*node{}
+		var subLines []int
+		stack := []int{entry}
+		for len(stack) > 0 {
+			i := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if _, seen := sub[i]; seen {
+				continue
 			}
 			n, ok := nodes[i]
 			if !ok {
 				return 0, false
 			}
+			c := &node{line: n.line, op: n.op, args: n.args, weight: n.weight, indirect: n.indirect}
 			if n.raReturn {
-				return 1, true // `j ra`: the callee returns
-			}
-			if v, ok := memo[i]; ok {
-				return v, true
+				c.halt = true // `j ra`: the callee returns
+				sub[i] = c
+				continue
 			}
 			if n.barrier || n.halt || len(n.succ) == 0 {
 				return 0, false
 			}
-			if _, isCall := callTarget(n); isCall {
-				return 0, false // nested call: not modelled
+			if _, isCall := callTarget(n); isCall && n.weight == 0 {
+				return 0, false // nested call, not summarised yet
 			}
 			if n.op == "j" {
 				if t, ok := resolveTarget(i, n.args[0]); ok && callEntries[t] {
 					return 0, false // tail call into another function
 				}
 			}
-			onPath[i] = true
-			best := 0
-			for _, s := range n.succ {
-				if _, ok := nodes[s]; !ok {
-					continue
-				}
-				v, ok := walk(s)
-				if !ok {
-					// A path that does not return: the callee cannot be
-					// summarised soundly (it might not come back at all).
-					delete(onPath, i)
-					return 0, false
-				}
-				if v > best {
-					best = v
-				}
-			}
-			delete(onPath, i)
-			memo[i] = 1 + best
-			return 1 + best, true
+			c.succ = n.succ
+			sub[i] = c
+			subLines = append(subLines, i)
+			stack = append(stack, n.succ...)
 		}
-		v, ok := walk(entry)
-		if cyc || !ok {
-			fnCache[entry] = fnInfo{}
-			return 0, false
+		sort.Ints(subLines)
+		for _, i := range subLines {
+			sub[i].dsucc = sub[i].succ
 		}
+		w := newBoundedWalk(sub, subLines, dominators(sub, entry))
+		v := w.steps(entry, limit+1, [maxTrackedLoops]byte{})
 		fnCache[entry] = fnInfo{cost: v, ok: true}
 		return v, true
 	}
-	for _, i := range lines {
-		n := nodes[i]
-		t, isCall := callTarget(n)
-		if !isCall {
-			continue
+	// Fixpoint: rewriting an inner call lets its caller be summarised next round.
+	for progress := true; progress; {
+		progress = false
+		tried := map[int]bool{} // callees that failed this round (retried next)
+		for _, i := range lines {
+			n := nodes[i]
+			if n.weight > 0 {
+				continue // already rewritten
+			}
+			t, isCall := callTarget(n)
+			if !isCall || tried[t] {
+				continue
+			}
+			cost, ok := summarize(t)
+			if !ok {
+				tried[t] = true
+				continue
+			}
+			if nxt := next(i); nxt >= 0 {
+				n.succ = []int{nxt}
+			} else {
+				n.succ = nil
+			}
+			n.weight = 1 + cost
+			progress = true
 		}
-		cost, ok := summarize(t)
-		if !ok {
-			continue
-		}
-		if nxt := next(i); nxt >= 0 {
-			n.succ = []int{nxt}
-		} else {
-			n.succ = nil
-		}
-		n.weight = 1 + cost
 	}
 
 	// Refine `j ra` / `jr ra` returns by propagating the possible constant values
@@ -608,99 +606,7 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 	// bounded by the remaining budget, so an unbounded loop is reported as
 	// exceeding the budget (its worst case is genuinely unbounded).
 	dom := dominators(nodes, lines[0])
-	type backEdge struct {
-		e    [2]int
-		trip int // detected trip count (0 = unknown)
-		cap  int // how many times this edge itself is taken
-	}
-	var backs []backEdge
-	for _, u := range lines {
-		for _, v := range nodes[u].dsucc {
-			if _, ok := nodes[v]; !ok {
-				continue
-			}
-			if !dom[u][v] {
-				continue
-			}
-			set := naturalLoop(nodes, v, map[int]bool{u: true})
-			t := detectTrips(nodes, set, v)
-			// How many times this back edge itself is taken: a latch that is the
-			// loop's exit check runs trips-1 times, a plain jump at the bottom
-			// runs trips times.
-			c := t
-			if t > 0 && isConditional(nodes[u].op) {
-				for _, s := range nodes[u].dsucc {
-					if !set[s] {
-						c = t - 1 // exits on this branch
-						break
-					}
-				}
-			}
-			if c < 0 {
-				c = 0
-			}
-			backs = append(backs, backEdge{e: [2]int{u, v}, trip: t, cap: c})
-		}
-	}
-	// Carry iteration counts only while the walk's state space (the product of
-	// the counts) stays small; the rest rely on the budget cap.
-	sort.Slice(backs, func(i, j int) bool { return backs[i].cap < backs[j].cap })
-	edgeTrip := map[[2]int]int{}
-	edgeIdx := map[[2]int]int{}
-	tracked, product := 0, 1
-	for _, b := range backs {
-		edgeTrip[b.e] = b.cap
-		if b.trip <= 0 || tracked >= maxTrackedLoops || product*(b.cap+1) > maxDPStates {
-			continue
-		}
-		edgeIdx[b.e] = tracked
-		tracked++
-		product *= b.cap + 1
-	}
-
-	type dpKey struct {
-		i, rem int
-		counts [maxTrackedLoops]byte
-	}
-	memo := map[dpKey]int{}
-	choice := map[dpKey]int{}
-	var steps func(i, rem int, counts [maxTrackedLoops]byte) int
-	steps = func(i, rem int, counts [maxTrackedLoops]byte) int {
-		n := nodes[i]
-		if rem <= 0 {
-			return 0
-		}
-		w := nodeCost(n)
-		if n.barrier || n.halt || len(n.succ) == 0 {
-			return w // the terminal instruction itself counts
-		}
-		key := dpKey{i, rem, counts}
-		if v, ok := memo[key]; ok {
-			return v
-		}
-		best, bestTo := 0, -1
-		for _, s := range n.succ {
-			if _, ok := nodes[s]; !ok {
-				continue
-			}
-			e := [2]int{i, s}
-			nc := counts // arrays are values: this is already a copy
-			if bi, ok := edgeIdx[e]; ok {
-				if int(counts[bi]) >= edgeTrip[e] {
-					continue // the loop has run all its iterations
-				}
-				nc[bi]++
-			}
-			v := steps(s, rem-w, nc)
-			if v > best {
-				best, bestTo = v, s
-			}
-		}
-		res := w + best
-		memo[key] = res
-		choice[key] = bestTo
-		return res
-	}
+	walk := newBoundedWalk(nodes, lines, dom)
 
 	rep.Loops = findLoops(nodes, lines, dom, &rep.Indirect)
 
@@ -708,7 +614,7 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		if _, ok := nodes[st]; !ok {
 			continue
 		}
-		cost := steps(st, limit+1, [maxTrackedLoops]byte{})
+		cost := walk.steps(st, limit+1, [maxTrackedLoops]byte{})
 		if cost > limit {
 			// The exact count is unknown once it exceeds the budget (the walk
 			// stops there); report limit+1, the documented "exceeds" marker.
@@ -735,11 +641,11 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 			if n.halt || len(n.succ) == 0 {
 				break
 			}
-			to, ok := choice[dpKey{cur, rem, counts}]
+			to, ok := walk.choice[dpKey{cur, rem, counts}]
 			if !ok || to < 0 {
 				break
 			}
-			if bi, ok := edgeIdx[[2]int{cur, to}]; ok {
+			if bi, ok := walk.edgeIdx[[2]int{cur, to}]; ok {
 				counts[bi]++
 			}
 			rem -= nodeCost(n)
@@ -863,6 +769,120 @@ func findLoops(nodes map[int]*node, lines []int, dom map[int]map[int]bool, indir
 		loops = append(loops, l)
 	}
 	return loops
+}
+
+// dpKey is the bounded-walk memo key: a node, the remaining budget and the
+// per-loop iteration counts used so far.
+type dpKey struct {
+	i, rem int
+	counts [maxTrackedLoops]byte
+}
+
+// boundedWalk is the worst-case path DP over a CFG. From a node with rem
+// instructions left it returns the worst-case number of instructions to a
+// terminal (barrier/halt/no successor), following each loop's back edge only as
+// many times as its detected trip count allows.
+type boundedWalk struct {
+	nodes    map[int]*node
+	edgeTrip map[[2]int]int // how many times a back edge is taken (0 = unknown)
+	edgeIdx  map[[2]int]int // tracked loops: index into counts (absent = untracked)
+	memo     map[dpKey]int
+	choice   map[dpKey]int
+}
+
+// newBoundedWalk reads the loop back edges out of dom and prepares the walk.
+func newBoundedWalk(nodes map[int]*node, lines []int, dom map[int]map[int]bool) *boundedWalk {
+	w := &boundedWalk{
+		nodes:    nodes,
+		edgeTrip: map[[2]int]int{},
+		edgeIdx:  map[[2]int]int{},
+		memo:     map[dpKey]int{},
+		choice:   map[dpKey]int{},
+	}
+	type backEdge struct {
+		e    [2]int
+		trip int // detected trip count (0 = unknown)
+		cap  int // how many times this edge itself is taken
+	}
+	var backs []backEdge
+	for _, u := range lines {
+		for _, v := range nodes[u].dsucc {
+			if _, ok := nodes[v]; !ok {
+				continue
+			}
+			if !dom[u][v] {
+				continue
+			}
+			set := naturalLoop(nodes, v, map[int]bool{u: true})
+			t := detectTrips(nodes, set, v)
+			// How many times this back edge itself is taken: a latch that is the
+			// loop's exit check runs trips-1 times, a plain jump at the bottom
+			// runs trips times.
+			c := t
+			if t > 0 && isConditional(nodes[u].op) {
+				for _, s := range nodes[u].dsucc {
+					if !set[s] {
+						c = t - 1 // exits on this branch
+						break
+					}
+				}
+			}
+			if c < 0 {
+				c = 0
+			}
+			backs = append(backs, backEdge{e: [2]int{u, v}, trip: t, cap: c})
+		}
+	}
+	// Carry iteration counts only while the walk's state space (the product of
+	// the counts) stays small; the rest rely on the budget cap.
+	sort.Slice(backs, func(i, j int) bool { return backs[i].cap < backs[j].cap })
+	tracked, product := 0, 1
+	for _, b := range backs {
+		w.edgeTrip[b.e] = b.cap
+		if b.trip <= 0 || tracked >= maxTrackedLoops || product*(b.cap+1) > maxDPStates {
+			continue
+		}
+		w.edgeIdx[b.e] = tracked
+		tracked++
+		product *= b.cap + 1
+	}
+	return w
+}
+
+func (w *boundedWalk) steps(i, rem int, counts [maxTrackedLoops]byte) int {
+	n := w.nodes[i]
+	if rem <= 0 {
+		return 0
+	}
+	c := nodeCost(n)
+	if n.barrier || n.halt || len(n.succ) == 0 {
+		return c // the terminal instruction itself counts
+	}
+	key := dpKey{i, rem, counts}
+	if v, ok := w.memo[key]; ok {
+		return v
+	}
+	best, bestTo := 0, -1
+	for _, s := range n.succ {
+		if _, ok := w.nodes[s]; !ok {
+			continue
+		}
+		e := [2]int{i, s}
+		nc := counts // arrays are values: this is already a copy
+		if bi, ok := w.edgeIdx[e]; ok {
+			if int(counts[bi]) >= w.edgeTrip[e] {
+				continue // the loop has run all its iterations
+			}
+			nc[bi]++
+		}
+		if v := w.steps(s, rem-c, nc); v > best {
+			best, bestTo = v, s
+		}
+	}
+	res := c + best
+	w.memo[key] = res
+	w.choice[key] = bestTo
+	return res
 }
 
 // nodeCost is the instruction cost of a node: 1, or the summarized callee cost

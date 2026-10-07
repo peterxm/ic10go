@@ -220,6 +220,51 @@ func TestMultiCallSiteSummary(t *testing.T) {
 	}
 }
 
+// TestLoopCalleeSummary checks that a callee containing a counting loop is
+// summarised with the same trip counts the direct analysis uses: two calls cost
+// twice what a single call costs (the single call is computed directly, so it is
+// the reference).
+func TestLoopCalleeSummary(t *testing.T) {
+	one := "yield\n" + // 0
+		"jal 7\n" + // 1
+		"j 0\n" + // 2
+		"hcf\nhcf\nhcf\nhcf\n" + // 3..6
+		"move r0 0\n" + // 7  (callee: r0 = 0; r0++ while r0 < 3)
+		"add r0 r0 1\n" + // 8
+		"blt r0 3 8\n" + // 9
+		"j ra\n" // 10
+	rep, err := Analyze(one, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	single := rep.Segments[len(rep.Segments)-1]
+	if single.Exceeds || single.Cost != 11 {
+		t.Fatalf("single call = %+v, want 11 fits:\n%s", single, rep)
+	}
+
+	two := "yield\n" + // 0
+		"jal 8\n" + // 1
+		"jal 8\n" + // 2
+		"j 0\n" + // 3
+		"hcf\nhcf\nhcf\nhcf\n" + // 4..7
+		"move r0 0\n" + // 8
+		"add r0 r0 1\n" + // 9
+		"blt r0 3 9\n" + // 10
+		"j ra\n" // 11
+	rep, err = Analyze(two, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	double := rep.Segments[len(rep.Segments)-1]
+	if double.Exceeds {
+		t.Fatalf("looped callee reported unbounded:\n%s", rep)
+	}
+	// one yield + two calls (each 1 + the 8-instruction callee) + the `j 0`.
+	if double.Cost != 20 {
+		t.Fatalf("two calls = %d, want 20:\n%s", double.Cost, rep)
+	}
+}
+
 func TestUnknownTripIsStillBounded(t *testing.T) {
 	// A self-loop with no detectable induction still must terminate the DP.
 	rep, err := Analyze("yield\nmove r0 1\nj 1\n", 128)
