@@ -536,3 +536,72 @@ func TestNoFoldIntoBranchWhenReused(t *testing.T) {
 		t.Fatalf("expected the load and compute to remain:\n%s", code)
 	}
 }
+
+func TestFoldCopiedLoadIntoPoke(t *testing.T) {
+	// The lowerer copies the loaded value to the variable; the fold skips that
+	// copy: `v = sp; x = v; poke x 1` -> `poke sp 1`.
+	b := ir.NewBuilder("t")
+	v := b.NewReg("v")
+	x := b.NewReg("x")
+	b.Emit(&ir.LoadSpecial{Dst: v, Name: "sp"})
+	b.Emit(&ir.Assign{Dst: x, Src: v})
+	b.Emit(&ir.Builtin{Name: "poke", Args: []ir.Value{x, &ir.Const{V: 1}}})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{v: 0, x: 0})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if want := "poke sp 1\n"; code != want {
+		t.Fatalf("code = %q, want %q", code, want)
+	}
+}
+
+func TestFoldCopiedLoadIntoGetAddress(t *testing.T) {
+	// `v = sp; x = v; y = get(db, x)` -> `get <dst> db sp`.
+	b := ir.NewBuilder("t")
+	v := b.NewReg("v")
+	x := b.NewReg("x")
+	y := b.NewReg("y")
+	b.Emit(&ir.LoadSpecial{Dst: v, Name: "sp"})
+	b.Emit(&ir.Assign{Dst: x, Src: v})
+	b.Emit(&ir.Builtin{Name: "get", Dst: y, Args: []ir.Value{&ir.Device{Name: "db"}, x}})
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: y})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{v: 0, x: 0, y: 1})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if strings.Contains(code, "move ") {
+		t.Fatalf("load copy not folded:\n%s", code)
+	}
+	if !strings.Contains(code, "get r1 db sp") {
+		t.Fatalf("want `get r1 db sp`:\n%s", code)
+	}
+}
+
+func TestFoldCopiedLoadIntoBranch(t *testing.T) {
+	// `v = sp; x = v; bgtz x L` -> `bgtz sp L`.
+	b := ir.NewBuilder("t")
+	v := b.NewReg("v")
+	x := b.NewReg("x")
+	thenB := b.NewBlock()
+	endB := b.NewBlock()
+	b.Emit(&ir.LoadSpecial{Dst: v, Name: "sp"})
+	b.Emit(&ir.Assign{Dst: x, Src: v})
+	b.SetTerm(&ir.Br{Cond: ir.Gt, A: x, B: &ir.Const{V: 0}, Then: thenB, Else: endB})
+	b.SetBlock(thenB)
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: &ir.Const{V: 1}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{v: 0, x: 0})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if strings.Contains(code, "move r0 sp") {
+		t.Fatalf("load copy not folded into the branch:\n%s", code)
+	}
+	if !strings.Contains(code, "blez sp ") && !strings.Contains(code, "bgtz sp ") {
+		t.Fatalf("want a branch on sp:\n%s", code)
+	}
+}

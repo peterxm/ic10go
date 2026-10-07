@@ -322,9 +322,10 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 				idx += n - 1
 				continue
 			}
-			// A single-use load that is the block's last instruction folds into
-			// the branch terminator (`u = sp; bgtz u L` -> `bgtz sp L`).
-			if spill == nil && !termDone && idx == len(instrs)-1 {
+			// A single-use load that feeds the block's branch terminator folds
+			// into it (`u = sp; bgtz u L` -> `bgtz sp L`); the lowerer's copy to
+			// the variable is skipped too.
+			if spill == nil && !termDone && idx >= len(instrs)-2 {
 				src := b.SrcLine
 				if s := fn.SrcTerms[b.Term]; s > 0 {
 					src = s
@@ -679,22 +680,11 @@ func foldIndirectDst(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 // actually read it, so nothing can change the register in between and the load
 // is never dropped while still needed.
 func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[*ir.Reg]int, legacyByID bool) (string, int, bool) {
-	if i+1 >= len(instrs) {
+	operand, loaded, ci, ok := loadOperand(instrs, i, uses, colors)
+	if !ok || ci >= len(instrs) {
 		return "", 0, false
 	}
-	var loaded *ir.Reg
-	operand := ""
-	switch ld := instrs[i].(type) {
-	case *ir.LoadIndirect:
-		loaded, operand = ld.Dst, indirectName(ld.Ptr, colors)
-	case *ir.LoadSpecial:
-		loaded, operand = ld.Dst, ld.Name
-	default:
-		return "", 0, false
-	}
-	if uses[loaded] != 1 {
-		return "", 0, false
-	}
+	consume := ci - i + 1
 	val := func(v ir.Value) string {
 		if r, ok := v.(*ir.Reg); ok && r == loaded {
 			return operand
@@ -709,40 +699,40 @@ func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 		}
 		return false
 	}
-	switch v := instrs[i+1].(type) {
+	switch v := instrs[ci].(type) {
 	case *ir.Bin:
 		if !mentions(v.A, v.B) {
 			return "", 0, false
 		}
-		return v.Op.IC10() + " " + regName(v.Dst, colors) + " " + val(v.A) + " " + val(v.B), 2, true
+		return v.Op.IC10() + " " + regName(v.Dst, colors) + " " + val(v.A) + " " + val(v.B), consume, true
 	case *ir.Un:
 		if !mentions(v.A) {
 			return "", 0, false
 		}
 		switch v.Op {
 		case ir.Neg:
-			return "sub " + regName(v.Dst, colors) + " 0 " + val(v.A), 2, true
+			return "sub " + regName(v.Dst, colors) + " 0 " + val(v.A), consume, true
 		case ir.BitNot:
-			return "not " + regName(v.Dst, colors) + " " + val(v.A), 2, true
+			return "not " + regName(v.Dst, colors) + " " + val(v.A), consume, true
 		case ir.Seqz:
-			return "seqz " + regName(v.Dst, colors) + " " + val(v.A), 2, true
+			return "seqz " + regName(v.Dst, colors) + " " + val(v.A), consume, true
 		}
 	case *ir.Select:
 		if !mentions(v.Cond, v.Then, v.Else) {
 			return "", 0, false
 		}
 		return "select " + regName(v.Dst, colors) + " " + val(v.Cond) + " " + val(v.Then) +
-			" " + val(v.Else), 2, true
+			" " + val(v.Else), consume, true
 	case *ir.Cmp:
 		if !mentions(v.A, v.B) {
 			return "", 0, false
 		}
-		return cmpTextFolded(v.Cond, v.Dst, v.A, v.B, loaded, operand, colors), 2, true
+		return cmpTextFolded(v.Cond, v.Dst, v.A, v.B, loaded, operand, colors), consume, true
 	case *ir.Store:
 		if !mentions(v.Src) {
 			return "", 0, false
 		}
-		return "s " + v.Dev + " " + v.Logic + " " + val(v.Src), 2, true
+		return "s " + v.Dev + " " + v.Logic + " " + val(v.Src), consume, true
 	case *ir.StoreSlot:
 		// DynDev renders DevPtr directly, so only fold when DevPtr is not the
 		// loaded register.
@@ -750,7 +740,7 @@ func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 			return "", 0, false
 		}
 		return "ss " + dynDev(v.Dev, v.DevPtr, colors) + " " + val(v.Index) + " " +
-			v.Logic + " " + val(v.Src), 2, true
+			v.Logic + " " + val(v.Src), consume, true
 	case *ir.StoreDyn:
 		if v.DevID != nil {
 			if !mentions(v.DevID, v.Logic, v.Src) {
@@ -760,12 +750,12 @@ func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 			if legacyByID {
 				mn = "sd"
 			}
-			return mn + " " + val(v.DevID) + " " + val(v.Logic) + " " + val(v.Src), 2, true
+			return mn + " " + val(v.DevID) + " " + val(v.Logic) + " " + val(v.Src), consume, true
 		}
 		if mentions(v.DevPtr) || !mentions(v.Logic, v.Src) {
 			return "", 0, false
 		}
-		return "s " + dynDev(v.Dev, v.DevPtr, colors) + " " + val(v.Logic) + " " + val(v.Src), 2, true
+		return "s " + dynDev(v.Dev, v.DevPtr, colors) + " " + val(v.Logic) + " " + val(v.Src), consume, true
 	case *ir.Builtin:
 		if !mentions(v.Args...) {
 			return "", 0, false
@@ -778,9 +768,36 @@ func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 		for _, a := range v.Args {
 			parts = append(parts, val(a))
 		}
-		return strings.Join(parts, " "), 2, true
+		return strings.Join(parts, " "), consume, true
 	}
 	return "", 0, false
+}
+
+// loadOperand finds a single-use load at instrs[i]. The lowerer often copies the
+// loaded value to the variable (`t = load(); x = t`), so it also skips one such
+// copy and returns the register the consumer actually reads plus that consumer's
+// index. The index may be len(instrs), meaning the block terminator.
+func loadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[*ir.Reg]int) (operand string, use *ir.Reg, ci int, ok bool) {
+	switch ld := instrs[i].(type) {
+	case *ir.LoadIndirect:
+		use, operand = ld.Dst, indirectName(ld.Ptr, colors)
+	case *ir.LoadSpecial:
+		use, operand = ld.Dst, ld.Name
+	default:
+		return "", nil, 0, false
+	}
+	if uses[use] != 1 {
+		return "", nil, 0, false
+	}
+	ci = i + 1
+	if ci < len(instrs) {
+		if cp, isCopy := instrs[ci].(*ir.Assign); isCopy {
+			if r, isReg := cp.Src.(*ir.Reg); isReg && r == use && cp.Dst != use && uses[cp.Dst] == 1 {
+				use, ci = cp.Dst, ci+1
+			}
+		}
+	}
+	return operand, use, ci, true
 }
 
 // cmpTextFolded renders a Cmp whose operands may be the folded-in load.
@@ -826,17 +843,8 @@ func branchTextFolded(c ir.Cond, a, b ir.Value, loaded *ir.Reg, operand string, 
 // `u = sp; bgtz u L` -> `bgtz sp L`. It mirrors foldLoadOperand for terminators
 // (only plain Br; the approximate/valid forms take device operands).
 func foldLoadTerminator(instrs []ir.Instr, i int, term ir.Term, next *ir.Block, uses map[*ir.Reg]int, colors map[*ir.Reg]int, src int, fn string) ([]line, bool) {
-	var loaded *ir.Reg
-	operand := ""
-	switch ld := instrs[i].(type) {
-	case *ir.LoadIndirect:
-		loaded, operand = ld.Dst, indirectName(ld.Ptr, colors)
-	case *ir.LoadSpecial:
-		loaded, operand = ld.Dst, ld.Name
-	default:
-		return nil, false
-	}
-	if uses[loaded] != 1 {
+	operand, loaded, ci, ok := loadOperand(instrs, i, uses, colors)
+	if !ok || ci != len(instrs) {
 		return nil, false
 	}
 	br, ok := term.(*ir.Br)
