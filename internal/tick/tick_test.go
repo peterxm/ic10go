@@ -151,6 +151,38 @@ func TestDominantOnExceed(t *testing.T) {
 	}
 }
 
+// A `j ra` must not connect to a return site that sits inside its own
+// continuation: the compiled `jal f` / `move ra r` / `j ra` chain would
+// otherwise invent a loop that never executes (the `ra` value has changed).
+func TestNoPhantomReturnLoop(t *testing.T) {
+	src := "yield\n" + // 0
+		"jal 6\n" + // 1  (ra = 2)
+		"move ra 0\n" + // 2
+		"s d0 Setting 1\n" + // 3
+		"j ra\n" + // 4  (ra = 0)
+		"hcf\n" + // 5
+		"s d1 Setting 1\n" + // 6
+		"j ra\n" // 7  (ra = 2)
+	rep, err := Analyze(src, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range rep.Loops {
+		if l.Header == 2 {
+			t.Fatalf("phantom return loop hdr=2 from an unreachable return: %+v", rep.Loops)
+		}
+	}
+	found := false
+	for _, l := range rep.Loops {
+		if l.Header == 0 {
+			found = true // the real, yield-spanning loop
+		}
+	}
+	if !found {
+		t.Fatalf("real yield loop missing: %+v", rep.Loops)
+	}
+}
+
 func TestUnknownTripIsStillBounded(t *testing.T) {
 	// A self-loop with no detectable induction still must terminate the DP.
 	rep, err := Analyze("yield\nmove r0 1\nj 1\n", 128)

@@ -99,6 +99,55 @@ type node struct {
 	// every tick boundary. The bounded walk uses succ, not dsucc.
 	dsucc    []int
 	indirect bool
+	// raReturn marks an indirect `j ra` / `jr ra`: its targets are refined from a
+	// forward analysis of the possible constant `ra` values, falling back to the
+	// conservative set of every call return site.
+	raReturn bool
+}
+
+// raSet is the set of constant line numbers the `ra` register can hold at a
+// program point. unknown means "not a known constant", so the caller falls back
+// to the conservative return-site set.
+type raSet struct {
+	unknown bool
+	vals    map[int]bool
+}
+
+func raClone(s raSet) raSet {
+	if s.unknown {
+		return raSet{unknown: true}
+	}
+	out := raSet{vals: make(map[int]bool, len(s.vals))}
+	for v := range s.vals {
+		out.vals[v] = true
+	}
+	return out
+}
+
+func raMerge(a, b raSet) raSet {
+	if a.unknown || b.unknown {
+		return raSet{unknown: true}
+	}
+	out := raSet{vals: make(map[int]bool, len(a.vals)+len(b.vals))}
+	for v := range a.vals {
+		out.vals[v] = true
+	}
+	for v := range b.vals {
+		out.vals[v] = true
+	}
+	return out
+}
+
+func raEqual(a, b raSet) bool {
+	if a.unknown != b.unknown || len(a.vals) != len(b.vals) {
+		return false
+	}
+	for v := range a.vals {
+		if !b.vals[v] {
+			return false
+		}
+	}
+	return true
 }
 
 // Analyze parses src as IC10 and reports its per-tick budget. limit <= 0 uses
@@ -210,9 +259,10 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		case ins.Op == "j":
 			if t, ok := resolveTarget(i, ins.Args[0]); ok {
 				n.succ = []int{t}
-			} else if ins.Args[0] == "ra" && len(calls) > 0 {
+			} else if ins.Args[0] == "ra" {
 				// `j ra` is an outlined-function return: connect to the call
-				// return sites instead of every line.
+				// return sites (refined below by the `ra` analysis).
+				n.raReturn = true
 				n.succ = append([]int(nil), calls...)
 				n.indirect = true
 			} else {
@@ -231,6 +281,10 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 				} else {
 					n.indirect = true
 				}
+			} else if ins.Args[0] == "ra" {
+				n.raReturn = true
+				n.succ = append([]int(nil), calls...)
+				n.indirect = true
 			} else if len(calls) > 0 {
 				n.succ = append([]int(nil), calls...)
 				n.indirect = true
@@ -261,6 +315,100 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 			}
 		}
 		nodes[i] = n
+	}
+
+	// Refine `j ra` / `jr ra` returns by propagating the possible constant values
+	// of `ra` forward. Connecting every such return to *all* call return sites
+	// can invent a loop when a return site sits inside the return's own
+	// continuation (the compiled `jal f` / `move ra r` / `j ra` chain): the walk
+	// then revisits that site forever. With the actual `ra` value the return goes
+	// where it really does and the phantom loop disappears.
+	raTransfer := func(n *node, in raSet) raSet {
+		switch {
+		case n.op == "jal":
+			if t := next(n.line); t >= 0 {
+				return raSet{vals: map[int]bool{t: true}}
+			}
+			return raSet{unknown: true}
+		case regDestOps[n.op] && len(n.args) > 0 && n.args[0] == "ra":
+			if n.op == "move" && len(n.args) == 2 {
+				if t, ok := resolveTarget(n.line, n.args[1]); ok {
+					return raSet{vals: map[int]bool{t: true}}
+				}
+			}
+			return raSet{unknown: true}
+		default:
+			if _, _, withRA, ok := ic10asm.BranchInfo(n.op); ok && withRA {
+				out := raClone(in)
+				if t := next(n.line); t >= 0 {
+					if out.vals == nil {
+						out.vals = map[int]bool{}
+					}
+					out.vals[t] = true
+				}
+				return out
+			}
+			return in
+		}
+	}
+	raIn := make(map[int]raSet, len(lines))
+	for _, i := range lines {
+		raIn[i] = raSet{}
+	}
+	if len(lines) > 0 {
+		raIn[lines[0]] = raSet{unknown: true}
+	}
+	// raSucc is the flow graph for the `ra` analysis: a `j ra` does not propagate
+	// `ra` (the return site's `ra` is the caller's), so it has no successors here.
+	raSucc := func(i int) []int {
+		if nodes[i].raReturn {
+			return nil
+		}
+		var out []int
+		for _, s := range nodes[i].succ {
+			if _, ok := nodes[s]; ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, i := range lines {
+			out := raTransfer(nodes[i], raIn[i])
+			for _, s := range raSucc(i) {
+				m := raMerge(raIn[s], out)
+				if !raEqual(m, raIn[s]) {
+					raIn[s] = m
+					changed = true
+				}
+			}
+		}
+	}
+	for _, i := range lines {
+		n := nodes[i]
+		if !n.raReturn {
+			continue
+		}
+		out := raTransfer(n, raIn[i])
+		if !out.unknown && len(out.vals) > 0 {
+			var ts []int
+			for v := range out.vals {
+				if _, ok := nodes[v]; ok {
+					ts = append(ts, v)
+				}
+			}
+			sort.Ints(ts)
+			if len(ts) > 0 {
+				n.succ = ts
+				n.indirect = len(ts) > 1
+				continue
+			}
+		}
+		if len(calls) > 0 {
+			n.succ = append([]int(nil), calls...)
+			n.indirect = true
+		}
 	}
 
 	// An unresolved jump could go anywhere: make it a conservative edge set so
