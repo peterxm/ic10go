@@ -457,7 +457,9 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 	// A worst-case tick overrun is informational, not an error: it only matters
 	// when a loop is meant to finish within one tick.
 	if err == nil && (diags == nil || !diags.HasErrors()) {
-		items = append(items, tickDiagnostics(compiledUnits(compiled), uri, s.zh)...)
+		units := compiledUnits(compiled)
+		items = append(items, tickLoopList(units, uri, s.zh)...)
+		items = append(items, tickDiagnostics(units, uri, s.zh)...)
 	}
 	notify(w, "textDocument/publishDiagnostics", map[string]any{
 		"uri":         uri,

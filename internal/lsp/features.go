@@ -1576,6 +1576,7 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 type tickUnit struct {
 	code    string
 	lineMap []int
+	chip    string // chip-block name ("" for a single-chip program / native text)
 }
 
 // compiledUnits builds the tick units for a compiled .icg result.
@@ -1583,7 +1584,7 @@ func compiledUnits(compiled ic10.Result) []tickUnit {
 	var units []tickUnit
 	if len(compiled.Chips) > 0 {
 		for _, ch := range compiled.Chips {
-			units = append(units, tickUnit{code: ch.Code, lineMap: ch.LineMap})
+			units = append(units, tickUnit{code: ch.Code, lineMap: ch.LineMap, chip: ch.Name})
 		}
 	} else {
 		units = append(units, tickUnit{code: compiled.Code, lineMap: compiled.LineMap})
@@ -1736,16 +1737,18 @@ func spansSuffix(spans, zh bool) string {
 }
 
 // tickLoopList summarises every loop (best..worst per iteration × trips) as one
-// information diagnostic, anchored at the first loop's line. Native IC10 has no
-// other place to show the full list.
+// information diagnostic per program, anchored at that program's first loop. For
+// a .icg with `chip` blocks each chip gets its own diagnostic (its loops are
+// listed separately). Native IC10 has no other place to show the full list.
 func tickLoopList(units []tickUnit, uri string, zh bool) []lspDiagnostic {
-	var lines []string
-	first := 0
+	out := make([]lspDiagnostic, 0, len(units))
 	for _, u := range units {
 		rep, err := tick.AnalyzeOpts(u.code, tick.Options{Limit: tick.DefaultLimit, LineMap: u.lineMap})
 		if err != nil {
 			continue
 		}
+		var lines []string
+		first := 0
 		for _, lp := range rep.Loops {
 			body := fmt.Sprintf("%d", lp.Body)
 			if lp.BodyMin != lp.Body {
@@ -1769,26 +1772,35 @@ func tickLoopList(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 				first = lp.Source
 			}
 		}
+		if len(lines) == 0 {
+			continue
+		}
+		label := ""
+		if u.chip != "" {
+			if zh {
+				label = fmt.Sprintf(" [芯片 %s]", u.chip)
+			} else {
+				label = fmt.Sprintf(" [chip %s]", u.chip)
+			}
+		}
+		head := fmt.Sprintf("循环分析%s：共 %d 个循环（每圈 最快..最慢 条）：", label, len(lines))
+		if !zh {
+			head = fmt.Sprintf("Loop analysis%s: %d loop(s) (best..worst instructions per iteration):", label, len(lines))
+		}
+		msg := head + "\n" + strings.Join(lines, "\n")
+		line := 0
+		if first > 0 {
+			line = first - 1
+		}
+		out = append(out, lspDiagnostic{
+			Range:    lspRange{Start: lspPosition{Line: line}, End: lspPosition{Line: line}},
+			Severity: 3, // Information
+			Source:   "ic10c",
+			Code:     "tick-loops",
+			Message:  msg,
+		})
 	}
-	if len(lines) == 0 {
-		return nil
-	}
-	head := fmt.Sprintf("循环分析：共 %d 个循环（每圈 最快..最慢 条）：", len(lines))
-	if !zh {
-		head = fmt.Sprintf("Loop analysis: %d loop(s) (best..worst instructions per iteration):", len(lines))
-	}
-	msg := head + "\n" + strings.Join(lines, "\n")
-	line := 0
-	if first > 0 {
-		line = first - 1
-	}
-	return []lspDiagnostic{{
-		Range:    lspRange{Start: lspPosition{Line: line}, End: lspPosition{Line: line}},
-		Severity: 3, // Information
-		Source:   "ic10c",
-		Code:     "tick-loops",
-		Message:  msg,
-	}}
+	return out
 }
 
 // publishNativeStats sends the budget + per-loop tick analysis for a native
