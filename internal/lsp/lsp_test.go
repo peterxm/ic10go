@@ -65,6 +65,37 @@ func TestTickBudgetDedup(t *testing.T) {
 	}
 }
 
+// A tick body that is too long but is not dominated by a loop (the whole body
+// exceeds the budget) must still be reported, worded as "this tick body" rather
+// than "the loop", and linked to the cross-tick loop it belongs to.
+func TestTickBudgetTickBody(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("yield\n") // 0 (the loop header: the body spans ticks)
+	for i := 0; i < 140; i++ {
+		b.WriteString("s d0 Setting 1\n") // 1..140
+	}
+	b.WriteString("j 0\n") // 141
+	src := b.String()
+	units := []tickUnit{{code: src, lineMap: identityLineMap(src)}}
+	diags := tickDiagnostics(units, "file:///t.ic", true)
+	if len(diags) != 1 {
+		t.Fatalf("tick-budget diagnostics = %d, want 1: %+v", len(diags), diags)
+	}
+	d := diags[0]
+	if d.Code != "tick-budget" {
+		t.Fatalf("code = %q, want tick-budget", d.Code)
+	}
+	if !strings.Contains(d.Message, "tick 体") {
+		t.Errorf("a body-only overrun should say 'tick 体', not '循环':\n%s", d.Message)
+	}
+	if !strings.Contains(d.Message, "跨 tick 循环") {
+		t.Errorf("message should name the cross-tick loop:\n%s", d.Message)
+	}
+	if len(d.RelatedInformation) == 0 {
+		t.Errorf("expected a related-information link to the cross-tick loop:\n%s", d.Message)
+	}
+}
+
 func TestNativeUntitledUsesLanguageID(t *testing.T) {
 	src := "define STACKER HASH(\"StructureStackerReverse\")\n" +
 		"setup:\n" +

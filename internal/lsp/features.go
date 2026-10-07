@@ -1604,14 +1604,16 @@ func identityLineMap(text string) []int {
 
 // tickDiagnostics reports, as information diagnostics, worst-case ticks that
 // exceed the game's per-tick instruction budget: a loop between two yields
-// spans ticks. Overrunning segments that share the same dominant loop (or, with
-// no dominant loop, the same tick-body start) collapse into a single diagnostic
-// anchored on the dominant loop's source line, so one overrunning loop is not
-// reported once per segment. Returns nil when nothing exceeds.
+// spans ticks. Overrunning segments that share the same dominant loop — or,
+// when the report names none (the whole tick body is too long), the same
+// cross-tick loop or tick-body start — collapse into a single diagnostic, so
+// one overrunning loop is not reported once per segment. Returns nil when
+// nothing exceeds.
 func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 	type hit struct {
 		seg  tick.Segment
-		loop *tick.Loop
+		loop *tick.Loop // dominant loop, when the report names one
+		span *tick.Loop // the cross-tick loop the body belongs to (else nil)
 		chip string
 	}
 	var hits []hit
@@ -1632,6 +1634,20 @@ func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 					h.loop = &lp
 				}
 			}
+			// With no dominant loop the overrun is the whole tick body; if it
+			// sits inside a loop that spans ticks, point at that loop (the
+			// innermost one containing the body start).
+			if h.loop == nil {
+				for j := range rep.Loops {
+					lp := rep.Loops[j]
+					if lp.Spans && lp.Start <= s.Start && s.Start <= lp.End {
+						if h.span == nil || lp.End-lp.Start < h.span.End-h.span.Start {
+							lpc := lp
+							h.span = &lpc
+						}
+					}
+				}
+			}
 			hits = append(hits, h)
 		}
 	}
@@ -1639,22 +1655,26 @@ func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 		return nil
 	}
 	// Collapse hits that share the same dominant loop (or, without one, the same
-	// tick-body start) within the same chip.
+	// cross-tick loop or tick-body start) within the same chip.
 	type group struct {
 		chip string
 		loop *tick.Loop
+		span *tick.Loop
 		segs []tick.Segment
 	}
 	var groups []*group
 	byKey := map[string]*group{}
 	for _, h := range hits {
 		key := fmt.Sprintf("%s|body|%d", h.chip, h.seg.Start)
-		if h.loop != nil {
+		switch {
+		case h.loop != nil:
 			key = fmt.Sprintf("%s|loop|%d", h.chip, h.loop.Header)
+		case h.span != nil:
+			key = fmt.Sprintf("%s|span|%d", h.chip, h.span.Header)
 		}
 		g := byKey[key]
 		if g == nil {
-			g = &group{chip: h.chip, loop: h.loop}
+			g = &group{chip: h.chip, loop: h.loop, span: h.span}
 			byKey[key] = g
 			groups = append(groups, g)
 		}
@@ -1702,7 +1722,11 @@ func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 		}
 		var msg strings.Builder
 		if zh {
-			fmt.Fprintf(&msg, "两个 yield 之间的最坏路径超过 %d 条，循环会被切到下一 tick。", tick.DefaultLimit)
+			if g.loop != nil {
+				fmt.Fprintf(&msg, "两个 yield 之间的最坏路径超过 %d 条，循环会被切到下一 tick。", tick.DefaultLimit)
+			} else {
+				fmt.Fprintf(&msg, "两个 yield 之间的最坏路径超过 %d 条，这段 tick 体会被切到下一 tick。", tick.DefaultLimit)
+			}
 			switch {
 			case len(g.segs) == 1 && len(starts) == 1:
 				fmt.Fprintf(&msg, "\ntick 体从源码第 %d 行开始", starts[0])
@@ -1716,10 +1740,17 @@ func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 			if g.loop != nil {
 				fmt.Fprintf(&msg, "\n支配循环在源码第 %d 行：每圈 %s 条（最快..最慢）× %s 次 ≈ %d 条。",
 					g.loop.Source, bodyText(g.loop), tripsText(g.loop), maxCost)
+			} else if g.span != nil {
+				fmt.Fprintf(&msg, "\n该 tick 体属于源码第 %d 行的跨 tick 循环：完整一圈约 %s 条。",
+					g.span.Source, bodyText(g.span))
 			}
 			msg.WriteString("\n用 `ic10c tick --path` 看完整最坏路径。")
 		} else {
-			fmt.Fprintf(&msg, "worst case between two yields exceeds %d instructions, so the tick is cut mid-loop.", tick.DefaultLimit)
+			if g.loop != nil {
+				fmt.Fprintf(&msg, "worst case between two yields exceeds %d instructions, so the loop is cut to the next tick.", tick.DefaultLimit)
+			} else {
+				fmt.Fprintf(&msg, "worst case between two yields exceeds %d instructions, so this tick body is cut to the next tick.", tick.DefaultLimit)
+			}
 			switch {
 			case len(g.segs) == 1 && len(starts) == 1:
 				fmt.Fprintf(&msg, "\ntick body starts at source line %d", starts[0])
@@ -1733,6 +1764,9 @@ func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 			if g.loop != nil {
 				fmt.Fprintf(&msg, "\ndominant loop at source line %d: %s instructions (best..worst x %s iterations ≈ %d).",
 					g.loop.Source, bodyText(g.loop), tripsText(g.loop), maxCost)
+			} else if g.span != nil {
+				fmt.Fprintf(&msg, "\nthis tick body belongs to the cross-tick loop at source line %d: a full pass is about %s instructions.",
+					g.span.Source, bodyText(g.span))
 			}
 			msg.WriteString("\nrun `ic10c tick --path` for the worst-case path.")
 		}
@@ -1744,13 +1778,23 @@ func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 			Message:  msg.String(),
 		}
 		var related []relatedInfo
-		if g.loop != nil && g.loop.Source > 0 {
+		switch {
+		case g.loop != nil && g.loop.Source > 0:
 			m := fmt.Sprintf("dominant loop header (body %s, %s iterations)", bodyText(g.loop), tripsText(g.loop))
 			if zh {
 				m = fmt.Sprintf("支配的循环头（每圈 %s 条，%s 次）", bodyText(g.loop), tripsText(g.loop))
 			}
 			related = append(related, relatedInfo{
 				Location: map[string]any{"uri": uri, "range": at(g.loop.Source)},
+				Message:  m,
+			})
+		case g.span != nil && g.span.Source > 0:
+			m := fmt.Sprintf("cross-tick loop (a full pass is %s instructions)", bodyText(g.span))
+			if zh {
+				m = fmt.Sprintf("跨 tick 循环（完整一圈 %s 条）", bodyText(g.span))
+			}
+			related = append(related, relatedInfo{
+				Location: map[string]any{"uri": uri, "range": at(g.span.Source)},
 				Message:  m,
 			})
 		}

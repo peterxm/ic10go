@@ -495,9 +495,9 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 
 // warnTickBudget adds a warning for each yield-delimited run whose worst-case
 // instruction count exceeds the per-tick budget. The game pauses a chip after
-// 128 instructions (tick.DefaultLimit), so such a loop resumes mid-iteration on
-// the next tick; the warning points at the dominant loop's source line (see
-// `ic10c tick`).
+// 128 instructions (tick.DefaultLimit), so such a run resumes mid-iteration on
+// the next tick; the warning points at the dominant loop's source line, or the
+// tick-body start when the report names no dominant loop (see `ic10c tick`).
 func warnTickBudget(name, code string, lineMap []int, diags *diag.Bag) {
 	if code == "" {
 		return

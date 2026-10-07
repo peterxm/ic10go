@@ -33,8 +33,8 @@ ic10c tick --json printer.icg          # 机器可读
 
 ### 编译时提醒（`ic10c build --tick-warn`）
 
-`ic10c build --tick-warn` 会对**每个超限的支配循环**在 stderr 打一条警告（诊断 code
-`tick-budget`），锚在支配循环的源码行，**不影响退出码**：
+`ic10c build --tick-warn` 会对**每个超限分段**在 stderr 打一条警告（诊断 code `tick-budget`），
+锚在支配循环的源码行（没有支配循环时用 tick 体起点），**不影响退出码**：
 
 ```text
 examples/打印机控制.icg:25:1: warning: the worst-case path between two yields exceeds the 128-instruction tick budget; the chip resumes mid-loop on the next tick (see `ic10c tick`)
@@ -102,20 +102,32 @@ examples/…-表驱动.icg: ... worst-case 129 instructions [EXCEEDS 128]
 
 ### 编辑器诊断
 
-除了状态栏，LSP 会对**每个超限的支配循环**发一条 **Information** 级诊断（code `tick-budget`），锚在
-**支配循环的源码行**，并带上数字与相关位置。同一循环撑爆多个分段时**只报一条**（把各段的
-tick 体起点合并在一条里）：
+除了状态栏，LSP 会对**每个超限分段**发一条 **Information** 级诊断（code `tick-budget`），并带上
+数字与相关位置。同一支配循环（或同一跨 tick 循环 / tick 体起点）撑爆多个分段时**只报一条**
+（把各段的 tick 体起点合并在一条里）：
 
 ```text
-worst case between two yields exceeds 128 instructions, so the tick is cut mid-loop.
-tick body starts at source line 63, ends at the next yield (source line 62).
-dominant loop at source line 69: body 26 × 8 iterations ≈ 182 instructions.
-run `ic10c tick --path` for the worst-case path.
+两个 yield 之间的最坏路径超过 128 条，循环会被切到下一 tick。
+tick 体从源码第 63 行开始，到下一个 yield（源码第 62 行）结束。
+支配循环在源码第 69 行：每圈 26 条（最快..最慢）× 8 次 ≈ 182 条。
+用 `ic10c tick --path` 看完整最坏路径。
 ```
 
-- `relatedInformation` 指向**支配循环头**（"dominant loop header (body 26, 8 iterations)"）和
-  各 **tick 体起点**（"tick body starts here"），可在 Problems 面板里点跳。
-- 多芯片时每块芯片的超限循环各一条。
+- **锚点**：有支配循环时锚在**支配循环的源码行**；没有支配循环时（超限的是**整段 tick 体**，
+  例如 outline 出去、调用被摘要掉的 `打印机控制`），锚在 **tick 体起点**，措辞改为「这段 tick 体…」，
+  并给出它所属的**跨 tick 循环**及其整圈大小：
+
+  ```text
+  两个 yield 之间的最坏路径超过 128 条，这段 tick 体会被切到下一 tick。
+  tick 体从源码第 25 行开始。
+  该 tick 体属于源码第 23 行的跨 tick 循环：完整一圈约 238..267 条。
+  用 `ic10c tick --path` 看完整最坏路径。
+  ```
+
+- `relatedInformation` 指向**支配循环头**（"支配的循环头（每圈 26 条，8 次）"）或**跨 tick 循环**
+  （"跨 tick 循环（完整一圈 238..267 条）"），以及各 **tick 体起点**（"tick 体从这里开始"），
+  可在 Problems 面板里点跳。
+- 多芯片时每块芯片的超限分段各一条。
 - 之所以用 Information 而不是 Warning：很多长驻循环本来就该跨 tick，这不是错误，只是提醒。
 
 > `.icg` 与原生 IC10 文本（`.ic`/`.ic10`）都会多一条**总览**诊断（code `tick-loops`），
