@@ -980,8 +980,9 @@ class LspClient {
                     const bodyTxt = lp.bodyMin !== undefined && lp.bodyMin !== lp.body ? `${lp.bodyMin}..${lp.body}` : `${lp.body}`;
                     const trips = lp.trips > 0 ? `${lp.trips}` : '?';
                     const spans = lp.spans ? t('yes', '是') : '';
-                    const end = lp.sourceEnd > 0 ? lp.sourceEnd : lp.end + 1;
-                    return `<tr class="click" data-line="${line}" data-end="${end}"><td>L${line}</td><td class="num">${bodyTxt}</td><td class="num">${trips}</td><td>${spans}</td></tr>`;
+                    const startSrc = lp.sourceStart > 0 ? lp.sourceStart : lp.start + 1;
+                    const endSrc = lp.sourceEnd > 0 ? lp.sourceEnd : lp.end + 1;
+                    return `<tr class="click" data-line="${line}" data-start="${startSrc}" data-end="${endSrc}"><td>L${line}</td><td class="num">${bodyTxt}</td><td class="num">${trips}</td><td>${spans}</td></tr>`;
                 })
                 .join('');
             body += `<details class="chip" open>
@@ -1046,7 +1047,11 @@ class LspClient {
   });
   document.addEventListener('mouseover', (e) => {
     const tr = row(e.target);
-    if (tr) vscode.postMessage({ type: 'highlight', line: Number(tr.getAttribute('data-line')), end: Number(tr.getAttribute('data-end') || tr.getAttribute('data-line')) });
+    if (tr) {
+      const s = Number(tr.getAttribute('data-start') || tr.getAttribute('data-line'));
+      const en = Number(tr.getAttribute('data-end') || s);
+      vscode.postMessage({ type: 'highlight', line: s, end: en });
+    }
   });
   document.addEventListener('mouseout', (e) => {
     const tr = row(e.target);
