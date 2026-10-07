@@ -1493,6 +1493,15 @@ class LspClient {
                     `两个 yield 之间的最坏路径 > ${p.tickLimit} 条：循环会跨 tick（用 \`ic10c tick --path\` 看路径）`)
                 : t(`worst-case between two yields: ${p.tickCost}/${p.tickLimit} instructions`,
                     `两个 yield 之间的最坏路径：${p.tickCost}/${p.tickLimit} 条`));
+            for (const lp of p.tickLoops || []) {
+                const body = lp.bodyMin !== undefined && lp.bodyMin !== lp.body
+                    ? `${lp.bodyMin}..${lp.body}`
+                    : `${lp.body}`;
+                const where = lp.source ? `src L${lp.source}` : `line ${lp.header}`;
+                const trips = lp.trips > 0 ? `${lp.trips}` : '?';
+                tips.push(t(`loop ${where}: ${body} instructions x ${trips} iterations (best..worst per iteration)`,
+                    `循环 ${where}：每圈 ${body} 条 × ${trips} 次（最快..最慢）`));
+            }
         }
         if (p.stackUnbounded) tips.push(t('push depth is unbounded', 'push 深度无界'));
         if (p.stackUser !== undefined) {

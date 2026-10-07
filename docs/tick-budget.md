@@ -47,8 +47,9 @@ examples/…-表驱动.icg: per-tick budget: limit 128, 122 instructions
   `worst-case` 是这一段任意路径上的最大指令数（≥ 128 就 `EXCEEDS`）。
 - **归因**：超限的段尾会附 `<- dominated by loop L29 (src L69) (~182 instr)`，指出是哪个循环
   撑爆的（最坏路径上该循环头执行次数 × 一圈行数的最大值）。
-- **loop**：识别到的自然循环：`body` 是一圈的最坏指令数，`x N iterations` 是识别出的
-  迭代次数（`?` 表示没识别出常量上界）。
+- **loop**：识别到的自然循环：`body` 是**一圈的指令数**（`最快..最慢`，如 `12..26`；两者相同时只给一个数），
+  `x N iterations` 是识别出的迭代次数（`?` 表示没识别出常量上界）。
+  VSCode 状态栏悬停里也会逐个循环列出「每圈 最快..最慢 条 × N 次」。
 - `--path`：`.icg` 给出映射后的**源码行**序列（`sourcePath`），原生 IC10 给出 0 基 IC10 行号。
 
 ### 多芯片

@@ -67,13 +67,14 @@ type Segment struct {
 
 // Loop is a natural loop found in the program (informational).
 type Loop struct {
-	Header int `json:"header"`           // 0-based line of the loop header (branch back target)
-	Latch  int `json:"latch"`            // 0-based line of the branch that jumps back
-	Start  int `json:"start"`            // lowest line in the loop body
-	End    int `json:"end"`              // highest line in the loop body
-	Body   int `json:"body"`             // worst-case instructions in one iteration
-	Trips  int `json:"trips"`            // detected constant trip count, or 0 when unknown
-	Source int `json:"source,omitempty"` // 1-based source line of Header (with Options.LineMap)
+	Header  int `json:"header"`           // 0-based line of the loop header (branch back target)
+	Latch   int `json:"latch"`            // 0-based line of the branch that jumps back
+	Start   int `json:"start"`            // lowest line in the loop body
+	End     int `json:"end"`              // highest line in the loop body
+	Body    int `json:"body"`             // worst-case (longest) instructions in one iteration
+	BodyMin int `json:"bodyMin"`          // best-case (shortest) instructions in one iteration
+	Trips   int `json:"trips"`            // detected constant trip count, or 0 when unknown
+	Source  int `json:"source,omitempty"` // 1-based source line of Header (with Options.LineMap)
 }
 
 // Report is the analysis result.
@@ -520,6 +521,7 @@ func findLoops(nodes map[int]*node, lines []int, dom map[int]map[int]bool, indir
 			}
 		}
 		l.Body = loopBody(nodes, set, h, byHeader[h])
+		l.BodyMin = loopBodyMin(nodes, set, h, byHeader[h])
 		l.Trips = detectTrips(nodes, set, h)
 		loops = append(loops, l)
 	}
@@ -550,6 +552,39 @@ func loopBody(nodes map[int]*node, set map[int]bool, header int, latches map[int
 			}
 			if v := walk(s); v > best {
 				best = v
+			}
+		}
+		onPath[i] = false
+		memo[i] = 1 + best
+		return 1 + best
+	}
+	return walk(header)
+}
+
+// loopBodyMin is the best-case (shortest) instructions from the header to a
+// latch along edges inside the loop (one iteration, excluding the back edge).
+func loopBodyMin(nodes map[int]*node, set map[int]bool, header int, latches map[int]bool) int {
+	memo := map[int]int{}
+	onPath := map[int]bool{}
+	var walk func(i int) int
+	walk = func(i int) int {
+		if latches[i] {
+			return 1
+		}
+		if v, ok := memo[i]; ok {
+			return v
+		}
+		if onPath[i] {
+			return 0
+		}
+		onPath[i] = true
+		best, seen := 0, false
+		for _, s := range nodes[i].dsucc {
+			if !set[s] || s == header {
+				continue
+			}
+			if v := walk(s); !seen || v < best {
+				best, seen = v, true
 			}
 		}
 		onPath[i] = false
@@ -949,8 +984,12 @@ func (r *Report) String() string {
 		if l.Trips > 0 {
 			trips = strconv.Itoa(l.Trips)
 		}
-		fmt.Fprintf(&b, "  loop %s..%s (header %s): body %d x %s iterations\n",
-			loc(l.Start, 0), loc(l.End, 0), loc(l.Header, l.Source), l.Body, trips)
+		body := fmt.Sprintf("%d", l.Body)
+		if l.BodyMin != l.Body {
+			body = fmt.Sprintf("%d..%d", l.BodyMin, l.Body)
+		}
+		fmt.Fprintf(&b, "  loop %s..%s (header %s): body %s x %s iterations\n",
+			loc(l.Start, 0), loc(l.End, 0), loc(l.Header, l.Source), body, trips)
 	}
 	if anyExceeds {
 		b.WriteString("  worst case: a loop between yields can exceed the budget, so the chip resumes mid-loop on the next tick.\n")

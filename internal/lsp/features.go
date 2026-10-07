@@ -1478,8 +1478,9 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 	// most 128 per tick); the editor shows it next to the other budgets.
 	tickLimit := tick.DefaultLimit
 	tickCost, tickExceeds := 0, false
-	analyzeTick := func(code string) {
-		rep, err := tick.Analyze(code, tickLimit)
+	var tickLoops []map[string]any
+	analyzeTick := func(code string, lineMap []int) {
+		rep, err := tick.AnalyzeOpts(code, tick.Options{Limit: tickLimit, LineMap: lineMap})
 		if err != nil {
 			return
 		}
@@ -1491,11 +1492,19 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 				tickExceeds = true
 			}
 		}
+		for _, lp := range rep.Loops {
+			tickLoops = append(tickLoops, map[string]any{
+				"source":  lp.Source,
+				"body":    lp.Body,
+				"bodyMin": lp.BodyMin,
+				"trips":   lp.Trips,
+			})
+		}
 	}
-	analyzeTick(compiled.Code)
+	analyzeTick(compiled.Code, compiled.LineMap)
 	if multi {
 		for _, ch := range compiled.Chips {
-			analyzeTick(ch.Code)
+			analyzeTick(ch.Code, ch.LineMap)
 		}
 	}
 
@@ -1516,6 +1525,9 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 	}
 	if multi {
 		payload["chips"] = len(compiled.Chips)
+	}
+	if len(tickLoops) > 0 {
+		payload["tickLoops"] = tickLoops
 	}
 	if !multi {
 		// Follow imports and library dirs so the budget reflects the real build.
