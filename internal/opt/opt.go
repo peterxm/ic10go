@@ -674,8 +674,43 @@ func constProp(fn *ir.Function) bool {
 				state[d] = c
 			}
 		}
+		if replaceConstTermUses(b.Term, state) {
+			rewritten = true
+		}
 	}
 	return rewritten
+}
+
+// replaceConstTermUses substitutes known constants into a branch terminator's
+// operands, so a condition on a constant variable (`a := 1; if a < 5`) becomes
+// constant and the later foldBranches pass can drop the branch. Without this the
+// propagation only reached instruction operands.
+func replaceConstTermUses(t ir.Term, state map[*ir.Reg]*ir.Const) bool {
+	changed := false
+	rw := func(v ir.Value) ir.Value {
+		if r, ok := v.(*ir.Reg); ok {
+			if c, ok := state[r]; ok {
+				changed = true
+				return c
+			}
+		}
+		return v
+	}
+	switch v := t.(type) {
+	case *ir.Br:
+		v.A = rw(v.A)
+		if v.B != nil {
+			v.B = rw(v.B)
+		}
+	case *ir.BrApprox:
+		v.A = rw(v.A)
+		v.B = rw(v.B)
+		v.Tol = rw(v.Tol)
+	case *ir.BrApproxZero:
+		v.A = rw(v.A)
+		v.Tol = rw(v.Tol)
+	}
+	return changed
 }
 
 func meetPreds(b *ir.Block, out map[*ir.Block]map[*ir.Reg]*ir.Const) map[*ir.Reg]*ir.Const {

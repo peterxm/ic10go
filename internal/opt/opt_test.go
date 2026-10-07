@@ -777,3 +777,56 @@ func TestSelectConvertKeepsLiveIntermediate(t *testing.T) {
 		t.Fatal("selectConvert must keep a chain whose intermediate is still live")
 	}
 }
+
+func TestConstBranchOnVariable(t *testing.T) {
+	// `a := 1; if a < 5 { ... }` must fold: constant propagation has to reach
+	// the branch terminator, not just instruction operands.
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	b.Emit(&ir.Assign{Dst: a, Src: &ir.Const{V: 1}})
+	b.SetTerm(&ir.Br{Cond: ir.Lt, A: a, B: &ir.Const{V: 5}, Then: thenB, Else: elseB})
+	b.SetBlock(thenB)
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: &ir.Const{V: 1}})
+	b.SetTerm(&ir.Ret{})
+	b.SetBlock(elseB)
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: &ir.Const{V: 2}})
+	b.SetTerm(&ir.Ret{})
+	fn := b.Fn()
+	if err := Optimize(fn); err != nil {
+		t.Fatalf("optimize: %v", err)
+	}
+	for _, blk := range fn.Blocks {
+		if br, ok := blk.Term.(*ir.Br); ok {
+			t.Fatalf("constant branch not folded: %+v", br)
+		}
+	}
+}
+
+func TestConstBranchKeepsNonConstant(t *testing.T) {
+	// The condition reads a device, so it is not constant and the branch stays.
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	thenB := b.NewBlock()
+	elseB := b.NewBlock()
+	b.Emit(&ir.Load{Dst: a, Dev: "d0", Logic: "On"})
+	b.SetTerm(&ir.Br{Cond: ir.Lt, A: a, B: &ir.Const{V: 5}, Then: thenB, Else: elseB})
+	b.SetBlock(thenB)
+	b.SetTerm(&ir.Ret{})
+	b.SetBlock(elseB)
+	b.SetTerm(&ir.Ret{})
+	fn := b.Fn()
+	if err := Optimize(fn); err != nil {
+		t.Fatalf("optimize: %v", err)
+	}
+	found := false
+	for _, blk := range fn.Blocks {
+		if _, ok := blk.Term.(*ir.Br); ok {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("non-constant branch was folded away")
+	}
+}
