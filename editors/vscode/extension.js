@@ -856,14 +856,27 @@ class LspClient {
                 { enableScripts: true, retainContextWhenHidden: true }
             );
             const subs = [];
+            if (!this.tickDeco) {
+                this.tickDeco = vscode.window.createTextEditorDecorationType({
+                    isWholeLine: true,
+                    backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
+                });
+            }
             this.tickPanel.onDidDispose(() => {
                 this.tickPanel = undefined;
                 for (const s of subs) s.dispose();
+                this.clearHighlight();
+                if (this.tickDeco) {
+                    this.tickDeco.dispose();
+                    this.tickDeco = undefined;
+                }
             });
             this.tickPanel.webview.onDidReceiveMessage((m) => {
                 if (!m) return;
                 if (m.type === 'jump') this.jumpToLine(m.line);
                 else if (m.type === 'refresh') this.refreshTick();
+                else if (m.type === 'highlight') this.highlightRange(m.line, m.end);
+                else if (m.type === 'clear') this.clearHighlight();
             });
             subs.push(
                 vscode.workspace.onDidSaveTextDocument((d) => {
@@ -892,6 +905,28 @@ class LspClient {
         const ed = await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preserveFocus: false });
         ed.selection = new vscode.Selection(pos, pos);
         ed.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+    }
+
+    // visibleEditorFor finds the visible editor showing doc, if any.
+    visibleEditorFor(doc) {
+        return (vscode.window.visibleTextEditors || []).find((e) => e.document === doc);
+    }
+
+    // highlightRange highlights source lines [line, end] of the tick document,
+    // so hovering a loop/segment row shows where it is.
+    highlightRange(line, end) {
+        if (!this.tickDeco || !this.tickDoc) return;
+        const ed = this.visibleEditorFor(this.tickDoc);
+        if (!ed) return;
+        const a = Math.max(0, (line || 1) - 1);
+        const b = Math.max(a, (end || line || 1) - 1);
+        ed.setDecorations(this.tickDeco, [{ range: new vscode.Range(a, 0, b, 0) }]);
+    }
+
+    clearHighlight() {
+        if (!this.tickDeco || !this.tickDoc) return;
+        const ed = this.visibleEditorFor(this.tickDoc);
+        if (ed) ed.setDecorations(this.tickDeco, []);
     }
 
     async refreshTick() {
@@ -945,7 +980,8 @@ class LspClient {
                     const bodyTxt = lp.bodyMin !== undefined && lp.bodyMin !== lp.body ? `${lp.bodyMin}..${lp.body}` : `${lp.body}`;
                     const trips = lp.trips > 0 ? `${lp.trips}` : '?';
                     const spans = lp.spans ? t('yes', '是') : '';
-                    return `<tr class="click" data-line="${line}"><td>L${line}</td><td class="num">${bodyTxt}</td><td class="num">${trips}</td><td>${spans}</td></tr>`;
+                    const end = lp.sourceEnd > 0 ? lp.sourceEnd : lp.end + 1;
+                    return `<tr class="click" data-line="${line}" data-end="${end}"><td>L${line}</td><td class="num">${bodyTxt}</td><td class="num">${trips}</td><td>${spans}</td></tr>`;
                 })
                 .join('');
             body += `<details class="chip" open>
@@ -992,12 +1028,30 @@ class LspClient {
 <main>${body}</main>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
+  const saved = vscode.getState() || {};
   const eo = document.getElementById('exceedOnly');
-  if (eo) eo.addEventListener('change', () => document.body.classList.toggle('exceed-only', eo.checked));
+  if (eo) {
+    eo.checked = !!saved.exceedOnly;
+    if (eo.checked) document.body.classList.add('exceed-only');
+    eo.addEventListener('change', () => {
+      document.body.classList.toggle('exceed-only', eo.checked);
+      vscode.setState(Object.assign({}, vscode.getState(), { exceedOnly: eo.checked }));
+    });
+  }
+  function row(el) { return el && el.closest ? el.closest('tr[data-line]') : null; }
   document.addEventListener('click', (e) => {
-    const tr = e.target && e.target.closest ? e.target.closest('tr[data-line]') : null;
+    const tr = row(e.target);
     if (tr) { vscode.postMessage({ type: 'jump', line: Number(tr.getAttribute('data-line')) }); return; }
     if (e.target && e.target.id === 'refresh') vscode.postMessage({ type: 'refresh' });
+  });
+  document.addEventListener('mouseover', (e) => {
+    const tr = row(e.target);
+    if (tr) vscode.postMessage({ type: 'highlight', line: Number(tr.getAttribute('data-line')), end: Number(tr.getAttribute('data-end') || tr.getAttribute('data-line')) });
+  });
+  document.addEventListener('mouseout', (e) => {
+    const tr = row(e.target);
+    const to = row(e.relatedTarget);
+    if (tr && tr !== to) vscode.postMessage({ type: 'clear' });
   });
 </script>
 </body></html>`;

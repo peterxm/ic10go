@@ -115,6 +115,7 @@ const mock = {
     Diagnostic: class {},
     DiagnosticSeverity: { Error: 1, Warning: 2, Information: 3 },
     ViewColumn: { Active: 1, Beside: 2 },
+    TextEditorRevealType: { InCenter: 1 },
     TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
     TreeItem: class {
         constructor(label, collapsibleState) {

@@ -118,6 +118,9 @@ func TestSourceMapAndDominant(t *testing.T) {
 	if inner == nil || inner.Source != 12 {
 		t.Fatalf("loop source = %+v, want a loop with header source 12", rep.Loops)
 	}
+	if inner.SourceStart != 12 || inner.SourceEnd < inner.SourceStart {
+		t.Fatalf("loop source range = %d..%d, want start 12 and end >= start", inner.SourceStart, inner.SourceEnd)
+	}
 	if rep.Segments[1].Dominant != 2 || rep.Segments[1].DominantSource != 12 {
 		t.Fatalf("dominant = %d (src %d), want 2 (src 12)",
 			rep.Segments[1].Dominant, rep.Segments[1].DominantSource)

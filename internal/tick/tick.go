@@ -76,6 +76,10 @@ type Loop struct {
 	Trips   int  `json:"trips"`            // detected constant trip count, or 0 when unknown
 	Spans   bool `json:"spans,omitempty"`  // the loop contains a yield/sleep and so spans ticks
 	Source  int  `json:"source,omitempty"` // 1-based source line of Header (with Options.LineMap)
+	// SourceStart / SourceEnd are the 1-based source lines of Start / End (with
+	// Options.LineMap), for highlighting the loop's range in an editor.
+	SourceStart int `json:"sourceStart,omitempty"`
+	SourceEnd   int `json:"sourceEnd,omitempty"`
 }
 
 // Report is the analysis result.
@@ -619,7 +623,23 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 	}
 
 	for i := range rep.Loops {
-		rep.Loops[i].Source = srcOf(rep.Loops[i].Header)
+		l := &rep.Loops[i]
+		l.Source = srcOf(l.Header)
+		// SourceStart/End: the source-line span of the loop's IC10 range, so an
+		// editor can highlight the whole loop. Mapping only Start/End is wrong
+		// when the latch (a back jump) maps back to the header's source line.
+		for ln := l.Start; ln <= l.End; ln++ {
+			s := srcOf(ln)
+			if s <= 0 {
+				continue
+			}
+			if l.SourceStart == 0 || s < l.SourceStart {
+				l.SourceStart = s
+			}
+			if s > l.SourceEnd {
+				l.SourceEnd = s
+			}
+		}
 	}
 	return rep, nil
 }
