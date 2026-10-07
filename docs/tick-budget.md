@@ -88,8 +88,9 @@ examples/…-表驱动.icg: ... worst-case 129 instructions [EXCEEDS 128]
 
 ### 编辑器诊断
 
-除了状态栏，LSP 会对**每个超限段**发一条 **Information** 级诊断（code `tick-budget`），锚在
-**支配循环的源码行**，并带上数字与相关位置：
+除了状态栏，LSP 会对**每个超限的支配循环**发一条 **Information** 级诊断（code `tick-budget`），锚在
+**支配循环的源码行**，并带上数字与相关位置。同一循环撑爆多个分段时**只报一条**（把各段的
+tick 体起点合并在一条里）：
 
 ```text
 worst case between two yields exceeds 128 instructions, so the tick is cut mid-loop.
@@ -99,8 +100,8 @@ run `ic10c tick --path` for the worst-case path.
 ```
 
 - `relatedInformation` 指向**支配循环头**（"dominant loop header (body 26, 8 iterations)"）和
-  **tick 体起点**（"tick body starts here"），可在 Problems 面板里点跳。
-- 多芯片时每块芯片的超限段各一条。
+  各 **tick 体起点**（"tick body starts here"），可在 Problems 面板里点跳。
+- 多芯片时每块芯片的超限循环各一条。
 - 之所以用 Information 而不是 Warning：很多长驻循环本来就该跨 tick，这不是错误，只是提醒。
 
 > `.icg` 与原生 IC10 文本（`.ic`/`.ic10`）都会多一条**总览**诊断（code `tick-loops`），

@@ -43,6 +43,28 @@ func TestDiagnostics(t *testing.T) {
 // A native IC10 buffer opened without a .ic/.ic10 path (e.g. the untitled
 // document `icg.bench.pull` creates) must be classified by its language id, not
 // compiled as .icg.
+// An overrunning loop that cuts several tick segments must be reported once,
+// not once per segment.
+func TestTickBudgetDedup(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("move r0 0\n") // 0
+	b.WriteString("loop:\n")     // 1 (label)
+	for i := 0; i < 140; i++ {
+		b.WriteString("add r0 r0 1\n") // 2..141 (header = 2)
+	}
+	b.WriteString("yield\n")  // 142
+	b.WriteString("j loop\n") // 143
+	src := b.String()
+	units := []tickUnit{{code: src, lineMap: identityLineMap(src)}}
+	diags := tickDiagnostics(units, "file:///t.ic", true)
+	if len(diags) != 1 {
+		t.Fatalf("tick-budget diagnostics = %d, want 1 (deduped by dominant loop): %+v", len(diags), diags)
+	}
+	if diags[0].Code != "tick-budget" {
+		t.Fatalf("code = %q, want tick-budget", diags[0].Code)
+	}
+}
+
 func TestNativeUntitledUsesLanguageID(t *testing.T) {
 	src := "define STACKER HASH(\"StructureStackerReverse\")\n" +
 		"setup:\n" +
