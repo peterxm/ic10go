@@ -908,15 +908,23 @@ class LspClient {
         }, ext);
     }
 
-    // tickHtml renders the per-tick report: one block per chip with a segments
-    // table and a loops table; rows carry data-line and post a jump message.
+    // tickHtml renders the per-tick report: one collapsible block per chip, a
+    // segments table (each row expandable to its worst-case path) and a loops
+    // table. Rows carry data-line and post a jump message; the header has an
+    // "exceeds only" filter.
     tickHtml(reports, subtitle) {
         const nonce = String(Date.now()) + Math.random().toString(36).slice(2);
         const esc = (s) =>
             String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const pathLines = (s) => {
+            if (Array.isArray(s.sourcePath) && s.sourcePath.length) return s.sourcePath;
+            if (Array.isArray(s.path) && s.path.length) return s.path.map((x) => x + 1);
+            return [];
+        };
         let body = '';
         for (const rep of reports) {
             const chip = rep.chip ? t(`chip ${rep.chip}`, `芯片 ${rep.chip}`) : '';
+            const title = `${chip ? esc(chip) + ' · ' : ''}${esc(subtitle)} · ${t('limit', '预算')} ${rep.limit}`;
             const segRows = (rep.segments || [])
                 .map((s) => {
                     const start = s.source > 0 ? s.source : s.start + 1;
@@ -924,7 +932,11 @@ class LspClient {
                     const dom = s.dominantSource > 0 ? `L${s.dominantSource}` : '–';
                     const cls = s.exceeds ? 'bad' : 'ok';
                     const label = s.exceeds ? t('exceeds', '超限') : 'fits';
-                    return `<tr class="click" data-line="${start}"><td>L${start}</td><td class="num">${cost} / ${rep.limit}</td><td class="${cls}">${label}</td><td>${dom}</td></tr>`;
+                    const row = `<tr class="click seg ${s.exceeds ? 'exc' : 'fit'}" data-line="${start}"><td>L${start}</td><td class="num">${cost} / ${rep.limit}</td><td class="${cls}">${label}</td><td>${dom}</td></tr>`;
+                    const path = pathLines(s);
+                    if (!path.length) return row;
+                    const pathRow = `<tr class="pathrow"><td colspan="4"><details><summary>${t('worst-case path', '最坏路径')} · ${path.length} ${t('instructions', '条')}</summary><div class="pathbox">${path.map((l) => 'L' + l).join(' → ')}</div></details></td></tr>`;
+                    return row + pathRow;
                 })
                 .join('');
             const loopRows = (rep.loops || [])
@@ -936,13 +948,13 @@ class LspClient {
                     return `<tr class="click" data-line="${line}"><td>L${line}</td><td class="num">${bodyTxt}</td><td class="num">${trips}</td><td>${spans}</td></tr>`;
                 })
                 .join('');
-            body += `<section>
-  <h2>${chip ? esc(chip) + ' · ' : ''}<span class="muted">${esc(subtitle)} · ${t('limit', '预算')} ${rep.limit}</span></h2>
+            body += `<details class="chip" open>
+  <summary>${title}</summary>
   <h3>${t('Segments', '分段')}</h3>
   <table><thead><tr><th>${t('start', '起点')}</th><th>${t('instructions', '指令')}</th><th>${t('status', '状态')}</th><th>${t('dominant loop', '支配循环')}</th></tr></thead><tbody>${segRows || '<tr><td colspan="4" class="muted">–</td></tr>'}</tbody></table>
   <h3>${t('Loops', '循环')}</h3>
   <table><thead><tr><th>${t('line', '行')}</th><th>${t('best..worst per iteration', '每圈 最快..最慢')}</th><th>${t('iterations', '迭代')}</th><th>${t('spans ticks', '跨 tick')}</th></tr></thead><tbody>${loopRows || '<tr><td colspan="4" class="muted">–</td></tr>'}</tbody></table>
-</section>`;
+</details>`;
         }
         if (reports.length === 0) {
             body = `<p class="err">${esc(subtitle || t('no data', '无数据'))}</p>`;
@@ -953,28 +965,35 @@ class LspClient {
 <style>
   :root { color-scheme: light dark; }
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); margin: 0; }
-  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); }
   header .title { font-weight: 600; }
-  main { padding: 8px 16px 40px; }
-  h2 { font-size: 1.05em; margin: 14px 0 6px; }
-  h3 { font-size: .95em; margin: 12px 0 4px; color: var(--vscode-descriptionForeground); }
+  header label { display: inline-flex; align-items: center; gap: 4px; }
+  main { padding: 4px 16px 40px; }
+  details.chip > summary { cursor: pointer; font-weight: 600; margin: 12px 0 4px; }
+  h3 { font-size: .95em; margin: 10px 0 4px; color: var(--vscode-descriptionForeground); }
   table { width: 100%; max-width: 680px; border-collapse: collapse; }
   th, td { text-align: left; padding: 3px 10px; border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.2)); }
   th { color: var(--vscode-descriptionForeground); font-weight: 500; }
   td.num { text-align: right; font-family: var(--vscode-editor-font-family, monospace); font-variant-numeric: tabular-nums; }
   tr.click { cursor: pointer; }
   tr.click:hover td { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.12)); }
+  tr.pathrow td { border-bottom: none; padding-top: 0; }
+  tr.pathrow details > summary { color: var(--vscode-descriptionForeground); font-weight: 400; cursor: pointer; }
+  .pathbox { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-descriptionForeground); padding: 4px 0 8px; word-break: break-all; line-height: 1.45; }
   .bad { color: var(--vscode-errorForeground, #f14c4c); }
   .ok { color: var(--vscode-charts-green, #3fb950); }
   .muted { color: var(--vscode-descriptionForeground); }
   .err { color: var(--vscode-errorForeground, #f14c4c); padding: 12px; }
+  body.exceed-only tr.seg.fit { display: none; }
   button { font-family: inherit; font-size: inherit; color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); border-radius: 5px; padding: 3px 10px; cursor: pointer; }
 </style></head>
 <body>
-<header><span class="title">${t('Per-tick instruction budget', '每 tick 指令预算')}</span><button id="refresh">${t('Refresh', '刷新')}</button></header>
+<header><span class="title">${t('Per-tick instruction budget', '每 tick 指令预算')}</span><label class="muted"><input type="checkbox" id="exceedOnly" /> ${t('exceeds only', '只看超限')}</label><button id="refresh">${t('Refresh', '刷新')}</button></header>
 <main>${body}</main>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
+  const eo = document.getElementById('exceedOnly');
+  if (eo) eo.addEventListener('change', () => document.body.classList.toggle('exceed-only', eo.checked));
   document.addEventListener('click', (e) => {
     const tr = e.target && e.target.closest ? e.target.closest('tr[data-line]') : null;
     if (tr) { vscode.postMessage({ type: 'jump', line: Number(tr.getAttribute('data-line')) }); return; }

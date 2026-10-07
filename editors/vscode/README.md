@@ -127,7 +127,7 @@ func main() {
 | `IC10 Go: Annotate IC10 (disasm)` | 给 `.ic`/`.ic10` 加跳转目标注释 |
 | `IC10 Go: Show CFG (Mermaid)` | 在 Markdown 预览中显示 `.icg` 的**源码级控制流图**（Mermaid，按函数分组；条件/分支/循环/break/continue 一目了然） |
 | `IC10 Go: Per-tick budget & loops` | 每 tick 指令预算与循环分析（`ic10c tick --json`）：QuickPick 列出每个分段（fits / 超限）与每个循环（每圈最快..最慢、迭代次数、是否跨 tick），**选中即跳到对应源码行**；`.icg` 与原生 `.ic`/`.ic10` 都可用（状态栏悬停也有同样的循环列表） |
-| `IC10 Go: Open the per-tick budget panel` | 打开**持久面板**（Webview，Beside 分栏）：按芯片分块列出「分段」表（起点 / 指令 / 状态 / 支配循环）和「循环」表（行 / 每圈最快..最慢 / 迭代次数 / 是否跨 tick），**点击任意一行跳到源码**；保存或切换文件时自动刷新 |
+| `IC10 Go: Open the per-tick budget panel` | 打开**持久面板**（Webview，Beside 分栏）：按芯片分块（**可折叠**）列出「分段」表（起点 / 指令 / 状态 / 支配循环）和「循环」表（行 / 每圈最快..最慢 / 迭代次数 / 是否跨 tick）；**点击任意一行跳到源码**，每个分段还能**展开看最坏路径**，顶部有**「只看超限」**开关；保存或切换文件时自动刷新 |
 | `IC10 Go: Restart Language Server` | 重启语言服务器 |
 | `IC10 Go: Upload to Game` | 上传到游戏内的芯片：当前是 `.icg` 就先**编译**再上传（`Ctrl+Alt+U`；多芯片源码会先弹芯片选择；有安装代码/loader 会先自动运行），当前是 `.ic10`/`.ic` 则**原样上传**（便于测试社区脚本，尾部空行会被去掉） |
 | `IC10 Go: Download from Game` | 从选中芯片下载当前 IC10 源码到新编辑器，可一键反编译为 `.icg` 或另存为文件（`Ctrl+Alt+D`） |
