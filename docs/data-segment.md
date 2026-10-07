@@ -221,6 +221,9 @@ VS Code `icg.dynamicStack`，默认关，或文件 pragma `// icg: dynamic-stack
 - 是**文件级**声明（编译器扫描整份源码取第一个匹配），多芯片时对所有 chip 生效。
 - 只影响**芯片自己的持久栈**（`db` / 本地栈）上的“删/并写入”类优化；设备栈
   `d0.stack[...]` 属于共享设备，始终按可观测处理，不受本 pragma 影响。
+- **不用 `chip`/`bus`、手写单芯片程序向宿主栈发布数据（让别的芯片 `get/put(dN, …)` 读）时，
+  必须自己加 `// icg: shared-stack`**，否则这些写会被当死存储删掉——见
+  [`multichip.md`](multichip.md) §13。
 - 这些优化只在 runtime 行数不增时才采用（编译器比较两种产物）。
 - 详见 [`spec.md` §4.6](spec.md#46-栈私有-pragma) 与
   [`architecture.md` §6.8](architecture.md#68-栈私有标记)。
