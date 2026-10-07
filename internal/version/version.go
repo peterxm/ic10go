@@ -12,7 +12,7 @@ import (
 // Version is the ic10c release version. It can be overridden at build time:
 //
 //	-ldflags "-X ic10go/internal/version.Version=1.2.3"
-var Version = "0.8.43"
+var Version = "0.8.44"
 
 // Build metadata. These may be injected with -ldflags; when left empty they
 // fall back to the VCS information embedded by the Go toolchain.
