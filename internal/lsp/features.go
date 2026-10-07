@@ -1570,21 +1570,51 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 	notify(w, "icg/stats", payload)
 }
 
+// tickUnit is one program to analyse: compiled .icg runtime code (with its line
+// map), or native IC10 text (identity line map, line N maps to N).
+type tickUnit struct {
+	code    string
+	lineMap []int
+}
+
+// compiledUnits builds the tick units for a compiled .icg result.
+func compiledUnits(compiled ic10.Result) []tickUnit {
+	var units []tickUnit
+	if len(compiled.Chips) > 0 {
+		for _, ch := range compiled.Chips {
+			units = append(units, tickUnit{code: ch.Code, lineMap: ch.LineMap})
+		}
+	} else {
+		units = append(units, tickUnit{code: compiled.Code, lineMap: compiled.LineMap})
+	}
+	return units
+}
+
+// identityLineMap maps IC10 line N (1-based) to itself, for native text.
+func identityLineMap(text string) []int {
+	n := strings.Count(text, "\n") + 2
+	m := make([]int, n)
+	for i := range m {
+		m[i] = i
+	}
+	return m
+}
+
 // tickDiagnostics reports, as information diagnostics, worst-case ticks that
 // exceed the game's per-tick instruction budget: a loop between two yields
 // spans ticks. One diagnostic per overrunning segment, anchored on the dominant
 // loop's source line (or the segment start), with the numbers and a related
 // location for the tick body. Returns nil when nothing exceeds.
-func tickDiagnostics(compiled ic10.Result, uri string, zh bool) []lspDiagnostic {
+func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 	type hit struct {
 		seg  tick.Segment
 		loop *tick.Loop
 	}
 	var hits []hit
-	analyze := func(code string, lineMap []int) {
-		rep, err := tick.AnalyzeOpts(code, tick.Options{Limit: tick.DefaultLimit, LineMap: lineMap})
+	for _, u := range units {
+		rep, err := tick.AnalyzeOpts(u.code, tick.Options{Limit: tick.DefaultLimit, LineMap: u.lineMap})
 		if err != nil {
-			return
+			continue
 		}
 		for i := range rep.Segments {
 			s := rep.Segments[i]
@@ -1600,13 +1630,6 @@ func tickDiagnostics(compiled ic10.Result, uri string, zh bool) []lspDiagnostic 
 			}
 			hits = append(hits, h)
 		}
-	}
-	if len(compiled.Chips) > 0 {
-		for _, ch := range compiled.Chips {
-			analyze(ch.Code, ch.LineMap)
-		}
-	} else {
-		analyze(compiled.Code, compiled.LineMap)
 	}
 	if len(hits) == 0 {
 		return nil

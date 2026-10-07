@@ -406,9 +406,16 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 		return
 	}
 	if s.native(uri) {
+		items := ic10Diagnostics(text)
+		// Native IC10 text: the tick/loop analysis runs on the text directly
+		// (line N maps to itself).
+		items = append(items, tickDiagnostics([]tickUnit{{code: text, lineMap: identityLineMap(text)}}, uri, s.zh)...)
+		if items == nil {
+			items = []lspDiagnostic{}
+		}
 		notify(w, "textDocument/publishDiagnostics", map[string]any{
 			"uri":         uri,
-			"diagnostics": ic10Diagnostics(text),
+			"diagnostics": items,
 		})
 		return
 	}
@@ -447,7 +454,7 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 	// A worst-case tick overrun is informational, not an error: it only matters
 	// when a loop is meant to finish within one tick.
 	if err == nil && (diags == nil || !diags.HasErrors()) {
-		items = append(items, tickDiagnostics(compiled, uri, s.zh)...)
+		items = append(items, tickDiagnostics(compiledUnits(compiled), uri, s.zh)...)
 	}
 	notify(w, "textDocument/publishDiagnostics", map[string]any{
 		"uri":         uri,
