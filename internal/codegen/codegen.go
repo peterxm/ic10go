@@ -287,6 +287,7 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 			}
 		}
 		spillStart := -1
+		termDone := false
 		for idx := 0; idx < len(instrs); idx++ {
 			if spill != nil && spillStart < 0 && idx >= len(b.Instrs) {
 				spillStart = len(lines)
@@ -321,6 +322,19 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 				idx += n - 1
 				continue
 			}
+			// A single-use load that is the block's last instruction folds into
+			// the branch terminator (`u = sp; bgtz u L` -> `bgtz sp L`).
+			if spill == nil && !termDone && idx == len(instrs)-1 {
+				src := b.SrcLine
+				if s := fn.SrcTerms[b.Term]; s > 0 {
+					src = s
+				}
+				if ls, ok := foldLoadTerminator(instrs, idx, b.Term, next, uses, colors, src, b.Func); ok {
+					lines = append(lines, ls...)
+					termDone = true
+					continue
+				}
+			}
 			if ls, ok := ins.(*ir.LoadSpill); ok {
 				dst := regName(ls.Dst, colors)
 				if spillDB {
@@ -354,6 +368,9 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 			// terminator is still handled when the layout reaches it.
 			consumed[spill] = len(spill.Instrs)
 			continue
+		}
+		if termDone {
+			continue // the terminator was folded into the last instruction
 		}
 		if isHaltBlock(b) {
 			// A bare halt emits no line, so branches target 9999 directly. It
@@ -716,6 +733,11 @@ func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 		}
 		return "select " + regName(v.Dst, colors) + " " + val(v.Cond) + " " + val(v.Then) +
 			" " + val(v.Else), 2, true
+	case *ir.Cmp:
+		if !mentions(v.A, v.B) {
+			return "", 0, false
+		}
+		return cmpTextFolded(v.Cond, v.Dst, v.A, v.B, loaded, operand, colors), 2, true
 	case *ir.Store:
 		if !mentions(v.Src) {
 			return "", 0, false
@@ -759,6 +781,86 @@ func foldLoadOperand(instrs []ir.Instr, i int, uses map[*ir.Reg]int, colors map[
 		return strings.Join(parts, " "), 2, true
 	}
 	return "", 0, false
+}
+
+// cmpTextFolded renders a Cmp whose operands may be the folded-in load.
+func cmpTextFolded(c ir.Cond, dst *ir.Reg, a, b ir.Value, loaded *ir.Reg, operand string, colors map[*ir.Reg]int) string {
+	txt := func(v ir.Value) string {
+		if r, ok := v.(*ir.Reg); ok && r == loaded {
+			return operand
+		}
+		return valueText(v, colors)
+	}
+	if b == nil {
+		return cmpMnemonic(c) + " " + regName(dst, colors) + " " + txt(a)
+	}
+	if isZeroConst(b) {
+		if m, ok := zeroCmpMnemonic(c); ok {
+			return m + " " + regName(dst, colors) + " " + txt(a)
+		}
+	}
+	return cmpMnemonic(c) + " " + regName(dst, colors) + " " + txt(a) + " " + txt(b)
+}
+
+// branchTextFolded renders a branch whose operands may be the folded-in load.
+func branchTextFolded(c ir.Cond, a, b ir.Value, loaded *ir.Reg, operand string, colors map[*ir.Reg]int) string {
+	txt := func(v ir.Value) string {
+		if r, ok := v.(*ir.Reg); ok && r == loaded {
+			return operand
+		}
+		return valueText(v, colors)
+	}
+	if b == nil {
+		return branchMnemonic(c) + " " + txt(a)
+	}
+	if isZeroConst(b) {
+		if m, ok := zeroBranchMnemonic(c); ok {
+			return m + " " + txt(a)
+		}
+	}
+	return branchMnemonic(c) + " " + txt(a) + " " + txt(b)
+}
+
+// foldLoadTerminator folds a single-use load that is a block's last instruction
+// into its branch terminator, so the load line disappears:
+// `u = sp; bgtz u L` -> `bgtz sp L`. It mirrors foldLoadOperand for terminators
+// (only plain Br; the approximate/valid forms take device operands).
+func foldLoadTerminator(instrs []ir.Instr, i int, term ir.Term, next *ir.Block, uses map[*ir.Reg]int, colors map[*ir.Reg]int, src int, fn string) ([]line, bool) {
+	var loaded *ir.Reg
+	operand := ""
+	switch ld := instrs[i].(type) {
+	case *ir.LoadIndirect:
+		loaded, operand = ld.Dst, indirectName(ld.Ptr, colors)
+	case *ir.LoadSpecial:
+		loaded, operand = ld.Dst, ld.Name
+	default:
+		return nil, false
+	}
+	if uses[loaded] != 1 {
+		return nil, false
+	}
+	br, ok := term.(*ir.Br)
+	if !ok {
+		return nil, false
+	}
+	isLoaded := func(v ir.Value) bool {
+		r, ok := v.(*ir.Reg)
+		return ok && r == loaded
+	}
+	if !isLoaded(br.A) && !isLoaded(br.B) {
+		return nil, false
+	}
+	mk := func(c ir.Cond, target *ir.Block) line {
+		return line{text: branchTextFolded(c, br.A, br.B, loaded, operand, colors) + " ", target: target, fn: fn, src: src}
+	}
+	switch {
+	case br.Else == next:
+		return []line{mk(br.Cond, br.Then)}, true
+	case br.Then == next:
+		return []line{mk(br.Cond.Invert(), br.Else)}, true
+	default:
+		return []line{mk(br.Cond, br.Then), {text: "j ", target: br.Else, fn: fn, src: src}}, true
+	}
 }
 
 // labelLine returns the line a label used as a value stands for: the block's own

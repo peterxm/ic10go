@@ -387,9 +387,12 @@ VS Code `icg.redundantDeviceWrites`）会删除**同一段直落代码**内、�
 合法的源操作数，所以 `t = a op b; rrP = t` 折成 `a op rrP b`，`u = ireg(rrP); d = u op b`
 折成 `d = rrP op b`。源折叠同样适用于把单次使用的读直接喂给设备写（`s` / `ss` /
 `sd`）、内建调用（`poke`/`put`/…）和 `select`——`u = sp; s db Setting u` 折成
-`s db Setting sp`，`u = sp; poke u v` 折成 `poke sp v`。前提都是临时寄存器全局单次
-使用、值必须紧邻其消费者（中间没有写）、且消费者确实读它。折叠还跨过被当作
-fall-through 省掉的块边界：块 `b` 无条件跳到布局上的下一个块、且该后继只有 `b` 一个前驱
+`s db Setting sp`，`u = sp; poke u v` 折成 `poke sp v`。另外 `select` 也支持写 `sp`/`ra`
+（`t = select c a b; sp = t` → `select sp c a b`）。**分支与比较的操作数**同样折叠：
+`u = sp; bgtz u L` → `bgtz sp L`，`u = ireg(rrP); beqz u L` → `beqz rrP L`，
+`u = sp; d = u > 5` → `sgt d sp 5`（分支折叠由 `codegen.foldLoadTerminator` 在终止符处完成）。
+前提都是临时寄存器全局单次使用、值必须紧邻其消费者（中间没有写）、且消费者确实读它。折叠还跨过被
+当作 fall-through 省掉的块边界：块 `b` 无条件跳到布局上的下一个块、且该后继只有 `b` 一个前驱
 时，后继的指令会拼进折叠窗口（`select` 的结果被下一块写进 `sp` 就属于这种）。这是反编译
 「间接寄存器组」与栈机器程序能压进 128 行的关键（见 [`backlog.md`](backlog.md) D6、
 [`special-reg-operands.md`](special-reg-operands.md)）。

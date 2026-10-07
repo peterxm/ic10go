@@ -440,3 +440,99 @@ func TestNoFoldAcrossSharedBlock(t *testing.T) {
 		t.Fatalf("code = %q, want no fold into a shared block", code)
 	}
 }
+
+func TestFoldSpecialIntoBranch(t *testing.T) {
+	// `u = sp; bgtz u L` becomes `bgtz sp L` (the load line disappears).
+	b := ir.NewBuilder("t")
+	u := b.NewReg("u")
+	thenB := b.NewBlock()
+	endB := b.NewBlock()
+	b.Emit(&ir.LoadSpecial{Dst: u, Name: "sp"})
+	b.SetTerm(&ir.Br{Cond: ir.Gt, A: u, B: &ir.Const{V: 0}, Then: thenB, Else: endB})
+	b.SetBlock(thenB)
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: &ir.Const{V: 1}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{u: 0})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if strings.Contains(code, "move r0 sp") {
+		t.Fatalf("load not folded into the branch:\n%s", code)
+	}
+	if !strings.Contains(code, "bgtz sp ") && !strings.Contains(code, "blez sp ") {
+		t.Fatalf("want a branch on sp:\n%s", code)
+	}
+}
+
+func TestFoldIndirectIntoBranch(t *testing.T) {
+	// `u = ireg(rrP); beqz u L` becomes `beqz rrP L`.
+	b := ir.NewBuilder("t")
+	u := b.NewReg("u")
+	p := b.NewReg("p")
+	thenB := b.NewBlock()
+	endB := b.NewBlock()
+	b.Emit(&ir.LoadIndirect{Dst: u, Ptr: p})
+	b.SetTerm(&ir.Br{Cond: ir.Zero, A: u, Then: thenB, Else: endB})
+	b.SetBlock(thenB)
+	b.Emit(&ir.Store{Dev: "d0", Logic: "On", Src: &ir.Const{V: 1}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{u: 1, p: 3})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if strings.Contains(code, "move r1 rr3") {
+		t.Fatalf("load not folded into the branch:\n%s", code)
+	}
+	if !strings.Contains(code, "beqz rr3 ") && !strings.Contains(code, "bnez rr3 ") {
+		t.Fatalf("want a branch on rr3:\n%s", code)
+	}
+}
+
+func TestFoldSpecialIntoCmp(t *testing.T) {
+	// `u = sp; d = u > 5` becomes `sgt d sp 5`.
+	b := ir.NewBuilder("t")
+	u := b.NewReg("u")
+	d := b.NewReg("d")
+	b.Emit(&ir.LoadSpecial{Dst: u, Name: "sp"})
+	b.Emit(&ir.Cmp{Cond: ir.Gt, Dst: d, A: u, B: &ir.Const{V: 5}})
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: d})
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{u: 0, d: 1})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if strings.Contains(code, "move ") {
+		t.Fatalf("load not folded into the Cmp:\n%s", code)
+	}
+	if !strings.Contains(code, "sgt r1 sp 5") {
+		t.Fatalf("want `sgt r1 sp 5`:\n%s", code)
+	}
+}
+
+func TestNoFoldIntoBranchWhenReused(t *testing.T) {
+	// The loaded value is read again after the branch's own consumer, so the
+	// load keeps its own line.
+	b := ir.NewBuilder("t")
+	u := b.NewReg("u")
+	thenB := b.NewBlock()
+	endB := b.NewBlock()
+	b.Emit(&ir.LoadSpecial{Dst: u, Name: "sp"})
+	b.Emit(&ir.Bin{Op: ir.Add, Dst: u, A: u, B: &ir.Const{V: 1}})
+	b.SetTerm(&ir.Br{Cond: ir.Gt, A: u, B: &ir.Const{V: 0}, Then: thenB, Else: endB})
+	b.SetBlock(thenB)
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: &ir.Const{V: 1}})
+	b.SetTerm(&ir.Jmp{Target: endB})
+	b.SetBlock(endB)
+	b.SetTerm(&ir.Ret{})
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{u: 0})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if !strings.Contains(code, "move r0 sp") || !strings.Contains(code, "add r0 r0 1") {
+		t.Fatalf("expected the load and compute to remain:\n%s", code)
+	}
+}
