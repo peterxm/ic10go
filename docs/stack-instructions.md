@@ -11,7 +11,7 @@
 >
 > （另外 Medium Satellite Dish 用 `TraderInstruction` 的另一套，不在本文。）
 >
-> 关联：[`spec.md` §8.7](spec.md)（`printer.*` / `sorter.*` 构建器）、[`target-ic10.md`](target-ic10.md)
+> 关联：[`spec.md` §8.8](spec.md)（`printer.*` / `sorter.*` 构建器）、[`target-ic10.md`](target-ic10.md)
 > （枚举与常量）、`Stationeers_IC10_参考文档.md`（附：内部栈编程）。
 
 ---

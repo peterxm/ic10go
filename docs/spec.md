@@ -654,6 +654,11 @@ batch.writeSlot(hash("StructureBattery"), 0, "ChargeRatio", 1)       // sbs
   也可用裸名（`Sum`）或 `LogicBatchMethod.*` 常量。
 - `hash("...")` 在编译期计算 CRC-32。
 
+> **无匹配设备**时批量读按聚合方式返回**边界值**：`Average` → `NaN`（已实测），
+> `Maximum` → `±inf`，`Sum` / `Minimum` / `Count` → `0`。所以用 `isNaN` 判「设备是否存在」
+> 只对 `Average` 成立；更稳妥的是读 `ReferenceId`（`Average`）再判 `NaN`。批量读到的值可能
+> 为 NaN，与它相关的 `< <= > >=` 比较在 NaN 下均为假（见 §8.6）。
+
 ### 7.7 设备栈 / 按 id
 
 ```go
@@ -755,7 +760,29 @@ notApproxZero(a, tol)  // snaz
 | `isNaN(x)` | `snan` |
 | `isNotNaN(x)` | `snanz` |
 
-### 8.6 编译期
+### 8.6 比较与 NaN
+
+IC10 的比较是**各自独立**的 IEEE 运算：`a < b` / `a <= b` / `a > b` / `a >= b` 在任一
+操作数为 NaN 时**都为假**，彼此**不是取反关系**。
+
+- `!(a < b)` **不等于** `a >= b`（a 为 NaN 时前者真、后者假）——所以编译器不能随意把
+  `if a < b { … }` 折成取反的单条分支。
+- `a == b` / `a != b` 对 NaN 恒假 / 恒真（这一对可以互相取反）。
+
+NaN 的来源：显式 `nan`、`sqrt(负数)` / `log(非正)` / `asin`·`acos`(越界) / `pow(负底数)` /
+除数为 0 的 `div`、`pinf` 算术（`inf - inf`、`0 * inf`）、以及**批量读**（`lb`/`lbn`/`lbs`
+无匹配设备时按聚合返回边界值，`Average` → `NaN`，见 §7.6）。
+
+> **编译期**：常量表达式若产生 NaN（`1/0`、`0/0`、`sqrt(-1)`、`pinf - pinf` …），编译器会
+> **warning**，并按游戏语义折成 `nan`（注意游戏里 `div`/`mod` 除数为 0 是 NaN，不是 ±inf）。
+> 故意的 `nan` 字面量不警告。
+
+> **`--nan-safe`**（`Options.NaNSafe`，**默认关**）：默认情况下，编译器会为省行把
+> `if a < b { … }` 折成取反的单条分支（`bge`），这在 NaN 下会改变行为。开启后，只有当两个
+> 操作数**可证明非 NaN**（整数运算、比较结果、单个设备读，或被 `if isNaN(x) { … }` 收窄过）
+> 时才对 ordering 条件取反，否则发正向分支 + 一条 `j`。代价约每处 +1 行。
+
+### 8.7 编译期
 
 ```go
 hash("StructureBattery")   // CRC-32，编译期常量
@@ -771,7 +798,7 @@ raw("Equals")              // 原样输出该 IC10 操作数（游戏枚举/关�
 > 的拼写建议（例如 `Color.Blck` → `Color.Black`），因此游戏更新新增枚举
 > 无需改编译器（已知枚举仍优先用内建表里的数值）。
 
-### 8.7 设备栈指令构建器
+### 8.8 设备栈指令构建器
 
 分拣器 / 打印机的栈指令是按位段打包的整数。`sorter.*` / `printer.*` 构建器
 按手册的字段布局打包（常量参数会折叠成单个数字）：
@@ -807,7 +834,7 @@ put(d1, 9, printer.missingRecipeReagent(2, hash("Iron"))) // ceil<<8 | hash<<16 
 常量取 `SortingClass.*` / `SlotClass.*`。分拣器 `Mode`：`All`(0) / `Any`(1) /
 `None`(2)。
 
-### 8.8 底层
+### 8.9 底层
 
 | 函数 | 说明 |
 |------|------|
