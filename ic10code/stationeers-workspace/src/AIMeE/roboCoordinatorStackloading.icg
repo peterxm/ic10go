@@ -1,3 +1,4 @@
+// icg: shared-stack
 // 把 20 个 Aimee 机器人的名称 hash 写入宿主内存地址 0..19。
 //
 // 原脚本：AIMeE/roboCoordinatorStackloading.ic10

@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -14,22 +13,30 @@ import (
 	"ic10go/pkg/ic10"
 )
 
-// housingStackWrite matches a write to the housing/user stack: put(db, N, ...),
-// db.stack[N] = ..., or poke(N, ...). The single-chip default is private-stack,
-// which deletes such writes when the program never reads them back, so a port
-// that publishes to db without `// icg: shared-stack` can silently drop its
-// outputs.
-var housingStackWrite = regexp.MustCompile(`put\(\s*db\s*,|db\.stack\s*\[[0-9]+\]\s*=[^=]|poke\s*\(`)
-
-// housingStackHint logs a port that writes the housing stack but does not carry
-// the shared-stack pragma, since its db writes may be removed.
-func housingStackHint(t *testing.T, port, src string) {
+// housingStackHint logs a port whose compiled code changes when built with
+// `// icg: shared-stack`. The single-chip default is private-stack, which drops
+// housing-stack writes the program never reads back and may assume such slots
+// start at 0, so a port that publishes to (or reads state from) db needs the
+// pragma. Compiling both ways keeps this quiet for ports where db is only
+// private scratch.
+func housingStackHint(t *testing.T, port string, src []byte) {
 	t.Helper()
-	if strings.Contains(src, "shared-stack") || !housingStackWrite.MatchString(src) {
+	if strings.Contains(string(src), "shared-stack") {
 		return
 	}
-	t.Logf("%s writes the housing stack (db) but has no `// icg: shared-stack`; the single-chip private-stack default may delete those writes. Add the pragma if they are outputs (see solverLarge).",
-		filepath.Base(port))
+	priv, pd, perr := ic10.CompileWithOptions(port, src, ic10.Options{DynamicStack: true})
+	if perr != nil || pd.HasErrors() {
+		return
+	}
+	sharedSrc := append([]byte("// icg: shared-stack\n"), src...)
+	shared, sd, serr := ic10.CompileWithOptions(port, sharedSrc, ic10.Options{DynamicStack: true})
+	if serr != nil || sd.HasErrors() {
+		return // the shared-stack build does not fit; the compile check reports that
+	}
+	if priv != shared {
+		t.Logf("%s: private-stack and `// icg: shared-stack` compile to different code; add the pragma if its db writes are outputs (see solverLarge).",
+			filepath.Base(port))
+	}
 }
 
 // portSetup gives both the original and the ported script the same devices and
@@ -108,7 +115,7 @@ func TestIc10CodePorts(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			housingStackHint(t, port, string(newSrc))
+			housingStackHint(t, port, newSrc)
 			// The ported scripts are real-world IC10 that predate the user
 			// stack partition, so compile them with the dynamic boundary.
 			compiled, diags, err := ic10.CompileWithOptions(port, newSrc, ic10.Options{DynamicStack: true})

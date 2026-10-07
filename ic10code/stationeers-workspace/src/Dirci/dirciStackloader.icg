@@ -1,3 +1,4 @@
+// icg: shared-stack
 // Dirci 路线装载：清空内存并把 8 个航点、最后一个航点索引、电量阈值写入。
 //
 // 原脚本：Dirci/dirciStackloader.ic10

@@ -1,3 +1,4 @@
+// icg: shared-stack
 // Aimee 简易往返脚本（矿区 ↔ 卸载点），用于测试 roboroutine。
 //
 // 原脚本：AIMeE/useless/baseFriend.ic10
