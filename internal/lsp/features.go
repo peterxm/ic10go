@@ -1575,7 +1575,7 @@ func (s *Server) publishStats(w *bufio.Writer, uri, text string, compiled ic10.R
 // spans ticks. One diagnostic per overrunning segment, anchored on the dominant
 // loop's source line (or the segment start), with the numbers and a related
 // location for the tick body. Returns nil when nothing exceeds.
-func tickDiagnostics(compiled ic10.Result, uri string) []lspDiagnostic {
+func tickDiagnostics(compiled ic10.Result, uri string, zh bool) []lspDiagnostic {
 	type hit struct {
 		seg  tick.Segment
 		loop *tick.Loop
@@ -1624,6 +1624,12 @@ func tickDiagnostics(compiled ic10.Result, uri string) []lspDiagnostic {
 		}
 		return "?"
 	}
+	bodyText := func(lp *tick.Loop) string {
+		if lp.BodyMin != lp.Body {
+			return fmt.Sprintf("%d..%d", lp.BodyMin, lp.Body)
+		}
+		return fmt.Sprintf("%d", lp.Body)
+	}
 	out := make([]lspDiagnostic, 0, len(hits))
 	for _, h := range hits {
 		anchor := h.seg.Source
@@ -1631,19 +1637,35 @@ func tickDiagnostics(compiled ic10.Result, uri string) []lspDiagnostic {
 			anchor = h.loop.Source
 		}
 		var msg strings.Builder
-		fmt.Fprintf(&msg, "worst case between two yields exceeds %d instructions, so the tick is cut mid-loop.", tick.DefaultLimit)
-		if h.seg.Source > 0 {
-			fmt.Fprintf(&msg, "\ntick body starts at source line %d", h.seg.Source)
-			if h.seg.Barrier >= 0 && h.seg.BarrierSource > 0 {
-				fmt.Fprintf(&msg, ", ends at the next yield (source line %d)", h.seg.BarrierSource)
+		if zh {
+			fmt.Fprintf(&msg, "两个 yield 之间的最坏路径超过 %d 条，循环会被切到下一 tick。", tick.DefaultLimit)
+			if h.seg.Source > 0 {
+				fmt.Fprintf(&msg, "\ntick 体从源码第 %d 行开始", h.seg.Source)
+				if h.seg.Barrier >= 0 && h.seg.BarrierSource > 0 {
+					fmt.Fprintf(&msg, "，到下一个 yield（源码第 %d 行）结束", h.seg.BarrierSource)
+				}
+				msg.WriteString("。")
 			}
-			msg.WriteString(".")
+			if h.loop != nil {
+				fmt.Fprintf(&msg, "\n支配循环在源码第 %d 行：每圈 %s 条（最快..最慢）× %s 次 ≈ %d 条。",
+					h.loop.Source, bodyText(h.loop), tripsText(h.loop), h.seg.DominantCost)
+			}
+			msg.WriteString("\n用 `ic10c tick --path` 看完整最坏路径。")
+		} else {
+			fmt.Fprintf(&msg, "worst case between two yields exceeds %d instructions, so the tick is cut mid-loop.", tick.DefaultLimit)
+			if h.seg.Source > 0 {
+				fmt.Fprintf(&msg, "\ntick body starts at source line %d", h.seg.Source)
+				if h.seg.Barrier >= 0 && h.seg.BarrierSource > 0 {
+					fmt.Fprintf(&msg, ", ends at the next yield (source line %d)", h.seg.BarrierSource)
+				}
+				msg.WriteString(".")
+			}
+			if h.loop != nil {
+				fmt.Fprintf(&msg, "\ndominant loop at source line %d: %s instructions (best..worst x %s iterations ≈ %d).",
+					h.loop.Source, bodyText(h.loop), tripsText(h.loop), h.seg.DominantCost)
+			}
+			msg.WriteString("\nrun `ic10c tick --path` for the worst-case path.")
 		}
-		if h.loop != nil {
-			fmt.Fprintf(&msg, "\ndominant loop at source line %d: body %d × %s iterations ≈ %d instructions.",
-				h.loop.Source, h.loop.Body, tripsText(h.loop), h.seg.DominantCost)
-		}
-		msg.WriteString("\nrun `ic10c tick --path` for the worst-case path.")
 		d := lspDiagnostic{
 			Range:    at(anchor),
 			Severity: 3, // Information: exceeding a tick is often intentional
@@ -1653,15 +1675,23 @@ func tickDiagnostics(compiled ic10.Result, uri string) []lspDiagnostic {
 		}
 		var related []relatedInfo
 		if h.loop != nil && h.loop.Source > 0 {
+			m := fmt.Sprintf("dominant loop header (body %s, %s iterations)", bodyText(h.loop), tripsText(h.loop))
+			if zh {
+				m = fmt.Sprintf("支配的循环头（每圈 %s 条，%s 次）", bodyText(h.loop), tripsText(h.loop))
+			}
 			related = append(related, relatedInfo{
 				Location: map[string]any{"uri": uri, "range": at(h.loop.Source)},
-				Message:  fmt.Sprintf("dominant loop header (body %d, %s iterations)", h.loop.Body, tripsText(h.loop)),
+				Message:  m,
 			})
 		}
 		if h.seg.Source > 0 && h.seg.Source != anchor {
+			m := "tick body starts here"
+			if zh {
+				m = "tick 体从这里开始"
+			}
 			related = append(related, relatedInfo{
 				Location: map[string]any{"uri": uri, "range": at(h.seg.Source)},
-				Message:  "tick body starts here",
+				Message:  m,
 			})
 		}
 		d.RelatedInformation = related
