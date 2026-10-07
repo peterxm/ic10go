@@ -45,6 +45,42 @@ func main() {
 	}
 }
 
+// A `continue` inside a `switch` continues the enclosing loop (as in Go); a
+// switch frame only supports `break`, so it is skipped when resolving the
+// continue. This used to fail at lowering with "continue outside of loop".
+func TestContinueInSwitch(t *testing.T) {
+	src := `func main() {
+    for {
+        yield()
+        s := 0
+        for i := 0; i < 5; i++ {
+            switch i {
+            case 2:
+                continue
+            }
+            s += i
+        }
+        d0.Setting = s
+    }
+}
+`
+	code, diags, err := ic10.Compile("t.icg", []byte(src))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	m := vm.New()
+	if err := m.Load(code); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(1000); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	// i = 0+1+3+4 = 8 (i == 2 is skipped by the continue).
+	if got := m.Get("d0", "Setting"); got != 8 {
+		t.Errorf("d0.Setting = %v, want 8", got)
+	}
+}
+
 func TestDataTableCompile(t *testing.T) {
 	code, diags, err := ic10.Compile("t.icg", []byte(dataTableSrc))
 	if err != nil || diags.HasErrors() {

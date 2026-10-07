@@ -463,6 +463,8 @@ case 6, 7:
 
 编译为比较链或跳转表（视情况）。`case lo..hi` 是闭区间，lower 为两次边界比较；区间 case 会让该 `switch` 退出 `--auto-table` / `--jump-table`（它们要求稠密单值）。
 
+无标签的 `break` 作用于**最内层循环或 switch**；无标签的 `continue` 作用于**最内层循环**——中间的 `switch` 会被跳过（与 Go 一致）。`continue` 不能作用于 `switch`：`continue SwitchLabel` 会报错。
+
 加 `table` 标记可把「常量 → 常量」的多路分支自动放进数据段（省行数）：
 
 ```go

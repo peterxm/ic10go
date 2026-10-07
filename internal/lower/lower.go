@@ -613,11 +613,15 @@ func (l *lowerer) breakTarget(label *ast.Ident, pos source.Pos) *ir.Block {
 // the one named by the optional label.
 func (l *lowerer) continueTarget(label *ast.Ident, pos source.Pos) *ir.Block {
 	if label == nil {
-		if len(l.loops) == 0 || l.loops[len(l.loops)-1].continueB == nil {
-			l.diags.Errorf(pos, "continue outside of loop")
-			return nil
+		// A continue targets the innermost enclosing *loop*; a switch only gets a
+		// break frame (continueB == nil) and is skipped, as in Go.
+		for i := len(l.loops) - 1; i >= 0; i-- {
+			if l.loops[i].continueB != nil {
+				return l.loops[i].continueB
+			}
 		}
-		return l.loops[len(l.loops)-1].continueB
+		l.diags.Errorf(pos, "continue outside of loop")
+		return nil
 	}
 	for i := len(l.loops) - 1; i >= 0; i-- {
 		if l.loops[i].label == label.Name {
