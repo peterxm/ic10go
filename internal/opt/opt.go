@@ -277,9 +277,20 @@ func Optimize(fn *ir.Function) error {
 	}
 	fn.BuildCFG()
 	debug := os.Getenv("IC10C_DUMP_PASSES") != ""
+	// IC10C_SKIP_PASS=name[,name] disables individual passes, to measure each
+	// pass's contribution to the output size.
+	skip := map[string]bool{}
+	for _, n := range strings.Split(os.Getenv("IC10C_SKIP_PASS"), ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			skip[n] = true
+		}
+	}
 	for i := 0; i < maxRounds; i++ {
 		changed := false
 		for _, p := range pipeline {
+			if skip[p.name] {
+				continue
+			}
 			if p.run(fn) {
 				changed = true
 				if debug {
