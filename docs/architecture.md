@@ -361,6 +361,8 @@ VS Code `icg.redundantDeviceWrites`）会删除**同一段直落代码**内、�
 | `!a` | `seqz d a` |
 | `a && b`（无副作用） | `min d a b` |
 | `a \|\| b`（无副作用） | `max d a b` |
+| `if c1 && c2` / `if c1 \|\| c2`（两侧是比较或 `isNaN`） | 短路成两条 `b<cond>`（`fuseBranches` 去掉 `min`/`max` 与比较行） |
+| `if isNaN(x)` | `bnan x Lelse`（`isNotNaN`/`!isNaN` 对调目标；IC10 无 `bnanz`） |
 | `d0.On` | `l d d0 On` |
 | `d0.On = v` | `s d0 On v` |
 | `d.slot[i].X` | `ls d d i X` |
@@ -515,7 +517,7 @@ ic10go/
 - 块内拷贝/常量传播、全局常量传播（⊤ 起步 + RPO，跨回边）、常量折叠、代数化简
 - 冗余设备/槽位/批量读消除（含跨块 CSE、存储转发）、常量分支折叠（常量代入分支终止符）
 - 循环不变量外提（含设备读；开/关取更短）、尾块合并、死存储消除
-- DCE、全局 CSE（可用表达式）、比较-分支融合（跨过一次拷贝；`isSet`/`isUnset` → `bdse`/`bdns`、`isLoadValid`/`isStoreValid` → `bdnvl`/`bdnvs`，设备实参含运行期寄存器/id；`min`/`max` 短路）、`select` 化、逻辑化简
+- DCE、全局 CSE（可用表达式）、比较-分支融合（跨过一次拷贝；`isSet`/`isUnset` → `bdse`/`bdns`、`isLoadValid`/`isStoreValid` → `bdnvl`/`bdnvs`、`isNaN` → `bnan`，设备实参含运行期寄存器/id；`min`/`max` 的 `&&`/`||` 短路）、`select` 化、逻辑化简
 - 特殊寄存器/间接寄存器操作数折叠（`sp`/`ra`/`rrN` 折进算术、设备写、内建、`select`、分支、`Cmp`）
 - 用户栈提升（mem2reg，含 `pop`/`peek` 别名安全）、连续 ≥5 个 `pop` 的 `rrN` 批量折叠
 - 内联 / 外提（按体积取短；设备实参可外提为 `drN`，常量实参可折叠或一起外提）

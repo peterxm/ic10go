@@ -336,6 +336,7 @@ const (
 	Ge
 	NonZero // a != 0
 	Zero    // a == 0
+	NaN     // a is NaN (IC10 bnan); there is no "branch if not NaN"
 )
 
 func (c Cond) String() string {
@@ -356,11 +357,14 @@ func (c Cond) String() string {
 		return "nz"
 	case Zero:
 		return "z"
+	case NaN:
+		return "nan"
 	}
 	return "?"
 }
 
-// Invert returns the logical negation of the condition.
+// Invert returns the logical negation of the condition. IC10 has no "branch if
+// not NaN", so Invert(NaN) returns NaN: callers that can invert must guard it.
 func (c Cond) Invert() Cond {
 	switch c {
 	case Eq:

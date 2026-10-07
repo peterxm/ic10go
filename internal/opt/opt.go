@@ -2298,7 +2298,7 @@ func fuseBranches(fn *ir.Function) bool {
 				case *ir.Cmp:
 					return i, v, nil, true
 				case *ir.Builtin:
-					if (v.Name == "isSet" || v.Name == "isUnset") && len(v.Args) == 1 {
+					if (v.Name == "isSet" || v.Name == "isUnset" || v.Name == "isNaN") && len(v.Args) == 1 {
 						return i, nil, v, true
 					}
 				}
@@ -2324,15 +2324,22 @@ func fuseBranches(fn *ir.Function) bool {
 			continue
 		}
 		if set != nil {
-			// `x = isSet(d); if x` -> `bdse d` / `bdns d`.
-			devSet := set.Name == "isSet"
+			// `x = isSet(d); if x` -> `bdse`/`bdns`; `x = isNaN(y); if x` -> `bnan`.
+			then, els := br.Then, br.Else
 			if cond == ir.Zero {
-				devSet = !devSet
+				then, els = br.Else, br.Then
 			}
-			if d, isDev := set.Args[0].(*ir.Device); isDev {
-				b.Term = &ir.BrSet{Dev: d.Name, Set: devSet, Then: br.Then, Else: br.Else}
-			} else {
-				b.Term = &ir.BrSet{DevPtr: set.Args[0], Set: devSet, Then: br.Then, Else: br.Else}
+			switch set.Name {
+			case "isNaN":
+				b.Term = &ir.Br{Cond: ir.NaN, A: set.Args[0], Then: then, Else: els}
+			default: // isSet / isUnset
+				var dev *ir.BrSet
+				if d, isDev := set.Args[0].(*ir.Device); isDev {
+					dev = &ir.BrSet{Dev: d.Name, Set: set.Name == "isSet", Then: then, Else: els}
+				} else {
+					dev = &ir.BrSet{DevPtr: set.Args[0], Set: set.Name == "isSet", Then: then, Else: els}
+				}
+				b.Term = dev
 			}
 		} else {
 			newCond := cmp.Cond
@@ -2356,10 +2363,15 @@ func fuseBranches(fn *ir.Function) bool {
 		changed = true
 	}
 
-	// Fuse `t = min(c1, c2)` used only by a branch on t into two short-circuit
-	// branches, dropping the min and the materialised comparisons:
+	// Fuse `t = min(c1, c2)` (which the lowerer emits for `c1 && c2`) or
+	// `t = max(c1, c2)` (`c1 || c2`), used only by a branch on t, into two
+	// short-circuit branches, dropping the min/max and the materialised
+	// comparisons:
 	//   if c1 && c2 { Then } else { Else }  ->
 	//     b:   if !c1 goto Else else goto mid
+	//     mid: if !c2 goto Else else goto Then
+	//   if c1 || c2 { Then } else { Else }  ->
+	//     b:   if c1 goto Then else goto mid
 	//     mid: if !c2 goto Else else goto Then
 	// This is the branch form of `x >= 0 && x > y`: nonnegFold leaves it as a
 	// min, and this removes the min and its two comparison lines.
@@ -2387,46 +2399,74 @@ func fuseBranches(fn *ir.Function) bool {
 		if !ok || uses[r] != 1 {
 			continue
 		}
-		var min *ir.Bin
+		var combine *ir.Bin
 		for _, ins := range b.Instrs {
 			d := ir.DefOf(ins)
 			if d != r {
 				continue
 			}
-			if mb, isMin := ins.(*ir.Bin); isMin && mb.Op == ir.Min {
-				min = mb
+			if mb, isBin := ins.(*ir.Bin); isBin && (mb.Op == ir.Min || mb.Op == ir.Max) {
+				combine = mb
 			}
 			break
 		}
-		if min == nil {
+		if combine == nil {
 			continue
 		}
-		cmpIn := func(v ir.Value) *ir.Cmp {
+		// A predicate materialised as a comparison (`slt` etc.) or `isNaN`
+		// (`snan`). IC10 has no "branch if not NaN", so NaN cannot be inverted.
+		type pred struct {
+			cond ir.Cond
+			a, b ir.Value
+		}
+		predIn := func(v ir.Value) (pred, bool) {
 			rr, ok := v.(*ir.Reg)
 			if !ok || uses[rr] != 1 {
-				return nil
+				return pred{}, false
 			}
 			for _, ins := range b.Instrs {
 				if ir.DefOf(ins) == rr {
-					if c, isCmp := ins.(*ir.Cmp); isCmp {
-						return c
+					switch iv := ins.(type) {
+					case *ir.Cmp:
+						return pred{iv.Cond, iv.A, iv.B}, true
+					case *ir.Builtin:
+						if iv.Name == "isNaN" && len(iv.Args) == 1 {
+							return pred{ir.NaN, iv.Args[0], nil}, true
+						}
 					}
-					return nil
+					return pred{}, false
 				}
 			}
-			return nil
+			return pred{}, false
 		}
-		c1, c2 := cmpIn(min.A), cmpIn(min.B)
-		if c1 == nil || c2 == nil {
+		c1, ok1 := predIn(combine.A)
+		c2, ok2 := predIn(combine.B)
+		if !ok1 || !ok2 {
 			continue
 		}
+		isMax := combine.Op == ir.Max
+		// `min` (`&&`) inverts c1; a NaN predicate has no inverse.
+		if !isMax && (c1.cond == ir.NaN || c2.cond == ir.NaN) {
+			continue
+		}
+		// min(c1,c2) is c1&&c2, max(c1,c2) is c1||c2. `holds` is the block the
+		// terminator reaches when the whole combination is true.
+		holds, fails := br.Then, br.Else
+		if cond == ir.Zero {
+			holds, fails = br.Else, br.Then
+		}
 		mid := fn.NewBlock()
-		if cond == ir.NonZero { // Then exactly when c1 && c2
-			b.Term = &ir.Br{Cond: c1.Cond.Invert(), A: c1.A, B: c1.B, Then: br.Else, Else: mid}
-			mid.Term = &ir.Br{Cond: c2.Cond.Invert(), A: c2.A, B: c2.B, Then: br.Else, Else: br.Then}
-		} else { // Then exactly when !(c1 && c2)
-			b.Term = &ir.Br{Cond: c1.Cond.Invert(), A: c1.A, B: c1.B, Then: br.Then, Else: mid}
-			mid.Term = &ir.Br{Cond: c2.Cond.Invert(), A: c2.A, B: c2.B, Then: br.Then, Else: br.Else}
+		// c1 decides early: a false c1 fails a `&&`; a true c1 satisfies a `||`.
+		if isMax {
+			b.Term = &ir.Br{Cond: c1.cond, A: c1.a, B: c1.b, Then: holds, Else: mid}
+		} else {
+			b.Term = &ir.Br{Cond: c1.cond.Invert(), A: c1.a, B: c1.b, Then: fails, Else: mid}
+		}
+		// c2 decides the rest. Prefer the inverted form for layout, except NaN.
+		if c2.cond == ir.NaN {
+			mid.Term = &ir.Br{Cond: c2.cond, A: c2.a, B: c2.b, Then: holds, Else: fails}
+		} else {
+			mid.Term = &ir.Br{Cond: c2.cond.Invert(), A: c2.a, B: c2.b, Then: fails, Else: holds}
 		}
 		changed = true
 	}

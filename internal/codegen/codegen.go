@@ -445,6 +445,13 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 			thenNext := t.Then == next
 			elseNext := t.Else == next
 			switch {
+			case t.Cond == ir.NaN:
+				// IC10 has only `bnan` (no branch-if-not-NaN), so always branch
+				// on the NaN edge and jump to Else when needed.
+				add(branchText(t.Cond, t.A, t.B, colors)+" ", t.Then, b.Func)
+				if !elseNext {
+					add("j ", t.Else, b.Func)
+				}
 			case elseNext:
 				add(branchText(t.Cond, t.A, t.B, colors)+" ", t.Then, b.Func)
 			case thenNext:
@@ -879,6 +886,12 @@ func foldLoadTerminator(instrs []ir.Instr, i int, term ir.Term, next *ir.Block, 
 		return line{text: branchTextFolded(c, br.A, br.B, loaded, operand, colors) + " ", target: target, fn: fn, src: src}
 	}
 	switch {
+	case br.Cond == ir.NaN:
+		// No branch-if-not-NaN: branch on the NaN edge.
+		if br.Else == next {
+			return []line{mk(br.Cond, br.Then)}, true
+		}
+		return []line{mk(br.Cond, br.Then), {text: "j ", target: br.Else, fn: fn, src: src}}, true
 	case br.Else == next:
 		return []line{mk(br.Cond, br.Then)}, true
 	case br.Then == next:
@@ -1551,6 +1564,8 @@ func cmpMnemonic(c ir.Cond) string {
 		return "snez"
 	case ir.Zero:
 		return "seqz"
+	case ir.NaN:
+		return "snan"
 	}
 	return "seq"
 }
@@ -1573,6 +1588,8 @@ func branchMnemonic(c ir.Cond) string {
 		return "bnez"
 	case ir.Zero:
 		return "beqz"
+	case ir.NaN:
+		return "bnan"
 	}
 	return "beq"
 }

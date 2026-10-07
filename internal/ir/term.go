@@ -119,6 +119,11 @@ func (t *Ret) Key() string             { return "ret|" + valueKey(t.Value) }
 
 func (t *Br) Successors() []*Block {
 	// Visit the false edge first so the true target becomes the fall-through.
+	// A NaN branch has no inverse (`bnan` only), so instead make the else edge
+	// the fall-through: then a single `bnan` reaches Then.
+	if t.Cond == NaN {
+		return []*Block{t.Then, t.Else}
+	}
 	return []*Block{t.Else, t.Then}
 }
 func (t *Br) Uses() []Value { return []Value{t.A, t.B} }

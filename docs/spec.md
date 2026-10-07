@@ -635,6 +635,10 @@ if isStoreValid(d0, "On") { ... }           // 设备支持写入该 logicType�
 
 > `isLoadValid` / `isStoreValid` 只能在 `if` / `for` 条件中使用（IC10 无对应的置寄存器指令）。
 
+> `isNaN(x)` / `isNotNaN(x)` 作为**条件**时折成 `bnan`（IC10 只有「是 NaN」分支，没有
+> 「非 NaN」分支，所以 `isNotNaN` / `!isNaN` 用**对调目标**实现）；作为**值**时是
+> `snan` / `snanz`。
+
 ### 7.6 批量 IO
 
 ```go

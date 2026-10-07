@@ -577,7 +577,7 @@ func (g *gen) expr(depth int) string {
 	if depth <= 0 {
 		return g.atom()
 	}
-	switch g.rng.Intn(18) {
+	switch g.rng.Intn(21) {
 	case 0:
 		return g.atom()
 	case 1:
@@ -615,6 +615,14 @@ func (g *gen) expr(depth int) string {
 	case 17:
 		// A slot read by ReferenceId (IC10 `ls r? rN i slt`).
 		return fmt.Sprintf("readByIdSlot(%s, %d, %s)", g.devId(), g.rng.Intn(4), g.slotType())
+	case 18:
+		// A guaranteed-NaN value, confined to an isNaN argument so it does not
+		// leak into comparisons (where !(a>b) != a<=b for NaN).
+		return "isNaN(nan)"
+	case 19:
+		return fmt.Sprintf("isNaN(%s)", g.expr(depth-1))
+	case 20:
+		return fmt.Sprintf("isNotNaN(%s)", g.expr(depth-1))
 	default:
 		return g.atom()
 	}

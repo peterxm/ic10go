@@ -1708,6 +1708,22 @@ func (l *lowerer) branchCond(e ast.Expr, thenB, elseB *ir.Block) {
 					})
 					return
 				}
+			case "isNaN", "isNotNaN":
+				if len(call.Args) != 1 {
+					break
+				}
+				nan := id.Name == "isNaN"
+				if neg {
+					nan = !nan
+				}
+				a := l.lowerExpr(call.Args[0])
+				// IC10 has only `bnan`, so pick the target instead of negating.
+				if nan {
+					l.b.SetTerm(&ir.Br{Cond: ir.NaN, A: a, Then: thenB, Else: elseB})
+				} else {
+					l.b.SetTerm(&ir.Br{Cond: ir.NaN, A: a, Then: elseB, Else: thenB})
+				}
+				return
 			}
 		}
 	}
