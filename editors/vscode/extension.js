@@ -877,6 +877,7 @@ class LspClient {
                 else if (m.type === 'refresh') this.refreshTick();
                 else if (m.type === 'highlight') this.highlightRange(m.line, m.end);
                 else if (m.type === 'clear') this.clearHighlight();
+                else if (m.type === 'exportMd') this.exportTickMarkdown();
             });
             subs.push(
                 vscode.workspace.onDidSaveTextDocument((d) => {
@@ -929,6 +930,50 @@ class LspClient {
         if (ed) ed.setDecorations(this.tickDeco, []);
     }
 
+    // exportTickMarkdown opens the current report as a new Markdown document.
+    async exportTickMarkdown() {
+        const reports = this.tickReports || [];
+        if (!reports.length) return;
+        const md = this.tickMarkdown(reports, this.tickSubtitle || '');
+        const doc = await vscode.workspace.openTextDocument({ content: md, language: 'markdown' });
+        await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside, preview: false });
+    }
+
+    // tickMarkdown renders the report as a Markdown document (one section per
+    // chip with a segments table and a loops table).
+    tickMarkdown(reports, subtitle) {
+        const out = [];
+        out.push(`# ${t('Per-tick instruction budget', '每 tick 指令预算')}${subtitle ? ' — ' + subtitle : ''}`, '');
+        for (const rep of reports) {
+            const chip = rep.chip ? t(`chip ${rep.chip}`, `芯片 ${rep.chip}`) : '';
+            out.push(`## ${chip ? chip + ' · ' : ''}${t('limit', '预算')} ${rep.limit}`, '');
+            out.push(`### ${t('Segments', '分段')}`, '');
+            out.push(
+                `| ${t('start', '起点')} | ${t('instructions', '指令')} | ${t('status', '状态')} | ${t('dominant loop', '支配循环')} |`,
+                '|---|---|---|---|'
+            );
+            for (const s of rep.segments || []) {
+                const start = s.source > 0 ? s.source : s.start + 1;
+                const cost = s.exceeds ? `>${rep.limit}` : `${s.cost}`;
+                const dom = s.dominantSource > 0 ? `L${s.dominantSource}` : '–';
+                out.push(`| L${start} | ${cost} / ${rep.limit} | ${s.exceeds ? t('exceeds', '超限') : 'fits'} | ${dom} |`);
+            }
+            out.push('', `### ${t('Loops', '循环')}`, '');
+            out.push(
+                `| ${t('line', '行')} | ${t('best..worst per iteration', '每圈 最快..最慢')} | ${t('iterations', '迭代')} | ${t('spans ticks', '跨 tick')} |`,
+                '|---|---|---|---|'
+            );
+            for (const lp of rep.loops || []) {
+                const line = lp.source > 0 ? lp.source : lp.header + 1;
+                const bodyTxt = lp.bodyMin !== undefined && lp.bodyMin !== lp.body ? `${lp.bodyMin}..${lp.body}` : `${lp.body}`;
+                const trips = lp.trips > 0 ? `${lp.trips}` : '?';
+                out.push(`| L${line} | ${bodyTxt} | ${trips} | ${lp.spans ? t('yes', '是') : ''} |`);
+            }
+            out.push('');
+        }
+        return out.join('\n');
+    }
+
     async refreshTick() {
         if (!this.tickPanel || !this.tickDoc) return;
         const doc = this.tickDoc;
@@ -939,6 +984,8 @@ class LspClient {
             if (panel !== this.tickPanel) return; // closed while running
             const reports = this.parseJSONStream(res.stdout);
             const name = doc.uri && doc.uri.scheme === 'file' ? path.basename(doc.fileName || '') : '';
+            this.tickReports = reports;
+            this.tickSubtitle = name;
             panel.webview.html = this.tickHtml(reports, reports.length ? name : res.stderr || t('no data', '无数据'));
         }, ext);
     }
@@ -970,7 +1017,8 @@ class LspClient {
                     const row = `<tr class="click seg ${s.exceeds ? 'exc' : 'fit'}" data-line="${start}"><td>L${start}</td><td class="num">${cost} / ${rep.limit}</td><td class="${cls}">${label}</td><td>${dom}</td></tr>`;
                     const path = pathLines(s);
                     if (!path.length) return row;
-                    const pathRow = `<tr class="pathrow"><td colspan="4"><details><summary>${t('worst-case path', '最坏路径')} · ${path.length} ${t('instructions', '条')}</summary><div class="pathbox">${path.map((l) => 'L' + l).join(' → ')}</div></details></td></tr>`;
+                    const pathText = path.map((l) => `<span class="plink" data-line="${l}">L${l}</span>`).join(' <span class="arrow">→</span> ');
+                    const pathRow = `<tr class="pathrow"><td colspan="4"><details><summary>${t('worst-case path', '最坏路径')} · ${path.length} ${t('instructions', '条')}</summary><div class="pathbox">${pathText}</div></details></td></tr>`;
                     return row + pathRow;
                 })
                 .join('');
@@ -1017,6 +1065,9 @@ class LspClient {
   tr.pathrow td { border-bottom: none; padding-top: 0; }
   tr.pathrow details > summary { color: var(--vscode-descriptionForeground); font-weight: 400; cursor: pointer; }
   .pathbox { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-descriptionForeground); padding: 4px 0 8px; word-break: break-all; line-height: 1.45; }
+  .plink { cursor: pointer; }
+  .plink:hover { text-decoration: underline; color: var(--vscode-textLink-foreground, inherit); }
+  .arrow { color: var(--vscode-descriptionForeground); }
   .bad { color: var(--vscode-errorForeground, #f14c4c); }
   .ok { color: var(--vscode-charts-green, #3fb950); }
   .muted { color: var(--vscode-descriptionForeground); }
@@ -1025,7 +1076,7 @@ class LspClient {
   button { font-family: inherit; font-size: inherit; color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); border-radius: 5px; padding: 3px 10px; cursor: pointer; }
 </style></head>
 <body>
-<header><span class="title">${t('Per-tick instruction budget', '每 tick 指令预算')}</span><label class="muted"><input type="checkbox" id="exceedOnly" /> ${t('exceeds only', '只看超限')}</label><button id="refresh">${t('Refresh', '刷新')}</button></header>
+<header><span class="title">${t('Per-tick instruction budget', '每 tick 指令预算')}</span><label class="muted"><input type="checkbox" id="exceedOnly" /> ${t('exceeds only', '只看超限')}</label><button id="exportMd">${t('Export Markdown', '导出 Markdown')}</button><button id="refresh">${t('Refresh', '刷新')}</button></header>
 <main>${body}</main>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
@@ -1041,8 +1092,11 @@ class LspClient {
   }
   function row(el) { return el && el.closest ? el.closest('tr[data-line]') : null; }
   document.addEventListener('click', (e) => {
+    const pl = e.target && e.target.closest ? e.target.closest('.plink[data-line]') : null;
+    if (pl) { vscode.postMessage({ type: 'jump', line: Number(pl.getAttribute('data-line')) }); return; }
     const tr = row(e.target);
     if (tr) { vscode.postMessage({ type: 'jump', line: Number(tr.getAttribute('data-line')) }); return; }
+    if (e.target && e.target.id === 'exportMd') { vscode.postMessage({ type: 'exportMd' }); return; }
     if (e.target && e.target.id === 'refresh') vscode.postMessage({ type: 'refresh' });
   });
   document.addEventListener('mouseover', (e) => {
