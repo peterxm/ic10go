@@ -1171,8 +1171,7 @@ func cmdTick(args []string) int {
 					Chip string `json:"chip,omitempty"`
 					*tick.Report
 				}{File: file, Chip: u.chip, Report: rep}
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
+				enc := json.NewEncoder(os.Stdout) // one compact object per line (JSONL)
 				if err := enc.Encode(out); err != nil {
 					fmt.Fprintln(os.Stderr, "ic10c:", err)
 					return 1

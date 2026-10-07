@@ -718,6 +718,42 @@ class LspClient {
         });
     }
 
+    // parseJSONStream reads one or more JSON objects from a stream, whether they
+    // arrive compact (one per line) or pretty-printed and concatenated.
+    parseJSONStream(text) {
+        const out = [];
+        let depth = 0,
+            start = -1,
+            inStr = false,
+            esc = false;
+        for (let i = 0; i < (text || '').length; i++) {
+            const c = text[i];
+            if (inStr) {
+                if (esc) esc = false;
+                else if (c === '\\') esc = true;
+                else if (c === '"') inStr = false;
+                continue;
+            }
+            if (c === '"') {
+                inStr = true;
+            } else if (c === '{') {
+                if (depth === 0) start = i;
+                depth++;
+            } else if (c === '}' && depth > 0) {
+                depth--;
+                if (depth === 0 && start >= 0) {
+                    try {
+                        out.push(JSON.parse(text.slice(start, i + 1)));
+                    } catch (err) {
+                        // skip a malformed object
+                    }
+                    start = -1;
+                }
+            }
+        }
+        return out;
+    }
+
     // showTick runs the per-tick budget analysis (`ic10c tick --json`) and lists
     // every segment and loop in a QuickPick; selecting an entry jumps to the
     // source line. Works for .icg and native .ic/.ic10.
@@ -734,16 +770,7 @@ class LspClient {
         const ext = id === 'ic10' ? '.ic10' : '.icg';
         await this.withTempFile(doc, async (tmp) => {
             const res = await this.execCli(['tick', '--json', ...this.libArgs(), tmp]);
-            const reports = [];
-            for (const line of (res.stdout || '').split('\n')) {
-                const s = line.trim();
-                if (!s) continue;
-                try {
-                    reports.push(JSON.parse(s));
-                } catch (err) {
-                    // ignore non-JSON chatter (e.g. the raw-IC10 hint on stderr)
-                }
-            }
+            const reports = this.parseJSONStream(res.stdout);
             if (reports.length === 0) {
                 this.output.appendLine(`=== tick failed ===\n${res.stderr || res.stdout}`);
                 this.output.show(true);
