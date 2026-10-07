@@ -1,0 +1,14 @@
+// IC10 indirect register access (rrN). The destination register is chosen at
+// run time from a Dial reading, so the compiler must emit rrN -- a constant
+// pointer would be addressed directly (rN) and never exercise the indirect
+// form. r2..r6 are reserved for indirect use.
+func main() {
+    reserveRegs(2, 6)
+    for {
+        yield()
+        v := d4.Setting          // d4 = LogicMemory
+        p := 2 + d1.Setting      // runtime register number in the reserved bank
+        setIreg(p, 100 + v)      // *p = 100 + v      (rrN write)
+        d0.Setting = ireg(p)     // LED = *p          (rrN read)
+    }
+}
