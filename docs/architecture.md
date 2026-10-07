@@ -206,7 +206,7 @@ Ret
 | 死代码消除 | 活跃性驱动的纯指令删除、不可达块删除 |
 | 分支融合 | 块终止 `Br` 的条件若由同块单次使用的 `Cmp` 定义，则折进分支并删 `Cmp`（`seq`/`seqz` + 分支 → `beq`/`bne`/`beqz`/`bnez`） |
 | 常量查表内联 | `T[const]` 直接内联为字面量；与不折叠的产物比较取 runtime 更短者（`--unsafe`/`--no-data-check` 下不折叠） |
-| 用户栈提升（mem2reg） | 仅 `private-stack`：常量用户槽提升为虚拟寄存器，删除其 `get`/`put`/`poke`；寄存器与栈一样跨 tick 保留 |
+| 用户栈提升（mem2reg） | 仅 `private-stack`：常量用户槽提升为虚拟寄存器，删除其 `get`/`put`/`poke`；寄存器与栈一样跨 tick 保留。**别名安全**：`pop`/`peek` 按 `sp-1` 读栈，与绝对用户槽共用同一内存，所以先对 `sp` 做常量传播（`sp = N` / `push` / `pop`；算不出则放弃提升），并**不提升**被 `push` 写过的槽；若某个 `pop` 会在该槽**已写入之后**读到它，则该槽留在内存（`peek` 出现时仍整体保守禁用） |
 | push/pop 消除 | 仅 `private-stack`：同块内成对 `push`/`pop` 删除并把被压值转发给 `pop` 目标（块内不得有 `peek`/动态栈访问） |
 | pop 批量折叠（bank） | 连续 **≥5** 个 `pop()` 时降为 IC10 `rrN` 惯用法：占一段连续物理寄存器，发 `move rC start` / `pop rrC` / `add rC rC 1` / `ble rC last body`（4 行，任意 N）。只对**单函数**程序生效（无外提函数）——`reserveRegs` 是按函数记录的，别的函数分配器不会知道要避开。寄存器保留可能加重另一些值的溢出，故编译器比较两种产物取更短者（内部 `NoPopBank`） |
 | 重复设备写消除 | `--redundant-device-writes`（默认关闭）：删除同一段直落代码内重复的同值常量设备写；改变可观测写序列 |

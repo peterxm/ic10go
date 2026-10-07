@@ -17,24 +17,130 @@ func promoteUserStack(fn *ir.Function) bool {
 		return false
 	}
 	fn.BuildCFG()
-	slots, ok := promotableSlots(fn)
+	tracked := spTracker(fn)
+	slots, ok := promotableSlots(fn, tracked)
 	if !ok || len(slots) == 0 {
 		return false
 	}
 	changed := false
 	for slot := range slots {
-		if promoteSlot(fn, slot) {
+		if promoteSlot(fn, slot, tracked) {
 			changed = true
 		}
 	}
 	return changed
 }
 
+// spTracker returns the value of sp before each instruction, or -1 when it is
+// not a known constant. The IC10 stack pointer starts at 0; `sp = N` sets it,
+// push/pop move it by one, and other instructions leave it alone. A pop/peek
+// reads the stack at sp-1, so without this the promotion pass cannot tell which
+// absolute user slot a stack access touches.
+func spTracker(fn *ir.Function) map[ir.Instr]int {
+	fn.BuildCFG()
+	const bottom = -2 // not computed yet (lattice: bottom < constant < unknown)
+	in := map[*ir.Block]int{}
+	out := map[*ir.Block]int{}
+	for _, b := range fn.Blocks {
+		in[b], out[b] = bottom, bottom
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, b := range fn.Blocks {
+			v := bottom
+			if b == fn.Entry {
+				v = 0
+			} else {
+				for _, p := range b.Preds {
+					pv := out[p]
+					if pv == bottom {
+						continue
+					}
+					if v == bottom {
+						v = pv
+					} else if pv != v {
+						v = -1
+						break
+					}
+				}
+			}
+			if v != in[b] {
+				in[b] = v
+				changed = true
+			}
+			o := v
+			for _, ins := range b.Instrs {
+				o = spAfter(o, ins)
+			}
+			if o != out[b] {
+				out[b] = o
+				changed = true
+			}
+		}
+	}
+	res := make(map[ir.Instr]int)
+	for _, b := range fn.Blocks {
+		v := in[b]
+		for _, ins := range b.Instrs {
+			if v == bottom {
+				v = -1
+			}
+			res[ins] = v
+			v = spAfter(v, ins)
+		}
+	}
+	return res
+}
+
+func spAfter(sp int, ins ir.Instr) int {
+	if sp < 0 {
+		return sp // bottom stays bottom; unknown stays unknown
+	}
+	switch t := ins.(type) {
+	case *ir.StoreSpecial:
+		if t.Name == "sp" {
+			if c, ok := t.Src.(*ir.Const); ok && c.Raw == "" && c.Special == "" && c.V >= 0 {
+				return int(c.V)
+			}
+			return -1
+		}
+	case *ir.Builtin:
+		switch t.Name {
+		case "push":
+			return sp + 1
+		case "pop":
+			return sp - 1
+		}
+	}
+	return sp
+}
+
+// spAt returns the tracked sp before ins, or -1 when unknown.
+func spAt(tracked map[ir.Instr]int, ins ir.Instr) int {
+	if v, ok := tracked[ins]; ok {
+		return v
+	}
+	return -1
+}
+
+// popReadSlot returns the stack slot a pop/peek reads (sp-1), or -1 when the
+// instruction is neither or the slot is below 0.
+func popReadSlot(ins ir.Instr, sp int) int {
+	v, ok := ins.(*ir.Builtin)
+	if !ok || (v.Name != "pop" && v.Name != "peek") || sp < 1 {
+		return -1
+	}
+	return sp - 1
+}
+
 // promotableSlots collects the constant user slots written by fn. It reports
-// ok=false when the function has an access it cannot reason about: a peek
-// (reads sp-1) or a dynamic get/put/poke on the housing stack.
-func promotableSlots(fn *ir.Function) (map[int]bool, bool) {
+// ok=false when the function has an access it cannot reason about: a dynamic
+// get/put/poke, or a push/pop/peek whose sp is not a known constant (their
+// sp-relative addressing could touch any absolute slot). A slot written by a
+// push is never promoted, since the push keeps writing it in memory.
+func promotableSlots(fn *ir.Function, tracked map[ir.Instr]int) (map[int]bool, bool) {
 	slots := map[int]bool{}
+	pushed := map[int]bool{}
 	for _, b := range fn.Blocks {
 		for _, ins := range b.Instrs {
 			v, isB := ins.(*ir.Builtin)
@@ -43,7 +149,22 @@ func promotableSlots(fn *ir.Function) (map[int]bool, bool) {
 			}
 			switch v.Name {
 			case "peek":
+				// Kept conservative (the documented behaviour): a peek reads
+				// sp-1 like pop, but unlike pop it leaves sp alone, and the
+				// original pass already refused to promote when it appeared.
 				return nil, false
+			case "push":
+				s := spAt(tracked, ins)
+				if s < 0 {
+					return nil, false
+				}
+				pushed[s] = true
+			case "pop":
+				// A pop reads sp-1 directly; spTracker resolves which absolute
+				// slot that is. A dynamic sp means any slot could be read.
+				if spAt(tracked, ins) < 0 {
+					return nil, false
+				}
 			case "get", "put":
 				if len(v.Args) < 2 {
 					continue
@@ -71,6 +192,9 @@ func promotableSlots(fn *ir.Function) (map[int]bool, bool) {
 				}
 			}
 		}
+	}
+	for s := range pushed {
+		delete(slots, s)
 	}
 	return slots, true
 }
@@ -126,7 +250,7 @@ func slotAccess(ins ir.Instr, slot int) (use bool, def bool, dst *ir.Reg, val ir
 	return false, false, nil, nil
 }
 
-func promoteSlot(fn *ir.Function, slot int) bool {
+func promoteSlot(fn *ir.Function, slot int, tracked map[ir.Instr]int) bool {
 	// Must analysis: is the slot defined on every path to a block's entry?
 	definedIn := map[*ir.Block]bool{}
 	definedOut := map[*ir.Block]bool{}
@@ -147,6 +271,22 @@ func promoteSlot(fn *ir.Function, slot int) bool {
 			if in != definedIn[b] || out != definedOut[b] {
 				definedIn[b], definedOut[b] = in, out
 				changed = true
+			}
+		}
+	}
+
+	// A pop/peek reads the stack at sp-1 directly. If it can read `slot` after a
+	// promoted write to it, the value in memory is stale (the write lives in a
+	// register), so the slot must stay in memory. A pop before any write reads
+	// the initial value, which matches the register's initial 0, so it is fine.
+	for _, b := range fn.Blocks {
+		def := definedIn[b]
+		for _, ins := range b.Instrs {
+			if popReadSlot(ins, spAt(tracked, ins)) == slot && def {
+				return false
+			}
+			if _, isDef, _, _ := slotAccess(ins, slot); isDef {
+				def = true
 			}
 		}
 	}
