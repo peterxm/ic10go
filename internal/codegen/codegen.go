@@ -179,6 +179,12 @@ type Options struct {
 	// instead of the current `l`/`s` with a ReferenceId device operand. Off by
 	// default (the game's deprecated spelling is only for old game versions).
 	LegacyByID bool
+	// NaNSafe makes the codegen respect IEEE NaN semantics for ordering
+	// comparisons: IC10's `!(a < b)` is not `a >= b` when an operand is NaN, so
+	// an ordering branch is negated only when both operands are provably
+	// numbers (or shown to be by an `isNaN` guard). Off by default: the shorter
+	// negated form is emitted and the program is expected to handle NaN itself.
+	NaNSafe bool
 }
 
 // Generate renders a function to IC10 code and validates the result against the
@@ -202,10 +208,20 @@ func GenerateReport(fn *ir.Function, colors map[*ir.Reg]int) (string, *Report, e
 // layoutLines computes the codegen block order and the emitted lines before
 // branch targets are resolved to line numbers. It is shared by code generation
 // and by Layout (used for the control-flow graph).
-func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bool) ([]*ir.Block, []line, map[*ir.Block]int) {
+func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID, nanSafe bool) ([]*ir.Block, []line, map[*ir.Block]int) {
 	fn.BuildCFG()
-	nf := nanFreeRegs(fn)
-	blocks := rpoOrdered(fn, nf)
+	// The NaN analysis is only needed when NaN-safe codegen is requested; off by
+	// default, the codegen negates ordering branches freely for the shorter form.
+	var ni *nanInfo
+	if nanSafe {
+		ni = analyzeNaN(fn)
+	}
+	var blocks []*ir.Block
+	if ni != nil {
+		blocks = rpoOrdered(fn, ni)
+	} else {
+		blocks = rpo(fn)
+	}
 	// Blocks that a call returns to must be laid out right after the call and
 	// therefore stay in place even if they only halt.
 	retBlocks := map[*ir.Block]bool{}
@@ -338,7 +354,7 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 				if s := fn.SrcTerms[b.Term]; s > 0 {
 					src = s
 				}
-				if ls, ok := foldLoadTerminator(instrs, idx, b.Term, next, uses, colors, src, b.Func, nf); ok {
+				if ls, ok := foldLoadTerminator(instrs, idx, b, next, uses, colors, src, ni); ok {
 					lines = append(lines, ls...)
 					termDone = true
 					continue
@@ -450,7 +466,7 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 		case *ir.Br:
 			thenNext := t.Then == next
 			elseNext := t.Else == next
-			inv := branchInvertible(t, nf)
+			inv := ni == nil || ni.branchInvertible(b, t)
 			emitBr := func(text string, target *ir.Block) {
 				add(text, target, b.Func)
 				lines[len(lines)-1].safeInvert = inv
@@ -878,12 +894,13 @@ func branchTextFolded(c ir.Cond, a, b ir.Value, loaded *ir.Reg, operand string, 
 // into its branch terminator, so the load line disappears:
 // `u = sp; bgtz u L` -> `bgtz sp L`. It mirrors foldLoadOperand for terminators
 // (only plain Br; the approximate/valid forms take device operands).
-func foldLoadTerminator(instrs []ir.Instr, i int, term ir.Term, next *ir.Block, uses map[*ir.Reg]int, colors map[*ir.Reg]int, src int, fn string, nf map[*ir.Reg]bool) ([]line, bool) {
+func foldLoadTerminator(instrs []ir.Instr, i int, blk *ir.Block, next *ir.Block, uses map[*ir.Reg]int, colors map[*ir.Reg]int, src int, ni *nanInfo) ([]line, bool) {
 	operand, loaded, ci, ok := loadOperand(instrs, i, uses, colors)
 	if !ok || ci != len(instrs) {
 		return nil, false
 	}
-	br, ok := term.(*ir.Br)
+	br, ok := blk.Term.(*ir.Br)
+	fn := blk.Func
 	if !ok {
 		return nil, false
 	}
@@ -894,7 +911,7 @@ func foldLoadTerminator(instrs []ir.Instr, i int, term ir.Term, next *ir.Block, 
 	if !isLoaded(br.A) && !isLoaded(br.B) {
 		return nil, false
 	}
-	inv := branchInvertible(br, nf)
+	inv := ni == nil || ni.branchInvertible(blk, br)
 	mk := func(c ir.Cond, target *ir.Block) line {
 		return line{text: branchTextFolded(c, br.A, br.B, loaded, operand, colors) + " ", target: target, fn: fn, src: src, safeInvert: inv}
 	}
@@ -939,13 +956,13 @@ func labelLine(b *ir.Block, start map[*ir.Block]int, n int) (int, bool) {
 
 // Layout returns the codegen block order and each block's 0-based start line.
 func Layout(fn *ir.Function, colors map[*ir.Reg]int) ([]*ir.Block, map[*ir.Block]int) {
-	blocks, _, start := layoutLines(fn, colors, false, false)
+	blocks, _, start := layoutLines(fn, colors, false, false, false)
 	return blocks, start
 }
 
 // GenerateReportWithOptions is GenerateReport with explicit options.
 func GenerateReportWithOptions(fn *ir.Function, colors map[*ir.Reg]int, opts Options) (string, *Report, error) {
-	blocks, lines, start := layoutLines(fn, colors, opts.SpillDB, opts.LegacyByID)
+	blocks, lines, start := layoutLines(fn, colors, opts.SpillDB, opts.LegacyByID, opts.NaNSafe)
 
 	if err := checkCallLayout(blocks, lines, start); err != nil {
 		return "", nil, err
@@ -1296,17 +1313,17 @@ func brDev(dev string, ptr ir.Value, colors map[*ir.Reg]int) string {
 // taking NaN-freeness into account: a branch whose condition cannot be negated
 // lays its else edge out as the fall-through, so the codegen can branch on the
 // condition directly with one instruction.
-func successorsFor(t ir.Term, nf map[*ir.Reg]bool) []*ir.Block {
-	if br, ok := t.(*ir.Br); ok {
-		if br.Cond == ir.NaN || !branchInvertible(br, nf) {
+func successorsFor(b *ir.Block, ni *nanInfo) []*ir.Block {
+	if br, ok := b.Term.(*ir.Br); ok {
+		if br.Cond == ir.NaN || !ni.branchInvertible(b, br) {
 			return []*ir.Block{br.Then, br.Else}
 		}
 	}
-	return t.Successors()
+	return b.Term.Successors()
 }
 
 // rpoOrdered is rpo with a NaN-aware successor preference.
-func rpoOrdered(fn *ir.Function, nf map[*ir.Reg]bool) []*ir.Block {
+func rpoOrdered(fn *ir.Function, ni *nanInfo) []*ir.Block {
 	var order []*ir.Block
 	visited := map[*ir.Block]bool{}
 	var dfs func(*ir.Block)
@@ -1316,7 +1333,7 @@ func rpoOrdered(fn *ir.Function, nf map[*ir.Reg]bool) []*ir.Block {
 		}
 		visited[b] = true
 		if b.Term != nil {
-			for _, s := range successorsFor(b.Term, nf) {
+			for _, s := range successorsFor(b, ni) {
 				dfs(s)
 			}
 		}

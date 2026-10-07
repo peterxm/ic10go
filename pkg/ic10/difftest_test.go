@@ -18,7 +18,13 @@ import (
 // catches optimisation bugs (e.g. a wrong hoist or a bad common-subexpression
 // merge) that unit tests miss.
 func TestDifferentialRandom(t *testing.T) {
-	for _, opts := range []ic10.Options{{}, {StableInsOrder: true}, {JumpTable: true}, {Fast: true}, {RelJump: true}} {
+	for _, opts := range []ic10.Options{
+		{NaNSafe: true},
+		{NaNSafe: true, StableInsOrder: true},
+		{NaNSafe: true, JumpTable: true},
+		{NaNSafe: true, Fast: true},
+		{NaNSafe: true, RelJump: true},
+	} {
 		name := "default"
 		if opts.StableInsOrder {
 			name = "stable-ins"
@@ -44,7 +50,7 @@ func TestDifferentialRandom(t *testing.T) {
 func TestDifferentialRenamedTails(t *testing.T) {
 	for seed := int64(0); seed < 800; seed++ {
 		src := genProgram(seed)
-		plain, diags, err := ic10.CompileResult("t.icg", []byte(src), ic10.Options{})
+		plain, diags, err := ic10.CompileResult("t.icg", []byte(src), ic10.Options{NaNSafe: true})
 		if err != nil && (strings.Contains(err.Error(), "exceeding") ||
 			strings.Contains(err.Error(), "did not converge")) {
 			continue
@@ -52,7 +58,7 @@ func TestDifferentialRenamedTails(t *testing.T) {
 		if diags.HasErrors() || err != nil {
 			t.Fatalf("seed %d: plain compile failed: %v %v\n%s", seed, diags.Diags, err, src)
 		}
-		renamed, diags, err := ic10.CompileResult("t.icg", []byte(src), ic10.Options{MergeRenamedTails: true})
+		renamed, diags, err := ic10.CompileResult("t.icg", []byte(src), ic10.Options{MergeRenamedTails: true, NaNSafe: true})
 		if err != nil && (strings.Contains(err.Error(), "exceeding") ||
 			strings.Contains(err.Error(), "did not converge")) {
 			continue
@@ -79,9 +85,9 @@ func TestDifferentialData(t *testing.T) {
 		name string
 		opts ic10.Options
 	}{
-		{"default", ic10.Options{}},
-		{"access-stack", ic10.Options{DataAccessStack: true}},
-		{"layout-middle", ic10.Options{DataLayout: "middle"}},
+		{"default", ic10.Options{NaNSafe: true}},
+		{"access-stack", ic10.Options{DataAccessStack: true, NaNSafe: true}},
+		{"layout-middle", ic10.Options{DataLayout: "middle", NaNSafe: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			runDifferential(t, tc.opts, 300, genDataProgram, true)
@@ -675,7 +681,7 @@ func (g *gen) devRead() string {
 // use reserveRegs / setIreg / ireg (IC10 rrN). The optimiser must not reorder
 // or common up indirect register accesses across an indirect write.
 func TestDifferentialIndirect(t *testing.T) {
-	runDifferential(t, ic10.Options{}, 800, genIndirectProgram, false)
+	runDifferential(t, ic10.Options{NaNSafe: true}, 800, genIndirectProgram, false)
 }
 
 func genIndirectProgram(seed int64) string {

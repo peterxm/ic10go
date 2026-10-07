@@ -135,6 +135,11 @@ var legacyByIDFlag = Flag{Long: "--legacy-by-id", Desc: text{
 	ZH: "readById/writeById 发已弃用的 ld/sd（仅老版本游戏需要；默认发 l/s + ReferenceId）",
 }}
 
+var nanSafeFlag = Flag{Long: "--nan-safe", Desc: text{
+	EN: "emit NaN-correct comparisons: never negate an ordering test whose operands may be NaN (longer; the game's `!(a<b)` is not `a>=b` for NaN)",
+	ZH: "生成对 NaN 正确的比较：操作数可能为 NaN 时不对 `< <= > >=` 取反（更长；游戏里 NaN 下 `!(a<b)` 不是 `a>=b`）；默认关闭",
+}}
+
 var spillFlag = Flag{Long: "--spill", Arg: "db|stack", Desc: text{
 	EN: "register spill storage: get/put db (default, 1 line per load) or peek/poke stack (5 lines, fallback)",
 	ZH: "寄存器溢出存放：get/put db（默认，每次加载 1 行）或 peek/poke 栈（5 行，回退）",
@@ -267,6 +272,7 @@ var Commands = []Command{
 			fastFlag,
 			relJumpFlag,
 			legacyByIDFlag,
+			nanSafeFlag,
 			spillFlag,
 			dynamicStackFlag,
 			userStackFlag,

@@ -1799,6 +1799,9 @@ func (l *lowerer) lowerBinary(e *ast.BinaryExpr) ir.Value {
 
 	if ca, ok := a.(*ir.Const); ok {
 		if cb, ok := b.(*ir.Const); ok {
+			if msg := constBinWarn(e.Op, ca, cb); msg != "" {
+				l.diags.Warnf(e.Pos(), "%s", msg)
+			}
 			if cond, ok := condOf(e.Op); ok {
 				if f, ok := foldCmp(cond, ca, cb); ok {
 					return f
@@ -2392,6 +2395,21 @@ func (l *lowerer) lowerCallExpr(e ast.Expr, needResult bool) ir.Value {
 		case "get", "put":
 			if d, ok := args[0].(*ir.Device); ok && d.Name == "db" {
 				l.noteUserStack(call.Pos(), args[1])
+			}
+		}
+		var consts []*ir.Const
+		allConst := true
+		for _, a := range args {
+			c, ok := a.(*ir.Const)
+			if !ok {
+				allConst = false
+				break
+			}
+			consts = append(consts, c)
+		}
+		if allConst {
+			if msg := constBuiltinWarn(id.Name, consts); msg != "" {
+				l.diags.Warnf(call.Pos(), "%s", msg)
 			}
 		}
 		b := &ir.Builtin{Name: id.Name, Args: args}
@@ -3440,6 +3458,11 @@ func foldBin(op ir.BinOp, a, b *ir.Const) (*ir.Const, bool) {
 	case ir.Mul:
 		return &ir.Const{V: x * y}, true
 	case ir.Div:
+		// IC10's div yields NaN when the divisor is zero (not ±inf as IEEE
+		// would): `1/0` and `0/0` both fold to NaN.
+		if y == 0 {
+			return &ir.Const{V: math.NaN()}, true
+		}
 		return &ir.Const{V: x / y}, true
 	case ir.Mod:
 		return &ir.Const{V: ic10Mod(x, y)}, true
@@ -3459,6 +3482,100 @@ func foldBin(op ir.BinOp, a, b *ir.Const) (*ir.Const, bool) {
 		return &ir.Const{V: math.Max(x, y)}, true
 	}
 	return nil, false
+}
+
+// constNum converts an IR constant to a float64, including the nan/pinf/ninf
+// specials. It reports false for raw (non-numeric) constants.
+func constNum(c *ir.Const) (float64, bool) {
+	switch {
+	case c.Raw != "":
+		return 0, false
+	case c.Special == "nan":
+		return math.NaN(), true
+	case c.Special == "pinf":
+		return math.Inf(1), true
+	case c.Special == "ninf":
+		return math.Inf(-1), true
+	case c.Special == "":
+		return c.V, true
+	}
+	return 0, false
+}
+
+// constBinWarn returns a diagnostic message when a binary operation on constant
+// operands produces NaN from non-NaN inputs, matching IC10's math semantics
+// (division/modulo by zero, inf-inf, 0*inf, inf+(-inf)).
+func constBinWarn(op token.Kind, a, b *ir.Const) string {
+	x, ok1 := constNum(a)
+	y, ok2 := constNum(b)
+	if !ok1 || !ok2 || math.IsNaN(x) || math.IsNaN(y) {
+		return ""
+	}
+	switch op {
+	case token.Slash:
+		if y == 0 {
+			return "division by zero yields NaN"
+		}
+		if math.IsInf(x, 0) && math.IsInf(y, 0) {
+			return "inf / inf yields NaN"
+		}
+	case token.Percent:
+		if y == 0 {
+			return "modulo by zero yields NaN"
+		}
+	case token.Minus:
+		if math.IsInf(x, 0) && math.IsInf(y, 0) && x == y {
+			return "inf - inf yields NaN"
+		}
+	case token.Plus:
+		if math.IsInf(x, 0) && math.IsInf(y, 0) && x != y {
+			return "inf + (-inf) yields NaN"
+		}
+	case token.Star:
+		if (x == 0 && math.IsInf(y, 0)) || (y == 0 && math.IsInf(x, 0)) {
+			return "0 * inf yields NaN"
+		}
+	}
+	return ""
+}
+
+// constBuiltinWarn returns a diagnostic message for a math builtin applied to
+// constant arguments outside its domain (all of which yield NaN in IC10).
+func constBuiltinWarn(name string, args []*ir.Const) string {
+	if len(args) == 0 {
+		return ""
+	}
+	nums := make([]float64, len(args))
+	for i, a := range args {
+		v, ok := constNum(a)
+		if !ok || math.IsNaN(v) {
+			return ""
+		}
+		nums[i] = v
+	}
+	switch name {
+	case "sqrt":
+		if nums[0] < 0 {
+			return "sqrt of a negative value yields NaN"
+		}
+	case "log":
+		if nums[0] <= 0 {
+			return "log of a non-positive value is undefined"
+		}
+	case "asin", "acos":
+		if nums[0] < -1 || nums[0] > 1 {
+			return name + " of a value outside [-1, 1] yields NaN"
+		}
+	case "pow":
+		if len(nums) >= 2 && nums[0] < 0 && nums[1] != math.Trunc(nums[1]) {
+			return "pow of a negative base with a fractional exponent yields NaN"
+		}
+	case "atan2":
+		if len(nums) >= 2 && nums[0] == 0 && nums[1] == 0 {
+			return "atan2(0, 0) is undefined"
+		}
+	}
+	return ""
 }
 
 func foldCmp(c ir.Cond, a, b *ir.Const) (*ir.Const, bool) {

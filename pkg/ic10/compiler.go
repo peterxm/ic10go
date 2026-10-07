@@ -71,6 +71,13 @@ type Options struct {
 	// they are only needed on old game versions.
 	LegacyByID bool
 
+	// NaNSafe emits code that stays correct when an ordering comparison operand
+	// is NaN: IC10's `!(a < b)` is not `a >= b` for NaN, so an ordering branch
+	// is negated only when both operands are provably numbers (or proven so by
+	// an `isNaN` guard). Off by default: the shorter negated form is used and
+	// the program is expected to handle NaN (e.g. from `batch.read`) itself.
+	NaNSafe bool
+
 	// SpillStack keeps register spills in the IC stack with a peek/poke
 	// save-restore sequence (5 lines per load, reserves r15 as scratch). The
 	// default is false: spills use get/put db (1 line per load, no scratch).
@@ -848,6 +855,7 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 		SpillDB:    !opts.SpillStack,
 		Limits:     opts.editorLimits(),
 		LegacyByID: opts.LegacyByID,
+		NaNSafe:    opts.NaNSafe,
 	})
 	if err != nil {
 		return code, colors, nil, spillCount, err

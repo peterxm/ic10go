@@ -53,11 +53,12 @@ func TestFuseNaNOr(t *testing.T) {
 // single-device read or an integer loop counter is a number and keeps the
 // shorter negated form.
 func TestOrderingBranchNaNSafe(t *testing.T) {
+	opts := ic10.Options{NaNSafe: true}
 	for _, src := range []string{
 		"func main() {\n    for {\n        yield()\n        if batch.read(hash(\"X\"), \"Setting\", \"Sum\") > 100 { d1.On = 1 }\n    }\n}\n",
 		"func main() {\n    for {\n        yield()\n        if nan < 1 { d1.On = 1 }\n    }\n}\n",
 	} {
-		code, diags, err := ic10.Compile("t.icg", []byte(src))
+		code, diags, err := ic10.CompileWithOptions("t.icg", []byte(src), opts)
 		if err != nil || diags.HasErrors() {
 			t.Fatalf("compile %q: err=%v diags=%v", src, err, diags.Diags)
 		}
@@ -67,12 +68,25 @@ func TestOrderingBranchNaNSafe(t *testing.T) {
 	}
 
 	// An integer loop counter is provably not NaN, so the negated form is exact.
-	code, diags, err := ic10.Compile("t.icg", []byte(
-		"func main() {\n    for i := 0; i < 5; i++ {\n        d0.Setting = i\n        yield()\n    }\n}\n"))
+	code, diags, err := ic10.CompileWithOptions("t.icg", []byte(
+		"func main() {\n    for i := 0; i < 5; i++ {\n        d0.Setting = i\n        yield()\n    }\n}\n"), opts)
 	if err != nil || diags.HasErrors() {
 		t.Fatalf("compile: err=%v diags=%v", err, diags.Diags)
 	}
 	if !strings.Contains(code, "bge ") {
 		t.Fatalf("want the negated bge for an integer loop condition:\n%s", code)
+	}
+}
+
+// With NaNSafe off (the default) the codegen negates ordering branches freely,
+// which is shorter but only correct when no operand is NaN.
+func TestOrderingBranchNaNDefault(t *testing.T) {
+	code, diags, err := ic10.Compile("t.icg", []byte(
+		"func main() {\n    for {\n        yield()\n        if d0.Temperature > 100 { d1.On = 1 }\n    }\n}\n"))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: err=%v diags=%v", err, diags.Diags)
+	}
+	if !strings.Contains(code, "ble ") {
+		t.Fatalf("want the shorter negated form by default:\n%s", code)
 	}
 }

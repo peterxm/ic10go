@@ -14,11 +14,18 @@ const minTemp = 266.17
 const maxTemp = 308.15
 const maxRatio = 0.005
 
-// 返回 1 表示检测到危险。
+// 返回 1 表示检测到危险。没有传感器时返回 0。
 func checkMode() num {
     mode := 0
 
-    if batch.read(sensHash, "Pressure", "Minimum") <= minPress { mode = 1 }
+    // 传感器不存在时批量读返回 NaN：先确认设备存在，再判危险。
+    press := batch.read(sensHash, "Pressure", "Minimum")
+    if isNaN(press) {
+        db.Setting = mode
+        return mode
+    }
+
+    if press <= minPress { mode = 1 }
     if batch.read(sensHash, "Pressure", "Maximum") >= maxPress { mode = 1 }
     if batch.read(sensHash, "Temperature", "Minimum") <= minTemp { mode = 1 }
     if batch.read(sensHash, "Temperature", "Maximum") >= maxTemp { mode = 1 }
