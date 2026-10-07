@@ -32,6 +32,7 @@ coverage.txt
 
 # Local design notes (not distributed)
 /docs/architecture-improvement-plan.md
+/docs/community-captures.md
 
 # ic10code/: only the author's own (Chinese-named) scripts are tracked;
 # the rest is third-party community code kept locally only.
