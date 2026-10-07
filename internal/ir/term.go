@@ -139,7 +139,7 @@ func (t *BrValid) Successors() []*Block {
 	// Lay out Valid as the fall-through: visit Invalid first.
 	return []*Block{t.Invalid, t.Valid}
 }
-func (t *BrValid) Uses() []Value { return nil }
+func (t *BrValid) Uses() []Value { return appendUse(nil, t.DevPtr) }
 func (t *BrValid) Redirect(from, to *Block) {
 	if t.Valid == from {
 		t.Valid = to
@@ -149,12 +149,12 @@ func (t *BrValid) Redirect(from, to *Block) {
 	}
 }
 func (t *BrValid) Key() string {
-	return "brvalid|" + t.Dev + "|" + t.Logic + "|" + strconv.FormatBool(t.Store) +
+	return "brvalid|" + t.Dev + "|" + valueKey(t.DevPtr) + "|" + t.Logic + "|" + strconv.FormatBool(t.Store) +
 		"|" + blockKey(t.Valid) + "|" + blockKey(t.Invalid)
 }
 
 func (t *BrSet) Successors() []*Block { return []*Block{t.Else, t.Then} }
-func (t *BrSet) Uses() []Value        { return nil }
+func (t *BrSet) Uses() []Value        { return appendUse(nil, t.DevPtr) }
 func (t *BrSet) Redirect(from, to *Block) {
 	if t.Then == from {
 		t.Then = to
@@ -164,7 +164,7 @@ func (t *BrSet) Redirect(from, to *Block) {
 	}
 }
 func (t *BrSet) Key() string {
-	return "brset|" + t.Dev + "|" + strconv.FormatBool(t.Set) +
+	return "brset|" + t.Dev + "|" + valueKey(t.DevPtr) + "|" + strconv.FormatBool(t.Set) +
 		"|" + blockKey(t.Then) + "|" + blockKey(t.Else)
 }
 
@@ -222,12 +222,22 @@ func (t *BrCall) returnBlock() *Block { return t.Return }
 // RewriteUses
 // ---------------------------------------------------------------------------
 
-func (t *Jmp) RewriteUses(func(Value) Value)     {}
-func (t *Goto) RewriteUses(func(Value) Value)    {}
-func (t *Call) RewriteUses(func(Value) Value)    {}
-func (t *JmpRA) RewriteUses(func(Value) Value)   {}
-func (t *BrValid) RewriteUses(func(Value) Value) {}
-func (t *BrSet) RewriteUses(func(Value) Value)   {}
+func (t *Jmp) RewriteUses(func(Value) Value)   {}
+func (t *Goto) RewriteUses(func(Value) Value)  {}
+func (t *Call) RewriteUses(func(Value) Value)  {}
+func (t *JmpRA) RewriteUses(func(Value) Value) {}
+
+func (t *BrValid) RewriteUses(rewrite func(Value) Value) {
+	if t.DevPtr != nil {
+		t.DevPtr = rewrite(t.DevPtr)
+	}
+}
+
+func (t *BrSet) RewriteUses(rewrite func(Value) Value) {
+	if t.DevPtr != nil {
+		t.DevPtr = rewrite(t.DevPtr)
+	}
+}
 
 func (t *JmpDyn) RewriteUses(rewrite func(Value) Value) {
 	if t.Target != nil {

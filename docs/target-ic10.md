@@ -130,7 +130,8 @@
 | `batch.write` | `sb` |
 | `batch.writeName` | `sbn` |
 | `batch.writeSlot` | `sbs` |
-| `isSet(d)` | `sdse`（**条件位置**折成 `bdns`：省掉 sdse）；`isUnset(d)` → `sdns` / 条件 `bdse` |
+| `isSet(d)` / `isUnset(d)` | `sdse` / `sdns`；**条件位置**折成 `bdns` / `bdse`（省掉 sdse）；设备实参可为 `d?|r?|id` |
+| `isLoadValid(d, "lt")` / `isStoreValid(d, "lt")` | `bdnvl` / `bdnvs`（仅条件；设备实参可为 `d?|r?|id`） |
 | `get / put / clr / rmap` | 同名指令 |
 | `dN.stack[addr]` / `id.stack[addr]` | `get` / `put`（device 操作数接受端口 / id / 寄存器） |
 | `getd(id, addr)` / `putd(id, addr, v)` | 统一 `get` / `put`（独立的 `getd`/`putd` 已弃用） |
@@ -150,6 +151,7 @@
 | `a` 为真 | `bnez` |
 | `a` 为假 | `beqz` |
 | 设备已/未设置 | `bdse / bdns` |
+| 设备不可读/写某 logicType | `bdnvl / bdnvs` |
 | 近似比较 | `bap / bna / bapz / bnaz` |
 
 ---

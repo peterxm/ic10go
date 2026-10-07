@@ -426,9 +426,12 @@ type JmpDyn struct {
 	Table  []*Block
 }
 
-// BrValid branches when a device load/store is invalid (IC10 bdnvl/bdnvs).
+// BrValid branches when a device load/store is invalid (IC10 bdnvl/bdnvs). Dev
+// names a compile-time port (d0..d5 / db / const); DevPtr holds a runtime
+// device operand instead (a register with a ReferenceId, or an id).
 type BrValid struct {
 	Dev     string
+	DevPtr  Value
 	Logic   string
 	Store   bool // true = store validity (bdnvs), false = load (bdnvl)
 	Valid   *Block
@@ -436,12 +439,14 @@ type BrValid struct {
 }
 
 // BrSet branches on a device's "set" state (IC10 bdse/bdns). Set selects which
-// branch is taken when the device is set: Then when Set, Else otherwise.
+// branch is taken when the device is set: Then when Set, Else otherwise. Dev
+// names a compile-time port; DevPtr holds a runtime device operand instead.
 type BrSet struct {
-	Dev  string
-	Set  bool
-	Then *Block
-	Else *Block
+	Dev    string
+	DevPtr Value
+	Set    bool
+	Then   *Block
+	Else   *Block
 }
 
 // BrApprox branches when a ≈ b within tol (IC10 bap) or, when Negate is set,

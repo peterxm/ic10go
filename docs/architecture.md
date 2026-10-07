@@ -355,7 +355,7 @@ VS Code `icg.redundantDeviceWrites`）会删除**同一段直落代码**内、�
 |--------|------|
 | `a + b` | `add d a b` |
 | `if a < b { ... }` | `bge a b Lelse` + body |
-| `if isSet(d) { ... }` | `bdns d Lelse` + body（`isUnset`/`!` 取反为 `bdse`；省掉一条 `sdse`） |
+| `if isSet(d) { ... }` | `bdns d Lelse` + body（`isUnset`/`!` 取反为 `bdse`；省掉一条 `sdse`）。设备实参可为运行期寄存器/id（`bdns r?`），如从栈 `pop` 出来的 ReferenceId |
 | `if c { x = 1 } else { x = 0 }` | `select x c 1 0` |
 | `c ? a : b` | `select d c a b` |
 | `!a` | `seqz d a` |
@@ -515,7 +515,7 @@ ic10go/
 - 块内拷贝/常量传播、全局常量传播（⊤ 起步 + RPO，跨回边）、常量折叠、代数化简
 - 冗余设备/槽位/批量读消除（含跨块 CSE、存储转发）、常量分支折叠（常量代入分支终止符）
 - 循环不变量外提（含设备读；开/关取更短）、尾块合并、死存储消除
-- DCE、全局 CSE（可用表达式）、比较-分支融合（跨过一次拷贝；`isSet`/`isUnset` → `bdse`/`bdns`；`min`/`max` 短路）、`select` 化、逻辑化简
+- DCE、全局 CSE（可用表达式）、比较-分支融合（跨过一次拷贝；`isSet`/`isUnset` → `bdse`/`bdns`、`isLoadValid`/`isStoreValid` → `bdnvl`/`bdnvs`，设备实参含运行期寄存器/id；`min`/`max` 短路）、`select` 化、逻辑化简
 - 特殊寄存器/间接寄存器操作数折叠（`sp`/`ra`/`rrN` 折进算术、设备写、内建、`select`、分支、`Cmp`）
 - 用户栈提升（mem2reg，含 `pop`/`peek` 别名安全）、连续 ≥5 个 `pop` 的 `rrN` 批量折叠
 - 内联 / 外提（按体积取短；设备实参可外提为 `drN`，常量实参可折叠或一起外提）

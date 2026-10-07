@@ -1651,7 +1651,7 @@ func (l *lowerer) branchCond(e ast.Expr, thenB, elseB *ir.Block) {
 		if id, ok := call.Fun.(*ast.Ident); ok {
 			switch id.Name {
 			case "isLoadValid", "isStoreValid":
-				dev, logic, ok := l.validArgs(call)
+				dev, devPtr, logic, ok := l.validArgs(call)
 				if !ok {
 					return
 				}
@@ -1661,6 +1661,7 @@ func (l *lowerer) branchCond(e ast.Expr, thenB, elseB *ir.Block) {
 				}
 				l.b.SetTerm(&ir.BrValid{
 					Dev:     dev,
+					DevPtr:  devPtr,
 					Logic:   logic,
 					Store:   id.Name == "isStoreValid",
 					Valid:   valid,
@@ -1672,15 +1673,17 @@ func (l *lowerer) branchCond(e ast.Expr, thenB, elseB *ir.Block) {
 				if len(call.Args) != 1 {
 					break
 				}
-				dev, ok := l.deviceName(call.Args[0])
-				if !ok {
-					break
-				}
 				set := id.Name == "isSet"
 				if neg {
 					set = !set
 				}
-				l.b.SetTerm(&ir.BrSet{Dev: dev, Set: set, Then: thenB, Else: elseB})
+				if dev, ok := l.deviceName(call.Args[0]); ok {
+					l.b.SetTerm(&ir.BrSet{Dev: dev, Set: set, Then: thenB, Else: elseB})
+					return
+				}
+				// A runtime device operand (a register holding a ReferenceId, or
+				// an id) is valid too: `bdse r?` / `bdns r?`.
+				l.b.SetTerm(&ir.BrSet{DevPtr: l.lowerExpr(call.Args[0]), Set: set, Then: thenB, Else: elseB})
 				return
 			case "approx", "notApprox":
 				if len(call.Args) == 3 {
@@ -1712,23 +1715,26 @@ func (l *lowerer) branchCond(e ast.Expr, thenB, elseB *ir.Block) {
 	l.b.SetTerm(&ir.Br{Cond: cond, A: a, B: b, Then: thenB, Else: elseB})
 }
 
-// validArgs parses (device, "logicType") for the validity builtins.
-func (l *lowerer) validArgs(call *ast.CallExpr) (string, string, bool) {
+// validArgs parses (device, "logicType") for the validity builtins. The device
+// may be a compile-time port (returned in dev) or a runtime operand such as a
+// register holding a ReferenceId (returned in devPtr); IC10's bdnvl/bdnvs take
+// a `device(d?|r?|id)`.
+func (l *lowerer) validArgs(call *ast.CallExpr) (dev string, devPtr ir.Value, logic string, ok bool) {
 	if len(call.Args) != 2 {
 		l.diags.Errorf(call.Pos(), "expected a device and a logic type")
-		return "", "", false
+		return "", nil, "", false
 	}
-	dev, ok := l.deviceName(call.Args[0])
-	if !ok {
-		l.diags.Errorf(call.Args[0].Pos(), "expected a device as the first argument")
-		return "", "", false
-	}
-	logic, ok := call.Args[1].(*ast.StringLit)
-	if !ok {
+	s, isStr := call.Args[1].(*ast.StringLit)
+	if !isStr {
 		l.diags.Errorf(call.Args[1].Pos(), "expected a logic type string as the second argument")
-		return "", "", false
+		return "", nil, "", false
 	}
-	return dev, logic.Value, true
+	if d, isDev := l.deviceName(call.Args[0]); isDev {
+		dev = d
+	} else {
+		devPtr = l.lowerExpr(call.Args[0])
+	}
+	return dev, devPtr, s.Value, true
 }
 
 func (l *lowerer) lowerCond(e ast.Expr) (ir.Cond, ir.Value, ir.Value) {

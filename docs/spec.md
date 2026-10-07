@@ -628,6 +628,11 @@ if isStoreValid(d0, "On") { ... }           // 设备支持写入该 logicType�
 > `isSet` / `isUnset` 作为**条件**时折成 `bdns` / `bdse`（`!` 会自动取反）；作为**值**
 > （`x := isSet(d)`）时才是 `sdse` / `sdns`。
 
+> 设备实参也可以是**运行期**操作数——一个寄存器（放 ReferenceId）或一个 id，对应 IC10 的
+> `device(d?|r?|id)`：`d := pop(); if isSet(d) { … }` → `bdns r?`，
+> `if isLoadValid(d, "On") { … }` → `bdnvl r? On`。因此从栈里 `pop` 出来的设备引用可以
+> 直接判有效（`if isSet(d)` 折成 `bdse`/`bdns`，不再多发一条 `sdse`）。
+
 > `isLoadValid` / `isStoreValid` 只能在 `if` / `for` 条件中使用（IC10 无对应的置寄存器指令）。
 
 ### 7.6 批量 IO

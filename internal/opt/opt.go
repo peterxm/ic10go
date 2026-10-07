@@ -2299,9 +2299,7 @@ func fuseBranches(fn *ir.Function) bool {
 					return i, v, nil, true
 				case *ir.Builtin:
 					if (v.Name == "isSet" || v.Name == "isUnset") && len(v.Args) == 1 {
-						if _, isDev := v.Args[0].(*ir.Device); isDev {
-							return i, nil, v, true
-						}
+						return i, nil, v, true
 					}
 				}
 				return i, nil, nil, false // some other instruction defines it
@@ -2327,12 +2325,15 @@ func fuseBranches(fn *ir.Function) bool {
 		}
 		if set != nil {
 			// `x = isSet(d); if x` -> `bdse d` / `bdns d`.
-			dev := set.Args[0].(*ir.Device)
 			devSet := set.Name == "isSet"
 			if cond == ir.Zero {
 				devSet = !devSet
 			}
-			b.Term = &ir.BrSet{Dev: dev.Name, Set: devSet, Then: br.Then, Else: br.Else}
+			if d, isDev := set.Args[0].(*ir.Device); isDev {
+				b.Term = &ir.BrSet{Dev: d.Name, Set: devSet, Then: br.Then, Else: br.Else}
+			} else {
+				b.Term = &ir.BrSet{DevPtr: set.Args[0], Set: devSet, Then: br.Then, Else: br.Else}
+			}
 		} else {
 			newCond := cmp.Cond
 			if cond == ir.Zero {

@@ -422,7 +422,7 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 			if t.Store {
 				m = "bdnvs"
 			}
-			add(m+" "+t.Dev+" "+t.Logic+" ", t.Invalid, b.Func)
+			add(m+" "+brDev(t.Dev, t.DevPtr, colors)+" "+t.Logic+" ", t.Invalid, b.Func)
 			if t.Valid != next {
 				add("j ", t.Valid, b.Func)
 			}
@@ -431,13 +431,14 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID bo
 			if !t.Set {
 				thenM, elseM = "bdns", "bdse"
 			}
+			dev := brDev(t.Dev, t.DevPtr, colors)
 			switch {
 			case t.Else == next:
-				add(thenM+" "+t.Dev+" ", t.Then, b.Func)
+				add(thenM+" "+dev+" ", t.Then, b.Func)
 			case t.Then == next:
-				add(elseM+" "+t.Dev+" ", t.Else, b.Func)
+				add(elseM+" "+dev+" ", t.Else, b.Func)
 			default:
-				add(thenM+" "+t.Dev+" ", t.Then, b.Func)
+				add(thenM+" "+dev+" ", t.Then, b.Func)
 				add("j ", t.Else, b.Func)
 			}
 		case *ir.Br:
@@ -1251,6 +1252,15 @@ func valueText(v ir.Value, colors map[*ir.Reg]int) string {
 		return regName(r, colors)
 	}
 	return v.String()
+}
+
+// brDev renders a branch's device operand: a compile-time port name (d0..d5 /
+// db / const) or a runtime register/id (IC10's `r?|id` device operand).
+func brDev(dev string, ptr ir.Value, colors map[*ir.Reg]int) string {
+	if ptr == nil {
+		return dev
+	}
+	return valueText(ptr, colors)
 }
 
 // rpo returns the reachable blocks in reverse post-order, which tends to place
