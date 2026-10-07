@@ -1,0 +1,68 @@
+// 打印机产量控制器（原 IC10（同目录 打印机控制.ic10）的 icg 重写）。
+//
+// 原件把 7 组「打印机 prefab / 打印机名 / 堆叠机名」压在持久栈上做工作列表，
+// 用标签 + 相对跳转轮转处理，每组的产量基线存在栈里。icg 里改用：
+//   - func control(ptype, pname, sname, slot)：一台「打印机 + 堆叠机」的全部逻辑；
+//   - 每组一个固定的 db.stack[slot] 存基线（不再自己轮转栈指针）；
+//   - batch.readName / readById / readByIdSlot 直接读设备，with 枚举糖
+//     （SlotClass.Ingot、LogicType.*），加一台只加一行。
+//
+// 行为与原件一致：
+//   - 启动把堆叠机 Mode=1、Output=1（收产物 + 允许输出）；
+//   - 打印机 On 时：槽位 2 有产物（SortingClass==Ingot 或已满）且堆叠机没在
+//     输出 → start 堆叠机；打印机正在打印时按 ExportCount 增量计数，到量停机；
+//   - 无论何时都把打印机的 On 镜像给堆叠机。
+//
+// 部署：所有设备接在同一数据网络；在游戏里按下面 main 里的名字命名；
+//   名字不匹配的那台（batch 读回 NaN）会被跳过。加一台：复制一行 control(...)，
+//   改类型和两个名字，并把最后的槽位号改成没用过的（0,1,2,...）。
+const Stacker = hash("StructureStackerReverse")
+
+func main() {
+    for {
+        yield()
+        //           打印机 prefab                     打印机名              堆叠机名                   基线槽位
+        control(hash("StructureAutolathe"),           hash("Autolathe A"),  hash("Autolathe Stacker A"), 0)
+        control(hash("StructureAutolathe"),           hash("Autolathe B"),  hash("Autolathe Stacker B"), 1)
+        control(hash("StructureElectronicsPrinter"),  hash("Electronics A"), hash("Electronics Stacker A"), 2)
+        control(hash("StructureElectronicsPrinter"),  hash("Electronics B"), hash("Electronics Stacker B"), 3)
+        control(hash("StructureHydraulicPipeBender"), hash("Pipe Bender A"), hash("Pipe Stacker A"), 4)
+        control(hash("StructureHydraulicPipeBender"), hash("Pipe Bender B"), hash("Pipe Stacker B"), 5)
+        control(hash("StructureToolManufactory"),     hash("Tool"),          hash("Tool Stacker"), 6)
+    }
+}
+
+// control 处理一台「打印机 + 堆叠机」。
+func control(ptype num, pname num, sname num, slot num) {
+    pr := batch.readName(ptype, pname, "ReferenceId", "Average")
+    st := batch.readName(Stacker, sname, "ReferenceId", "Average")
+    if isNaN(pr) || isNaN(st) {
+        return // 名字不匹配 = 设备不存在
+    }
+    writeById(st, LogicType.Mode, 1)
+    writeById(st, LogicType.Output, 1)
+
+    on := readById(pr, LogicType.On)
+    if on != 0 {
+        // 槽位 2 有产物（产物类或已满）且堆叠机没在输出 → 启动堆叠机。
+        if readByIdSlot(st, 2, Occupied) != 0 {
+            full := readByIdSlot(st, 2, Quantity) >= readByIdSlot(st, 2, MaxQuantity)
+            if readByIdSlot(st, 2, SortingClass) == SlotClass.Ingot || full {
+                if readById(st, LogicType.Output) == 0 {
+                    writeById(st, LogicType.Activate, 1)
+                }
+            }
+        }
+        // 打印机在打印：到量（基线 + 堆叠机 Setting）就停机并清基线。
+        if readById(pr, LogicType.Activate) != 0 {
+            if db.stack[slot] == 0 {
+                db.stack[slot] = readById(pr, LogicType.ExportCount) + readById(st, LogicType.Setting)
+            }
+            if db.stack[slot] > readById(pr, LogicType.ExportCount) {
+                writeById(pr, LogicType.Activate, 0)
+                db.stack[slot] = 0
+            }
+        }
+    }
+    writeById(st, LogicType.On, on) // 镜像
+}

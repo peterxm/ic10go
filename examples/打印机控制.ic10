@@ -1,0 +1,84 @@
+define stackerHash HASH("StructureStackerReverse")
+
+clr db
+push HASH("StructureAutolathe")
+push HASH("Autolathe A")
+push HASH("Autolathe Stacker A")
+push HASH("StructureAutolathe")
+push HASH("Autolathe B")
+push HASH("Autolathe Stacker B")
+push HASH("StructureElectronicsPrinter")
+push HASH("Electronics A")
+push HASH("Electronics Stacker A")
+push HASH("StructureElectronicsPrinter")
+push HASH("Electronics B")
+push HASH("Electronics Stacker B")
+push HASH("StructureHydraulicPipeBender")
+push HASH("Pipe Bender A")
+push HASH("Pipe Stacker A")
+push HASH("StructureHydraulicPipeBender")
+push HASH("Pipe Bender B")
+push HASH("Pipe Stacker B")
+push HASH("StructureToolManufactory")
+push HASH("Tool")
+push HASH("Tool Stacker")
+
+alias maxSp r15
+alias halfSp r14
+alias printer r13
+alias stacker r12
+alias endCount r11
+move maxSp sp
+div halfSp maxSp 3
+ceil halfSp halfSp
+mul halfSp halfSp 3
+
+init:
+pop stacker
+pop printer
+pop r0
+lbn stacker stackerHash stacker ReferenceId Maximum
+s stacker Mode 1
+s stacker Output 1
+lbn printer r0 printer ReferenceId Maximum
+push 0
+push printer
+push stacker
+sub sp sp 3
+bgtz sp init
+move sp maxSp
+loop:
+pop stacker
+pop printer
+pop endCount
+l r5 printer Activate
+l r6 printer ExportCount
+l r0 printer On
+brlez r0 20
+ls r1 stacker 2 Occupied        #Occupied check
+brlez r1 10
+  ls r2 stacker 2 SortingClass
+  ls r3 stacker 2 Quantity
+  ls r4 stacker 2 MaxQuantity
+  breq r2 SlotClass.Ingot 3
+  brlez r5 2
+    brlt r3 r4 4
+      l r8 stacker Output
+      brgtz r8 2
+      s stacker Activate 1
+brlez r5 7
+  brgtz endCount 4
+    l r7 stacker Setting
+    add endCount r6 r7
+    put db sp endCount
+brgt endCount r6 3
+  s printer Activate 0
+  put db sp 0
+l r8 printer On
+s stacker On r8
+brne sp halfSp 2
+  yield
+brgtz sp 3
+  yield
+  move sp maxSp
+j loop

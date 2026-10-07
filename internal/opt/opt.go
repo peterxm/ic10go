@@ -2421,23 +2421,32 @@ func fuseBranches(fn *ir.Function) bool {
 			cond ir.Cond
 			a, b ir.Value
 		}
-		predIn := func(v ir.Value) (pred, bool) {
+		var predIn func(ir.Value) (pred, bool)
+		predIn = func(v ir.Value) (pred, bool) {
 			rr, ok := v.(*ir.Reg)
 			if !ok || uses[rr] != 1 {
 				return pred{}, false
 			}
 			for _, ins := range b.Instrs {
-				if ir.DefOf(ins) == rr {
-					switch iv := ins.(type) {
-					case *ir.Cmp:
-						return pred{iv.Cond, iv.A, iv.B}, true
-					case *ir.Builtin:
-						if iv.Name == "isNaN" && len(iv.Args) == 1 {
-							return pred{ir.NaN, iv.Args[0], nil}, true
-						}
-					}
-					return pred{}, false
+				if ir.DefOf(ins) != rr {
+					continue
 				}
+				switch iv := ins.(type) {
+				case *ir.Cmp:
+					return pred{iv.Cond, iv.A, iv.B}, true
+				case *ir.Builtin:
+					if iv.Name == "isNaN" && len(iv.Args) == 1 {
+						return pred{ir.NaN, iv.Args[0], nil}, true
+					}
+				case *ir.Assign:
+					// `x = cmp(...)`: the lowerer materialises a comparison then
+					// copies it to the variable. Look through the single-use
+					// copy, like the comparison/branch fusion does.
+					if src, isReg := iv.Src.(*ir.Reg); isReg && uses[src] == 1 {
+						return predIn(src)
+					}
+				}
+				return pred{}, false
 			}
 			return pred{}, false
 		}
