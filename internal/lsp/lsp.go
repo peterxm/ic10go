@@ -406,10 +406,12 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 		return
 	}
 	if s.native(uri) {
-		items := ic10Diagnostics(text)
 		// Native IC10 text: the tick/loop analysis runs on the text directly
 		// (line N maps to itself).
-		items = append(items, tickDiagnostics([]tickUnit{{code: text, lineMap: identityLineMap(text)}}, uri, s.zh)...)
+		units := []tickUnit{{code: text, lineMap: identityLineMap(text)}}
+		items := ic10Diagnostics(text)
+		items = append(items, tickLoopList(units, uri, s.zh)...)
+		items = append(items, tickDiagnostics(units, uri, s.zh)...)
 		if items == nil {
 			items = []lspDiagnostic{}
 		}
@@ -417,6 +419,7 @@ func (s *Server) publish(w *bufio.Writer, uri string) {
 			"uri":         uri,
 			"diagnostics": items,
 		})
+		s.publishNativeStats(w, uri, text)
 		return
 	}
 	// Follow imports relative to the document's directory so names from an

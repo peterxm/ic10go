@@ -1443,7 +1443,7 @@ class LspClient {
 
     refreshStatus() {
         const editor = vscode.window.activeTextEditor;
-        if (!editor || editor.document.languageId !== 'icg') {
+        if (!editor || !['icg', 'ic10'].includes(editor.document.languageId)) {
             this.status.hide();
             return;
         }

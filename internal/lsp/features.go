@@ -1723,6 +1723,108 @@ func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 	return out
 }
 
+// tickLoopList summarises every loop (best..worst per iteration × trips) as one
+// information diagnostic, anchored at the first loop's line. Native IC10 has no
+// other place to show the full list.
+func tickLoopList(units []tickUnit, uri string, zh bool) []lspDiagnostic {
+	var lines []string
+	first := 0
+	for _, u := range units {
+		rep, err := tick.AnalyzeOpts(u.code, tick.Options{Limit: tick.DefaultLimit, LineMap: u.lineMap})
+		if err != nil {
+			continue
+		}
+		for _, lp := range rep.Loops {
+			body := fmt.Sprintf("%d", lp.Body)
+			if lp.BodyMin != lp.Body {
+				body = fmt.Sprintf("%d..%d", lp.BodyMin, lp.Body)
+			}
+			trips := "?"
+			if lp.Trips > 0 {
+				trips = strconv.Itoa(lp.Trips)
+			}
+			where := fmt.Sprintf("line %d", lp.Header+1)
+			if lp.Source > 0 {
+				where = fmt.Sprintf("L%d", lp.Source)
+			}
+			if zh {
+				lines = append(lines, fmt.Sprintf("源码 %s：每圈 %s 条 × %s 次", where, body, trips))
+			} else {
+				lines = append(lines, fmt.Sprintf("%s: %s x %s", where, body, trips))
+			}
+			if first == 0 && lp.Source > 0 {
+				first = lp.Source
+			}
+		}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	head := "循环分析（每圈 最快..最慢 条 × 迭代次数）："
+	if !zh {
+		head = "Loop analysis (best..worst instructions per iteration x trips):"
+	}
+	msg := head + "\n" + strings.Join(lines, "\n")
+	line := 0
+	if first > 0 {
+		line = first - 1
+	}
+	return []lspDiagnostic{{
+		Range:    lspRange{Start: lspPosition{Line: line}, End: lspPosition{Line: line}},
+		Severity: 3, // Information
+		Source:   "ic10c",
+		Code:     "tick-loops",
+		Message:  msg,
+	}}
+}
+
+// publishNativeStats sends the budget + per-loop tick analysis for a native
+// IC10 document, so the editor status bar / hover works for .ic/.ic10 too.
+func (s *Server) publishNativeStats(w *bufio.Writer, uri, text string) {
+	st := ic10.StatsOf(text)
+	limits := ic10.LimitsFor(ic10.Options{})
+	tickLimit := tick.DefaultLimit
+	tickCost, tickExceeds := 0, false
+	var tickLoops []map[string]any
+	if rep, err := tick.AnalyzeOpts(text, tick.Options{Limit: tickLimit, LineMap: identityLineMap(text)}); err == nil {
+		for _, seg := range rep.Segments {
+			if seg.Cost > tickCost {
+				tickCost = seg.Cost
+			}
+			if seg.Exceeds {
+				tickExceeds = true
+			}
+		}
+		for _, lp := range rep.Loops {
+			tickLoops = append(tickLoops, map[string]any{
+				"source":  lp.Source,
+				"body":    lp.Body,
+				"bodyMin": lp.BodyMin,
+				"trips":   lp.Trips,
+			})
+		}
+	}
+	payload := map[string]any{
+		"uri":         uri,
+		"native":      true,
+		"lines":       st.Lines,
+		"bytes":       st.Bytes,
+		"maxLineLen":  st.MaxLineLen,
+		"regs":        st.RegsUsed,
+		"maxLines":    limits.Lines,
+		"maxBytes":    limits.Bytes,
+		"maxLineMax":  limits.MaxLine,
+		"maxRegs":     16,
+		"tickLimit":   tickLimit,
+		"tickCost":    tickCost,
+		"tickExceeds": tickExceeds,
+	}
+	if len(tickLoops) > 0 {
+		payload["tickLoops"] = tickLoops
+	}
+	notify(w, "icg/stats", payload)
+}
+
 // loaderLineCount reports the total line count of the one-time loader chunks.
 func loaderLineCount(loaders []string) int {
 	n := 0
