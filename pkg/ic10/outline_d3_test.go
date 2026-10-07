@@ -129,6 +129,7 @@ func main() {
     for i := 0; i < 6; i++ {
         control(d4, d0, 0, 100)
         control(d0, d3, 0, 100)
+        control(d4, d3, 0, 100)
     }
 }
 `

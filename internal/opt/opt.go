@@ -640,32 +640,55 @@ func factsEqual(a, b map[*ir.Reg]ir.Value) bool {
 // constProp propagates constants across basic blocks. A register is known to
 // hold a constant at a block entry only if it holds the same constant on every
 // incoming path.
+// reversePostorder lists the blocks reachable from the entry in reverse
+// postorder, so a forward dataflow fixpoint converges in one pass per nesting
+// level instead of one pass per fact.
+func reversePostorder(fn *ir.Function) []*ir.Block {
+	seen := map[*ir.Block]bool{}
+	var order []*ir.Block
+	var visit func(b *ir.Block)
+	visit = func(b *ir.Block) {
+		if b == nil || seen[b] {
+			return
+		}
+		seen[b] = true
+		for _, s := range b.Succs {
+			visit(s)
+		}
+		order = append(order, b)
+	}
+	visit(fn.Entry)
+	for i, j := 0, len(order)-1; i < j; i, j = i+1, j-1 {
+		order[i], order[j] = order[j], order[i]
+	}
+	return order
+}
+
 func constProp(fn *ir.Function) bool {
 	fn.BuildCFG()
 	in := map[*ir.Block]map[*ir.Reg]*ir.Const{}
 	out := map[*ir.Block]map[*ir.Reg]*ir.Const{}
-	for _, b := range fn.Blocks {
-		in[b] = map[*ir.Reg]*ir.Const{}
-		out[b] = map[*ir.Reg]*ir.Const{}
-	}
+	// A must-analysis. Every block starts at TOP (no constraint) and a fact is
+	// dropped only when a *computed* predecessor disagrees. Seeding with the
+	// empty map (bottom) let a back edge that was not yet computed erase a fact
+	// and never recover, so a constant used inside a loop was not folded. The
+	// RPO order keeps the fixpoint at one pass per nesting level.
+	computed := map[*ir.Block]bool{}
+	order := reversePostorder(fn)
 	for changed := true; changed; {
 		changed = false
-		for _, b := range fn.Blocks {
-			ni := meetPreds(b, out)
-			if !constMapEqual(ni, in[b]) {
-				in[b] = ni
-				changed = true
-			}
-			no := transfer(b, in[b])
-			if !constMapEqual(no, out[b]) {
-				out[b] = no
+		for _, b := range order {
+			ni := meetPreds(b, out, computed)
+			no := transfer(b, ni)
+			if !computed[b] || !constMapEqual(ni, in[b]) || !constMapEqual(no, out[b]) {
+				in[b], out[b], computed[b] = ni, no, true
 				changed = true
 			}
 		}
 	}
 
 	rewritten := false
-	for _, b := range fn.Blocks {
+	for _, b := range order {
 		state := copyConstMap(in[b])
 		for idx, ins := range b.Instrs {
 			if replaceConstUses(ins, state) {
@@ -724,15 +747,19 @@ func replaceConstTermUses(t ir.Term, state map[*ir.Reg]*ir.Const) bool {
 	return changed
 }
 
-func meetPreds(b *ir.Block, out map[*ir.Block]map[*ir.Reg]*ir.Const) map[*ir.Reg]*ir.Const {
-	result := map[*ir.Reg]*ir.Const{}
+func meetPreds(b *ir.Block, out map[*ir.Block]map[*ir.Reg]*ir.Const, computed map[*ir.Block]bool) map[*ir.Reg]*ir.Const {
 	if len(b.Preds) == 0 {
-		return result
+		return map[*ir.Reg]*ir.Const{}
 	}
-	for r, c := range out[b.Preds[0]] {
-		result[r] = c
-	}
-	for _, p := range b.Preds[1:] {
+	var result map[*ir.Reg]*ir.Const
+	for _, p := range b.Preds {
+		if !computed[p] {
+			continue // TOP: this predecessor has no constraint yet
+		}
+		if result == nil {
+			result = copyConstMap(out[p])
+			continue
+		}
 		for r, c := range result {
 			oc, ok := out[p][r]
 			if !ok || !constEqual(c, oc) {
@@ -740,7 +767,7 @@ func meetPreds(b *ir.Block, out map[*ir.Block]map[*ir.Reg]*ir.Const) map[*ir.Reg
 			}
 		}
 	}
-	return result
+	return result // nil = TOP (no computed predecessor)
 }
 
 func transfer(b *ir.Block, in map[*ir.Reg]*ir.Const) map[*ir.Reg]*ir.Const {

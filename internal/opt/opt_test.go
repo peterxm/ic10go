@@ -830,3 +830,34 @@ func TestConstBranchKeepsNonConstant(t *testing.T) {
 		t.Fatal("non-constant branch was folded away")
 	}
 }
+
+func TestConstPropAcrossLoop(t *testing.T) {
+	// A constant defined before a loop must fold into a use inside the loop: the
+	// must-analysis has to start from TOP so a not-yet-computed back edge does
+	// not erase the fact.
+	b := ir.NewBuilder("f")
+	a := b.NewReg("a")
+	body := b.NewBlock()
+	b.Emit(&ir.Assign{Dst: a, Src: &ir.Const{V: 5}})
+	b.SetTerm(&ir.Jmp{Target: body})
+	b.SetBlock(body)
+	b.Emit(&ir.Store{Dev: "d0", Logic: "Setting", Src: a})
+	b.SetTerm(&ir.Jmp{Target: body})
+	fn := b.Fn()
+	if err := Optimize(fn); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, blk := range fn.Blocks {
+		for _, ins := range blk.Instrs {
+			if st, ok := ins.(*ir.Store); ok {
+				if _, isConst := st.Src.(*ir.Const); isConst {
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("constant not propagated into the loop body's store")
+	}
+}
