@@ -954,6 +954,46 @@ func debugVars(fn *ir.Function, colors map[*ir.Reg]int, info *sema.Info) []Var {
 		line int
 		name string
 	}
+	// Bound each variable to the span of source lines where it is actually
+	// defined and used. Liveness alone is loose around merged blocks (a value
+	// needed later in a block reads as live from the block's entry), which made
+	// a loop header list variables the body had not computed yet.
+	firstDef := map[*ir.Reg]int{}
+	lastUse := map[*ir.Reg]int{}
+	note := func(v *ir.Reg, line int, use bool) {
+		if v == nil || line <= 0 {
+			return
+		}
+		if use {
+			if line > lastUse[v] {
+				lastUse[v] = line
+			}
+			return
+		}
+		if firstDef[v] == 0 || line < firstDef[v] {
+			firstDef[v] = line
+		}
+	}
+	for _, b := range fn.Blocks {
+		for _, ins := range b.Instrs {
+			line := instrLine(fn, b, ins)
+			use, def := ir.DefUse(ins)
+			for _, u := range use {
+				note(u, line, true)
+			}
+			for _, d := range def {
+				note(d, line, false)
+			}
+		}
+		line := termLine(fn, b)
+		for _, u := range ir.TermUses(b.Term) {
+			note(u, line, true)
+		}
+		for _, d := range ir.TermDefs(b.Term) {
+			note(d, line, false)
+		}
+	}
+
 	seen := map[key]int{}
 	var vars []Var
 	add := func(line int, live map[*ir.Reg]bool) {
@@ -967,6 +1007,12 @@ func debugVars(fn *ir.Function, colors map[*ir.Reg]int, info *sema.Info) []Var {
 			c, ok := colors[r]
 			if !ok {
 				continue
+			}
+			if f := firstDef[r]; f > 0 && line < f {
+				continue // not computed yet at this line
+			}
+			if line > lastUse[r] {
+				continue // already dead
 			}
 			k := key{line, r.Name}
 			if _, ok := seen[k]; ok {
@@ -985,17 +1031,10 @@ func debugVars(fn *ir.Function, colors map[*ir.Reg]int, info *sema.Info) []Var {
 		for _, u := range ir.TermUses(b.Term) {
 			live[u] = true
 		}
-		termLine := b.SrcLine
-		if s := fn.SrcTerms[b.Term]; s > 0 {
-			termLine = s
-		}
-		add(termLine, live)
+		add(termLine(fn, b), live)
 		for i := len(b.Instrs) - 1; i >= 0; i-- {
 			ins := b.Instrs[i]
-			line := b.SrcLine
-			if s := fn.SrcLines[ins]; s > 0 {
-				line = s
-			}
+			line := instrLine(fn, b, ins)
 			add(line, live) // live before this instruction
 			use, def := ir.DefUse(ins)
 			for _, d := range def {
@@ -1014,6 +1053,23 @@ func debugVars(fn *ir.Function, colors map[*ir.Reg]int, info *sema.Info) []Var {
 		return vars[i].Reg < vars[j].Reg
 	})
 	return vars
+}
+
+// instrLine is the 1-based .icg source line an IR instruction was lowered from,
+// falling back to its block's line when the per-instruction map has no entry.
+func instrLine(fn *ir.Function, b *ir.Block, ins ir.Instr) int {
+	if s := fn.SrcLines[ins]; s > 0 {
+		return s
+	}
+	return b.SrcLine
+}
+
+// termLine is the 1-based source line a block's terminator was lowered from.
+func termLine(fn *ir.Function, b *ir.Block) int {
+	if s := fn.SrcTerms[b.Term]; s > 0 {
+		return s
+	}
+	return b.SrcLine
 }
 
 // userVarNames returns the set of source variable names (locals, parameters and
