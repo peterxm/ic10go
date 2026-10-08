@@ -1551,7 +1551,9 @@ namespace Ic10Go.Testbench
                 try { lineText = chip.ErrorLineNumberString; } catch { }
                 int line = -1;
                 if (!string.IsNullOrEmpty(lineText)) int.TryParse(lineText, out line);
-                if (string.IsNullOrEmpty(code) && !compilation && line < 0) return null;
+                // No error at all: the game reports lineText "0" (line 0), which
+                // is not a real error line (those are 1-based), so treat <= 0 as none.
+                if (string.IsNullOrEmpty(code) && !compilation && line <= 0) return null;
                 return new JObject
                 {
                     ["code"] = code ?? "",

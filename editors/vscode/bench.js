@@ -1448,8 +1448,15 @@ class Bench {
         if (this.sel) args.chip = this.sel;
         try {
             const r = await conn.call('run', args);
-            if (r && r.error) {
-                this.client.output.appendLine(`IC10 bench run: ${JSON.stringify(r.error)}`);
+            // The mod always returns an `error` object; only a non-empty code,
+            // a compilation error, or a real line (> 0) means the chip errored.
+            // (The game reports line 0 / lineText "0" when there is no error.)
+            const cerr = r && r.error;
+            const errored = typeof cerr === 'string'
+                ? cerr !== ''
+                : !!(cerr && (cerr.code || cerr.compilation || (Number(cerr.line) || 0) > 0));
+            if (errored) {
+                this.client.output.appendLine(`IC10 bench run: ${JSON.stringify(cerr)}`);
                 vscode.window.showErrorMessage(t('IC10: chip error while running. See the "IC10 Go" output.', 'IC10: 运行中芯片报错，详见 "IC10 Go" 输出面板。'));
             }
             await this.refresh(false);
