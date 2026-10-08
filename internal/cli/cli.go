@@ -577,7 +577,7 @@ var Commands = []Command{
 		},
 	},
 	{
-		Name: "testbench", Args: "ping|list|players|locate|hud|push|state|program|set|step|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
+		Name: "testbench", Args: "ping|list|players|locate|hud|push|state|program|set|step|trace|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
 		Summary: text{EN: "drive the in-game testbench mod", ZH: "驱动游戏内测试台 mod"},
 		Long: text{
 			EN: "Talk to the ic10go-testbench mod running in Stationeers over NDJSON/TCP\n" +
@@ -599,6 +599,7 @@ var Commands = []Command{
 				"  program                   print the chip's current IC10 source\n" +
 				"  set d1.Setting=10 ...     set device values (dN.Logic=value or id:N.Logic=value)\n" +
 				"  step [N]                  advance the chip N game ticks (paused)\n" +
+				"  trace [N]                 execute N instructions one at a time (paused)\n" +
 				"  ports                     dump how ports/devices are wired (diagnostic)\n" +
 				"  devices [--name F]        list devices (id/prefab/name/Setting) to tell same-name ones apart\n" +
 				"  device --ids 1,2          read devices by ReferenceId (readById), wired to a port or not\n" +
@@ -638,6 +639,7 @@ var Commands = []Command{
 				"  program                   打印芯片当前 IC10 源码\n" +
 				"  set d1.Setting=10 ...     设置设备值（dN.Logic=值 或 id:N.Logic=值）\n" +
 				"  step [N]                  推进芯片 N 个游戏 tick（暂停下）\n" +
+				"  trace [N]                 逐条执行 N 条指令（暂停下）\n" +
 				"  ports                     诊断：打印端口/设备接线映射\n" +
 				"  devices [--name F]        列出设备（id/预制体/名字/Setting），区分同名设备\n" +
 				"  device --ids 1,2           按 ReferenceId 读设备（readById），接不接端口都行\n" +

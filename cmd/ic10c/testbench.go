@@ -194,6 +194,12 @@ func cmdTestbench(args []string) int {
 			n, _ = strconv.Atoi(rest[0])
 		}
 		return benchStep(addr, chip, n, asJSON)
+	case "trace":
+		n := 1
+		if len(rest) > 0 {
+			n, _ = strconv.Atoi(rest[0])
+		}
+		return benchTrace(addr, chip, n, asJSON)
 	case "ports":
 		return benchPorts(addr, chip, asJSON)
 	case "devices":
@@ -840,6 +846,27 @@ func benchStep(addr string, chip any, ticks int, asJSON bool) int {
 		return printJSON(res)
 	}
 	fmt.Printf("stepped %d ticks, line=%v\n", res.Ticks, res.Line)
+	return 0
+}
+
+func benchTrace(addr string, chip any, n int, asJSON bool) int {
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	res, err := c.Trace(n, chip)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if asJSON {
+		return printJSON(res)
+	}
+	fmt.Printf("traced %d instruction(s), %d storage hit(s)\n", res.Steps, res.HitCount)
+	for _, h := range res.Hits {
+		fmt.Printf("  L%d  %s\n", h.PC, h.Text)
+	}
 	return 0
 }
 

@@ -470,6 +470,36 @@ type RunResult struct {
 	Line  float64 `json:"line"`
 }
 
+// Trace executes n instructions one at a time (the mod's `trace`) and returns
+// the storage-instruction hits with register snapshots, so a debugger can step
+// instruction by instruction. The world should be paused for determinism.
+func (c *Client) Trace(n int, chip any) (*TraceResult, error) {
+	args := map[string]any{"n": n}
+	if chip != nil {
+		args["chip"] = chip
+	}
+	var res TraceResult
+	if err := c.CallInto("trace", args, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// TraceResult is the result of trace.
+type TraceResult struct {
+	Steps    int        `json:"steps"`
+	HitCount int        `json:"hitCount"`
+	Hits     []TraceHit `json:"hits"`
+}
+
+// TraceHit is one executed storage instruction (set/get/put/poke/...) with the
+// registers right before it ran.
+type TraceHit struct {
+	PC   int       `json:"pc"`
+	Text string    `json:"text"`
+	Regs []float64 `json:"regs"`
+}
+
 // State fetches a chip state snapshot. include lists the sections to return
 // (nil = all); all requests the whole stack.
 func (c *Client) State(include []string, all bool, chip any) (*State, error) {

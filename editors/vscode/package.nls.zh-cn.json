@@ -58,6 +58,7 @@
   "cmd.bench.openPanel": "IC10 Go: 打开芯片状态面板",
   "cmd.bench.pause": "IC10 Go: 暂停 / 恢复游戏",
   "cmd.bench.step": "IC10 Go: 单步（1 tick）",
+  "cmd.bench.stepIns": "IC10 Go: 单步（1 指令）",
   "cmd.bench.runTicks": "IC10 Go: 运行 N tick",
   "cmd.bench.reset": "IC10 Go: 重置芯片",
   "cmd.bench.ports": "IC10 Go: 查看端口接线",

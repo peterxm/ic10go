@@ -804,6 +804,18 @@ class Bench {
         ed.setDecorations(this.runDecor, [new vscode.Range(line, 0, line, 0)]);
     }
 
+    // revealRunLine scrolls the highlighted line into view. Used after an
+    // instruction step, where following the PC is the whole point.
+    revealRunLine() {
+        if (!this.programMap || !this.state) return;
+        const src = this.programMap.map && this.programMap.map[this.state.line];
+        if (!src) return;
+        const ed = (vscode.window.visibleTextEditors || []).find((e) => e.document.uri.toString() === this.programMap.uri);
+        if (!ed) return;
+        const line = Math.min(Math.max(0, src - 1), Math.max(0, ed.document.lineCount - 1));
+        ed.revealRange(new vscode.Range(line, 0, line, 0), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    }
+
     cfg() {
         const c = vscode.workspace.getConfiguration('icg');
         return {
@@ -826,6 +838,11 @@ class Bench {
         this.runDecor = vscode.window.createTextEditorDecorationType({
             isWholeLine: true,
             backgroundColor: new vscode.ThemeColor('editor.rangeHighlightBackground'),
+            borderWidth: '0 0 0 3px',
+            borderStyle: 'solid',
+            borderColor: new vscode.ThemeColor('editorInfo.foreground'),
+            overviewRulerColor: new vscode.ThemeColor('editorInfo.foreground'),
+            overviewRulerLane: vscode.OverviewRulerLane.Left,
         });
         context.subscriptions.push(this.runDecor);
 
@@ -873,6 +890,7 @@ class Bench {
         cmd('icg.bench.watch', () => this.toggleWatch());
         cmd('icg.bench.pause', () => this.togglePause());
         cmd('icg.bench.step', () => this.runTicks(1));
+        cmd('icg.bench.stepIns', () => this.stepIns());
         cmd('icg.bench.runTicks', () => this.runTicks(this.cfg().runTicks));
         cmd('icg.bench.reset', () => this.reset());
         cmd('icg.bench.ports', () => this.showPorts());
@@ -1294,6 +1312,12 @@ class Bench {
         // are trimmed so the chip does not gain an empty last line.
         if (prog.raw) {
             const code = doc.getText().replace(/\r?\n+$/, '');
+            // Raw IC10 is uploaded verbatim, so its runtime line numbers are the
+            // source's: an identity map lets the run-line highlight work here too.
+            const nLines = code.split('\n').length;
+            const map = new Array(nLines + 1);
+            for (let i = 0; i <= nLines; i++) map[i] = i;
+            this.programMap = { uri: doc.uri.toString(), map };
             try {
                 const r = await conn.call('push', { code });
                 vscode.window.setStatusBarMessage(
@@ -1463,6 +1487,32 @@ class Bench {
         } catch (err) {
             this.client.output.appendLine(`IC10 bench run failed: ${err.message}`);
             vscode.window.showErrorMessage(t('IC10: run failed. See the "IC10 Go" output.', 'IC10: 运行失败，详见 "IC10 Go" 输出面板。'));
+        }
+    }
+
+    // stepIns advances the selected chip by a single instruction (the mod's
+    // `trace` runs Execute(1) per step), so a debugger can follow the PC line by
+    // line. Pause first for determinism, as with runTicks.
+    async stepIns() {
+        const conn = await this.connect(false);
+        if (!conn) return;
+        if (!(this.state && this.state.paused)) {
+            try {
+                await conn.call('pause', { on: true });
+                vscode.window.setStatusBarMessage(t('IC10: paused for stepping', 'IC10: 已暂停以便单步'), 3000);
+            } catch (err) {
+                // Not fatal.
+            }
+        }
+        const args = { n: 1 };
+        if (this.sel) args.chip = this.sel;
+        try {
+            await conn.call('trace', args);
+            await this.refresh(false);
+            this.revealRunLine();
+        } catch (err) {
+            this.client.output.appendLine(`IC10 bench step-ins failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('IC10: step failed. See the "IC10 Go" output.', 'IC10: 单步失败，详见 "IC10 Go" 输出面板。'));
         }
     }
 
@@ -2436,6 +2486,7 @@ ${note}${diffNote}
         else if (m.type === 'watch') this.toggleWatch();
         else if (m.type === 'pause') this.togglePause();
         else if (m.type === 'step') this.runTicks(1);
+        else if (m.type === 'stepIns') this.stepIns();
         else if (m.type === 'run') this.runTicks(this.cfg().runTicks);
         else if (m.type === 'reset') this.reset();
         else if (m.type === 'copyHash' && m.name) this.copyHash(m.name);
@@ -2607,6 +2658,7 @@ ${note}${diffNote}
   <span class="line" id="line"></span>
   <button id="pause">Pause</button>
   <button id="step">Step</button>
+  <button id="stepins">${t('Ins', '指令')}</button>
   <button id="run">Run</button>
   <button id="reset">Reset</button>
   <button id="watch">Watch</button>
@@ -2631,6 +2683,7 @@ ${note}${diffNote}
   document.getElementById('findids').addEventListener('click', () => vscode.postMessage({ type: 'queryIds' }));
   document.getElementById('pause').addEventListener('click', () => vscode.postMessage({ type: 'pause' }));
   document.getElementById('step').addEventListener('click', () => vscode.postMessage({ type: 'step' }));
+  document.getElementById('stepins').addEventListener('click', () => vscode.postMessage({ type: 'stepIns' }));
   document.getElementById('run').addEventListener('click', () => vscode.postMessage({ type: 'run' }));
   document.getElementById('reset').addEventListener('click', () => vscode.postMessage({ type: 'reset' }));
   const openMap = {};

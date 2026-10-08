@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.53",
+  "version": "0.7.54",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -370,6 +370,11 @@
         "icon": "$(debug-step-over)"
       },
       {
+        "command": "icg.bench.stepIns",
+        "title": "%cmd.bench.stepIns%",
+        "icon": "$(debug-step-into)"
+      },
+      {
         "command": "icg.bench.runTicks",
         "title": "%cmd.bench.runTicks%",
         "icon": "$(debug-continue)"
@@ -575,14 +580,19 @@
           "group": "navigation@7"
         },
         {
-          "command": "icg.bench.runTicks",
+          "command": "icg.bench.stepIns",
           "when": "view == icg.bench",
           "group": "navigation@8"
         },
         {
-          "command": "icg.bench.reset",
+          "command": "icg.bench.runTicks",
           "when": "view == icg.bench",
           "group": "navigation@9"
+        },
+        {
+          "command": "icg.bench.reset",
+          "when": "view == icg.bench",
+          "group": "navigation@10"
         },
         {
           "command": "icg.bench.loadSave",
