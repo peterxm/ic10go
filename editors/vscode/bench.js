@@ -810,10 +810,15 @@ class Bench {
 
     // runLine maps the chip's current PC to a 0-based line of the document whose
     // uri is `uri` (via the upload's line map), or null when there is nothing.
+    //
+    // chip.LineNumber is 0-based (the compiler emits `j 0` to loop to the first
+    // line), while the line map is indexed by the 1-based IC10 line, so add 1.
     runLine(uri) {
         if (!uri || !this.programMap || this.state == null) return null;
         if (uri !== this.programMap.uri) return null;
-        const src = this.programMap.map && this.programMap.map[this.state.line];
+        const l0 = Number(this.state.line);
+        if (!isFinite(l0) || l0 < 0) return null;
+        const src = this.programMap.map && this.programMap.map[l0 + 1];
         if (!src) return null;
         return src - 1; // 1-based source line -> 0-based
     }
