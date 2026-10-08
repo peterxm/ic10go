@@ -18,6 +18,16 @@ const vscode = require('vscode');
 const net = require('net');
 const dgram = require('dgram');
 const path = require('path');
+const crypto = require('crypto');
+
+// sourceFingerprint matches the mod's GameApi.Fingerprint: SHA1 of the source
+// with CRLF normalised and trailing whitespace trimmed, first 4 bytes as hex.
+// It lets the editor tell whether an open .icg compiles to exactly the program
+// a chip is running.
+function sourceFingerprint(code) {
+    const norm = String(code || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\s+$/, '');
+    return crypto.createHash('sha1').update(norm, 'utf8').digest('hex').slice(0, 8);
+}
 
 function t(en, zh) {
     return (vscode.env.language || 'en').toLowerCase().startsWith('zh') ? zh : en;
@@ -873,6 +883,54 @@ class Bench {
         }
     }
 
+    // hydrateWatch fills the watch table (and the line map) for an open .icg
+    // that compiles to exactly the program the chip is running, so the watch
+    // window works even when the program was uploaded before this feature
+    // existed or the recording was restored from an older session. It recompiles
+    // the document with the same flags as push and only records the result when
+    // the fingerprint matches the chip's source. Runs once per (uri, fp).
+    async hydrateWatch() {
+        const st = this.state;
+        const fp = st && st.chip && st.chip.fp;
+        const editor = vscode.window.activeTextEditor;
+        if (!fp || !editor || editor.document.languageId !== 'icg') return;
+        const doc = editor.document;
+        const uri = doc.uri.toString();
+        const pm = this.programMap;
+        if (pm && pm.uri === uri && pm.vars && pm.vars.length) return; // already recorded
+        const key = uri + ':' + fp;
+        if (this.watchHydratedKey === key) return;
+        this.watchHydratedKey = key;
+        try {
+            await this.client.withTempFile(doc, async (tmp) => {
+                const args = ['build', '--json', ...this.client.buildFlags(this.client.config()), tmp];
+                const res = await this.client.execCli(args);
+                let out;
+                try {
+                    out = JSON.parse(res.stdout);
+                } catch (err) {
+                    return;
+                }
+                if (!out.ok) return;
+                // A multi-chip source needs the user to pick a block (push does).
+                if (Array.isArray(out.chips) && out.chips.length > 1) return;
+                if (!Array.isArray(out.vars) || !out.vars.length || !Array.isArray(out.lineMap)) return;
+                if (sourceFingerprint(out.code) !== fp) {
+                    this.client.output.appendLine(
+                        `IC10 bench watch: ${path.basename(doc.fileName)} (${sourceFingerprint(out.code)}) is not the program on the chip (${fp}); upload it to enable the watch table.`
+                    );
+                    return;
+                }
+                this.setProgramMap(doc, out.lineMap, out.vars);
+                this.updateRunLine();
+                this.renderPanel();
+                if (this.tree) this.tree.refresh();
+            });
+        } catch (err) {
+            this.watchHydratedKey = undefined; // let a later refresh retry
+        }
+    }
+
     // watchVars lists the .icg variables live at the chip's current source line,
     // with the value of the register currently holding each one. It needs the
     // watch table recorded by the last push of a .icg (raw IC10 and pulled
@@ -977,7 +1035,10 @@ class Bench {
                 provideCodeLenses: (doc) => this.benchCodeLenses(doc),
             })
         );
-        context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => this.updateRunLine()));
+        context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
+            this.updateRunLine();
+            this.hydrateWatch();
+        }));
 
         // Restore the last selected chip and the live-update toggle, so a reload
         // comes back to the same chip.
@@ -1276,6 +1337,7 @@ class Bench {
             this.setStatus(true);
             this.ensurePrefabs();
             this.updateRunLine();
+            this.hydrateWatch();
         } catch (err) {
             this.client.output.appendLine(`IC10 bench refresh failed: ${err.message}`);
             if (interactive) vscode.window.showErrorMessage(t('IC10: refresh failed. See the "IC10 Go" output.', 'IC10: 刷新失败，详见 "IC10 Go" 输出面板。'));
