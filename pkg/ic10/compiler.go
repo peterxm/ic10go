@@ -292,6 +292,23 @@ func fixedDataBase(opts Options) int {
 	return 0
 }
 
+// Var is one .icg variable and the IC10 register holding it at a source line,
+// used by the in-game debugger's watch list. Reg is the physical register index
+// 0..15 (r0..r15) chosen by register allocation. Variables the allocator spilled
+// to the stack are omitted. Because IC10 reuses registers, a variable only
+// appears on the lines where it is live, so a debugger can show which register
+// currently means which source name.
+type Var struct {
+	// Line is the 1-based .icg source line.
+	Line int `json:"line"`
+	// Name is the source variable name.
+	Name string `json:"name"`
+	// Reg is the physical register index (0..15 = r0..r15).
+	Reg int `json:"reg"`
+	// Type is the declared static type ("num", "bool", ...), or "".
+	Type string `json:"type,omitempty"`
+}
+
 // ChipResult is one chip's compiled output in a multi-chip program.
 type ChipResult struct {
 	// Name is the chip block's name.
@@ -310,6 +327,9 @@ type ChipResult struct {
 	// LineMap maps a 1-based runtime IC10 line to the 1-based .icg source line
 	// it came from (0 when unknown). It lets an editor follow execution.
 	LineMap []int
+	// Vars is the watch table: which source variable is in which register at
+	// each source line (live ranges), for the in-game debugger.
+	Vars []Var
 	// BusAccess maps "Bus.slot" to the access points ("dev:conn") this chip
 	// uses for it, used to wire a multi-chip VM run. Nil when the chip uses no
 	// bus.
@@ -338,6 +358,9 @@ type Result struct {
 	// LineMap maps a 1-based runtime IC10 line to the 1-based .icg source line
 	// it came from (0 when unknown). Chips[0] mirrors the top-level program's.
 	LineMap []int
+	// Vars is the watch table (source variable -> register per source line) of
+	// the top-level program; Chips[0] mirrors it.
+	Vars []Var
 }
 
 // Compile compiles .icg source into IC10 code.
@@ -439,7 +462,7 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 		}
 		res.Loader = dl + res.Loader
 		res.Loaders = SplitLoaderLines(res.Loader, opts.editorLimits().Lines)
-		res.Chips = []ChipResult{{Code: res.Code, LineMap: res.LineMap, Loader: res.Loader, Loaders: res.Loaders, Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, "")}}
+		res.Chips = []ChipResult{{Code: res.Code, LineMap: res.LineMap, Vars: res.Vars, Loader: res.Loader, Loaders: res.Loaders, Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, "")}}
 		return res, diags, nil
 	}
 
@@ -484,13 +507,13 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 			continue
 		}
 		loader := dl + res.Loader
-		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, LineMap: res.LineMap, Loader: loader, Loaders: SplitLoaderLines(loader, opts.editorLimits().Lines), Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, ch.Name.Name)})
+		results = append(results, ChipResult{Name: ch.Name.Name, Code: res.Code, LineMap: res.LineMap, Vars: res.Vars, Loader: loader, Loaders: SplitLoaderLines(loader, opts.editorLimits().Lines), Setup: res.Setup, BusAccess: chipBusAccess(chipAccess, ch.Name.Name)})
 	}
 	checkBusUse(common, busUses, diags)
 	if len(results) == 0 {
 		return Result{}, diags, firstErr
 	}
-	return Result{Code: results[0].Code, LineMap: results[0].LineMap, Loader: results[0].Loader, Loaders: results[0].Loaders, Chips: results, Setup: results[0].Setup}, diags, firstErr
+	return Result{Code: results[0].Code, LineMap: results[0].LineMap, Vars: results[0].Vars, Loader: results[0].Loader, Loaders: results[0].Loaders, Chips: results, Setup: results[0].Setup}, diags, firstErr
 }
 
 // warnTickBudget adds a warning for each yield-delimited run whose worst-case
@@ -590,7 +613,7 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			return
 		}
 		mergeDiags(diags, cand)
-		code, lineMap, spills, err := generate(fn, info, o)
+		code, lineMap, vars, spills, err := generate(fn, info, o)
 		if err == nil {
 			// Only look for a smaller unoptimised build when it could matter:
 			// over a limit, or close enough that a few saved lines help.
@@ -608,18 +631,18 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 		// needs a loader (data segment: reusing it is free), or when explicitly
 		// asked (--extract-setup).
 		if err == nil && info.DataSize == 0 && !o.ExtractSetup {
-			consider(Result{Code: code, LineMap: lineMap})
+			consider(Result{Code: code, LineMap: lineMap, Vars: vars})
 			return
 		}
 		if err == nil {
 			// Extraction is not required (data segment, or --extract-setup): keep
 			// the plain runtime as a candidate so the shorter one wins.
-			consider(Result{Code: code, LineMap: lineMap})
+			consider(Result{Code: code, LineMap: lineMap, Vars: vars})
 		}
 		setup := opt.SplitSetup(fn)
 		if setup == nil {
 			if err == nil {
-				consider(Result{Code: code, LineMap: lineMap})
+				consider(Result{Code: code, LineMap: lineMap, Vars: vars})
 			} else {
 				bestErr = err
 			}
@@ -627,31 +650,31 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 		}
 		if oerr := opt.Optimize(fn); oerr != nil {
 			if err == nil {
-				consider(Result{Code: code, LineMap: lineMap})
+				consider(Result{Code: code, LineMap: lineMap, Vars: vars})
 			} else {
 				bestErr = err
 			}
 			return
 		}
-		runtime, rlineMap, _, rerr := generate(fn, info, o)
+		runtime, rlineMap, rvars, _, rerr := generate(fn, info, o)
 		if rerr != nil {
 			if err == nil {
-				consider(Result{Code: code, LineMap: lineMap})
+				consider(Result{Code: code, LineMap: lineMap, Vars: vars})
 			} else {
 				bestErr = rerr
 			}
 			return
 		}
-		loader, _, _, lerr := generate(setup, info, o)
+		loader, _, _, _, lerr := generate(setup, info, o)
 		if lerr != nil {
 			if err == nil {
-				consider(Result{Code: code, LineMap: lineMap})
+				consider(Result{Code: code, LineMap: lineMap, Vars: vars})
 			} else {
 				bestErr = rerr
 			}
 			return
 		}
-		consider(Result{Code: runtime, LineMap: rlineMap, Loader: loader, Setup: true})
+		consider(Result{Code: runtime, LineMap: rlineMap, Vars: rvars, Loader: loader, Setup: true})
 	}
 	// Try each outline plan with and without constant data-read folding; the
 	// shortest runtime wins (folding is usually shorter, but not always).
@@ -860,15 +883,16 @@ func better(a, b string) bool {
 }
 
 // generate runs register allocation and code generation for a lowered function.
-// It returns the source line map and the number of register spill slots used.
-func generate(fn *ir.Function, info *sema.Info, opts Options) (string, []int, int, error) {
-	code, _, lineMap, spills, err := generateColored(fn, info, opts)
-	return code, lineMap, spills, err
+// It returns the source line map, the debugger watch table and the number of
+// register spill slots used.
+func generate(fn *ir.Function, info *sema.Info, opts Options) (string, []int, []Var, int, error) {
+	code, _, lineMap, vars, spills, err := generateColored(fn, info, opts)
+	return code, lineMap, vars, spills, err
 }
 
 // generateColored is generate plus the register colouring, which the
 // control-flow graph needs to render instruction text.
-func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, map[*ir.Reg]int, []int, int, error) {
+func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, map[*ir.Reg]int, []int, []Var, int, error) {
 	reserved := info.DataSize
 	if fixedDataBase(opts) > 0 {
 		reserved = 0
@@ -879,13 +903,13 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 	}
 	colors, spillCount, err := regalloc.AllocateReservedSpillsMode(fn, NumRegs, reserved, spillMode)
 	if err != nil {
-		return "", nil, nil, 0, err
+		return "", nil, nil, nil, 0, err
 	}
 	if spillCount > 0 && fixedDataBase(opts) > 0 {
 		bottom := 511 - reserved - spillCount + 1
 		dataEnd := info.Sentinel + info.DataSize - 1
 		if bottom <= dataEnd {
-			return "", nil, nil, 0, fmt.Errorf("register spills (%d slots, down to %d) overlap the data segment [%d..%d]",
+			return "", nil, nil, nil, 0, fmt.Errorf("register spills (%d slots, down to %d) overlap the data segment [%d..%d]",
 				spillCount, bottom, info.Sentinel, dataEnd)
 		}
 	}
@@ -904,9 +928,116 @@ func generateColored(fn *ir.Function, info *sema.Info, opts Options) (string, ma
 		NaNSafe:    opts.NaNSafe,
 	})
 	if err != nil {
-		return code, colors, nil, spillCount, err
+		return code, colors, nil, nil, spillCount, err
 	}
-	return code, colors, report.LineMap, spillCount, err
+	return code, colors, report.LineMap, debugVars(fn, colors, info), spillCount, err
+}
+
+// debugVars builds the debugger watch table: for each source line, the user
+// variables live there and the IC10 register (r0..r15) that currently holds
+// them. It runs after register allocation, so a variable's register is its
+// final colour. Variables without a colour were spilled to the stack and are
+// omitted (the register allocator rewrites them away).
+//
+// IC10 reuses registers across non-overlapping live ranges, so a variable is
+// only listed on the lines where it is live; that is what lets a watch window
+// say which register currently means which source name.
+func debugVars(fn *ir.Function, colors map[*ir.Reg]int, info *sema.Info) []Var {
+	if fn == nil {
+		return nil
+	}
+	fn.BuildCFG()
+	_, out := ir.Liveness(fn)
+	user, types := userVarNames(info)
+
+	type key struct {
+		line int
+		name string
+	}
+	seen := map[key]int{}
+	var vars []Var
+	add := func(line int, live map[*ir.Reg]bool) {
+		if line <= 0 {
+			return
+		}
+		for r := range live {
+			if !user[r.Name] {
+				continue
+			}
+			c, ok := colors[r]
+			if !ok {
+				continue
+			}
+			k := key{line, r.Name}
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			seen[k] = c
+			vars = append(vars, Var{Line: line, Name: r.Name, Reg: c, Type: types[r.Name]})
+		}
+	}
+
+	for _, b := range fn.Blocks {
+		live := map[*ir.Reg]bool{}
+		for r := range out[b] {
+			live[r] = true
+		}
+		for _, u := range ir.TermUses(b.Term) {
+			live[u] = true
+		}
+		termLine := b.SrcLine
+		if s := fn.SrcTerms[b.Term]; s > 0 {
+			termLine = s
+		}
+		add(termLine, live)
+		for i := len(b.Instrs) - 1; i >= 0; i-- {
+			ins := b.Instrs[i]
+			line := b.SrcLine
+			if s := fn.SrcLines[ins]; s > 0 {
+				line = s
+			}
+			add(line, live) // live before this instruction
+			use, def := ir.DefUse(ins)
+			for _, d := range def {
+				delete(live, d)
+			}
+			for _, u := range use {
+				live[u] = true
+			}
+			add(line, live) // live after it (so a just-computed value shows)
+		}
+	}
+	sort.Slice(vars, func(i, j int) bool {
+		if vars[i].Line != vars[j].Line {
+			return vars[i].Line < vars[j].Line
+		}
+		return vars[i].Reg < vars[j].Reg
+	})
+	return vars
+}
+
+// userVarNames returns the set of source variable names (locals, parameters and
+// range variables) and their declared types, so debugVars can skip the
+// compiler's internal temporaries (which use names like "swlt", "jidx", "read").
+func userVarNames(info *sema.Info) (map[string]bool, map[string]string) {
+	names := map[string]bool{}
+	types := map[string]string{}
+	if info == nil {
+		return names, types
+	}
+	for _, fi := range info.Funcs {
+		for _, p := range fi.Params {
+			names[p] = true
+		}
+	}
+	for id, t := range info.DeclTypes {
+		if id == nil {
+			continue
+		}
+		names[id.Name] = true
+		types[id.Name] = t.String()
+	}
+	return names, types
 }
 
 // checkStackRegion rejects user stack accesses that reach into the compiler's

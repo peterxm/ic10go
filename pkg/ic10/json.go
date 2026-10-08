@@ -96,6 +96,9 @@ type ChipJSON struct {
 	// LineMap maps a 1-based runtime IC10 line to the 1-based .icg source line
 	// it came from (0 when unknown), so an editor can follow execution.
 	LineMap []int `json:"lineMap,omitempty"`
+	// Vars is the debugger watch table: which source variable is in which
+	// register (r0..r15) at each source line.
+	Vars []Var `json:"vars,omitempty"`
 }
 
 // TickInfo is the per-tick instruction budget analysis (see `ic10c tick`): the
@@ -124,7 +127,9 @@ type BuildResult struct {
 	Tick       *TickInfo   `json:"tick,omitempty"`
 	// LineMap maps a 1-based runtime IC10 line to the 1-based .icg source line
 	// it came from (0 when unknown). It mirrors the first chip.
-	LineMap     []int        `json:"lineMap,omitempty"`
+	LineMap []int `json:"lineMap,omitempty"`
+	// Vars is the debugger watch table, mirroring the first chip.
+	Vars        []Var        `json:"vars,omitempty"`
 	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
@@ -167,6 +172,7 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 			Loaders: ch.Loaders,
 			Setup:   ch.Setup,
 			LineMap: ch.LineMap,
+			Vars:    ch.Vars,
 		})
 	}
 	if compiled.Loader != "" {
@@ -204,6 +210,7 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 	res.Lines = splitLines(compiled.Code)
 	res.Stats = StatsOf(compiled.Code)
 	res.LineMap = compiled.LineMap
+	res.Vars = compiled.Vars
 	res.Tick = tickInfo(compiled.Code)
 	if multi {
 		for _, ch := range compiled.Chips {
