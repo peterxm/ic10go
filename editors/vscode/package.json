@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.57",
+  "version": "0.7.58",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -42,7 +42,10 @@
     "onCommand:icg.bench.trackPlayer",
     "onCommand:icg.bench.findAt",
     "onCommand:icg.bench.filterNear",
-    "onCommand:icg.bench.clearNear"
+    "onCommand:icg.bench.clearNear",
+    "onCommand:icg.bench.stepIns",
+    "onCommand:icg.bench.step",
+    "onCommand:icg.bench.runTicks"
   ],
   "contributes": {
     "languages": [
@@ -692,6 +695,30 @@
         "key": "ctrl+alt+t",
         "mac": "cmd+alt+t",
         "when": "editorLangId == icg"
+      },
+      {
+        "command": "icg.bench.stepIns",
+        "key": "f11",
+        "mac": "f11",
+        "when": "editorLangId == icg || editorLangId == ic10"
+      },
+      {
+        "command": "icg.bench.step",
+        "key": "f10",
+        "mac": "f10",
+        "when": "editorLangId == icg || editorLangId == ic10"
+      },
+      {
+        "command": "icg.bench.runTicks",
+        "key": "f5",
+        "mac": "f5",
+        "when": "editorLangId == icg || editorLangId == ic10"
+      },
+      {
+        "command": "icg.bench.pause",
+        "key": "f6",
+        "mac": "f6",
+        "when": "editorLangId == icg || editorLangId == ic10"
       }
     ]
   }

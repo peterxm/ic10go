@@ -789,16 +789,15 @@ class Bench {
         return (e && e.name) || '';
     }
 
-    // updateRunLine highlights the source line the chip is executing (using the
-    // line map recorded on the last upload) and refreshes the per-line CodeLens
-    // step controls, which follow the PC.
+    // updateRunLine highlights the source line the chip is executing and
+    // refreshes the per-line CodeLens step controls, which follow the PC.
     updateRunLine() {
         if (this.runDecor) {
             const editors = vscode.window.visibleTextEditors || [];
             for (const ed of editors) ed.setDecorations(this.runDecor, []);
-            const ed = editors.find((e) => this.programMap && e.document.uri.toString() === this.programMap.uri);
+            const ed = this.runTargetEditor(editors);
             if (ed) {
-                const at = this.runLine(ed.document.uri.toString());
+                const at = this.runLine(ed.document);
                 if (at != null) {
                     const line = Math.min(Math.max(0, at), Math.max(0, ed.document.lineCount - 1));
                     ed.setDecorations(this.runDecor, [new vscode.Range(line, 0, line, 0)]);
@@ -808,25 +807,49 @@ class Bench {
         if (this.codeLensEmitter) this.codeLensEmitter.fire();
     }
 
-    // runLine maps the chip's current PC to a 0-based line of the document whose
-    // uri is `uri` (via the upload's line map), or null when there is nothing.
+    // runTargetEditor picks the visible editor to mark: the uploaded/pulled
+    // program's editor when visible, else the active raw-IC10 editor.
+    runTargetEditor(editors) {
+        const list = editors || vscode.window.visibleTextEditors || [];
+        if (this.programMap) {
+            const prog = list.find((e) => e.document.uri.toString() === this.programMap.uri);
+            if (prog) return prog;
+        }
+        const act = vscode.window.activeTextEditor;
+        if (act && act.document.languageId === 'ic10') return act;
+        return undefined;
+    }
+
+    // runLine maps the chip's current PC to a 0-based line of `doc`, or null.
     //
     // chip.LineNumber is 0-based (the compiler emits `j 0` to loop to the first
     // line), while the line map is indexed by the 1-based IC10 line, so add 1.
-    runLine(uri) {
-        if (!uri || !this.programMap || this.state == null) return null;
-        if (uri !== this.programMap.uri) return null;
+    // A raw IC10 document (language ic10) needs no recorded map: its line numbers
+    // are its own, so an identity map keeps the highlight after a reload/re-open
+    // (untitled documents get a new URI).
+    runLine(doc) {
+        if (!doc || this.state == null) return null;
         const l0 = Number(this.state.line);
         if (!isFinite(l0) || l0 < 0) return null;
-        const src = this.programMap.map && this.programMap.map[l0 + 1];
-        if (!src) return null;
-        return src - 1; // 1-based source line -> 0-based
+        if (this.programMap && doc.uri.toString() === this.programMap.uri) {
+            const src = this.programMap.map && this.programMap.map[l0 + 1];
+            return src ? src - 1 : null;
+        }
+        if (doc.languageId === 'ic10') {
+            return Math.min(l0, Math.max(0, doc.lineCount - 1));
+        }
+        return null;
     }
 
-    // benchCodeLenses puts clickable step controls on the executing line of doc.
+    // benchCodeLenses puts clickable step controls on the executing line of doc
+    // (the uploaded/pulled program, or the active raw-IC10 editor).
     benchCodeLenses(doc) {
         if (!this.cfg().highlightLine) return [];
-        const at = this.runLine(doc.uri.toString());
+        const isProg = this.programMap && doc.uri.toString() === this.programMap.uri;
+        const act = vscode.window.activeTextEditor;
+        const isRawActive = doc.languageId === 'ic10' && act && act.document.uri.toString() === doc.uri.toString();
+        if (!isProg && !isRawActive) return [];
+        const at = this.runLine(doc);
         if (at == null || at >= doc.lineCount) return [];
         const range = new vscode.Range(at, 0, at, 0);
         const mk = (title, command) => new vscode.CodeLens(range, { title, command });
@@ -841,9 +864,9 @@ class Bench {
     // revealRunLine scrolls the highlighted line into view. Used after an
     // instruction step, where following the PC is the whole point.
     revealRunLine() {
-        const ed = (vscode.window.visibleTextEditors || []).find((e) => this.programMap && e.document.uri.toString() === this.programMap.uri);
+        const ed = this.runTargetEditor(vscode.window.visibleTextEditors);
         if (!ed) return;
-        const at = this.runLine(ed.document.uri.toString());
+        const at = this.runLine(ed.document);
         if (at == null) return;
         const line = Math.min(Math.max(0, at), Math.max(0, ed.document.lineCount - 1));
         ed.revealRange(new vscode.Range(line, 0, line, 0), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
@@ -891,6 +914,7 @@ class Bench {
                 provideCodeLenses: (doc) => this.benchCodeLenses(doc),
             })
         );
+        context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => this.updateRunLine()));
 
         // Restore the last selected chip and the live-update toggle, so a reload
         // comes back to the same chip.
