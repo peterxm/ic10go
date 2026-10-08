@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.60",
+  "version": "0.7.61",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -31,6 +31,7 @@
     "onCommand:icg.bench.connect",
     "onCommand:icg.bench.disconnect",
     "onCommand:icg.bench.push",
+    "onCommand:icg.bench.pushAndBreak",
     "onCommand:icg.bench.refresh",
     "onCommand:icg.bench.watch",
     "onCommand:icg.bench.runScenario",
@@ -310,6 +311,11 @@
         "icon": "$(cloud-upload)"
       },
       {
+        "command": "icg.bench.pushAndBreak",
+        "title": "%cmd.bench.pushAndBreak%",
+        "icon": "$(debug-alt)"
+      },
+      {
         "command": "icg.bench.pull",
         "title": "%cmd.bench.pull%",
         "icon": "$(cloud-download)"
@@ -506,6 +512,11 @@
           "group": "navigation@1"
         },
         {
+          "command": "icg.bench.pushAndBreak",
+          "when": "editorLangId == icg",
+          "group": "navigation@1.1"
+        },
+        {
           "command": "icg.bench.pull",
           "when": "editorLangId == icg",
           "group": "navigation@2"
@@ -551,6 +562,11 @@
           "command": "icg.bench.push",
           "when": "view == icg.bench",
           "group": "navigation@1"
+        },
+        {
+          "command": "icg.bench.pushAndBreak",
+          "when": "view == icg.bench",
+          "group": "navigation@1.1"
         },
         {
           "command": "icg.bench.pull",

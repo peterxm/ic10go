@@ -45,6 +45,7 @@
   "cmd.tick": "IC10 Go: 每 tick 预算与循环",
   "cmd.tickPanel": "IC10 Go: 打开每 tick 预算面板",
   "cmd.bench.push": "IC10 Go: 上传到游戏",
+  "cmd.bench.pushAndBreak": "IC10 Go: 上传并暂停在第一行",
   "cmd.bench.pull": "IC10 Go: 从游戏下载",
   "cmd.bench.connect": "IC10 Go: 连接到游戏测试台",
   "cmd.bench.disconnect": "IC10 Go: 断开测试台连接",

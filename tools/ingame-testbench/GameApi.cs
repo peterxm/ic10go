@@ -1684,16 +1684,25 @@ namespace Ic10Go.Testbench
         private static bool _pauseToggleLooked;
 
         /// <summary>
-        /// Pauses / resumes the world. Uses the game's own pause toggle
-        /// (InputSourceCode.PauseGameToggle), which also handles cursor /
-        /// input state; setting WorldManager.IsGamePaused directly leaves the
-        /// game frozen but not operable until a menu is toggled.
+        /// Pauses / resumes the world and returns the state actually reached.
+        ///
+        /// Uses the game's own pause toggle (InputSourceCode.PauseGameToggle),
+        /// which also handles cursor / input state. That toggle only acts when
+        /// there is no network client (single player, or a host with nobody
+        /// connected); in multiplayer it silently does nothing. So after the
+        /// toggle we re-read the game's pause flag and, when it did not change,
+        /// fall back to WorldManager.SetGamePause directly (which leaves the
+        /// game frozen but not operable through the pause menu). Callers get the
+        /// real state so they can warn when a pause was requested but denied.
         /// </summary>
-        public static void Pause(bool on)
+        public static bool Pause(bool on)
         {
-            if (TryGamePause(on)) return;
+            if (Paused() == on) return on;
+            bool before = Paused();
+            if (TryGamePause(on) && Paused() != before) return Paused();
             try { WorldManager.SetGamePause(on); }
             catch (Exception ex) { throw new BenchError("internal", "pause: " + ex.Message); }
+            return Paused();
         }
 
         private static bool TryGamePause(bool on)

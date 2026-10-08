@@ -151,9 +151,9 @@ namespace Ic10Go.Testbench
         private static JObject PauseCmd(JObject args, TestbenchPlugin plugin)
         {
             bool on = args["on"] == null || (bool)args["on"];
-            GameApi.Pause(on);
-            plugin.SetPausedByUs(on);
-            return new JObject { ["paused"] = on };
+            bool actual = GameApi.Pause(on);
+            plugin.SetPausedByUs(actual);
+            return new JObject { ["paused"] = actual, ["requested"] = on };
         }
 
         // -- state ------------------------------------------------------------

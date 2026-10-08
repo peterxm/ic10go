@@ -199,6 +199,8 @@ class BenchTree {
             switch (el._kind) {
                 case 'registers':
                     return this.registerItems();
+                case 'variables':
+                    return this.variableItems();
                 case 'stack':
                     return this.stackItems();
                 case 'devices':
@@ -428,9 +430,25 @@ class BenchTree {
     chipItems() {
         const st = this.bench.state || {};
         const out = [];
+        if (this.bench.watchVars().length) out.push(group('variables', t('Variables', '变量'), 'symbol-variable'));
         if (st.registers) out.push(group('registers', t('Registers', '寄存器'), 'symbol-number'));
         if (st.stack) out.push(group('stack', t('Stack', '栈'), 'database'));
         if (st.devices && st.devices.length) out.push(group('devices', t('Devices', '设备'), 'server-process'));
+        return out;
+    }
+
+    // variableItems lists the .icg variables live at the chip's current source
+    // line, each showing the value of the register that holds it (the mapping
+    // comes from the compiler's watch table, since IC10 reuses registers).
+    variableItems() {
+        const out = [];
+        for (const v of this.bench.watchVars()) {
+            const item = new vscode.TreeItem(v.name, vscode.TreeItemCollapsibleState.None);
+            item.description = String(v.value);
+            item.tooltip = `${v.name} = ${v.value}  [${v.reg}${v.type ? ' · ' + v.type : ''}]`;
+            item.iconPath = new vscode.ThemeIcon('symbol-variable');
+            out.push(item);
+        }
         return out;
     }
 
@@ -845,14 +863,36 @@ class Bench {
     // pulled. A saved .icg keeps a stable URI, so its map is persisted and
     // restored after a reload (an untitled document gets a new URI, where the
     // raw-IC10 identity fallback in runLine takes over instead).
-    setProgramMap(doc, map) {
+    setProgramMap(doc, map, vars) {
         const uri = doc.uri.toString();
-        this.programMap = { uri, map };
+        this.programMap = { uri, map, vars };
         try {
-            if (this.store && doc.uri.scheme === 'file') this.store.update('icg.bench.map', { uri, map });
+            if (this.store && doc.uri.scheme === 'file') this.store.update('icg.bench.map', { uri, map, vars });
         } catch (err) {
             // ignore an unserialisable map
         }
+    }
+
+    // watchVars lists the .icg variables live at the chip's current source line,
+    // with the value of the register currently holding each one. It needs the
+    // watch table recorded by the last push of a .icg (raw IC10 and pulled
+    // programs have none).
+    watchVars() {
+        const st = this.state;
+        const pm = this.programMap;
+        if (!st || !pm || !pm.vars || !pm.vars.length || !pm.map) return [];
+        const l0 = Number(st.line);
+        if (!isFinite(l0) || l0 < 0) return [];
+        const line = pm.map[l0 + 1] || 0;
+        if (!line) return [];
+        const regs = st.registers || {};
+        const out = [];
+        for (const v of pm.vars) {
+            if (v.line !== line) continue;
+            const rk = 'r' + v.reg;
+            out.push({ name: v.name, value: regs[rk], reg: rk, type: v.type || '' });
+        }
+        return out;
     }
 
     clearProgramMap() {
@@ -966,7 +1006,7 @@ class Bench {
             // highlight / step CodeLens survive a window reload.
             const pm = this.store.get('icg.bench.map');
             if (pm && typeof pm === 'object' && typeof pm.uri === 'string' && Array.isArray(pm.map)) {
-                this.programMap = { uri: pm.uri, map: pm.map };
+                this.programMap = { uri: pm.uri, map: pm.map, vars: Array.isArray(pm.vars) ? pm.vars : undefined };
             }
         }
 
@@ -980,6 +1020,7 @@ class Bench {
         cmd('icg.bench.disconnect', () => this.disconnect());
         cmd('icg.bench.connectionMenu', () => this.connectionMenu());
         cmd('icg.bench.push', () => this.push());
+        cmd('icg.bench.pushAndBreak', () => this.pushAndBreak());
         cmd('icg.bench.pull', () => this.pull());
         cmd('icg.bench.refresh', () => this.refresh(true));
         cmd('icg.bench.copyServer', () => this.copyServer());
@@ -1400,12 +1441,14 @@ class Bench {
         if (this.tree) this.tree.refresh();
     }
 
+    // push compiles/uploads the active program to the chip and reports whether
+    // it succeeded, so callers (pushAndBreak) can chain a pause + reset.
     async push() {
         const prog = this.client.activeProgram();
-        if (!prog) return;
+        if (!prog) return false;
         const doc = prog.doc;
         const conn = await this.connect(false);
-        if (!conn) return;
+        if (!conn) return false;
 
         // Raw IC10 (.ic/.ic10): upload verbatim, no compile. Trailing newlines
         // are trimmed so the chip does not gain an empty last line.
@@ -1425,14 +1468,15 @@ class Bench {
                     4000
                 );
                 await this.refresh(false);
+                return true;
             } catch (err) {
                 this.client.output.appendLine(`IC10 bench push (raw) failed: ${err.message}`);
                 vscode.window.showErrorMessage(t('IC10: upload failed. See the "IC10 Go" output.', 'IC10: 上传失败，详见 "IC10 Go" 输出面板。'));
+                return false;
             }
-            return;
         }
 
-        await this.client.withTempFile(doc, async (tmp) => {
+        return await this.client.withTempFile(doc, async (tmp) => {
             const args = ['build', '--json', ...this.client.buildFlags(this.client.config()), tmp];
             const res = await this.client.execCli(args);
             let out;
@@ -1442,7 +1486,7 @@ class Bench {
                 this.client.output.appendLine(`=== push: compile failed ===\n${res.stderr || res.stdout}`);
                 this.client.output.show(true);
                 vscode.window.showErrorMessage(t('IC10: compile failed. See the "IC10 Go" output.', 'IC10: 编译失败，详见 "IC10 Go" 输出面板。'));
-                return;
+                return false;
             }
             if (!out.ok) {
                 this.client.output.appendLine(`=== push: ${path.basename(doc.fileName)} has errors ===`);
@@ -1452,12 +1496,13 @@ class Bench {
                 }
                 this.client.output.show(true);
                 vscode.window.showErrorMessage(t('IC10: cannot upload, the program has errors.', 'IC10: 程序有错误，无法上传。'));
-                return;
+                return false;
             }
             // A source with several `chip` blocks returns one entry per block;
             // ask which block to upload (the CLI equivalent is `push --as NAME`).
             let code = out.code;
             let lineMap = out.lineMap;
+            let vars = out.vars;
             let data = out.data;
             let chipLabel = '';
             if (Array.isArray(out.chips) && out.chips.length > 1) {
@@ -1469,16 +1514,17 @@ class Bench {
                     })),
                     { placeHolder: t('Choose a chip block to upload', '选择要上传的芯片块') }
                 );
-                if (!item) return;
+                if (!item) return false;
                 const c = out.chips[item.index];
                 code = c.code;
                 lineMap = c.lineMap;
+                vars = c.vars;
                 data = { needed: !!(c.loader || (c.loaders && c.loaders.length)), loader: c.loader, loaders: c.loaders, setup: c.setup };
                 chipLabel = c.name || '';
             }
             const loaders = (data && (data.loaders || (data.loader ? [data.loader] : []))) || [];
             if (Array.isArray(lineMap) && lineMap.length) {
-                this.setProgramMap(doc, lineMap);
+                this.setProgramMap(doc, lineMap, vars);
             } else {
                 this.clearProgramMap();
             }
@@ -1497,11 +1543,36 @@ class Bench {
                     4000
                 );
                 await this.refresh(false);
+                return true;
             } catch (err) {
                 this.client.output.appendLine(`IC10 bench push failed: ${err.message}`);
                 vscode.window.showErrorMessage(t('IC10: upload failed. See the "IC10 Go" output.', 'IC10: 上传失败，详见 "IC10 Go" 输出面板。'));
+                return false;
             }
         });
+    }
+
+    // pushAndBreak uploads the program, then pauses the world and resets the
+    // chip so its PC sits at line 1. Without the pause, a running chip races
+    // straight back into its main loop and the debug highlight never rests at
+    // the entry, which makes stepping from the top impossible.
+    async pushAndBreak() {
+        const ok = await this.push();
+        if (!ok) return;
+        const conn = await this.connect(false);
+        if (!conn) return;
+        try {
+            const args = {};
+            if (this.sel) args.chip = this.sel;
+            await conn.call('pause', { on: true });
+            await conn.call('reset', args);
+            await this.refresh(false);
+            this.revealRunLine();
+            vscode.window.setStatusBarMessage(t('IC10: uploaded, paused at line 1', 'IC10: 已上传，暂停在第一行'), 4000);
+        } catch (err) {
+            this.client.output.appendLine(`IC10 bench push-and-break failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('IC10: pause/reset failed. See the "IC10 Go" output.', 'IC10: 暂停/复位失败，详见 "IC10 Go" 输出面板。'));
+        }
     }
 
     // pull downloads the selected chip's current IC10 source into a new editor,
@@ -1554,10 +1625,37 @@ class Bench {
         if (!c) return;
         const want = !(this.state && this.state.paused);
         try {
-            await c.call('pause', { on: want });
+            const r = await c.call('pause', { on: want });
             await this.refresh(false);
+            const actual = r && typeof r.paused === 'boolean' ? r.paused : (this.state && this.state.paused);
+            if (want && actual !== true) {
+                vscode.window.showWarningMessage(t(
+                    'IC10: the game refused to pause (only the host of a single-player or client-less server can). Stepping will not be deterministic.',
+                    'IC10: 游戏拒绝了暂停（只有单机 / 无客户端连接的房主才能暂停），单步将不确定。'
+                ));
+            }
         } catch (err) {
             vscode.window.showErrorMessage(t('IC10: pause failed: ', 'IC10: 暂停失败：') + err.message);
+        }
+    }
+
+    // ensurePaused pauses the world for deterministic stepping and returns
+    // whether it is paused. A refused pause (multiplayer) is warned once.
+    async ensurePaused(conn) {
+        if (this.state && this.state.paused) return true;
+        try {
+            const r = await conn.call('pause', { on: true });
+            const actual = r && typeof r.paused === 'boolean' ? r.paused : true;
+            if (!actual) {
+                vscode.window.showWarningMessage(t(
+                    'IC10: could not pause the game (only the host of a single-player or client-less server can); stepping will not be deterministic.',
+                    'IC10: 无法暂停游戏（只有单机 / 无客户端连接的房主才能暂停），单步将不确定。'
+                ));
+            }
+            return actual;
+        } catch (err) {
+            // Not fatal: run still advances the chip.
+            return false;
         }
     }
 
@@ -1567,14 +1665,7 @@ class Bench {
     async runTicks(n) {
         const conn = await this.connect(false);
         if (!conn) return;
-        if (!(this.state && this.state.paused)) {
-            try {
-                await conn.call('pause', { on: true });
-                vscode.window.setStatusBarMessage(t('IC10: paused for stepping', 'IC10: 已暂停以便单步'), 3000);
-            } catch (err) {
-                // Not fatal: run still advances the chip.
-            }
-        }
+        await this.ensurePaused(conn);
         const args = { ticks: Math.max(1, Math.floor(n) || 1) };
         if (this.sel) args.chip = this.sel;
         try {
@@ -1603,14 +1694,7 @@ class Bench {
     async stepIns() {
         const conn = await this.connect(false);
         if (!conn) return;
-        if (!(this.state && this.state.paused)) {
-            try {
-                await conn.call('pause', { on: true });
-                vscode.window.setStatusBarMessage(t('IC10: paused for stepping', 'IC10: 已暂停以便单步'), 3000);
-            } catch (err) {
-                // Not fatal.
-            }
-        }
+        await this.ensurePaused(conn);
         const args = { n: 1 };
         if (this.sel) args.chip = this.sel;
         try {
@@ -2616,6 +2700,7 @@ ${note}${diffNote}
         this.panel.webview.postMessage({
             type: 'state',
             state: this.state,
+            watch: this.watchVars(),
             connected: !!this.conn,
             watching: this.watching,
             prefabs: this.prefabs || {},
@@ -2711,6 +2796,9 @@ ${note}${diffNote}
   th { color: var(--vscode-descriptionForeground); font-weight: 500; }
   td.port { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-charts-blue, #3794ff); }
   td.num { font-family: var(--vscode-editor-font-family, monospace); text-align: right; font-variant-numeric: tabular-nums; }
+  table.watch td:first-child { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-charts-purple, #b180d7); }
+  table.watch td:last-child { text-align: right; }
+  table.watch tr.changed { animation: flash 1.1s ease-out; }
   td input {
     width: 90px; text-align: right; font-family: var(--vscode-editor-font-family, monospace);
     color: var(--vscode-input-foreground); background: var(--vscode-input-background);
@@ -2888,6 +2976,18 @@ ${note}${diffNote}
 
     const next = {};
     let html = '';
+    if (m.watch && m.watch.length) {
+      html += '<section><h2>Watch <span class="pill">' + m.watch.length + '</span></h2><table class="watch">';
+      for (const w of m.watch) {
+        const key = 'w:' + w.name;
+        const changed = prev[key] !== undefined && prev[key] !== w.value;
+        next[key] = w.value;
+        html += '<tr' + (changed ? ' class="changed"' : '') + '><td>' + w.name +
+          '</td><td class="num">' + num(w.value) + '</td><td class="muted">' + w.reg +
+          (w.type ? ' · ' + w.type : '') + '</td></tr>';
+      }
+      html += '</table></section>';
+    }
     if (st.registers) {
       html += '<section><h2>Registers</h2><div class="grid">';
       const order = ['r0','r1','r2','r3','r4','r5','r6','r7','r8','r9','r10','r11','r12','r13','r14','r15','ra','sp'];

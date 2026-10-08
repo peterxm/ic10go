@@ -1460,7 +1460,8 @@ func benchPause(addr string, args []string, asJSON bool) int {
 	}
 	defer c.Close()
 	var res struct {
-		Paused bool `json:"paused"`
+		Paused    bool `json:"paused"`
+		Requested bool `json:"requested"`
 	}
 	if err := c.CallInto("pause", map[string]any{"on": on}, &res); err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
@@ -1470,6 +1471,10 @@ func benchPause(addr string, args []string, asJSON bool) int {
 		return printJSON(res)
 	}
 	fmt.Printf("paused = %v\n", res.Paused)
+	if res.Requested != res.Paused {
+		fmt.Fprintln(os.Stderr, "ic10c: warning: the game did not change its pause state "+
+			"(only the host of a single-player or client-less server can pause)")
+	}
 	return 0
 }
 
