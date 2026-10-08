@@ -789,30 +789,58 @@ class Bench {
         return (e && e.name) || '';
     }
 
-    // updateRunLine highlights the .icg line the chip is executing, using the
-    // line map recorded on the last upload (instruction-level best effort).
+    // updateRunLine highlights the source line the chip is executing (using the
+    // line map recorded on the last upload) and refreshes the per-line CodeLens
+    // step controls, which follow the PC.
     updateRunLine() {
-        if (!this.runDecor) return;
-        const editors = vscode.window.visibleTextEditors || [];
-        for (const ed of editors) ed.setDecorations(this.runDecor, []);
-        if (!this.cfg().highlightLine || !this.programMap || !this.state) return;
+        if (this.runDecor) {
+            const editors = vscode.window.visibleTextEditors || [];
+            for (const ed of editors) ed.setDecorations(this.runDecor, []);
+            const ed = editors.find((e) => this.programMap && e.document.uri.toString() === this.programMap.uri);
+            if (ed) {
+                const at = this.runLine(ed.document.uri.toString());
+                if (at != null) {
+                    const line = Math.min(Math.max(0, at), Math.max(0, ed.document.lineCount - 1));
+                    ed.setDecorations(this.runDecor, [new vscode.Range(line, 0, line, 0)]);
+                }
+            }
+        }
+        if (this.codeLensEmitter) this.codeLensEmitter.fire();
+    }
+
+    // runLine maps the chip's current PC to a 0-based line of the document whose
+    // uri is `uri` (via the upload's line map), or null when there is nothing.
+    runLine(uri) {
+        if (!uri || !this.programMap || this.state == null) return null;
+        if (uri !== this.programMap.uri) return null;
         const src = this.programMap.map && this.programMap.map[this.state.line];
-        if (!src) return;
-        const ed = editors.find((e) => e.document.uri.toString() === this.programMap.uri);
-        if (!ed) return;
-        const line = Math.min(Math.max(0, src - 1), Math.max(0, ed.document.lineCount - 1));
-        ed.setDecorations(this.runDecor, [new vscode.Range(line, 0, line, 0)]);
+        if (!src) return null;
+        return src - 1; // 1-based source line -> 0-based
+    }
+
+    // benchCodeLenses puts clickable step controls on the executing line of doc.
+    benchCodeLenses(doc) {
+        if (!this.cfg().highlightLine) return [];
+        const at = this.runLine(doc.uri.toString());
+        if (at == null || at >= doc.lineCount) return [];
+        const range = new vscode.Range(at, 0, at, 0);
+        const mk = (title, command) => new vscode.CodeLens(range, { title, command });
+        const n = this.cfg().runTicks;
+        return [
+            mk(t('▶ step 1 instruction', '▶ 单步 1 指令'), 'icg.bench.stepIns'),
+            mk(t('⏭ 1 tick', '⏭ 1 tick'), 'icg.bench.step'),
+            mk(t(`▶▶ run ${n} ticks`, `▶▶ 运行 ${n} tick`), 'icg.bench.runTicks'),
+        ];
     }
 
     // revealRunLine scrolls the highlighted line into view. Used after an
     // instruction step, where following the PC is the whole point.
     revealRunLine() {
-        if (!this.programMap || !this.state) return;
-        const src = this.programMap.map && this.programMap.map[this.state.line];
-        if (!src) return;
-        const ed = (vscode.window.visibleTextEditors || []).find((e) => e.document.uri.toString() === this.programMap.uri);
+        const ed = (vscode.window.visibleTextEditors || []).find((e) => this.programMap && e.document.uri.toString() === this.programMap.uri);
         if (!ed) return;
-        const line = Math.min(Math.max(0, src - 1), Math.max(0, ed.document.lineCount - 1));
+        const at = this.runLine(ed.document.uri.toString());
+        if (at == null) return;
+        const line = Math.min(Math.max(0, at), Math.max(0, ed.document.lineCount - 1));
         ed.revealRange(new vscode.Range(line, 0, line, 0), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
     }
 
@@ -843,8 +871,21 @@ class Bench {
             borderColor: new vscode.ThemeColor('editorInfo.foreground'),
             overviewRulerColor: new vscode.ThemeColor('editorInfo.foreground'),
             overviewRulerLane: vscode.OverviewRulerLane.Left,
+            gutterIconPath: vscode.Uri.file(context.asAbsolutePath('resources/run-line.svg')),
+            gutterIconSize: 'contain',
         });
         context.subscriptions.push(this.runDecor);
+
+        // A per-line CodeLens on the executing line, so stepping is available
+        // right at the code (the controls follow the PC).
+        this.codeLensEmitter = new vscode.EventEmitter();
+        context.subscriptions.push(this.codeLensEmitter);
+        context.subscriptions.push(
+            vscode.languages.registerCodeLensProvider([{ language: 'icg' }, { language: 'ic10' }], {
+                onDidChangeCodeLenses: this.codeLensEmitter.event,
+                provideCodeLenses: (doc) => this.benchCodeLenses(doc),
+            })
+        );
 
         // Restore the last selected chip and the live-update toggle, so a reload
         // comes back to the same chip.
