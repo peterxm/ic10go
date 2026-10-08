@@ -1994,8 +1994,9 @@ ${note}${diffNote}
 <style>
   :root { color-scheme: light dark; }
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); margin: 0; }
-  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); }
-  header .title { font-weight: 600; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); }
+  header .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  header button, header label { white-space: nowrap; flex: 0 0 auto; }
   button { font-family: inherit; font-size: inherit; color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); border-radius: 5px; padding: 3px 10px; cursor: pointer; }
   button.active { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border-color: var(--vscode-button-background); }
   #cols { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 14px 16px 32px; }
@@ -2012,7 +2013,7 @@ ${note}${diffNote}
   .dev { margin-top: 6px; }
   .logic { display: flex; justify-content: space-between; gap: 8px; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; color: var(--vscode-descriptionForeground); }
   .muted { color: var(--vscode-descriptionForeground); }
-  .pill { font-size: 10px; padding: 1px 7px; border-radius: 999px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+  .pill { font-size: 10px; padding: 1px 7px; border-radius: 999px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); white-space: nowrap; }
   details { margin-top: 6px; }
   details > summary { cursor: pointer; color: var(--vscode-descriptionForeground); }
   table.regs tr.changed td { background: var(--vscode-diffEditor-insertedLineBackground, rgba(63,185,80,.18)); }
@@ -2633,15 +2634,16 @@ ${note}${diffNote}
   }
   header {
     position: sticky; top: 0; z-index: 2;
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 16px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 14px;
     background: var(--vscode-sideBar-background, var(--vscode-editor-background));
     border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35));
   }
-  header .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--vscode-disabledForeground); }
+  header .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--vscode-disabledForeground); flex: 0 0 auto; }
   header .dot.on { background: var(--vscode-testing-iconPassed, #3fb950); box-shadow: 0 0 6px var(--vscode-testing-iconPassed, #3fb950); }
-  header .title { font-weight: 600; }
-  header .line { color: var(--vscode-descriptionForeground); margin-left: auto; font-variant-numeric: tabular-nums; }
+  header .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 100%; }
+  header .line { color: var(--vscode-descriptionForeground); margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  header button, header .pill { white-space: nowrap; flex: 0 0 auto; }
   button {
     font-family: inherit; font-size: inherit;
     color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
@@ -2692,7 +2694,7 @@ ${note}${diffNote}
     font-family: inherit; font-size: inherit;
     color: var(--vscode-input-foreground); background: var(--vscode-input-background);
     border: 1px solid var(--vscode-input-border, rgba(128,128,128,.35));
-    border-radius: 5px; padding: 2px 8px; width: 140px;
+    border-radius: 5px; padding: 2px 8px; width: 140px; max-width: 100%; flex: 0 0 auto;
   }
   details.dev {
     margin: 0 0 4px; padding: 3px 9px; border-radius: 6px;
@@ -2723,7 +2725,7 @@ ${note}${diffNote}
     border-radius: 6px; color: var(--vscode-descriptionForeground);
   }
   .port { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-charts-blue, #3794ff); }
-  .pill { font-size: 10px; padding: 1px 7px; border-radius: 999px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+  .pill { font-size: 10px; padding: 1px 7px; border-radius: 999px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -2732,7 +2734,6 @@ ${note}${diffNote}
   <span class="title" id="chip">IC10</span>
   <span class="pill" id="prog" style="display:none"></span>
   <input id="filter" type="search" placeholder="filter…" />
-  <span style="flex:1"></span>
   <span class="line" id="line"></span>
   <button id="pause">Pause</button>
   <button id="step">Step</button>
@@ -2847,11 +2848,14 @@ ${note}${diffNote}
       return;
     }
     const chip = st.chip;
-    document.getElementById('chip').textContent = chip.name || chip.prefab || ('chip#' + chip.index);
+    const chipEl = document.getElementById('chip');
+    const chipName = chip.name || chip.prefab || ('chip#' + chip.index);
+    chipEl.textContent = chipName;
+    chipEl.title = chipName;
     const prog = document.getElementById('prog');
     if (st.program) { prog.style.display = ''; prog.textContent = st.program.lines + ' lines'; }
     else prog.style.display = 'none';
-    document.getElementById('line').textContent = st.line !== undefined ? 'line ' + st.line : '';
+    document.getElementById('line').textContent = st.line !== undefined ? 'line ' + (Number(st.line) + 1) : '';
 
     const next = {};
     let html = '';
