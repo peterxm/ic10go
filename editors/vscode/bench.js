@@ -1471,6 +1471,14 @@ class Bench {
         const lines = r.lines || code.replace(/\r/g, '').split('\n').length;
         const doc = await vscode.workspace.openTextDocument({ content: code, language: 'ic10' });
         await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside, preview: false });
+        // The pulled source IS the chip's live IC10, so its line numbers are the
+        // source's: record an identity map, so the run-line highlight + step
+        // controls work on the downloaded program without re-uploading it.
+        const nLines = code.replace(/\r/g, '').split('\n').length;
+        const idMap = new Array(nLines + 1);
+        for (let i = 0; i <= nLines; i++) idMap[i] = i;
+        this.programMap = { uri: doc.uri.toString(), map: idMap };
+        this.updateRunLine();
         this.client.output.appendLine(`=== download: ${name} (${lines} lines) ===\n${code}`);
         const decompile = t('Decompile to .icg', '反编译为 .icg');
         const save = t('Save as…', '另存为…');
