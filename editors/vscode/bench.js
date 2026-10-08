@@ -33,6 +33,27 @@ function t(en, zh) {
     return (vscode.env.language || 'en').toLowerCase().startsWith('zh') ? zh : en;
 }
 
+// ALIAS_RE matches `alias NAME rN|sp|ra` (the register form). Device aliases
+// name a port, not a value, so they are not watchable.
+const ALIAS_RE = /^\s*alias\s+([A-Za-z_][A-Za-z0-9_]*)\s+(r(?:[0-9]|1[0-5])|sp|ra)\b/i;
+
+// parseAliases extracts the register aliases of a raw IC10 program, in order and
+// without duplicates.
+function parseAliases(text) {
+    const out = [];
+    const seen = new Set();
+    for (const raw of String(text || '').split('\n')) {
+        const m = ALIAS_RE.exec(raw.replace(/[#;].*$/, ''));
+        if (!m) continue;
+        const name = m[1];
+        const reg = m[2].toLowerCase();
+        if (seen.has(name)) continue;
+        seen.add(name);
+        out.push({ name, reg });
+    }
+    return out;
+}
+
 // HASH_LOGIC names the device logic entries whose numeric value is a prefab
 // hash (see the game's LogicType table), so they can be labelled with the
 // prefab they refer to.
@@ -937,20 +958,56 @@ class Bench {
     // programs have none).
     watchVars() {
         const st = this.state;
+        if (!st) return [];
         const pm = this.programMap;
-        if (!st || !pm || !pm.vars || !pm.vars.length || !pm.map) return [];
-        const l0 = Number(st.line);
-        if (!isFinite(l0) || l0 < 0) return [];
-        const line = pm.map[l0 + 1] || 0;
-        if (!line) return [];
-        const regs = st.registers || {};
-        const out = [];
-        for (const v of pm.vars) {
-            if (v.line !== line) continue;
-            const rk = 'r' + v.reg;
-            out.push({ name: v.name, value: regs[rk], reg: rk, type: v.type || '' });
+        if (pm && pm.vars && pm.vars.length && pm.map) {
+            const l0 = Number(st.line);
+            if (isFinite(l0) && l0 >= 0) {
+                const line = pm.map[l0 + 1] || 0;
+                const regs = st.registers || {};
+                const out = [];
+                if (line) {
+                    for (const v of pm.vars) {
+                        if (v.line !== line) continue;
+                        const rk = 'r' + v.reg;
+                        out.push({ name: v.name, value: regs[rk], reg: rk, type: v.type || '' });
+                    }
+                }
+                if (out.length) return out;
+            }
         }
-        return out;
+        // Raw IC10 has no source variables; its only names are `alias`es.
+        return this.aliasVars();
+    }
+
+    // watchDoc is the document the watch/run-line refer to: the uploaded/pulled
+    // program when it is open, else the active raw-IC10 editor.
+    watchDoc() {
+        const pm = this.programMap;
+        if (pm) {
+            const d = (vscode.workspace.textDocuments || []).find((x) => x.uri.toString() === pm.uri);
+            if (d) return d;
+        }
+        const act = vscode.window.activeTextEditor;
+        if (act && act.document.languageId === 'ic10') return act.document;
+        return undefined;
+    }
+
+    // aliasVars parses `alias NAME rN` / `alias NAME sp|ra` from a raw IC10
+    // program and returns those named registers with their values. Device
+    // aliases (d0..d5, db) are ignored: they name a port, not a value. The
+    // parse is cached per document version (the watch list is rebuilt on every
+    // refresh).
+    aliasVars() {
+        const doc = this.watchDoc();
+        if (!doc || doc.languageId !== 'ic10') return [];
+        const key = doc.uri.toString() + ':' + doc.version;
+        if (this.aliasCacheKey !== key) {
+            this.aliasCacheKey = key;
+            this.aliasCache = parseAliases(doc.getText());
+        }
+        const regs = (this.state && this.state.registers) || {};
+        return (this.aliasCache || []).map((a) => ({ name: a.name, value: regs[a.reg], reg: a.reg, type: '' }));
     }
 
     clearProgramMap() {
