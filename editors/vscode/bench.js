@@ -841,6 +841,29 @@ class Bench {
         return null;
     }
 
+    // setProgramMap records the line map of the program that was just uploaded /
+    // pulled. A saved .icg keeps a stable URI, so its map is persisted and
+    // restored after a reload (an untitled document gets a new URI, where the
+    // raw-IC10 identity fallback in runLine takes over instead).
+    setProgramMap(doc, map) {
+        const uri = doc.uri.toString();
+        this.programMap = { uri, map };
+        try {
+            if (this.store && doc.uri.scheme === 'file') this.store.update('icg.bench.map', { uri, map });
+        } catch (err) {
+            // ignore an unserialisable map
+        }
+    }
+
+    clearProgramMap() {
+        this.programMap = undefined;
+        try {
+            if (this.store) this.store.update('icg.bench.map', null);
+        } catch (err) {
+            // ignore
+        }
+    }
+
     // benchCodeLenses puts clickable step controls on the executing line of doc
     // (the uploaded/pulled program, or the active raw-IC10 editor).
     benchCodeLenses(doc) {
@@ -939,6 +962,12 @@ class Bench {
             this.restoreWatch = this.store.get('icg.bench.watching') === true;
             const ss = this.store.get('icg.bench.serverSort');
             if (typeof ss === 'string' && ss) this.serverSort = ss;
+            // Restore the last uploaded .icg's line map, so the run-line
+            // highlight / step CodeLens survive a window reload.
+            const pm = this.store.get('icg.bench.map');
+            if (pm && typeof pm === 'object' && typeof pm.uri === 'string' && Array.isArray(pm.map)) {
+                this.programMap = { uri: pm.uri, map: pm.map };
+            }
         }
 
         this.tree = new BenchTree(this);
@@ -1387,7 +1416,7 @@ class Bench {
             const nLines = code.split('\n').length;
             const map = new Array(nLines + 1);
             for (let i = 0; i <= nLines; i++) map[i] = i;
-            this.programMap = { uri: doc.uri.toString(), map };
+            this.setProgramMap(doc, map);
             try {
                 const r = await conn.call('push', { code });
                 vscode.window.setStatusBarMessage(
@@ -1449,9 +1478,9 @@ class Bench {
             }
             const loaders = (data && (data.loaders || (data.loader ? [data.loader] : []))) || [];
             if (Array.isArray(lineMap) && lineMap.length) {
-                this.programMap = { uri: doc.uri.toString(), map: lineMap };
+                this.setProgramMap(doc, lineMap);
             } else {
-                this.programMap = undefined;
+                this.clearProgramMap();
             }
             this.programData = data || undefined;
             try {
@@ -1506,7 +1535,7 @@ class Bench {
         const nLines = code.replace(/\r/g, '').split('\n').length;
         const idMap = new Array(nLines + 1);
         for (let i = 0; i <= nLines; i++) idMap[i] = i;
-        this.programMap = { uri: doc.uri.toString(), map: idMap };
+        this.setProgramMap(doc, idMap);
         this.updateRunLine();
         this.client.output.appendLine(`=== download: ${name} (${lines} lines) ===\n${code}`);
         const decompile = t('Decompile to .icg', '反编译为 .icg');
