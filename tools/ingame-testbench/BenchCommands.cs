@@ -8,7 +8,10 @@
 using System;
 using System.Collections.Generic;
 using Assets.Scripts;
+using Assets.Scripts.Objects.Electrical;
 using Assets.Scripts.Objects.Entities;
+using Assets.Scripts.Objects.Motherboards;
+using Assets.Scripts.Objects.Pipes;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
@@ -213,8 +216,8 @@ namespace Ic10Go.Testbench
             foreach (var w in writes)
             {
                 bool byId = w["id"] != null;
-                int port = byId ? -1 : ParsePort((string)w["port"]);
-                var dev = byId ? GameApi.DeviceById((int)(long)w["id"]) : GameApi.PortDevice(h.Holder, port);
+                var dev = byId ? GameApi.DeviceById((int)(long)w["id"]) : ResolvePortOperand(h.Holder, (string)w["port"]);
+                if (dev != null && w["conn"] != null) dev = GameApi.Connection(dev, (int)w["conn"]);
                 if (dev == null)
                     throw new BenchError("no-device", byId ? ("no device with id " + w["id"]) : ("no device on port " + w["port"]));
                 bool hasSlot = w["slot"] != null;
@@ -233,15 +236,15 @@ namespace Ic10Go.Testbench
             foreach (var r in reads)
             {
                 bool byId = r["id"] != null;
-                int port = byId ? -1 : ParsePort((string)r["port"]);
-                var dev = byId ? GameApi.DeviceById((int)(long)r["id"]) : GameApi.PortDevice(h.Holder, port);
+                var dev = byId ? GameApi.DeviceById((int)(long)r["id"]) : ResolvePortOperand(h.Holder, (string)r["port"]);
+                if (dev != null && r["conn"] != null) dev = GameApi.Connection(dev, (int)r["conn"]);
                 if (dev == null)
                     throw new BenchError("no-device", byId ? ("no device with id " + r["id"]) : ("no device on port " + r["port"]));
                 bool hasSlot = r["slot"] != null;
                 double v = GameApi.GetLogic(dev, (string)r["logic"], hasSlot ? (int)r["slot"] : 0, hasSlot);
                 values.Add(new JObject
                 {
-                    ["port"] = byId ? ("id:" + r["id"]) : PortLabel(port),
+                    ["port"] = byId ? ("id:" + r["id"]) : (string)r["port"],
                     ["logic"] = (string)r["logic"],
                     ["value"] = GameApi.Num(v),
                 });
@@ -393,16 +396,49 @@ namespace Ic10Go.Testbench
             }
         }
 
-        private static string PortLabel(int port) => port < 0 ? "db" : "d" + port;
 
-        private static int ParsePort(string port)
+        // ParsePortOperand parses an IC10 port operand: "db", "dN", and the
+        // network forms "db:C" / "dN:C" (`:C` is the connection index — the
+        // cable network a port's device exposes, so `d1:0 Channel0` is channel 0
+        // of the network on that device's connection 0). Returns the device
+        // index (int.MaxValue for db, -1 for db without a connection) and sets
+        // `network` to the connection (int.MinValue when none was given).
+        private static int ParsePortOperand(string port, out int network)
         {
+            network = int.MinValue;
             if (string.IsNullOrEmpty(port)) throw new BenchError("bad-request", "empty port");
-            if (string.Equals(port, "db", StringComparison.OrdinalIgnoreCase)) return -1;
-            string s = port[0] == 'd' || port[0] == 'D' ? port.Substring(1) : port;
-            if (!int.TryParse(s, out int n) || n < 0 || n >= GameApi.Ports)
-                throw new BenchError("bad-request", "bad port \"" + port + "\" (want db or d0..d" + (GameApi.Ports - 1) + ")");
+            string p = port;
+            bool db = false;
+            if (p.Length >= 2 && (p[0] == 'd' || p[0] == 'D') && (p[1] == 'b' || p[1] == 'B'))
+            {
+                db = true;
+                p = p.Substring(2);
+            }
+            else if (p[0] == 'd' || p[0] == 'D')
+            {
+                p = p.Substring(1);
+            }
+            int colon = p.IndexOf(':');
+            if (colon >= 0)
+            {
+                if (!int.TryParse(p.Substring(colon + 1), out network))
+                    throw new BenchError("bad-request", "bad connection index in \"" + port + "\"");
+                p = p.Substring(0, colon);
+            }
+            if (db)
+                return network == int.MinValue ? -1 : int.MaxValue;
+            if (!int.TryParse(p, out int n) || n < 0 || n >= GameApi.Ports)
+                throw new BenchError("bad-request", "bad port \"" + port + "\" (want db, d0..d" + (GameApi.Ports - 1) + " or d<port>:<conn>)");
             return n;
+        }
+
+        // ResolvePortOperand turns a port operand into the logicable to read or
+        // write: a device for "db"/"dN", or the cable network for "db:C"/"dN:C".
+        private static ILogicable ResolvePortOperand(ICircuitHolder holder, string port)
+        {
+            int idx = ParsePortOperand(port, out int network);
+            if (network == int.MinValue) return GameApi.PortDevice(holder, idx);
+            return GameApi.Port(holder, idx, network);
         }
     }
 }

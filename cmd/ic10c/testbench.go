@@ -1760,11 +1760,21 @@ func parseWrite(s string) (testbench.DeviceWrite, bool) {
 		if dot <= 0 || dot == len(rest)-1 {
 			return testbench.DeviceWrite{}, false
 		}
-		id, err := strconv.Atoi(rest[:dot])
+		idPart := rest[:dot]
+		var conn *int
+		if c := strings.IndexByte(idPart, ':'); c >= 0 { // id:N:conn.Logic
+			n, err := strconv.Atoi(idPart[c+1:])
+			if err != nil {
+				return testbench.DeviceWrite{}, false
+			}
+			conn = &n
+			idPart = idPart[:c]
+		}
+		id, err := strconv.Atoi(idPart)
 		if err != nil {
 			return testbench.DeviceWrite{}, false
 		}
-		return testbench.DeviceWrite{ID: &id, Logic: rest[dot+1:], Value: v}, true
+		return testbench.DeviceWrite{ID: &id, Conn: conn, Logic: rest[dot+1:], Value: v}, true
 	}
 	port, logic, err := splitPortLogic(key)
 	if err != nil {

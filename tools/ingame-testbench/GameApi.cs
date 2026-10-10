@@ -913,6 +913,17 @@ namespace Ic10Go.Testbench
             catch { return null; }
         }
 
+        /// <summary>The cable network on a device's connection `conn` (the IC10
+        /// `d:c` operand), whose Channel0..7 are shared with everything else on
+        /// that cable. Null when the device is not IConnected or the connection
+        /// does not exist.</summary>
+        public static ILogicable Connection(ILogicable dev, int conn)
+        {
+            var connected = dev as IConnected;
+            if (connected == null) return null;
+            try { return connected.GetNetwork(conn); } catch { return null; }
+        }
+
         /// <summary>
         /// The port devices. `index < 0` means the host itself (`db` in IC10: the
         /// device the chip is mounted on). Otherwise CircuitHousing exposes a
@@ -1268,6 +1279,13 @@ namespace Ic10Go.Testbench
         {
             if (dev == null) throw new BenchError("no-device", "no device on that port");
             if (hasSlot) throw new BenchError("bad-request", "slot writes are not supported (read-only)");
+            // A cable network is not ISetable, so the host's SetLogicFromClient
+            // handler cannot apply a channel write: a multiplayer client has no
+            // vanilla route to the network. Fail with a clear message instead of
+            // sending a message the host will reject (the host, including a host
+            // with clients connected, writes locally and works).
+            if (!GameManager.RunSimulation && dev is CableNetwork)
+                throw new BenchError("needs-host", "network-channel writes must reach the host: connect the tool to the host's mod, or write the channel from a chip program");
             var t = ParseLogic(logic);
             try
             {

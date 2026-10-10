@@ -429,6 +429,10 @@ type DeviceWrite struct {
 	Logic string  `json:"logic"`
 	Slot  *int    `json:"slot,omitempty"`
 	Value float64 `json:"value"`
+	// Conn, when set, addresses a cable-network channel: the target device is
+	// resolved as usual (port/id) and then its connection Conn's network is
+	// written (`dN:<conn> ChannelM`). Used to write Channel0..7 of a network.
+	Conn *int `json:"conn,omitempty"`
 }
 
 // SetWrites applies device writes and returns how many were applied. When
