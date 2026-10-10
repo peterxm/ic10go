@@ -2539,6 +2539,7 @@ ${note}${diffNote}
             if (arg.port) w.port = arg.port;
             else w.id = Number(arg.id);
             if (arg.slot !== undefined && arg.slot !== null && arg.slot !== '') w.slot = Number(arg.slot);
+            if (arg.conn !== undefined && arg.conn !== null && arg.conn !== '') w.conn = Number(arg.conn);
             const setArgs = { writes: [w] };
             if (this.sel) setArgs.chip = this.sel;
             await c.call('set', setArgs);
@@ -2560,6 +2561,7 @@ ${note}${diffNote}
             if (arg.port) w.port = arg.port;
             else w.id = Number(arg.id);
             if (arg.slot !== undefined && arg.slot !== null && arg.slot !== '') w.slot = Number(arg.slot);
+            if (arg.conn !== undefined && arg.conn !== null && arg.conn !== '') w.conn = Number(arg.conn);
             const req = { writes: [w], pulse: true };
             if (this.sel) req.chip = this.sel;
             await c.call('set', req);
@@ -3015,12 +3017,12 @@ ${note}${diffNote}
     const p = el && el.closest ? el.closest('.pulse') : null;
     if (p) {
       const row = p.closest('tr.logicrow');
-      if (row) vscode.postMessage({ type: 'pulse', port: row.getAttribute('data-port'), id: row.getAttribute('data-id'), slot: row.getAttribute('data-slot'), logic: row.getAttribute('data-logic') });
+      if (row) vscode.postMessage({ type: 'pulse', port: row.getAttribute('data-port'), id: row.getAttribute('data-id'), conn: row.getAttribute('data-conn'), slot: row.getAttribute('data-slot'), logic: row.getAttribute('data-logic') });
       return;
     }
     const r = el && el.closest ? el.closest('tr.logicrow') : null;
     if (r) {
-      vscode.postMessage({ type: 'setDevice', port: r.getAttribute('data-port'), id: r.getAttribute('data-id'), slot: r.getAttribute('data-slot'), logic: r.getAttribute('data-logic'), value: r.getAttribute('data-value') });
+      vscode.postMessage({ type: 'setDevice', port: r.getAttribute('data-port'), id: r.getAttribute('data-id'), conn: r.getAttribute('data-conn'), slot: r.getAttribute('data-slot'), logic: r.getAttribute('data-logic'), value: r.getAttribute('data-value') });
       return;
     }
     const s = el && el.closest ? el.closest('summary') : null;
@@ -3165,7 +3167,10 @@ ${note}${diffNote}
             for (let i = 0; i < vals.length; i++) {
               const k = 'Channel' + i;
               next[d.port + ':' + cn.port + '.' + k] = vals[i];
-              html += '<tr class="chanrow"><td>' + k + '</td><td class="num">' + num(vals[i]) + '</td></tr>';
+              html += '<tr class="logicrow chanrow" data-port="' + d.port + ':' + cn.port + '" data-logic="' + k +
+                '" data-value="' + num(vals[i]) + '" title="${t('click to set', '点击修改')}"><td>' + k +
+                '</td><td class="num">' + num(vals[i]) +
+                '</td><td class="act"><button class="pulse" title="${t('pulse 0 then 1', '脉冲：写 0 再写 1')}">⚡</button></td></tr>';
             }
             html += '</table></details>';
           }
@@ -3232,7 +3237,10 @@ ${note}${diffNote}
               '"><summary>${t('Channels', '通道')} <span class="pill">' + cn.port + (cn.net !== undefined ? ' · net ' + cn.net : '') + ' · ' + vals.length + '</span></summary><table>';
             for (let i = 0; i < vals.length; i++) {
               next['net:' + did + ':' + cn.port + '.Channel' + i] = vals[i];
-              html += '<tr class="chanrow"><td>Channel' + i + '</td><td class="num">' + num(vals[i]) + '</td></tr>';
+              html += '<tr class="logicrow chanrow" data-id="' + did + '" data-conn="' + cn.port + '" data-logic="Channel' + i +
+                '" data-value="' + num(vals[i]) + '" title="click to set"><td>Channel' + i +
+                '</td><td class="num">' + num(vals[i]) +
+                '</td><td class="act"><button class="pulse" title="pulse 0 then 1">⚡</button></td></tr>';
             }
             html += '</table></details>';
           }
