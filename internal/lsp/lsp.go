@@ -780,11 +780,11 @@ func completionItemsFor(text string, pos lspPosition) []completionItem {
 		case recv == "printer":
 			return printerMethodItems()
 		case isDevicePort(recv):
-			return logicTypeItems()
+			return deviceMemberItems()
 		case enumReceiver(recv):
 			return enumItems(recv)
 		default:
-			return logicTypeItems()
+			return deviceMemberItems()
 		}
 	}
 	if items, ok := argCompletionItems(text, off); ok {
@@ -851,6 +851,21 @@ func baseCompletionItems() []completionItem {
 	for name := range builtin.RawConstants {
 		items = append(items, completionItem{Label: name, Kind: 21, Detail: "constant"})
 	}
+	return items
+}
+
+// deviceMemberItems completes a device selector: its logic types plus the two
+// indexed accessors the language has but does not otherwise advertise — a slot
+// (`dev.slot[i].Logic`, `ls/ss`) and a network channel
+// (`dev.channel[conn][ch]`, `l/s dev:conn ChannelN`). Without these, a device
+// only ever suggests `Channel0`..`Channel7` and the `[..][..]` form is invisible.
+func deviceMemberItems() []completionItem {
+	items := logicTypeItems()
+	items = append(items,
+		ci("channel", 21, "network channel: dev.channel[conn][ch] (l/s dev:conn ChannelN)"),
+		ci("slot", 21, "slot accessor: dev.slot[i].Logic"),
+	)
+	sortItems(items)
 	return items
 }
 

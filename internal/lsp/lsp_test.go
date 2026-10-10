@@ -394,6 +394,8 @@ func TestCompletionContext(t *testing.T) {
 		{"power mode member", "PowerMode.", `{"line":0,"character":10}`, "Charging", `"label":"func"`},
 		{"color member", "Color.", `{"line":0,"character":6}`, "Purple", `"label":"func"`},
 		{"slot type", "d0.slot[0].", `{"line":0,"character":11}`, "Occupied", `"label":"func"`},
+		{"channel accessor on a port", "d0.", `{"line":0,"character":3}`, `"label":"channel"`, ""},
+		{"slot accessor on an aliased device", "dMem.", `{"line":0,"character":5}`, `"label":"slot"`, ""},
 		{"batch arg device logic", "batch.write(d0.", `{"line":0,"character":15}`, "Temperature", "StructureBattery"},
 		{"batch arg hash string", `batch.write(hash("Iro`, `{"line":0,"character":20}`, "ItemIronOre", ""},
 	}
