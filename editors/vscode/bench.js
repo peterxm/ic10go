@@ -2915,6 +2915,9 @@ ${note}${diffNote}
   th { color: var(--vscode-descriptionForeground); font-weight: 500; }
   td.port { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-charts-blue, #3794ff); }
   td.num { font-family: var(--vscode-editor-font-family, monospace); text-align: right; font-variant-numeric: tabular-nums; }
+  .chans { margin: 2px 0 2px 10px; border-left: 2px solid var(--vscode-editorWidget-border, rgba(128,128,128,.35)); padding-left: 6px; }
+  .chans > summary { cursor: pointer; color: var(--vscode-descriptionForeground); }
+  .chanrow td:first-child { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-charts-purple, #b180d7); }
   table.watch td:first-child { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-charts-purple, #b180d7); }
   table.watch td:last-child { text-align: right; }
   table.watch tr.changed { animation: flash 1.1s ease-out; }
@@ -3140,8 +3143,9 @@ ${note}${diffNote}
         }
         const desc = d.name || d.prefab || '';
         const slotCount = d.slots && d.slots.length ? d.slots.length : 0;
+        const chanCount = d.channels && d.channels.length ? d.channels.length : 0;
         html += '<details class="dev"' + (openMap['dev:' + d.port] ? ' open' : '') + ' data-key="dev:' + d.port + '"><summary><span class="port">' + d.port + '</span> ' + binding +
-          ' <span class="muted">' + desc + '</span> <span class="pill">' + keys.length + ' logic' + (slotCount ? ' · ' + slotCount + ' slots' : '') + '</span></summary><table>';
+          ' <span class="muted">' + desc + '</span> <span class="pill">' + keys.length + ' logic' + (slotCount ? ' · ' + slotCount + ' slots' : '') + (chanCount ? ' · ' + chanCount + ' ${t('ports', '端口')}' : '') + '</span></summary><table>';
         for (const k of keys) {
           next[d.port + '.' + k] = d.logic[k];
           html += '<tr class="logicrow" data-port="' + d.port + '" data-logic="' + k + '" data-value="' + num(d.logic[k]) +
@@ -3149,6 +3153,23 @@ ${note}${diffNote}
             '</td><td class="act"><button class="pulse" title="${t('pulse 0 then 1', '脉冲：写 0 再写 1')}">⚡</button></td></tr>';
         }
         html += '</table>';
+        // Cable-network channels: a data port's eight shared Channel0..7 values
+        // (a Logic Memory has two ports). IC10 addresses them d<port>:<conn>
+        // Channel<n>; read-only here, since writing goes through a network.
+        if (chanCount) {
+          for (const cn of d.channels) {
+            const vals = cn.channels || [];
+            const ckey = 'chan:' + d.port + ':' + cn.port;
+            html += '<details class="chans"' + (openMap[ckey] ? ' open' : '') + ' data-key="' + ckey +
+              '"><summary>${t('Channels', '通道')} <span class="pill">' + cn.port + (cn.net !== undefined ? ' · net ' + cn.net : '') + ' · ' + vals.length + '</span></summary><table>';
+            for (let i = 0; i < vals.length; i++) {
+              const k = 'Channel' + i;
+              next[d.port + ':' + cn.port + '.' + k] = vals[i];
+              html += '<tr class="chanrow"><td>' + k + '</td><td class="num">' + num(vals[i]) + '</td></tr>';
+            }
+            html += '</table></details>';
+          }
+        }
         if (d.probe && Object.keys(d.probe).length) {
           html += '<table class="probe">';
           for (const pk of Object.keys(d.probe)) {
