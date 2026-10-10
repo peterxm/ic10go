@@ -116,6 +116,7 @@ VSCode（可选，`sh editors/vscode/install.sh` 后重载窗口）：左侧 **I
 | 交互类 logic（`Open`/`Mode`/`Activate`/`Lock`/`On`/`Color`） | `NetworkClient.Interact(interactable, state)` | `RequestInteractionToServer` → `OnServer.Interact(interactable, state)` | `Device.SetLogicValue(Open)` 在客户端走 `OnServer.Interact`，而它 `if(!RunSimulation) return`，**是空操作**；必须发交互消息 |
 | 普通值 logic（`Setting` 等） | `NetworkClient.SendToServer(new SetLogicFromClient{LogicId,LogicType,Value})` | 校验 `ISetable` + `CanLogicWrite` 后 `SetLogicValue` | 仅 **`ISetable` 设备**（Stacker / Transformer / Suit / LogicUnitBase …）；打印机等不实现 |
 | 推芯片源码 | `ProgrammableChip.SendUpdate()` | 分片消息 `IntegratedCircuitHeader` + `IntegratedCircuitUpdate`，收齐后 `SetSourceCode` 并同步 | 客户端还要发 loader 后**等主机跑一拍**再发 runtime |
+| 网络通道（`dN:<conn> ChannelM`） | **无** | 只有主机在跑仿真 | `CableNetwork` 不是 `ISetable`，上面那条 `SetLogicFromClient` 收不到，所以客户端写通道**没有原生路子**，返回 `needs-host`。纯客户端要影响通道，只能让**芯片程序**去写（芯片在主机执行）；主机（含带客户端的房主）直接本地写即可 |
 
 mod 按 `RunSimulation` 自动分流：主机 / 单人走原来的直接调用，客户端才走上面这些网络路径。
 
@@ -205,8 +206,8 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `chip.select` | `{target:{id?|name?|index?}}` | `{chip}` |
 | `push` | `{code, loaders?:[string], reset?:bool}` | `{chip, lines, loaders, compileError?}` |
 | `state` | `{include?:["registers","stack","devices","program","errors"]}` | `state`（见 §4.3） |
-| `set` | `{writes:[{port,logic,slot?,value}], force?:bool, pulse?:bool}` — `port` or `id` | `{applied:n}` |
-| `get` | `{reads:[{port,logic,slot?}]}` — `port` or `id` | `{values:[...]}` |
+| `set` | `{writes:[{port?,id?,conn?,logic,slot?,value}], force?:bool, pulse?:bool}` | `{applied:n}` |
+| `get` | `{reads:[{port?,id?,conn?,logic,slot?}]}` | `{values:[...]}` |
 | `device` | `{ids:[...]}` | `{devices:[{id,logic,slots,…}]}`（按 ReferenceId） |
 | `find` | `{name?, prefab?, max?}` | `{devices:[{id,name,prefab,logic,slots,…}]}`（扫世界设备；过滤用 `Thing.CustomName`，输出全 logic + 槽位） |
 | `net` | `{chip?}` | `{devices:[...]}`（**该芯片数据网络**的设备：`Device.DataCableNetwork.DataDeviceList`，即 `lb`/`lbn` 视角，接不接端口都能看） |
@@ -219,11 +220,25 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
 | `ports` | `{chip?}` | diagnostic: `Devices[]`, ids, labels, lookups |
 | `reset` | `{}` | `{ok:true}` |
-| `pause` | `{on:bool}` | `{paused:bool}` |
+| `pause` | `{on:bool}` | `{paused:bool, requested:bool}` — `paused` 是**实际**状态（见下） |
 | `watch` | `{on:bool, include?:[...], all?:bool}` | `{watching:bool}` |
 | `world.saves` | `{}` | `{saves:[name,...]}` |
 | `world.load` | `{save:name}` | `{result:"..."}` |
 | `world.state` | `{}` | `{state, world, paused}` |
+
+> **端口操作数**分两族。**设备本身**用 `dN` / `db` / `id:<ref>`；**电缆网络通道**再加一层连接号：
+> `dN:<conn>`、`db:<conn>`、`id:<ref>:<conn>`（或用请求里的 `conn` 字段）。`d1:0 Channel0`
+> 读写的不是内存设备自己的逻辑，而是该设备**连接 0 那条网络**（`CableNetwork`）的通道 0 ——
+> 8 条 `Channel0..7`，同一条线上的设备共享，IC10 写作 `l/s d1:0 ChannelN`。
+>
+> id 只到「设备」这一层：`id:<ref>` 指到设备本身，而**游戏对 id 操作数只认纯整数**
+> （`id:<ref>:<conn>` 在芯片里会被 `int.TryParse` 拒掉，报 `InvalidInteger`；`s <ref> Channel0`
+> 报 `IncorrectLogicType`）。要写通道只能按端口 / 连接。
+>
+> `pause` 回的是**实际**暂停状态：游戏的 `InputSourceCode.PauseGameToggle` 只在
+> `!NetworkManager.IsClient && Clients.Count == 0`（单人 / 无客户端的房主）时才真的暂停，
+> 其余情况静默无效。mod 试过切换后**回读** `WorldManager.IsGamePaused`，没变就回退
+> `WorldManager.SetGamePause`，并把 `requested` 一起返回，调用方据此提示。
 
 > `state` also carries `paused` so a UI can show Pause/Resume. Save loading uses the
 > game's own `loadgame` console command (`Util.Commands.CommandLine`).
@@ -246,7 +261,7 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 > 返回的是 `CableNetwork`，不是物理设备。`set` 默认校验 `CanLogicWrite`，`force:true` 跳过。
 
 错误 code：`bad-request`、`no-chip`、`no-device`、`unknown-logic`、`compile-error`、
-`not-paused`（`mode:"step"` 需先暂停）、`internal`。
+`not-paused`（`mode:"step"` 需先暂停）、`needs-host`（客户端写网络通道，见 §1.3）、`internal`。
 
 ### 4.3 state 结构
 
@@ -258,13 +273,20 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
   "pc": 12, "line": 13,
   "devices": [
     {"port":"d0","prefab":"StructureLogicDisplay","logic":{"Setting":105}},
-    {"port":"d1","prefab":"StructureLogicDial","logic":{"Setting":10}}
+    {"port":"d1","prefab":"StructureLogicMemory","logic":{"Setting":0},
+     "channels":[                                  // 仅 IConnected 设备有
+       {"port":0,"net":12240,"channels":[0,null,null,null,null,3,null,null]},
+       {"port":1,"net":12334,"channels":[null,null,null,null,null,null,4,null]}
+     ]}
   ],
   "program": {"lines":37,"current":13},
   "errors": {"code":"","line":-1}
 }
 ```
 
+- `channels` 是**电缆网络通道**：设备每个数据连接（Logic Memory 有 2 个）对应一条网络，
+  8 个 `Channel0..7` 值；`null` = 从没写过。IC10 用 `dN:<conn> ChannelM` 读写。
+  panel 的 DEVICES / NETWORK DEVICES 会按端口折叠出来，点击 / ⚡ 即可写（写路径同 `set`）。
 - 栈默认只回 `0..sp`（外加少量上下文），避免一次传 512 个值；`--all` 可要全量。
 - `registers` 里 `r0..r15` 来自 `_Registers[0..15]`，`sp`/`ra` 是 `_Registers[16]`/`[17]`
   （数组长度不足时回退到 `_StackPointerIndex`/`_ReturnAddressIndex`）。
@@ -417,13 +439,15 @@ Activity Bar「IC10」
 | `icg.bench.connect` | IC10: Connect to Game | 视图 / 状态栏 |
 | `icg.bench.disconnect` | IC10: Disconnect | 视图 |
 | `icg.bench.push` | IC10: Upload to Game | 标题栏、`Ctrl+Alt+U` |
+| `icg.bench.pushAndBreak` | IC10: Upload and Pause at First Line | 标题栏 `$(debug-alt)`（上传 → 暂停世界 → 复位 → PC 停在第一行，便于从头单步） |
 | `icg.bench.pull` | IC10: Download from Game | 标题栏、`Ctrl+Alt+D`（读 `program`，可反编译为 `.icg`） |
 | `icg.bench.refresh` | IC10: Refresh State | 视图标题 |
 | `icg.bench.watch` | IC10: Toggle Live Updates | 视图标题 |
 | `icg.bench.runScenario` | IC10: Run Testbench | 标题栏、`Ctrl+Alt+T` |
 | `icg.bench.openPanel` | IC10: Open Chip Panel | 状态栏 / 命令面板 |
 | `icg.bench.pause` | IC10: Pause / Resume Game | 视图标题、面板按钮 |
-| `icg.bench.step` | IC10: Step One Tick | 视图标题、面板按钮（先暂停） |
+| `icg.bench.step` | IC10: Step One Tick | 视图标题、面板按钮、执行行 CodeLens / 行号旁 ▶、`F10`（先暂停） |
+| `icg.bench.stepIns` | IC10: Step One Instruction | 执行行 CodeLens / 行号旁 ▶、`F11`（mod 的 `trace`，逐条 `Execute(1)`） |
 | `icg.bench.runTicks` | IC10: Run Ticks | 视图标题、面板按钮（先暂停；tick 数见 `icg.bench.runTicks`） |
 | `icg.bench.reset` | IC10: Reset Chip | 视图标题、面板按钮 |
 | `icg.bench.ports` | IC10: Show Port Wiring | 视图标题（`ports` 诊断 → 接线表） |
@@ -440,17 +464,21 @@ Activity Bar「IC10」
 | `icg.bench.devices` | IC10: Find Devices | 视图标题 / 面板（`find` → 设备表） |
 | `icg.bench.queryIds` | IC10: Look up ReferenceIds in File | 视图标题 / 面板（扫描当前 `.icg` 里 `readById`/`writeById` 用到的 ReferenceId） |
 
+> 编辑器键位（`.icg` / `.ic10` 内）：**`F11`** 单步 1 指令、**`F10`** 单步 1 tick、**`F5`** 运行 N tick、**`F6`** 暂停/恢复。`Run` / `Step` 的步进数见 `icg.bench.runTicks`。
+
 ### 7.3 Webview「Chip State」面板
 
 - 顶栏：芯片名 + 连接圆点 + `Pause | Step | Run | Reset | Watch | Refresh`（`Pause` 在实时更新旁，暂停时变 `Resume` 并高亮；`Run` 显示 `icg.bench.runTicks`）。`Step` / `Run` 会先暂停世界，保证单步确定性。
 - 顶栏还有**过滤框**：按端口 / 设备名 / 预制体 / 逻辑名筛选设备卡片。
 - **Registers**：网格（r0–r15 / ra / sp），等宽数字；值变化时短暂高亮（绿色淡出）。
+- **Watch（变量）**：把 `.icg` 源码变量显示成 `名字 = 值 (寄存器·类型)` —— IC10 里寄存器是**复用**的，只看 `r0..r15` 读不出哪个是哪个。数据来自编译器 `build --json` 的调试表 **`vars`**（每条源码行上活跃的用户变量 → 物理寄存器），随上传记录；溢出到栈的变量不列。重新打开窗口后映射会持久化，对**已经在跑**的程序按源码**指纹**自动补全（不必重推）。原始 IC10 没有变量，回退成解析程序里已有的 `alias NAME rN`。面板里是 `Watch` 表，树里是「变量」分组。
 - **Stack**：默认**折叠**（`<details>`），展开后显示全部 512 槽，`sp` 行加色条。
 - **Devices**：每个设备一张**可折叠卡片**（`db` + `d0..d5`，空端口灰显 `empty`），带绑定标签与该设备的 logic 数量；展开看全部 logic，避免 `db` 那种几十条一次铺开。点击树里的 logic 可改输入；**面板里 logic 行同样可点击改值，行末 `⚡` 脉冲（写 0 再写 1）**。
 - **Network Devices**：`d0..d5` 下方列出**当前选中芯片的数据网络**上的设备（mod 的 `net`，即 `lb`/`lbn` 视角，**接不接端口都能看/改**）。每台一张可折叠卡片，显示完整 logic + 槽位（`Occupied`/`Quantity`/`Class`/…）；点击值可改、行末 `⚡` 脉冲，与端口设备同一套交互（多人客户端下写入自动走主机权威路径）。在左边树里切换芯片会一并刷新。
+- **通道**：`IConnected` 设备（如 Logic Memory）每个**数据连接**折叠出一组「通道」——8 个 `Channel0..7`，同一根电缆上共享。行可点击改值、行末 `⚡` 脉冲；写路径同 `set`（端口设备用 `dN:<conn>`，网络设备用 `id:<ref>:<conn>`，见 §4.2 注）。客户端写通道会返回 `needs-host`（§1.3）。
 - **Program**：当前行 + `line/total`。
 - **预制体名**：设备的 `PrefabHash` / `NameHash` / `OccupantHash` 值旁标注对应预制体名（反查表由 ic10c 通过 `ic10/prefabs` 请求提供）；点击名字可复制 `hash("Name")`。
-- **执行行高亮**：上传时记住 `build --json` 的 `lineMap`（IC10 行 → `.icg` 源码行），随 `state.line` 在 `.icg` 编辑器里高亮当前行（按指令近似）。可关（`icg.bench.highlightLine`）。
+- **执行行高亮 + 单步控件**：上传时记住 `build --json` 的 `lineMap`（IC10 行 → `.icg` 源码行），随 `state.line` 在 `.icg` 编辑器里高亮当前行（按指令近似），并在该行给出 **CodeLens**（`▶ 单步 1 指令` / `⏭ 1 tick` / `▶▶ 运行 N tick`）与行号旁的 **▶** 装饰；单步后自动滚到该行。`pull` 下来的原始 IC10 用身份映射，也能用。可关（`icg.bench.highlightLine`）。
 - **多芯片对比**：`icg.bench.compare` 打开并排面板，每块芯片一列（行号 / `program.lines` / 寄存器 / `sp` / 设备 logic / 报错），变化的寄存器高亮、可「只看差异」、点列头选中该芯片；`Live` 定时刷新；多芯片走 `bus` 时一起看。
 - **状态记忆**：选中的芯片与 `watch` 开关写入 `workspaceState`（`icg.bench.sel` / `icg.bench.watching`），重载窗口后自动恢复。
 - 全部用 `var(--vscode-*)` 变量、`--vscode-editorWidget-border` 描边、`--vscode-textCodeBlock-background`
@@ -474,8 +502,9 @@ Activity Bar「IC10」
 - `push` 成功用 `setStatusBarMessage` 显示 `✓ 37/128 lines`；编译失败复用现有诊断路径。
 - `runScenario` 结果用 Webview 报告（每 case ✓/✗ + 期望/实际）。
 - 所有错误走已有的 `IC10 Go` 输出面板。
-- `Pause` 按钮走游戏自身暂停流程，恢复后输入/光标正常，不用再按 F1。
-- `Step` / `Run` 在未暂停时先 `pause {on:true}`（**保持暂停**便于连续单步），再 `run {ticks}`；`run` 返回当前 `line` 与芯片 `error`。`Reset` 调 `reset`（保留栈）。
+- `Pause` 按钮走游戏自身暂停流程，恢复后输入/光标正常，不用再按 F1。`pause` 现在返回**实际**状态：被游戏拒绝时（联机客户端）扩展会提示「无法暂停」，而不是显示成已暂停。
+- `Step` / `Run` 在未暂停时先 `pause {on:true}`（**保持暂停**便于连续单步），再 `run {ticks}`；`run` 返回当前 `line` 与芯片 `error`。`Reset` 调 `reset`（保留栈）。`Step` 的「1 指令」走 mod 的 `trace`。
+- 「上传并暂停在第一行」（`pushAndBreak`）：光上传不暂停的话，芯片会立刻跑回 `for{}` 循环，单步控件永远不落在入口 —— 这条命令上传后自动**暂停 + 复位**，PC 停在第一行。
 - `writes` 面板「设为基线」记录当前每个目标 `(device,logic,slot)` 的值，之后刷新会标出差异并汇总变化数，可勾「只看变化」。
 - `exportStack` 读 `state.stack`，按所选范围（数据段 / `0..sp` / 非零 / 全部）生成 **loader 形式**的 `put db <槽> <值>`（上次上传用的是 `access=stack` 时改用 `poke`），每 ≤128 行一段；首段进剪贴板、每段开一个新编辑器。
 - 「Load Save」从 `world.saves` 快速选择并调用 `LoadHelper.LoadGame`；mod 侧 `autoload` 可启动即进存档。
@@ -568,6 +597,19 @@ Activity Bar「IC10」
 - **暂停/恢复**走游戏自己的 `InputSourceCode.PauseGameToggle(bool)`（社区 IC10 编辑器同款），
   避免只写 `WorldManager.IsGamePaused` 导致恢复后输入卡死。
 - **多芯片**：`chip.list` 返回全部 host；`push --as` 选编译块；多芯片场景文件尚未实现。
+
+**网络通道（2026-10-11，本机 host；开关 / 灯两块芯片共用一块 Logic Memory）**
+
+| 项 | 结果 |
+|---|---|
+| `state.devices[].channels`：Logic Memory `d1` 两个连接（net 12240 / 12334）各 8 个通道 | ✅ |
+| 面板 DEVICES 与 NETWORK DEVICES 折叠出「通道」并显示实时值（没写过 = `–`） | ✅ |
+| `set d1:0.Channel2=5`、`set d1:1.Channel3=7`、`set id:12327:0.Channel4=9` 写入读回一致 | ✅ |
+| 端到端：暂停 → `set d1:0.Channel0=1` → 单步灯芯片 8 tick → `r0=1`、灯 `On=1` | ✅ |
+| 芯片程序写通道**只能按端口**：`writeById(12327, LogicType.Channel0, v)` → `s 12327 Channel0` 报 `IncorrectLogicType`；手写 `12327:0` 报 `InvalidInteger` | 只能 `dN:conn` / `db:conn` |
+| `db.channel[0][0]`（`s db:0 Channel0`）同样跨芯片共享 —— 不必拿内存当网络入口 | ✅ |
+| 两块芯片各在自己的**电力**分网、中间隔 `变压器(小型)`：逻辑仍通（变压器只隔电力） | ✅ |
+| 客户端写通道无原生路子（`CableNetwork` 不是 `ISetable`） | 返回 `needs-host` |
 
 ---
 

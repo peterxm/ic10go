@@ -594,6 +594,13 @@ d0.channel[0][2] = x            // s d0:0 Channel2 x
 
 - 第一个下标是连接号（connection），第二个是通道号 `0..7`。
 - 通道号必须是编译期常量（用于生成 `ChannelN` 枚举名）。
+- 读写的是**那条电缆网络**的通道，不是设备自己的逻辑：`dMem.channel[0][0]` 生成 `s d1:0`，
+  而 `dMem.Channel0` 生成的是 `s d1`（设备自身的逻辑类型，内存设备没有 `ChannelN`）。
+- **只能按端口 + 连接寻址**（`dN:conn` / `db:conn`）。**ReferenceId 到不了通道这一层**：真机实测
+  `writeById(12327, LogicType.Channel0, v)` 生成 `s 12327 Channel0`，芯片报 `IncorrectLogicType`
+  （id 指到设备本身）；手写 `12327:0` 则被 `int.TryParse` 拒掉，报 `InvalidInteger`。
+- 没有中间设备时用芯片**自己的外壳网络**：`db.channel[0][0]`（`s db:0 Channel0`）。同一根线缆上的
+  芯片都读写这 8 个共享通道，不需要先接一块 Logic Memory 当入口。
 
 ### 7.4 动态逻辑类型
 

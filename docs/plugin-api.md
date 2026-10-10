@@ -21,6 +21,10 @@ ic10c build --json <file.icg>
   "code": "yield\nmove r2 0\n...",
   "lines": ["yield", "move r2 0", "..."],
   "lineMap": [0, 6, 6, 7, 7],
+  "vars": [
+    { "line": 6, "name": "setpoint", "reg": 2, "type": "num" },
+    { "line": 7, "name": "reading", "reg": 3, "type": "num" }
+  ],
   "data": {
     "needed": true,
     "setup": true,
@@ -59,6 +63,7 @@ ic10c build --json <file.icg>
 | `code` | 编译产物原文。 |
 | `lines` | 产物按行拆分。**直接写芯片请用这个**，避免尾换行 / CRLF 歧义。 |
 | `lineMap` | 1-based 产物行 → 1-based `.icg` 源码行的数组（下标 0 未用，长度 = `stats.lines`+1）；`0` = 未知。按**指令**记录（编译期展开/折叠新生成的指令可能为 0）。多芯片时顶层镜像 `chips[0]`，每个 `chips[]` 也各带 `lineMap`。供编辑器把芯片当前 `line` 回映到源码。 |
+| `vars` | 调试表：每个**源码变量在哪些行活着、在哪个物理寄存器**（`{line, name, reg, type?}`，`reg` = `0..15` 即 `r0..r15`）。IC10 寄存器**复用**，所以只在变量的活跃行（首次被赋值 → 最后一次使用）列出；溢出到栈的变量没有寄存器就不列。编辑器拿它把 `rN` 显示回变量名（「变量 Watch」）。多芯片时顶层镜像 `chips[0]`，每个 `chips[]` 也各带一份。 |
 | `data.needed` | 是否需要先运行一次性 loader（数据段和/或外提的设置写入）。 |
 | `data.setup` | loader 里是否包含**外提的一次性设置写入**（`Mode`/`On`/常量 `Setting` 等，见下文）。 |
 | `data.loader` | 一次性 loader 的完整 IC10 代码；`needed=false` 时省略。 |

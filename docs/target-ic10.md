@@ -144,6 +144,11 @@
 | `readReagent(reg, mode, key)` | `lr r? drN`（运行期端口） |
 | `readReagentById(reg, mode, key)` | `lr r? rN`（按 ReferenceId） |
 
+> **网络通道只有 `d.channel[c][n]` 这一种写法**（`l/s d:c Channel<n>`）—— 没有 id 形式：
+> `readById` / `writeById` 的 ReferenceId 只到「设备」这一层，写 `Channel0` 会报
+> `IncorrectLogicType`；手写 `<ref>:conn` 则被 `int.TryParse` 拒掉（`InvalidInteger`）。真机实测。
+> 芯片**自己**的网络是 `db:0`：`db.channel[0][0]` → `s db:0 Channel0`，跨芯片共享最省事。
+
 ### 4.3 分支
 
 | 条件 | 分支指令 |
