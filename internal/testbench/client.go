@@ -565,6 +565,19 @@ type DeviceState struct {
 	Logic   map[string]float64 `json:"logic"`
 	Slots   []SlotState        `json:"slots,omitempty"`
 	Probe   map[string]string  `json:"probe,omitempty"`
+	// Channels, when present, are the device's cable-network channels: one
+	// entry per data connection, each with the eight shared Channel0..7 values
+	// (IC10 `dN:<conn> ChannelM`). Nil for a device that is not on a network.
+	Channels []ConnectionState `json:"channels,omitempty"`
+}
+
+// ConnectionState is one cable-network connection of a device: its connection
+// index, the network's ReferenceId, and the eight Channel0..7 values (nil for a
+// channel that has never been written).
+type ConnectionState struct {
+	Port     int        `json:"port"`
+	Net      int        `json:"net,omitempty"`
+	Channels []*float64 `json:"channels"`
 }
 
 // SlotState is one logic slot (inventory slot) of a device.

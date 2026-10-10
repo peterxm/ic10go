@@ -1396,6 +1396,16 @@ func benchState(addr string, chip any, all, asJSON bool) int {
 		for _, k := range keys {
 			fmt.Printf("       %s = %v\n", k, d.Logic[k])
 		}
+		for _, cn := range d.Channels {
+			fmt.Printf("       channel[%d] net=%d:", cn.Port, cn.Net)
+			for i, v := range cn.Channels {
+				if v == nil {
+					continue // never written
+				}
+				fmt.Printf(" Channel%d=%v", i, *v)
+			}
+			fmt.Println()
+		}
 	}
 	if st.Errors != nil && (st.Errors.Code != "" || st.Errors.Compilation) {
 		fmt.Printf("error  %s line=%d\n", st.Errors.Code, st.Errors.Line)
