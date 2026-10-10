@@ -229,7 +229,8 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 > **端口操作数**分两族。**设备本身**用 `dN` / `db` / `id:<ref>`；**电缆网络通道**再加一层连接号：
 > `dN:<conn>`、`db:<conn>`、`id:<ref>:<conn>`（或用请求里的 `conn` 字段）。`d1:0 Channel0`
 > 读写的不是内存设备自己的逻辑，而是该设备**连接 0 那条网络**（`CableNetwork`）的通道 0 ——
-> 8 条 `Channel0..7`，同一条线上的设备共享，IC10 写作 `l/s d1:0 ChannelN`。
+> 8 条 `Channel0..7`，同一条线上的设备共享，IC10 写作 `l/s d1:0 ChannelN`。连接号含义随设备而定
+> （IC 外壳 `0` = 数据口、`1` = 电源口，故 `db:1 ChannelN` 是**电源网络**的通道）。
 >
 > id 只到「设备」这一层：`id:<ref>` 指到设备本身，而**游戏对 id 操作数只认纯整数**
 > （`id:<ref>:<conn>` 在芯片里会被 `int.TryParse` 拒掉，报 `InvalidInteger`；`s <ref> Channel0`
@@ -285,8 +286,9 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 ```
 
 - `channels` 是**电缆网络通道**：设备每个数据连接（Logic Memory 有 2 个）对应一条网络，
-  8 个 `Channel0..7` 值；`null` = 从没写过。IC10 用 `dN:<conn> ChannelM` 读写。
-  panel 的 DEVICES / NETWORK DEVICES 会按端口折叠出来，点击 / ⚡ 即可写（写路径同 `set`）。
+  8 个 `Channel0..7` 值；`null` = 从没写过（quiet NaN，不是 0）。IC10 用 `dN:<conn> ChannelM` 读写。
+  连接号含义随设备而定（IC 外壳 `0` = 数据口、`1` = 电源口）；通道**易失**——电缆网络增删改或退出
+  世界都会清空。panel 的 DEVICES / NETWORK DEVICES 会按端口折叠出来，点击 / ⚡ 即可写（写路径同 `set`）。
 - 栈默认只回 `0..sp`（外加少量上下文），避免一次传 512 个值；`--all` 可要全量。
 - `registers` 里 `r0..r15` 来自 `_Registers[0..15]`，`sp`/`ra` 是 `_Registers[16]`/`[17]`
   （数组长度不足时回退到 `_StackPointerIndex`/`_ReturnAddressIndex`）。
