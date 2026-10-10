@@ -24,6 +24,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Assets.Scripts;
 using Assets.Scripts.Networking;
+using Assets.Scripts.Networks;
 using Assets.Scripts.Objects;
 using Assets.Scripts.Objects.Electrical;
 using Assets.Scripts.Objects.Entities;
@@ -1225,6 +1226,8 @@ namespace Ic10Go.Testbench
                     if (slots.Count > 0) o["slots"] = slots;
                 }
             }
+            var channels = ConnectionChannels(lg);
+            if (channels != null) o["channels"] = channels;
             var probe = ProbeProps(dev);
             if (probe != null) o["probe"] = probe;
             return o;
@@ -1524,6 +1527,12 @@ namespace Ic10Go.Testbench
                 if (slots.Count > 0) entry["slots"] = slots;
             }
 
+            // Cable-network channels: an IConnected device exposes one network
+            // per data port, and each network carries eight shared Channel0..7
+            // values that IC10 addresses as `d<port>:<conn> Channel<n>`.
+            var channels = ConnectionChannels(dev);
+            if (channels != null) entry["channels"] = channels;
+
             var thing = dev as Thing;
             if (thing != null)
             {
@@ -1538,6 +1547,34 @@ namespace Ic10Go.Testbench
             var probe = ProbeProps(dev);
             if (probe != null) entry["probe"] = probe;
             return entry;
+        }
+
+        /// <summary>
+        /// The cable-network channels of a device: for each data connection it
+        /// has (a Logic Memory has two), the eight shared Channel0..7 values of
+        /// that network. IC10 reads/writes them as `dN:conn ChannelM`. Returns
+        /// null for a device that is not on a cable network.
+        /// </summary>
+        private static JArray ConnectionChannels(ILogicable dev)
+        {
+            var connected = dev as IConnected;
+            if (connected == null) return null;
+            var arr = new JArray();
+            for (int conn = 0; conn < 4; conn++)
+            {
+                CableNetwork net;
+                try { net = connected.GetNetwork(conn); } catch { break; }
+                if (net == null) continue;
+                var vals = new JArray();
+                for (int c = 0; c < 8; c++)
+                {
+                    double v = double.NaN;
+                    try { v = net.GetLogicValue((LogicType)((int)LogicType.Channel0 + c)); } catch { }
+                    vals.Add(Num(v));
+                }
+                arr.Add(new JObject { ["port"] = conn, ["net"] = net.ReferenceId, ["channels"] = vals });
+            }
+            return arr.Count > 0 ? arr : null;
         }
 
         private static JObject ErrorOf(ProgrammableChip chip)
