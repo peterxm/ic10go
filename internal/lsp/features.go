@@ -1887,9 +1887,28 @@ func tickLoopList(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 				label = fmt.Sprintf(" [chip %s]", u.chip)
 			}
 		}
-		head := fmt.Sprintf("循环分析%s：共 %d 个循环（每圈 最快..最慢 条）：", label, len(lines))
+		// The fewest and most instructions one iteration takes (they differ when
+		// a loop has branches); different loops can differ, so this spans them all.
+		best, worst := 0, 0
+		for _, lp := range rep.Loops {
+			lo := lp.BodyMin
+			if lo == 0 {
+				lo = lp.Body
+			}
+			if best == 0 || lo < best {
+				best = lo
+			}
+			if lp.Body > worst {
+				worst = lp.Body
+			}
+		}
+		perIter := strconv.Itoa(worst)
+		if best != worst {
+			perIter = fmt.Sprintf("%d..%d", best, worst)
+		}
+		head := fmt.Sprintf("循环分析%s：共 %d 个循环（每圈 %s 条）：", label, len(lines), perIter)
 		if !zh {
-			head = fmt.Sprintf("Loop analysis%s: %d loop(s) (best..worst instructions per iteration):", label, len(lines))
+			head = fmt.Sprintf("Loop analysis%s: %d loop(s) (%s instructions per iteration):", label, len(lines), perIter)
 		}
 		msg := head + "\n" + strings.Join(lines, "\n")
 		line := 0

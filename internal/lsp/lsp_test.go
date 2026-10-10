@@ -363,6 +363,24 @@ func TestCleanDocumentHasNoDiagnostics(t *testing.T) {
 	}
 }
 
+func TestTickLoopListMessage(t *testing.T) {
+	// `yield / l / s / j` is one loop of four instructions per iteration that
+	// spans ticks (the yield). The summary must carry the count, not the bare
+	// "最快..最慢" placeholder it used to print.
+	code := "yield\nl r0 d1:0 Channel0\ns d0 On r0\nj 0\n"
+	diags := tickLoopList([]tickUnit{{code: code, lineMap: identityLineMap(code)}}, "c.icg", true)
+	if len(diags) != 1 {
+		t.Fatalf("got %d diagnostics, want 1", len(diags))
+	}
+	msg := diags[0].Message
+	if !strings.Contains(msg, "共 1 个循环（每圈 4 条）") {
+		t.Errorf("summary is missing the per-iteration count:\n%s", msg)
+	}
+	if strings.Contains(msg, "最快") || strings.Contains(msg, "最慢") {
+		t.Errorf("summary still contains the empty placeholder:\n%s", msg)
+	}
+}
+
 func TestCompletionContext(t *testing.T) {
 	cases := []struct {
 		name    string
