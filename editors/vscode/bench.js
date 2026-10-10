@@ -3209,10 +3209,11 @@ ${note}${diffNote}
         const did = d.id !== undefined ? d.id : (d.name || d.prefab || '');
         const key = 'net:' + did;
         const slotCount = d.slots && d.slots.length ? d.slots.length : 0;
+        const ndChan = d.channels && d.channels.length ? d.channels.length : 0;
         html += '<details class="dev"' + (openMap[key] ? ' open' : '') + ' data-key="' + key +
           '"><summary><span class="port">' + did + '</span> ' + (d.name || '') +
           ' <span class="muted">' + esc(d.prefab || '') + '</span> <span class="pill">' + dkeys.length + ' logic' +
-          (slotCount ? ' · ' + slotCount + ' slots' : '') + '</span></summary>';
+          (slotCount ? ' · ' + slotCount + ' slots' : '') + (ndChan ? ' · ' + ndChan + ' ${t('ports', '端口')}' : '') + '</span></summary>';
         if (dkeys.length) {
           html += '<table>';
           for (const k of dkeys) {
@@ -3222,6 +3223,19 @@ ${note}${diffNote}
               '</td><td class="act"><button class="pulse" title="pulse 0 then 1">⚡</button></td></tr>';
           }
           html += '</table>';
+        }
+        if (ndChan) {
+          for (const cn of d.channels) {
+            const vals = cn.channels || [];
+            const ckey = 'netchan:' + did + ':' + cn.port;
+            html += '<details class="chans"' + (openMap[ckey] ? ' open' : '') + ' data-key="' + ckey +
+              '"><summary>${t('Channels', '通道')} <span class="pill">' + cn.port + (cn.net !== undefined ? ' · net ' + cn.net : '') + ' · ' + vals.length + '</span></summary><table>';
+            for (let i = 0; i < vals.length; i++) {
+              next['net:' + did + ':' + cn.port + '.Channel' + i] = vals[i];
+              html += '<tr class="chanrow"><td>Channel' + i + '</td><td class="num">' + num(vals[i]) + '</td></tr>';
+            }
+            html += '</table></details>';
+          }
         }
         if (d.slots && d.slots.length) {
           const skey = 'netslots:' + did;
