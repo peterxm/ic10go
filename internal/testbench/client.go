@@ -522,11 +522,12 @@ func (c *Client) RunTo(line, max int, chip any) (*RunToResult, error) {
 
 // RunToResult is the result of runTo. Reached reports whether the chip actually
 // stopped on the requested line; when it is false the chip either errored or
-// looped without getting there.
+// looped without getting there. It is a pointer because a mod older than 0.5.9
+// does not send it (unknown, not "did not reach").
 type RunToResult struct {
 	Steps   int     `json:"steps"`
 	Line    float64 `json:"line"`
-	Reached bool    `json:"reached"`
+	Reached *bool   `json:"reached"`
 }
 
 // SetReg pokes a chip register or stack slot while the world is paused, so a
