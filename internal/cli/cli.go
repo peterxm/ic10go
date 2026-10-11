@@ -589,7 +589,7 @@ var Commands = []Command{
 		},
 	},
 	{
-		Name: "testbench", Args: "ping|list|players|locate|hud|push|state|program|set|step|trace|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
+		Name: "testbench", Args: "ping|list|players|locate|hud|push|state|program|set|stackids|step|trace|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
 		Summary: text{EN: "drive the in-game testbench mod", ZH: "驱动游戏内测试台 mod"},
 		Long: text{
 			EN: "Talk to the ic10go-testbench mod running in Stationeers over NDJSON/TCP\n" +
@@ -650,6 +650,7 @@ var Commands = []Command{
 				"  state                     寄存器 / 栈 / 设备\n" +
 				"  program                   打印芯片当前 IC10 源码\n" +
 				"  set d1.Setting=10 ...     设置设备值（dN.Logic=值 或 id:N.Logic=值）\n" +
+				"  stackids --slot 3=NAME    把宿主栈里的设备 id 按名字/值解析出来，供 minify --stack-id 用\n" +
 				"  step [N]                  推进芯片 N 个游戏 tick（暂停下）\n" +
 				"  trace [N]                 逐条执行 N 条指令（暂停下）\n" +
 				"  ports                     诊断：打印端口/设备接线映射\n" +

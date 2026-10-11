@@ -57,3 +57,39 @@ func TestParseWrite(t *testing.T) {
 		}
 	}
 }
+
+func TestSplitSlotSpec(t *testing.T) {
+	cases := []struct {
+		in   string
+		n    int
+		spec string
+		ok   bool
+	}{
+		{"3=1550107", 3, "1550107", true},
+		{"0=Exterior Vent 01", 0, "Exterior Vent 01", true},
+		{"=5", 0, "", false},
+		{"5=", 0, "", false},
+		{"x=5", 0, "", false},
+		{"-1=5", 0, "", false},
+		{"5", 0, "", false},
+	}
+	for _, c := range cases {
+		n, spec, ok := splitSlotSpec(c.in)
+		if ok != c.ok || (ok && (n != c.n || spec != c.spec)) {
+			t.Errorf("splitSlotSpec(%q) = (%d, %q, %v), want (%d, %q, %v)", c.in, n, spec, ok, c.n, c.spec, c.ok)
+		}
+	}
+}
+
+func TestSortedKeysAndAllZero(t *testing.T) {
+	m := map[int]int{5: 7, 0: 3, 3: 0}
+	if got := sortedKeys(m); len(got) != 3 || got[0] != 0 || got[1] != 3 || got[2] != 5 {
+		t.Errorf("sortedKeys = %v, want [0 3 5]", got)
+	}
+	if allZero(m) {
+		t.Errorf("allZero(%v) = true, want false", m)
+	}
+	if !allZero(map[int]int{1: 0, 2: 0}) || allZero(map[int]int{}) {
+		t.Errorf("allZero boundary wrong")
+	}
+}

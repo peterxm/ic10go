@@ -1069,14 +1069,41 @@ func cmdMinify(args []string) int {
 // into literal ids before minify/decompile run.
 func foldStackIDs(data []byte, args []string) ([]byte, error) {
 	ids, err := ic10.ParseStackIDs(args)
-	if err != nil || len(ids) == 0 {
+	if err != nil {
 		return data, err
+	}
+	if len(ids) == 0 {
+		// Point at --stack-id when the program has the idiom but nothing was
+		// given: otherwise the compressor silently leaves 20+ lines behind.
+		if slots := ic10.StackIDSlots(string(data)); len(slots) > 0 {
+			fmt.Fprintf(os.Stderr, "ic10c: note: this program loads device ids from the host stack (slot%s %s);\n"+
+				"      pass --stack-id SLOT=REFID to fold them (`ic10c testbench stackids` resolves them by name).\n",
+				plural(slots), joinInts(slots))
+		}
+		return data, nil
 	}
 	out, err := ic10.StackFold(string(data), ids)
 	if err != nil {
 		return data, err
 	}
 	return []byte(out), nil
+}
+
+// plural returns "" for one slot and "s" otherwise.
+func plural(slots []int) string {
+	if len(slots) == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// joinInts renders ints as a comma-separated list.
+func joinInts(xs []int) string {
+	parts := make([]string, len(xs))
+	for i, x := range xs {
+		parts[i] = strconv.Itoa(x)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // cmdTick reports the worst-case number of IC10 instructions executed between

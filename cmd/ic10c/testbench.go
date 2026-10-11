@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -188,6 +189,8 @@ func cmdTestbench(args []string) int {
 		return benchProgram(addr, chip, asJSON)
 	case "set":
 		return benchSet(addr, chip, rest, force, pulse, asJSON)
+	case "stackids":
+		return benchStackIDs(addr, chip, rest, asJSON)
 	case "step":
 		n := 1
 		if len(rest) > 0 {
@@ -1102,6 +1105,154 @@ func benchFind(addr, nameFilter, prefabArg string, asJSON bool) int {
 		fmt.Printf("%-9s %-13s %-18v %-30v %8s %4s\n", numStr(d["id"]), numStr(lg(d, "PrefabHash")), d["name"], d["prefab"], numStr(lg(d, "Setting")), numStr(lg(d, "On")))
 	}
 	return 0
+}
+
+// benchStackIDs resolves the host-stack slots a program keeps its device
+// ReferenceIds in, so they can be handed to `minify --stack-id` without hunting
+// for them by hand. Each slot is given as N=SPEC, where SPEC is a ReferenceId or
+// a device name (resolved through `find`). With --from-stack the values are read
+// straight out of the selected chip's stack instead, which only works when the
+// tool is connected to the host: a client is not sent the stack contents.
+func benchStackIDs(addr string, chip any, rest []string, asJSON bool) int {
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+
+	slotOf := map[int]string{}
+	var order []int
+	fromStack := false
+	for i := 0; i < len(rest); i++ {
+		switch rest[i] {
+		case "--from-stack":
+			fromStack = true
+		case "--slot":
+			if i+1 >= len(rest) {
+				fmt.Fprintln(os.Stderr, "ic10c: --slot needs N=REFID or N=NAME")
+				return 2
+			}
+			i++
+			n, spec, ok := splitSlotSpec(rest[i])
+			if !ok {
+				fmt.Fprintf(os.Stderr, "ic10c: bad --slot %q (want N=REFID or N=NAME)\n", rest[i])
+				return 2
+			}
+			if _, dup := slotOf[n]; !dup {
+				order = append(order, n)
+			}
+			slotOf[n] = spec
+		}
+	}
+	if len(slotOf) == 0 && !fromStack {
+		fmt.Fprintln(os.Stderr, "ic10c: usage: ic10c testbench stackids --slot N=REFID|NAME [--slot …] [--from-stack]")
+		return 2
+	}
+
+	ids := map[int]int{}
+
+	if fromStack {
+		st, err := c.State([]string{"stack"}, true, chip)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		slots := order
+		if len(slots) == 0 {
+			for k, v := range st.Stack.Values {
+				if n, err := strconv.Atoi(k); err == nil && v != 0 {
+					slots = append(slots, n)
+				}
+			}
+			sort.Ints(slots)
+		}
+		for _, n := range slots {
+			ids[n] = int(st.Stack.Values[strconv.Itoa(n)])
+		}
+	} else {
+		for _, n := range order {
+			spec := slotOf[n]
+			if id, err := strconv.Atoi(spec); err == nil {
+				ids[n] = id
+				continue
+			}
+			id, name, err := findByName(c, spec)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "ic10c: slot %d: %v\n", n, err)
+				return 1
+			}
+			fmt.Fprintf(os.Stderr, "ic10c: slot %d: %q -> %d\n", n, name, id)
+			ids[n] = id
+		}
+	}
+
+	if asJSON {
+		return printJSON(ids)
+	}
+	parts := make([]string, 0, len(ids))
+	for _, n := range sortedKeys(ids) {
+		parts = append(parts, fmt.Sprintf("--stack-id %d=%d", n, ids[n]))
+	}
+	fmt.Println(strings.Join(parts, " "))
+	if fromStack && allZero(ids) {
+		fmt.Fprintln(os.Stderr, "ic10c: warning: the stack reads all zeros — a client is not sent the stack; "+
+			"connect the tool to the host, or resolve the slots by device name instead.")
+	}
+	return 0
+}
+
+// findByName resolves a device name to its ReferenceId via the mod's `find`.
+func findByName(c *testbench.Client, name string) (int, string, error) {
+	raw, err := c.Call("find", map[string]any{"name": name})
+	if err != nil {
+		return 0, "", err
+	}
+	var rep struct {
+		Devices []map[string]any `json:"devices"`
+	}
+	if err := json.Unmarshal(raw, &rep); err != nil {
+		return 0, "", err
+	}
+	if len(rep.Devices) == 0 {
+		return 0, "", fmt.Errorf("no device named %q", name)
+	}
+	d := rep.Devices[0]
+	id, _ := d["id"].(float64)
+	got, _ := d["name"].(string)
+	return int(id), got, nil
+}
+
+// splitSlotSpec parses "N=SPEC".
+func splitSlotSpec(s string) (int, string, bool) {
+	eq := strings.IndexByte(s, '=')
+	if eq <= 0 || eq == len(s)-1 {
+		return 0, "", false
+	}
+	n, err := strconv.Atoi(s[:eq])
+	if err != nil || n < 0 {
+		return 0, "", false
+	}
+	return n, s[eq+1:], true
+}
+
+// allZero reports whether every value is 0 (an unread stack).
+func allZero(m map[int]int) bool {
+	for _, v := range m {
+		if v != 0 {
+			return false
+		}
+	}
+	return len(m) > 0
+}
+
+// sortedKeys returns the map keys in ascending order.
+func sortedKeys(m map[int]int) []int {
+	ks := make([]int, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	sort.Ints(ks)
+	return ks
 }
 
 // benchNet lists the devices on the selected chip's data cable network (the

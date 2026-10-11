@@ -314,6 +314,60 @@ func foldLoop(items []item, br, pop, sp int, spKnown bool, ids map[int]int,
 	return out, j, true
 }
 
+// StackIDSniff reports the host-stack slots a program reads device ids from:
+// the `move sp N` / `pop rM` idiom where rM immediately feeds the next
+// instruction as a device operand. It needs only the slots (not the values), so
+// a tool can tell the user what to pass to --stack-id before looking them up.
+// The result is in read order, deduplicated.
+func StackIDSniff(src string) []int {
+	if !strings.Contains(src, "pop") {
+		return nil
+	}
+	items, labels, defs := parse(strings.Split(src, "\n"))
+	for i := range items {
+		if items[i].kind == kInstr {
+			items[i].toks = expand(items[i].toks, defs, labels)
+		}
+	}
+	var slots []int
+	seen := map[int]bool{}
+	sp, spKnown := 0, true
+	for i, it := range items {
+		if it.kind != kInstr {
+			continue
+		}
+		if len(it.toks) == 2 && strings.EqualFold(it.toks[0], "pop") && spKnown {
+			reg := it.toks[1]
+			for k := i + 1; k < len(items) && k <= i+2; k++ {
+				n := items[k]
+				if n.kind != kInstr {
+					continue
+				}
+				if usesAsOperand(n.toks, reg) {
+					if s := sp - 1; s >= 0 && !seen[s] {
+						seen[s] = true
+						slots = append(slots, s)
+					}
+				}
+				break
+			}
+		}
+		updateSP(it.toks, &sp, &spKnown)
+	}
+	return slots
+}
+
+// usesAsOperand reports whether reg appears as an operand of the instruction
+// (anywhere but the opcode itself). A false positive only costs a hint.
+func usesAsOperand(toks []string, reg string) bool {
+	for i := 1; i < len(toks); i++ {
+		if strings.EqualFold(toks[i], reg) {
+			return true
+		}
+	}
+	return false
+}
+
 // updateSP advances the constant sp tracker through one instruction.
 func updateSP(toks []string, sp *int, known *bool) {
 	if len(toks) == 0 {

@@ -27,6 +27,13 @@ func StackFold(src string, ids map[int]int) (string, error) {
 	return minify.StackFold(src, ids)
 }
 
+// StackIDSlots reports the host-stack slots a program loads device ReferenceIds
+// from (the idiom StackFold rewrites), in read order. A tool can use it to tell
+// the user which --stack-id values would help before they look the ids up.
+func StackIDSlots(src string) []int {
+	return minify.StackIDSniff(src)
+}
+
 // ParseStackIDs parses `SLOT=REFID` arguments (as accepted by
 // `ic10c minify/decompile --stack-id`) into the map StackFold takes.
 func ParseStackIDs(args []string) (map[int]int, error) {
