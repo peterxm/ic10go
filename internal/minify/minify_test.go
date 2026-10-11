@@ -1,6 +1,8 @@
 package minify
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -86,5 +88,61 @@ func TestKeepsDefinesWhenInliningOverflows(t *testing.T) {
 		if len(ln) > MaxLineLen {
 			t.Errorf("line over limit (%d): %q", len(ln), ln)
 		}
+	}
+}
+
+// opcodes counts instruction mnemonics (first token, lowercased).
+func opcodes(src string) map[string]int {
+	m := map[string]int{}
+	for _, ln := range strings.Split(src, "\n") {
+		toks := strings.Fields(strings.TrimSpace(ln))
+		if len(toks) == 0 || strings.HasSuffix(toks[0], ":") || strings.HasPrefix(toks[0], "#") {
+			continue
+		}
+		m[strings.ToLower(toks[0])]++
+	}
+	return m
+}
+
+// TestMinifyKeepsEveryInstruction is the guard against a compression pass that
+// silently drops real code. With dead-code elimination off, minify may only drop
+// comments, blank lines and labels — so the opcode multiset of the corpus files
+// has to come back identical. (A branch target is renumbered, but the mnemonic
+// stays.) The stack-id fold's TestStackFoldDropsOnlyScaffolding is the same idea
+// for the other pass; an earlier revision of it ate a real program's tail.
+func TestMinifyKeepsEveryInstruction(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "testdata", "ic10", "*.ic"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Skip("no corpus files")
+	}
+	for _, f := range files {
+		t.Run(filepath.Base(f), func(t *testing.T) {
+			data, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := Minify(string(data), Options{DeadCode: false})
+			if err != nil {
+				t.Fatalf("minify: %v", err)
+			}
+			before, after := opcodes(string(data)), opcodes(out)
+			for _, op := range []string{"alias", "define"} {
+				delete(before, op) // dropped as lines (their symbols are inlined)
+				delete(after, op)
+			}
+			for op, n := range before {
+				if after[op] != n {
+					t.Errorf("%s: input has %d, output %d", op, n, after[op])
+				}
+			}
+			for op, n := range after {
+				if before[op] == 0 {
+					t.Errorf("%s: output invented %d", op, n)
+				}
+			}
+		})
 	}
 }

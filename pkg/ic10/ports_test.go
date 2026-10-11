@@ -89,6 +89,15 @@ func portSetupSeed(m *vm.Machine, seed int64) {
 
 // TestIc10CodePorts runs every hand-written port next to its original .ic
 // script and checks that they leave the devices in the same state.
+//
+// Naming convention: `X.icg` (or `.ic10`) next to `X.ic` (or `.ic10`) is taken
+// as "X is a port of the original and must behave the same in the VM". A file
+// that is a *translation* or *rewrite* rather than a port — for example the
+// `.icg` produced by `decompile`, or a hand rewrite of a program whose device
+// ids live in the host stack — must not use that pairing: name it something
+// else (e.g. `X.rewrite.icg`), or add it to knownUnsupportedPorts with a reason.
+// Otherwise the pair is compared and fails for reasons the harness cannot set
+// up (see 主气闸管理IC).
 func TestIc10CodePorts(t *testing.T) {
 	requireIc10Code(t)
 	ports := corpusFiles(t, ".icg")
