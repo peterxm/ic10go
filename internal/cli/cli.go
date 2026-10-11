@@ -620,7 +620,7 @@ var Commands = []Command{
 				"                            scan world devices (like lb/lbn) by name / prefab\n" +
 				"  pause [on|off]            pause / resume the game\n" +
 				"  runto --line N            step until the program reaches line N (editor \"run to cursor\")\n" +
-				"  setreg --reg r3=5         poke chip state (--reg r3=5 / --stack 4=9; sp/ra are read-only in game)\n" +
+				"  setreg --reg r3=5         poke chip state (--reg r3=5 / --reg sp=12 / --stack 4=9)\n" +
 				"  run <scenario.json>       run a scenario and assert expectations\n" +
 				"  watch                     stream live state events\n" +
 				"  saves                     list save folders\n" +
@@ -663,7 +663,7 @@ var Commands = []Command{
 				"                            按名字/预制体扫描世界设备（类似 lb/lbn）\n" +
 				"  pause [on|off]            暂停 / 恢复游戏\n" +
 				"  runto --line N            逐条执行直到程序走到第 N 行（编辑器「运行到光标」）\n" +
-				"  setreg --reg r3=5         就地改芯片状态（--reg r3=5 / --stack 4=9；sp/ra 游戏不开放写）\n" +
+				"  setreg --reg r3=5         就地改芯片状态（--reg r3=5 / --reg sp=12 / --stack 4=9）\n" +
 				"  run <scenario.json>       跑场景并断言期望值\n" +
 				"  watch                     持续推送实时状态事件\n" +
 				"  saves                     列出存档\n" +

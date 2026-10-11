@@ -96,7 +96,8 @@ VSCode（可选，`sh editors/vscode/install.sh` 后重载窗口）：左侧 **I
 | `Reset` | `public void` | 复位 |
 | `_Registers` | `private readonly double[]` | r0–r15 / sp / ra（反射读；`[16]` 是 sp） |
 | `_Stack` | `private readonly double[]` | 512 槽栈（反射读，或用 `ReadMemory`） |
-| `_StackPointerIndex` / `_ReturnAddressIndex` / `_executeIndex` | private int | sp / ra / PC（反射读） |
+| `_StackPointerIndex` / `_ReturnAddressIndex` | private int | sp / ra 在 `_Registers` 里的**下标**（默认 16 / 17；见文末那一节） |
+| `_executeIndex` | private int | 执行用 PC（反射读） |
 
 - 全集/单步：`Assets.Scripts.Objects.Electrical.CircuitHolders` 的 `AllCircuitHolders` / `Execute()`。
 - 主板：`ProgrammableChipMotherboard.InputFinished(string)` / `SetSourceCode` / `GetSourceCode`。
