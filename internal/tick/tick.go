@@ -1366,6 +1366,8 @@ func (r *Report) String() string {
 	}
 	if anyExceeds {
 		b.WriteString("  worst case: a loop between yields can exceed the budget, so the chip resumes mid-loop on the next tick.\n")
+		b.WriteString("  hint: if a loop writes the same devices every tick, one state-change check around the whole\n" +
+			"        block is far cheaper than guarding each write (see docs/tick-budget.md).\n")
 	}
 	return b.String()
 }
