@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"ic10go/internal/diag"
 	"ic10go/internal/vm"
 	"ic10go/pkg/ic10"
 )
@@ -1740,5 +1741,61 @@ func TestStringLogicType(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("a misspelled string logic type should suggest the fix: %v", diags.Diags)
+	}
+}
+
+// hasSetupHint reports whether the diagnostic bag carries the "consider
+// --extract-setup" warning.
+func hasSetupHint(diags *diag.Bag) bool {
+	for _, d := range diags.Diags {
+		if d.Code == "setup-extract" {
+			return true
+		}
+	}
+	return false
+}
+
+// TestSetupExtractHint: a program that is tight against a line limit but still
+// fits gets pointed at --extract-setup (with the measured saving), while a
+// program with room to spare, or one already compiled with the flag, stays quiet.
+func TestSetupExtractHint(t *testing.T) {
+	src := []byte("func main() {\n\td0.Mode = 1\n\td0.On = 1\n\td1.Mode = 2\n\td1.Lock = 1\n\tfor {\n\t\tyield()\n\t\td0.Setting = d1.Setting\n\t}\n}\n")
+
+	// 8 lines normally, 4 with the extraction: tight at a 10-line limit, but it
+	// still fits, so the compiler will not extract on its own.
+	_, diags, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{MaxLines: 10})
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if !hasSetupHint(diags) {
+		t.Errorf("want a setup-extract hint, got %v", diags.Diags)
+	}
+	// The hint must carry the numbers, not just the flag name.
+	found := false
+	for _, d := range diags.Diags {
+		if d.Code == "setup-extract" && strings.Contains(d.Msg, "cut the runtime to 4") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("hint should name the saving, got %v", diags.Diags)
+	}
+
+	// Already extracted: nothing left to suggest.
+	_, diags2, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{MaxLines: 10, ExtractSetup: true})
+	if err != nil {
+		t.Fatalf("compile --extract-setup: %v", err)
+	}
+	if hasSetupHint(diags2) {
+		t.Errorf("hint must not repeat when --extract-setup is on: %v", diags2.Diags)
+	}
+
+	// Room to spare: stay quiet.
+	_, diags3, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{MaxLines: 128})
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if hasSetupHint(diags3) {
+		t.Errorf("hint must not fire with room to spare: %v", diags3.Diags)
 	}
 }

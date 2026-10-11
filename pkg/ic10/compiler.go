@@ -392,6 +392,16 @@ func CompileWithOptions(name string, src []byte, opts Options) (string, *diag.Ba
 // constant settings) into Result.Loader. Device state persists, so the loader
 // only has to run once; the chip is then overwritten with the runtime.
 func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, error) {
+	res, diags, err := compileResult(name, src, opts)
+	if err == nil && diags != nil {
+		suggestSetup(name, src, opts, res, diags)
+	}
+	return res, diags, err
+}
+
+// compileResult is CompileResult without the "consider extracting the setup"
+// hint, so the hint itself can compile a variant without recursing.
+func compileResult(name string, src []byte, opts Options) (Result, *diag.Bag, error) {
 	opts = stackEnv(opts)
 	opts = applyFileStackPragmas(src, opts)
 	file := source.NewFile(name, src)
@@ -521,6 +531,40 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 // 128 instructions (tick.DefaultLimit), so such a run resumes mid-iteration on
 // the next tick; the warning points at the dominant loop's source line, or the
 // tick-body start when the report names no dominant loop (see `ic10c tick`).
+// suggestSetup warns when a program is close to a line limit and compiling with
+// ExtractSetup would shorten the runtime enough to be worth it. Extraction
+// changes the deployment contract -- the loader has to run once before the
+// runtime is uploaded -- so the compiler never chooses it here on its own; it
+// only points at it (the flag is `ic10c build --extract-setup`).
+func suggestSetup(name string, src []byte, opts Options, res Result, diags *diag.Bag) {
+	if res.Code == "" || len(res.Chips) > 1 || opts.ExtractSetup {
+		return
+	}
+	limits := opts.editorLimits()
+	lines := len(splitLines(res.Code))
+	// Only when the program is tight: a hint on a 30-line program is noise.
+	if limits.Lines <= 0 || lines*4 < limits.Lines*3 {
+		return
+	}
+	alt, altDiags, altErr := compileResult(name, src, withExtractSetup(opts))
+	if altErr != nil || altDiags == nil || altDiags.HasErrors() || !alt.Setup {
+		return
+	}
+	altLines := len(splitLines(alt.Code))
+	if lines-altLines < 3 {
+		return
+	}
+	diags.WarnfCode("setup-extract", source.Pos{File: name, Line: 1, Col: 1},
+		"%d of %d lines: --extract-setup would cut the runtime to %d by hoisting one-time device "+
+			"writes into a loader (run the loader once, then upload the runtime)", lines, limits.Lines, altLines)
+}
+
+// withExtractSetup turns on ExtractSetup without touching the caller's Options.
+func withExtractSetup(opts Options) Options {
+	opts.ExtractSetup = true
+	return opts
+}
+
 func warnTickBudget(name, code string, lineMap []int, diags *diag.Bag) {
 	if code == "" {
 		return
