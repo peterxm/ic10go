@@ -1,6 +1,7 @@
 package tick
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -276,5 +277,59 @@ func TestUnknownTripIsStillBounded(t *testing.T) {
 	}
 	if !rep.Segments[1].Exceeds {
 		t.Fatalf("self-loop segment should exceed (%s)", rep)
+	}
+}
+
+// TestDuplicateWrites covers the over-budget diagnostic: a target written twice
+// in one pass is reported, unless a read of that device happens in between (it
+// consumes the earlier write), and "once per loop iteration" is not a duplicate
+// (that is the group-guard case, not dead weight).
+func TestDuplicateWrites(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string // "target@L2,L3" for each expected finding, joined by ';'
+	}{
+		{"twice with no read", "yield\ns d0 On 1\ns d0 On 0\nj 1\n", "d0.On@L2,L3"},
+		{"a read in between", "yield\ns d0 On 1\nl r1 d0 Setting\ns d0 On 0\nj 1\n", ""},
+		{"once per iteration", "yield\ns d0 On 1\nj 1\n", ""},
+		{"different logic", "yield\ns d0 On 1\ns d0 Lock 0\nj 1\n", ""},
+		{"loop repeated twice per pass", "yield\ns d0 On 1\ns d0 On 0\nj 1\n", "d0.On@L2,L3"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rep, err := Analyze(c.src, 128)
+			if err != nil {
+				t.Fatalf("Analyze: %v", err)
+			}
+			var got []string
+			for _, s := range rep.Segments {
+				for _, d := range s.Duplicates {
+					locs := make([]string, len(d.Lines))
+					for i, ln := range d.Lines {
+						locs[i] = "L" + strconv.Itoa(ln+1)
+					}
+					got = append(got, d.Target+"@"+strings.Join(locs, ","))
+				}
+			}
+			if strings.Join(got, ";") != c.want {
+				t.Errorf("duplicates = %q, want %q", strings.Join(got, ";"), c.want)
+			}
+		})
+	}
+}
+
+// TestDuplicateWritesOnlyWhenExceeding checks the diagnostic stays quiet for a
+// segment that fits: it exists to explain an overrun, not to nag.
+func TestDuplicateWritesOnlyWhenExceeding(t *testing.T) {
+	// A straight-line program that fits, writing the same target twice.
+	rep, err := Analyze("yield\ns d0 On 1\ns d0 On 0\nyield\n", 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range rep.Segments {
+		if len(s.Duplicates) != 0 {
+			t.Errorf("segment %d fits but reported %v", s.Start, s.Duplicates)
+		}
 	}
 }

@@ -16,6 +16,7 @@ package tick
 
 import (
 	"fmt"
+	"ic10go/internal/builtin"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,6 +64,22 @@ type Segment struct {
 	Dominant       int   `json:"dominant,omitempty"`       // 0-based header of the loop that dominates this segment (-1 = none)
 	DominantSource int   `json:"dominantSource,omitempty"` // source line of Dominant
 	DominantCost   int   `json:"dominantCost,omitempty"`   // estimated instructions from that loop
+
+	// Duplicates lists device targets this segment writes twice within one pass
+	// over its worst-case path (one loop iteration when a loop dominates), with
+	// no read of that device in between. Only filled for segments that exceed
+	// the budget, where such a write is a merge candidate.
+	Duplicates []DupWrite `json:"duplicates,omitempty"`
+}
+
+// DupWrite is a device target written more than once in one pass. The
+// intermediate writes are invisible to the program (the last one wins), but the
+// device itself still sees them, so a deliberate pulse looks the same — merge
+// only when it is not intentional.
+type DupWrite struct {
+	Target string `json:"target"`           // e.g. d0.On, d1.Setting[3]
+	Lines  []int  `json:"lines"`            // IC10 lines that write it, in order
+	Source []int  `json:"source,omitempty"` // their source lines (with Options.LineMap)
 }
 
 // Loop is a natural loop found in the program (informational).
@@ -678,6 +695,16 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 			seg.SourcePath = make([]int, len(seg.Path))
 			for i, ln := range seg.Path {
 				seg.SourcePath[i] = srcOf(ln)
+			}
+		}
+		// A write that happens twice in one pass with nothing reading the device
+		// between is dead weight in a segment that already exceeds the budget.
+		if seg.Exceeds && len(seg.Path) > 0 {
+			seg.Duplicates = dupWrites(seg.Path, nodes, seg.Dominant)
+			for i := range seg.Duplicates {
+				for _, ln := range seg.Duplicates[i].Lines {
+					seg.Duplicates[i].Source = append(seg.Duplicates[i].Source, srcOf(ln))
+				}
 			}
 		}
 		rep.Segments = append(rep.Segments, seg)
@@ -1347,6 +1374,22 @@ func (r *Report) String() string {
 			fmt.Fprintf(&b, "  <- dominated by loop %s (~%d instr)", loc(s.Dominant, s.DominantSource), s.DominantCost)
 		}
 		b.WriteByte('\n')
+		for _, d := range s.Duplicates {
+			locs := make([]string, len(d.Lines))
+			for j, ln := range d.Lines {
+				src := 0
+				if j < len(d.Source) {
+					src = d.Source[j]
+				}
+				locs[j] = loc(ln, src)
+			}
+			fmt.Fprintf(&b, "    %s written %d× in one pass with no read between: %s\n",
+				d.Target, len(d.Lines), strings.Join(locs, ", "))
+		}
+		if len(s.Duplicates) > 0 {
+			b.WriteString("      (the program only sees the last one; the device still sees each — merge them if none is a\n" +
+				"       deliberate pulse, and prefer one state check around the whole block)\n")
+		}
 	}
 	for _, l := range r.Loops {
 		trips := "?"
@@ -1370,6 +1413,139 @@ func (r *Report) String() string {
 			"        block is far cheaper than guarding each write (see docs/tick-budget.md).\n")
 	}
 	return b.String()
+}
+
+// deviceOperand resolves a node's device operand: its name ("" when the
+// instruction has none), the write target when it is a device write, whether the
+// instruction writes, and whether the operand is one this analysis can name (a
+// register-held ReferenceId is not). The operand position comes from the game's
+// own signature table.
+func deviceOperand(n *node) (dev, key string, write, known bool) {
+	ins, ok := builtin.IC10Instructions[n.op]
+	if !ok {
+		return "", "", false, false
+	}
+	kinds := strings.Fields(ins.Sig)
+	idx := -1
+	for i, k := range kinds {
+		if strings.Contains(k, "DEVICE") {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 || idx >= len(n.args) {
+		return "", "", false, false
+	}
+	dev = n.args[idx]
+	known = isLiteralDevice(dev)
+	switch n.op {
+	case "s":
+		write = true
+		if len(n.args) > 1 {
+			key = dev + "." + n.args[1]
+		}
+	case "ss": // DEVICE VALUE SLOT_LOGIC_TYPE REGISTER
+		write = true
+		if len(n.args) > 2 {
+			key = dev + "." + n.args[2]
+		}
+	case "sb":
+		write = true
+		if len(n.args) > 1 {
+			key = dev + "." + n.args[1]
+		}
+	default:
+		key = dev // a read: the key is unused
+	}
+	if key == "" {
+		key = dev
+	}
+	return dev, key, write, known
+}
+
+// isLiteralDevice reports whether a device operand is a port (d0..d5, db) or a
+// bare ReferenceId, i.e. something the analysis can name. A register operand
+// (an id in rN, a port in drN) is not.
+func isLiteralDevice(s string) bool {
+	if s == "db" {
+		return true
+	}
+	if len(s) > 1 && s[0] == 'd' {
+		if _, err := strconv.Atoi(s[1:]); err == nil {
+			return true
+		}
+	}
+	_, err := strconv.Atoi(s)
+	return err == nil
+}
+
+// dupWrites reports device targets written twice within one pass over the
+// worst-case path with no read of that device in between. Passes are delimited
+// by visits to a loop header, so "once per iteration" is not reported (that is
+// the group-guard case, not a duplicate), and only the executed path is walked,
+// so the two arms of an if/else can never be mistaken for one.
+func dupWrites(path []int, nodes map[int]*node, header int) []DupWrite {
+	type target struct{ dev, key string }
+
+	// Split the path at each return to the dominant loop header: one iteration
+	// is one pass. (With no dominant loop the whole path is one pass.)
+	start := 0
+	passes := [][2]int{}
+	if header >= 0 {
+		for i, ln := range path {
+			if i > start && ln == header {
+				passes = append(passes, [2]int{start, i})
+				start = i
+			}
+		}
+	}
+	passes = append(passes, [2]int{start, len(path)})
+
+	seen := map[target]bool{}
+	var out []DupWrite
+	for _, p := range passes {
+		writes := map[target][]int{} // this pass's unredeemed writes, by target
+		live := map[target]bool{}
+		byDev := map[string][]target{}
+		for _, ln := range path[p[0]:p[1]] {
+			n := nodes[ln]
+			if n == nil {
+				continue
+			}
+			dev, key, isWrite, known := deviceOperand(n)
+			if dev == "" {
+				continue // no device operand
+			}
+			if !known {
+				// A device the analysis cannot name may alias any of them.
+				writes, live, byDev = map[target][]int{}, map[target]bool{}, map[string][]target{}
+				continue
+			}
+			if !isWrite {
+				// Reading the device consumes the writes before it: they are no
+				// longer dead.
+				for _, t := range byDev[dev] {
+					delete(writes, t)
+					delete(live, t)
+				}
+				delete(byDev, dev)
+				continue
+			}
+			t := target{dev, key}
+			writes[t] = append(writes[t], ln)
+			live[t] = true
+			byDev[dev] = append(byDev[dev], t)
+		}
+		for t, lns := range writes {
+			if len(lns) < 2 || seen[t] {
+				continue
+			}
+			seen[t] = true
+			out = append(out, DupWrite{Target: t.key, Lines: append([]int(nil), lns...)})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Target < out[j].Target })
+	return out
 }
 
 // loc renders an IC10 line, adding its source line when known.

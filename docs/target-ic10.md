@@ -149,6 +149,12 @@
 > `IncorrectLogicType`；手写 `<ref>:conn` 则被 `int.TryParse` 拒掉（`InvalidInteger`）。真机实测。
 > 芯片**自己**的网络是 `db:0`：`db.channel[0][0]` → `s db:0 Channel0`，跨芯片共享最省事。
 
+> **没有「变化才写」这类指令**：IC10 一次设备写只占 1 条指令，而任何「先判断再写」至少多花 1 条判断 ——
+> **逐条守卫是净亏**（写全被跳过也不省）。要「值没变就不写」，就让**一次判断包住一整块写**：
+> `.icg` 里在循环**外**声明 `prev`，块首 `if st != prev {`，块尾 `prev = st` —— 编译出来就是
+> `beq <st> <prev> <块尾>` + 整块 + `move <prev> <st>`，实测 avg 3.2 条/tick（同规模不守卫约 7 条）。
+> 实测表与两个反例见 [`tick-budget.md`](tick-budget.md)。（因此也没有 `changed(x)` / `edge(x)` 内建。）
+
 ### 4.3 分支
 
 | 条件 | 分支指令 |
