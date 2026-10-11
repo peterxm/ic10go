@@ -1801,9 +1801,11 @@ namespace Ic10Go.Testbench
 
         /// <summary>runTo executes one instruction at a time until the chip's
         /// LineNumber reaches `line`, so an editor can offer "run to cursor" in
-        /// a single round trip (the stepping happens host-side, which is also
-        /// what a client can do). It stops early on an error, or after `max`
-        /// instructions, so a program that never reaches the line still returns.</summary>
+        /// a single round trip instead of one round trip per instruction. It
+        /// stops early on an error, or after `max` instructions, so a program
+        /// that never reaches the line still returns. Like `trace`, this only
+        /// moves the chip where the tool can drive it: a multiplayer client does
+        /// not own the host's chip simulation, so stepping there does nothing.</summary>
         public static JObject RunTo(ChipHandle handle, int line, int max)
         {
             var chip = handle.Chip;

@@ -1863,9 +1863,10 @@ class Bench {
     // runToLine runs the chip forward until its PC reaches the source line under
     // the cursor. The line map is stored as IC10-line -> source-line, so invert
     // it to the IC10 line to stop at, then let the mod step there in one round
-    // trip (stepping instruction by instruction from here would be a round trip
-    // each, and a client cannot step the host's chip at all). Pauses first, like
-    // the step commands.
+    // trip (stepping one instruction at a time from here would cost a round trip
+    // each). It only moves a chip the tool can drive, so it does nothing useful
+    // from a multiplayer client, same as the other step commands. Pauses first,
+    // like them.
     async runToLine() {
         const ed = vscode.window.activeTextEditor;
         if (!ed) return;
