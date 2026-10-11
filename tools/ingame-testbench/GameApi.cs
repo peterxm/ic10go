@@ -1425,15 +1425,15 @@ namespace Ic10Go.Testbench
                 var r = new JObject();
                 if (regs != null)
                 {
-                    // _Registers[0..15] are r0..r15. The slots after them are NOT
-                    // sp/ra: verified in game, after `move sp 3` a `push` writes
-                    // stack[3] while _Registers[16] does not move, and `move r3 sp`
-                    // reads 3. sp/ra come from their own fields; report those only.
+                    // _Registers[0..15] are r0..r15; sp/ra live further along, at
+                    // the indices held in _StackPointerIndex / _ReturnAddressIndex
+                    // (16 and 17 by default), so read those slots.
                     int n = Math.Min(regs.Length, 16);
                     for (int i = 0; i < n; i++) r["r" + i] = Num(regs[i]);
+                    int spi = spField ?? 16, rai = raField ?? 17;
+                    if (spi >= 0 && spi < regs.Length) r["sp"] = Num(regs[spi]);
+                    if (rai >= 0 && rai < regs.Length) r["ra"] = Num(regs[rai]);
                 }
-                if (spField.HasValue) r["sp"] = spField.Value;
-                if (raField.HasValue) r["ra"] = raField.Value;
                 st["registers"] = r;
             }
 
@@ -1442,8 +1442,10 @@ namespace Ic10Go.Testbench
                 int size = 0;
                 try { size = chip.GetStackSize(); } catch { }
                 if (size <= 0 && FStack != null) { try { size = ((double[])FStack.GetValue(chip))?.Length ?? 0; } catch { } }
-                // sp is the field, not _Registers[16] (see the registers section).
-                int spv = spField ?? ((regs != null && regs.Length > 16) ? (int)regs[16] : 0);
+                // sp lives at _Registers[_StackPointerIndex] (see the registers
+                // section); fall back to 0 when neither is readable.
+                int spi = spField ?? 16;
+                int spv = (regs != null && spi >= 0 && spi < regs.Length) ? (int)regs[spi] : 0;
                 int limit = allStack ? size : Math.Min(size, Math.Max(spv + 4, 16));
                 double[] stack = null;
                 try { stack = FStack?.GetValue(chip) as double[]; } catch { }
@@ -1863,24 +1865,19 @@ namespace Ic10Go.Testbench
 
             if (low == "sp" || low == "ra")
             {
-                // sp / ra live in their own fields (_StackPointerIndex /
-                // _ReturnAddressIndex), NOT in _Registers[16]/[17] (verified in
-                // game: after `move sp 3`, `push` writes stack[3] while
-                // _Registers[16] does not move). Both fields are readonly
-                // (Private|InitOnly), so a write may be refused; say so rather
-                // than report a success the game never saw.
+                // sp / ra live inside _Registers, at the index the game keeps in
+                // _StackPointerIndex / _ReturnAddressIndex (16 / 17 by default).
+                // Write that slot -- never the index field itself: pointing it at
+                // a user register makes the interpreter read sp out of r<N>
+                // (measured: with the index at 5, `push` wrote stack[0] because
+                // sp came from r5).
                 var f = low == "sp" ? FSp : FRa;
-                bool written = false;
-                if (f != null)
-                {
-                    try { f.SetValue(chip, (int)value); } catch { }
-                    try { written = Convert.ToInt32(f.GetValue(chip)) == (int)value; } catch { }
-                }
-                if (!written)
-                    throw new BenchError("readonly-register",
-                        low + " is owned by the game (a readonly field); it cannot be set from outside. " +
-                        "Poke a stack slot instead (`stack`), or have the program `move " + low + " N`.");
-                return new JObject { ["reg"] = low, ["value"] = Num(value) };
+                int idx = -1;
+                if (f != null) { try { idx = Convert.ToInt32(f.GetValue(chip)); } catch { } }
+                if (idx < 0 || idx >= regs.Length)
+                    throw new BenchError("internal", "cannot locate " + low + " (index " + idx + ")");
+                regs[idx] = value;
+                return new JObject { ["reg"] = low, ["index"] = idx, ["value"] = Num(value) };
             }
 
             int slot = -1;

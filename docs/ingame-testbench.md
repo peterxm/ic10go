@@ -219,7 +219,7 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `run` | `{ticks:n, mode?:"step"|"realtime"}` | `{ticks, line}` |
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
 | `runTo` | `{line:int, max?:int}` | `{steps, line, reached, error?}`（逐条 `Execute(1)` 直到 `LineNumber == line`，`max` 默认 20000；编辑器「运行到光标」用，一次往返替代 N 次。**芯片出错时立即停**——错误态下 `Execute` 不推进、且重跑出错指令有副作用（实测 `pop` 下溢会一直改目标寄存器）；`reached:false` 表示没走到该行。与 `trace` 一样，**只有能驱动该芯片的一方**才有效） |
-| `setreg` | `{reg?:"r0".."r15"\|"sp"\|"ra", stack?:int, value:number}` | `{reg\|stack, value}`（暂停时就地改 `r0..r15` 或栈槽，程序下一条指令即可见）。**`sp`/`ra` 改不了**：它们住在 readonly 字段里，游戏拒绝外部写 → 报 `readonly-register` 错误（别指望；要动栈请 poke 栈槽，或让程序 `move sp N`） |
+| `setreg` | `{reg?:"r0".."r15"\|"sp"\|"ra", stack?:int, value:number}` | `{reg\|index?, stack?, value}`（暂停时就地改 `r0..r15`、`sp`/`ra` 或栈槽，程序下一条指令即可见）。`sp`/`ra` 写的是 `_Registers[下标]` 这个值槽（mod ≥ 0.5.10；**绝不能写 `_StackPointerIndex`/`_ReturnAddressIndex` 本身**，那会把 sp 挪到普通寄存器上） |
 | `ports` | `{chip?}` | diagnostic: `Devices[]`, ids, labels, lookups |
 | `reset` | `{}` | `{ok:true}` |
 | `pause` | `{on:bool}` | `{paused:bool, requested:bool}` — `paused` 是**实际**状态（见下） |
@@ -292,9 +292,8 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
   连接号含义随设备而定（IC 外壳 `0` = 数据口、`1` = 电源口）；通道**易失**——电缆网络增删改或退出
   世界都会清空。panel 的 DEVICES / NETWORK DEVICES 会按端口折叠出来，点击 / ⚡ 即可写（写路径同 `set`）。
 - 栈默认只回 `0..sp`（外加少量上下文），避免一次传 512 个值；`--all` 可要全量。
-- `registers` 里 `r0..r15` 来自 `_Registers[0..15]`；`sp`/`ra` 取自各自的私有字段
-  `_StackPointerIndex` / `_ReturnAddressIndex`。**`_Registers[16]/[17]` 不是 `sp`/`ra`** ——
-  见 §「`_Registers` 不是 `[r0..r15, sp, ra]`」。
+- `registers` 里 `r0..r15` 来自 `_Registers[0..15]`；`sp`/`ra` 来自 `_Registers[16]/[17]`，
+  而 16/17 是 `_StackPointerIndex` / `_ReturnAddressIndex` 的值（下标，见文末那一节）。
 
 ---
 
@@ -477,8 +476,8 @@ Activity Bar「IC10」
 
 - 顶栏：芯片名 + 连接圆点 + `Pause | Step | Run | Reset | Watch | Refresh`（`Pause` 在实时更新旁，暂停时变 `Resume` 并高亮；`Run` 显示 `icg.bench.runTicks`）。`Step` / `Run` 会先暂停世界，保证单步确定性。
 - 顶栏还有**过滤框**：按端口 / 设备名 / 预制体 / 逻辑名筛选设备卡片。
-- **Registers**：网格（r0–r15 / ra / sp），等宽数字；值变化时短暂高亮（绿色淡出）。**点 r0–r15 任一格可改值**（`setreg`；暂停下的芯片会保留），鼠标悬停有提示；`sp`/`ra` 不可改（readonly 字段，见文末「`_Registers` 不是 `[r0..r15, sp, ra]`」）。
-- **Watch（变量）**：把 `.icg` 源码变量显示成 `名字 = 值 (寄存器·类型)` —— IC10 里寄存器是**复用**的，只看 `r0..r15` 读不出哪个是哪个。数据来自编译器 `build --json` 的调试表 **`vars`**（每条源码行上活跃的用户变量 → 物理寄存器），随上传记录；溢出到栈的变量不列。重新打开窗口后映射会持久化，对**已经在跑**的程序按源码**指纹**自动补全（不必重推）。原始 IC10 没有变量，回退成解析程序里已有的 `alias NAME rN`。面板里是 `Watch` 表，树里是「变量」分组。**点一行即改该变量当前所在的寄存器值**（`setreg`），和寄存器/栈格同一套交互（`sp`/`ra` 行不可点：游戏不让外部写）。
+- **Registers**：网格（r0–r15 / ra / sp），等宽数字；值变化时短暂高亮（绿色淡出）。**点任一格可改值**（`setreg`；暂停下的芯片会保留），鼠标悬停有提示；`sp`/`ra` 写的是 `_Registers` 里对应的值槽（mod ≥ 0.5.10）。
+- **Watch（变量）**：把 `.icg` 源码变量显示成 `名字 = 值 (寄存器·类型)` —— IC10 里寄存器是**复用**的，只看 `r0..r15` 读不出哪个是哪个。数据来自编译器 `build --json` 的调试表 **`vars`**（每条源码行上活跃的用户变量 → 物理寄存器），随上传记录；溢出到栈的变量不列。重新打开窗口后映射会持久化，对**已经在跑**的程序按源码**指纹**自动补全（不必重推）。原始 IC10 没有变量，回退成解析程序里已有的 `alias NAME rN`。面板里是 `Watch` 表，树里是「变量」分组。**点一行即改该变量当前所在的寄存器值**（`setreg`），和寄存器/栈格同一套交互。
 - **Stack**：默认**折叠**（`<details>`），展开后显示全部 512 槽，`sp` 行加色条。**点槽位可改值**。
 - **Devices**：每个设备一张**可折叠卡片**（`db` + `d0..d5`，空端口灰显 `empty`），带绑定标签与该设备的 logic 数量；展开看全部 logic，避免 `db` 那种几十条一次铺开。点击树里的 logic 可改输入；**面板里 logic 行同样可点击改值，行末 `⚡` 脉冲（写 0 再写 1）**。
 - **Network Devices**：`d0..d5` 下方列出**当前选中芯片的数据网络**上的设备（mod 的 `net`，即 `lb`/`lbn` 视角，**接不接端口都能看/改**）。每台一张可折叠卡片，显示完整 logic + 槽位（`Occupied`/`Quantity`/`Class`/…）；点击值可改、行末 `⚡` 脉冲，与端口设备同一套交互（多人客户端下写入自动走主机权威路径）。在左边树里切换芯片会一并刷新。
@@ -597,10 +596,9 @@ Activity Bar「IC10」
   由物理旋钮/按键决定，写入不报错但读回不变。测试输入请用 **Logic Memory**（`Setting` r/w，
   已真机验证）、**Logic Switch**，或芯片间 **bus 通道**（见 `testdata/bench/link.icg`）。
   LED 等输出设备的 `Setting` 写入正常。`set --force` 可跳过 `CanLogicWrite` 校验。
-- `state.registers` 里 `r0..r15` 来自 `_Registers[0..15]`；`sp`/`ra` 来自私有字段
-  `_StackPointerIndex` / `_ReturnAddressIndex`。**`_Registers[16]/[17]` 不是 `sp`/`ra`**
-  —— 2026-10-12 真机判别：`move sp 3` 之后 `push` 写入的是 `stack[3]`、`move r3 sp` 读到 3，
-  而 `_Registers[16]` 全程不动（旧结论反了，见文末那一节）。
+- `state.registers` 里 `r0..r15` 来自 `_Registers[0..15]`；`sp`/`ra` 来自
+  `_Registers[_StackPointerIndex]` / `[_ReturnAddressIndex]`（默认下标 16/17）。2026-10-12 真机复核
+  确认了下标模型，也确认了「不能写下标字段」这个坑（见文末那一节）。
 - **设备 host**（如空调）：程序用 `db` 控制宿主本身。`state` 会列出 `db` 设备；`set db.On=1`
   等生效。给设备 host 推送带 `data` 表的程序要用 `--data-access stack`。
 - **暂停/恢复**走游戏自己的 `InputSourceCode.PauseGameToggle(bool)`（社区 IC10 编辑器同款），
@@ -668,26 +666,30 @@ IC10 解释器把每行**编译成 `ProgrammableChip+_Operation` 的子类**，�
 全部实现挂 Harmony 前缀，只能看到**游戏自身**的写（传感器等 tick 时被写），**看不到芯片的写**。
 要看芯片的写，用 `trace`（逐条 `Execute(1)` + PC + 寄存器）在宿主机还原。
 
-### `_Registers` **不是** `[r0..r15, sp, ra]`（旧结论已推翻，2026-10-12）
+### sp / ra 在 `_Registers` 里，位置由下标字段给出（2026-10-12 复核）
 
-`_Registers[0..15]` 是 `r0..r15`；但它后面那两格 **不是** `sp`/`ra`。真机判别（本地测试存档，
-暂停下逐条 `trace`）：
+`_Registers[0..15]` 是 `r0..r15`。**sp / ra 也在 `_Registers` 里**，但位置由另两个私有字段
+`_StackPointerIndex` / `_ReturnAddressIndex` 给出 —— 它们是**下标**（默认 `16` / `17`），不是指针值：
 
-| 步骤 | `_Registers[16]` | 效果 |
+> 游戏里的 sp = `_Registers[_StackPointerIndex]`，ra = `_Registers[_ReturnAddressIndex]`
+
+判别（本地测试存档，**每步核对 `paused=true`**，逐条 `trace`；早期几次没核对暂停，被芯片自行执行
+污染，那些结论已作废）：
+
+| 设置 | 观察 | 结论 |
 |---|---|---|
-| `setreg sp=3`（mod 写 `_Registers[16]`） | 3 | 之后 `push 77` 仍写在 **`stack[0]`** |
-| 程序 `move sp 3` 后 `push 5` | 不变 | 写在 **`stack[3]`** ✓ |
-| 程序 `move r3 sp` | 不变 | `r3 = 3` ✓ |
+| 下标 = 5，同时 `r5 = 42`；程序 `push 7` | 7 写进 **`stack[42]`** | sp 取自 `_Registers[5]` → **下标模型成立** |
+| 下标 = 16（默认），`_Registers[16]` = 0 | `push` 写 `stack[0]` | 一致 |
+| 程序 `move sp 3` 后 `push 5` | 写 `stack[3]` | 程序改的也是同一个槽 |
 
-即：游戏的栈指针是私有字段 **`_StackPointerIndex`**（`push`/`pop` 用它，`Reset()` 会清零，
-程序可用 `move sp N` 改），`_ReturnAddressIndex` 同理是 `ra`。`_Registers[16]/[17]` 与它们无关，
-**别拿其中任何一个去解析操作数**（旧的「解码 `put db sp …` 必须用 `_Registers[16]`」说法是错的）。
+**坑（重要）**：不要写 `_StackPointerIndex` / `_ReturnAddressIndex` 本身。把下标改成 5，sp 就变成
+「r5 的值」，程序随后的 `push` 会写到 `stack[42]` —— 等于把栈挪到一个普通寄存器上。0.5.8 的
+`setreg sp/ra` 正是这么写的（静默，还顺手写了 `_Registers[16]`），0.5.9 改成"写下标 + 读回验证"
+（更糟：验证通过但游戏读的是别的槽）。**0.5.10 起写 `_Registers[下标]` 这个值槽**，
+`state.registers.sp/ra` 按同一模型读。
 
-更关键的是这两个字段是 **`readonly`**（IL 里 `Private|InitOnly`），反射 `SetValue` 在 Mono 上会被
-拒绝 —— 所以 mod 的 `setreg --reg sp=N` **改不动游戏的 sp**（0.5.9 起改为明确报
-`readonly-register` 错误，不再假装成功）。要动栈就 poke **栈槽**（`--stack i=V`：`_Stack` 是游戏真正
-使用的那份数组，已验证 —— 写进去的值程序读得到），或让程序自己 `move sp N`。`r0..r15` 与栈槽的
-poke 都真机验证过生效（`add r6 r7 1` 在 `setreg r7=100` 后算出 101）。
+> 一个仍未解释的点：同一状态下程序 `move r6 sp` 读到 `0` 而不是指针值（`push` 的落点才是权威证据）。
+> 所以**别拿 `move rX sp` 当探针**；`move sp N` 看起来是有效的，但也没再单独验证。
 
 ### `state` 只能读端口设备；按 id 的设备用 `device`
 `state` 的设备来自 `GetLogicBindings()` / `Devices[]`（芯片的 `db` + `d0..d5`）。按

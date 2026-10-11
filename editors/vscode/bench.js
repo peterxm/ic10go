@@ -479,9 +479,8 @@ class BenchTree {
             item.tooltip = `${v.name} = ${v.value}  [${v.reg}${v.type ? ' · ' + v.type : ''}]`;
             item.iconPath = new vscode.ThemeIcon('symbol-variable');
             // Clicking a watched variable changes it in place (the mod's
-            // `setreg`): the fastest way to steer a paused chip by hand. sp/ra
-            // are readonly in the game, so they are not offered.
-            if (v.reg && /^r\d+$/.test(v.reg)) {
+            // `setreg`): the fastest way to steer a paused chip by hand.
+            if (v.reg) {
                 item.tooltip += '\n' + t('click to change the value', '点击修改该值');
                 item.command = { command: 'icg.bench.setValue', title: t('Change value', '修改值'), arguments: [{ reg: v.reg, value: v.value, name: v.name }] };
             }
@@ -500,13 +499,8 @@ class BenchTree {
             item.description = String(r[k]);
             item.iconPath = new vscode.ThemeIcon(k === 'sp' ? 'arrow-both' : k === 'ra' ? 'reply' : 'symbol-number');
             if (k === 'sp' || k === 'ra') item.iconPath = new vscode.ThemeIcon('symbol-constant', new vscode.ThemeColor('charts.orange'));
-            item.tooltip = `${k} = ${r[k]}`;
-            // Only r0..r15 can be poked: sp/ra are readonly fields owned by the
-            // game, so offering an edit there would just error out.
-            if (k !== 'sp' && k !== 'ra') {
-                item.tooltip += '\n' + t('click to change the value', '点击修改该值');
-                item.command = { command: 'icg.bench.setValue', title: t('Change value', '修改值'), arguments: [{ reg: k, value: r[k] }] };
-            }
+            item.tooltip = `${k} = ${r[k]}\n` + t('click to change the value', '点击修改该值');
+            item.command = { command: 'icg.bench.setValue', title: t('Change value', '修改值'), arguments: [{ reg: k, value: r[k] }] };
             out.push(item);
         }
         return out;
