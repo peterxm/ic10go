@@ -468,6 +468,11 @@ func (d *decompiler) deviceIDArg(devArg string) (string, bool) {
 	if isReg(dev) || isIndirect(dev) {
 		return d.operand(dev), true
 	}
+	// A bare number is a ReferenceId too: ports are always written d0..d5 / db,
+	// so `l r0 704 Setting` addresses the device with ReferenceId 704.
+	if n, err := strconv.Atoi(dev); err == nil && n > 0 {
+		return dev, true
+	}
 	return "", false
 }
 

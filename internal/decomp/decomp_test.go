@@ -531,3 +531,24 @@ func TestDecompileComputedCallUnsupported(t *testing.T) {
 		}
 	}
 }
+
+// TestDecompileNumericDeviceID checks that a bare number as a device operand is
+// read back as a ReferenceId: IC10 ports are always written d0..d5 / db, so a
+// number means readById/writeById, not the invalid `704.Setting`.
+func TestDecompileNumericDeviceID(t *testing.T) {
+	code, warns, err := Decompile("l r0 704 Setting\ns 704 On 1\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	for _, want := range []string{"readById(704, LogicType.Setting)", "writeById(704, LogicType.On, 1)"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("output missing %q:\n%s", want, code)
+		}
+	}
+	if strings.Contains(code, "704.") {
+		t.Errorf("a bare ReferenceId must not be rendered as a port:\n%s", code)
+	}
+}

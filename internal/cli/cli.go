@@ -374,13 +374,17 @@ var Commands = []Command{
 		},
 	},
 	{
-		Name: "minify", Args: "[--keep-defines] [--keep-labels] [--no-dead-code] [-w|-o out] <file.ic>",
+		Name: "minify", Args: "[--stack-id SLOT=REFID ...] [--keep-defines] [--keep-labels] [--no-dead-code] [-w|-o out] <file.ic>",
 		Summary: text{EN: "shrink an IC10 script's line count", ZH: "压缩 IC10 脚本的行数"},
 		Long: text{
 			EN: "Rewrite an existing IC10 program with fewer lines while preserving\n" +
 				"its behaviour: comments and blank lines are dropped, alias/define\n" +
 				"symbols are inlined, labels are converted to absolute line numbers\n" +
 				"and unreachable instructions are removed.\n\n" +
+				"With --stack-id SLOT=REFID (repeatable) the \"device ReferenceId in\n" +
+				"the host stack\" idiom (`move sp N` / `pop rM`) is replaced by the\n" +
+				"literal id, so the id-loading scaffolding disappears; the ids are\n" +
+				"runtime data, so they have to be supplied.\n\n" +
 				"Use --keep-defines/--keep-labels to retain those lines and\n" +
 				"--no-dead-code to keep unreachable code.\n\n" +
 				"Unlike decompile+build, minify keeps the original instructions,\n" +
@@ -390,6 +394,9 @@ var Commands = []Command{
 				"  ic10c decompile -s -o out.icg <file.ic> && ic10c build out.icg",
 			ZH: "在保持行为不变的前提下，用更少的行重写现有 IC10 程序：删除注释与\n" +
 				"空行、内联 alias/define 符号、把标签改写为绝对行号、删除不可达指令。\n\n" +
+				"--stack-id SLOT=REFID（可重复）把「设备 ReferenceId 存在宿主栈里」\n" +
+				"（`move sp N` / `pop rM`）折成字面 id，取 id 的脚手架随之消失；id 是\n" +
+				"运行期数据，所以要人工提供。\n\n" +
 				"--keep-defines/--keep-labels 保留对应行；--no-dead-code 保留不可达代码。\n\n" +
 				"与 decompile+build 不同，minify 不改动原指令、寄存器分配和设备读写\n" +
 				"顺序，因此是安全的变换。若想同时重新优化并以 .icg 维护，请用：\n" +
@@ -543,18 +550,23 @@ var Commands = []Command{
 		Examples: []string{"ic10c disasm old.ic"},
 	},
 	{
-		Name: "decompile", Args: "[-s] [-o out.icg] <file.ic>",
+		Name: "decompile", Args: "[-s] [--stack-id SLOT=REFID ...] [-o out.icg] <file.ic>",
 		Summary: text{EN: "translate IC10 into .icg source", ZH: "将 IC10 反编译为 .icg 源码"},
 		Long: text{
 			EN: "Translate an IC10 program into .icg source. Aliases and defines\n" +
 				"are substituted, registers become variables r0..r15, and control\n" +
 				"flow becomes label/goto/call/ret. Unsupported instructions are\n" +
 				"reported on stderr and emitted as comments.\n\n" +
+				"With --stack-id SLOT=REFID (repeatable) the \"device ReferenceId in\n" +
+				"the host stack\" idiom (`move sp N` / `pop rM`) is replaced by the\n" +
+				"literal id, so the id-loading scaffolding disappears.\n\n" +
 				"With --structured the decompiler recovers if/else/for using the\n" +
 				"post-dominator tree, and falls back to goto where it cannot.\n\n" +
 				"To only shrink the line count while keeping the original\n" +
 				"instructions and register usage, use `ic10c minify` instead.",
-			ZH: "将 IC10 程序翻译为 .icg 源码。alias 与 define 会被替换，寄存器变为\n" +
+			ZH: "--stack-id SLOT=REFID（可重复）把「设备 ReferenceId 存在宿主栈里」\n" +
+				"（`move sp N` / `pop rM`）折成字面 id，取 id 的脚手架随之消失。\n\n" +
+				"将 IC10 程序翻译为 .icg 源码。alias 与 define 会被替换，寄存器变为\n" +
 				"变量 r0..r15，控制流变为 label/goto/call/ret。不支持的指令会在\n" +
 				"stderr 报告，并在源码中作为注释保留。\n\n" +
 				"加 --structured 时用后支配树还原 if/else/for；无法还原的部分回退为 goto。\n\n" +

@@ -60,6 +60,7 @@ var knownUnsupportedPorts = map[string]string{
 	"sorterSample":   "source uses an undefined `hash` register (invalid IC10)",
 	"solverLarge":    "over the 128-line budget and publishes to the housing stack without `shared-stack`",
 	"solverLargeRAW": "over the 128-line budget and publishes to the housing stack without `shared-stack`",
+	"主气闸管理IC":        "keeps its device ReferenceIds in the host stack; the harness does not preset the stack, so the original has nothing to compare",
 }
 
 // skipKnownUnsupported skips a corpus file listed in knownUnsupported.

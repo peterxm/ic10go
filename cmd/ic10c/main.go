@@ -993,8 +993,14 @@ func cmdMinify(args []string) int {
 	write := false
 	outFile := ""
 	var file string
+	var stackIDs []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "--stack-id":
+			if i+1 < len(args) {
+				stackIDs = append(stackIDs, args[i+1])
+				i++
+			}
 		case "--keep-defines":
 			opt.KeepDefines = true
 		case "--keep-labels":
@@ -1031,6 +1037,10 @@ func cmdMinify(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
+	if data, err = foldStackIDs(data, stackIDs); err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 2
+	}
 	out, err := minify.Minify(string(data), opt)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
@@ -1051,6 +1061,22 @@ func cmdMinify(args []string) int {
 		fmt.Print(out)
 	}
 	return 0
+}
+
+// foldStackIDs applies any `--stack-id SLOT=REFID` folds to a program's source.
+// The ids of devices a program keeps in the host stack are runtime data, so a
+// human has to supply them; with them the `move sp / pop` scaffolding collapses
+// into literal ids before minify/decompile run.
+func foldStackIDs(data []byte, args []string) ([]byte, error) {
+	ids, err := ic10.ParseStackIDs(args)
+	if err != nil || len(ids) == 0 {
+		return data, err
+	}
+	out, err := ic10.StackFold(string(data), ids)
+	if err != nil {
+		return data, err
+	}
+	return []byte(out), nil
 }
 
 // cmdTick reports the worst-case number of IC10 instructions executed between
@@ -1723,6 +1749,7 @@ func cmdDisasm(args []string) int {
 func cmdDecompile(args []string) int {
 	in, out := "", ""
 	structured := false
+	var stackIDs []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "-o", "--output":
@@ -1732,6 +1759,11 @@ func cmdDecompile(args []string) int {
 			}
 		case "-s", "--structured":
 			structured = true
+		case "--stack-id":
+			if i+1 < len(args) {
+				stackIDs = append(stackIDs, args[i+1])
+				i++
+			}
 		default:
 			in = args[i]
 		}
@@ -1744,6 +1776,10 @@ func cmdDecompile(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
+	}
+	if data, err = foldStackIDs(data, stackIDs); err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 2
 	}
 	code, warns, err := ic10.Decompile(in, data, structured)
 	if err != nil {
