@@ -215,6 +215,10 @@ func cmdTestbench(args []string) int {
 		return benchNet(addr, chip, asJSON)
 	case "pause":
 		return benchPause(addr, rest, asJSON)
+	case "runto":
+		return benchRunTo(addr, chip, rest, asJSON)
+	case "setreg":
+		return benchSetReg(addr, chip, rest, asJSON)
 	case "run":
 		var file string
 		if len(rest) > 0 {
@@ -832,6 +836,125 @@ func printChipLocation(ch testbench.Chip) {
 	if ch.Pos != nil {
 		fmt.Printf("     at (%s)\n", ch.Pos.String())
 	}
+}
+
+// benchRunTo steps instruction by instruction until the chip reaches a line
+// (`--line N`), so "run to cursor" is a single round trip. `--max N` caps how
+// many instructions run (default 20000).
+func benchRunTo(addr string, chip any, rest []string, asJSON bool) int {
+	line, max := -1, 20000
+	for i := 0; i < len(rest); i++ {
+		switch rest[i] {
+		case "--line":
+			if i+1 < len(rest) {
+				i++
+				line, _ = strconv.Atoi(rest[i])
+			}
+		case "--max":
+			if i+1 < len(rest) {
+				i++
+				max, _ = strconv.Atoi(rest[i])
+			}
+		default:
+			if n, err := strconv.Atoi(rest[i]); err == nil {
+				line = n
+			}
+		}
+	}
+	if line < 0 {
+		fmt.Fprintln(os.Stderr, "ic10c: usage: ic10c testbench runto --line N [--max N]")
+		return 2
+	}
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	res, err := c.RunTo(line, max, chip)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	if asJSON {
+		return printJSON(res)
+	}
+	fmt.Printf("ran %d instructions, line=%v\n", res.Steps, res.Line)
+	return 0
+}
+
+// pokeSpec is one `setreg` request: a register name or a stack slot, plus value.
+type pokeSpec struct {
+	reg   string
+	stack int
+	value float64
+}
+
+// benchSetReg pokes chip state while the world is paused: `--reg r3=5`,
+// `--reg sp=12`, `--stack 4=9`. It is what the watch panel's "change value" uses.
+// A client is not authoritative over the host's chip, so only local runs count.
+func benchSetReg(addr string, chip any, rest []string, asJSON bool) int {
+	var pokes []pokeSpec
+	for i := 0; i < len(rest); i++ {
+		kind := rest[i]
+		if kind != "--reg" && kind != "--stack" {
+			continue
+		}
+		if i+1 >= len(rest) {
+			fmt.Fprintf(os.Stderr, "ic10c: %s needs NAME=VALUE\n", kind)
+			return 2
+		}
+		i++
+		eq := strings.IndexByte(rest[i], '=')
+		if eq <= 0 || eq == len(rest[i])-1 {
+			fmt.Fprintf(os.Stderr, "ic10c: bad %s %q (want NAME=VALUE)\n", kind, rest[i])
+			return 2
+		}
+		name := rest[i][:eq]
+		v, err := strconv.ParseFloat(rest[i][eq+1:], 64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ic10c: bad value in %q\n", rest[i])
+			return 2
+		}
+		p := pokeSpec{reg: name, stack: -1, value: v}
+		if kind == "--stack" {
+			n, err := strconv.Atoi(name)
+			if err != nil || n < 0 {
+				fmt.Fprintf(os.Stderr, "ic10c: bad stack slot %q\n", name)
+				return 2
+			}
+			p.stack = n
+		}
+		pokes = append(pokes, p)
+	}
+	if len(pokes) == 0 {
+		fmt.Fprintln(os.Stderr, "ic10c: usage: ic10c testbench setreg --reg r3=5 | --stack 4=9")
+		return 2
+	}
+	c, rc := benchDial(addr)
+	if c == nil {
+		return rc
+	}
+	defer c.Close()
+	applied := 0
+	for _, p := range pokes {
+		res, err := c.SetReg(p.reg, p.stack, p.value, chip)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		applied++
+		if !asJSON {
+			if res.Stack != nil {
+				fmt.Printf("stack[%d] = %v\n", *res.Stack, res.Value)
+			} else {
+				fmt.Printf("%s = %v\n", res.Reg, res.Value)
+			}
+		}
+	}
+	if asJSON {
+		return printJSON(map[string]any{"applied": applied})
+	}
+	return 0
 }
 
 func benchStep(addr string, chip any, ticks int, asJSON bool) int {

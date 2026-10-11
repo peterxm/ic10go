@@ -1799,6 +1799,73 @@ namespace Ic10Go.Testbench
             return o;
         }
 
+        /// <summary>runTo executes one instruction at a time until the chip's
+        /// LineNumber reaches `line`, so an editor can offer "run to cursor" in
+        /// a single round trip (the stepping happens host-side, which is also
+        /// what a client can do). It stops early on an error, or after `max`
+        /// instructions, so a program that never reaches the line still returns.</summary>
+        public static JObject RunTo(ChipHandle handle, int line, int max)
+        {
+            var chip = handle.Chip;
+            if (chip == null) throw new BenchError("no-chip", "selected holder is not a ProgrammableChip");
+            if (max < 1) max = 1;
+            if (max > 100000) max = 100000;
+
+            int steps = 0;
+            for (int i = 0; i < max; i++)
+            {
+                int pc;
+                try { pc = (int)chip.LineNumber; } catch { break; }
+                if (pc == line) break;
+                try { chip.Execute(1); } catch { break; }
+                steps++;
+            }
+            var o = new JObject { ["steps"] = steps };
+            try { o["line"] = chip.LineNumber; } catch { }
+            var err = ErrorOf(chip);
+            if (err != null) o["error"] = err;
+            return o;
+        }
+
+        /// <summary>setreg pokes a chip register (r0..r15, sp, ra) or a stack
+        /// slot while the world is paused, so a watch panel can change a value
+        /// in place. Note that a client's write only reaches the host's chip if
+        /// the host runs the same program; the host is otherwise authoritative.</summary>
+        public static JObject SetReg(ChipHandle handle, JToken reg, JToken stack, double value)
+        {
+            var chip = handle.Chip;
+            if (chip == null) throw new BenchError("no-chip", "selected holder is not a ProgrammableChip");
+
+            if (stack != null && stack.Type != JTokenType.Null)
+            {
+                int idx = (int)stack;
+                var arr = FStack?.GetValue(chip) as double[];
+                if (arr == null) throw new BenchError("internal", "chip has no stack array");
+                if (idx < 0 || idx >= arr.Length) throw new BenchError("bad-request", "stack slot " + idx + " is out of range");
+                arr[idx] = value;
+                return new JObject { ["stack"] = idx, ["value"] = Num(value) };
+            }
+
+            var regs = ReadRegisters(chip);
+            if (regs == null) throw new BenchError("internal", "cannot read the chip registers");
+            string name = (reg == null || reg.Type == JTokenType.Null) ? "" : ((string)reg).Trim();
+            string low = name.ToLowerInvariant();
+            int slot = -1;
+            if (low == "sp") slot = 16;
+            else if (low == "ra") slot = 17;
+            else if (low.Length >= 2 && low[0] == 'r' && int.TryParse(low.Substring(1), out slot) && slot >= 0 && slot <= 15)
+            {
+            }
+            else throw new BenchError("bad-request", "unknown register " + name + " (want r0..r15, sp or ra)");
+            if (slot >= regs.Length) throw new BenchError("bad-request", "register " + name + " is not in the chip register file");
+            regs[slot] = value;
+            // sp/ra are mirrored in their own fields; keep both in step so the
+            // next instruction sees the change.
+            try { if (slot == 16 && FSp != null) FSp.SetValue(chip, (int)value); } catch { }
+            try { if (slot == 17 && FRa != null) FRa.SetValue(chip, (int)value); } catch { }
+            return new JObject { ["reg"] = low, ["value"] = Num(value) };
+        }
+
         private static int? IntField(FieldInfo f, object o)
         {
             if (f == null) return null;

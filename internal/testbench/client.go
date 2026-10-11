@@ -504,6 +504,55 @@ type TraceHit struct {
 	Regs []float64 `json:"regs"`
 }
 
+// RunTo steps the chip one instruction at a time until it reaches a line (the
+// mod's `runTo`), which is how the editor offers "run to cursor" in one round
+// trip. max caps the instruction count, so a program that never reaches the line
+// still returns.
+func (c *Client) RunTo(line, max int, chip any) (*RunToResult, error) {
+	args := map[string]any{"line": line, "max": max}
+	if chip != nil {
+		args["chip"] = chip
+	}
+	var res RunToResult
+	if err := c.CallInto("runTo", args, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// RunToResult is the result of runTo.
+type RunToResult struct {
+	Steps int     `json:"steps"`
+	Line  float64 `json:"line"`
+}
+
+// SetReg pokes a chip register or stack slot while the world is paused, so a
+// watch panel can change a value in place. Pass a register name ("r0".."r15",
+// "sp", "ra") or a stack slot (stack >= 0).
+func (c *Client) SetReg(reg string, stack int, value float64, chip any) (*SetRegResult, error) {
+	args := map[string]any{"value": value}
+	if stack >= 0 {
+		args["stack"] = stack
+	} else {
+		args["reg"] = reg
+	}
+	if chip != nil {
+		args["chip"] = chip
+	}
+	var res SetRegResult
+	if err := c.CallInto("setreg", args, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// SetRegResult is the result of setreg.
+type SetRegResult struct {
+	Reg   string  `json:"reg"`
+	Stack *int    `json:"stack"`
+	Value float64 `json:"value"`
+}
+
 // State fetches a chip state snapshot. include lists the sections to return
 // (nil = all); all requests the whole stack.
 func (c *Client) State(include []string, all bool, chip any) (*State, error) {

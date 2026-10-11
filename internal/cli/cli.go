@@ -589,7 +589,7 @@ var Commands = []Command{
 		},
 	},
 	{
-		Name: "testbench", Args: "ping|list|players|locate|hud|push|state|program|set|stackids|step|trace|ports|pause|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
+		Name: "testbench", Args: "ping|list|players|locate|hud|push|state|program|set|stackids|step|trace|ports|pause|runto|setreg|run|watch|saves|load|world [--addr H:P] [--chip NAME] [--json]",
 		Summary: text{EN: "drive the in-game testbench mod", ZH: "驱动游戏内测试台 mod"},
 		Long: text{
 			EN: "Talk to the ic10go-testbench mod running in Stationeers over NDJSON/TCP\n" +
@@ -619,6 +619,8 @@ var Commands = []Command{
 				"  find [--name F] [--prefab P]\n" +
 				"                            scan world devices (like lb/lbn) by name / prefab\n" +
 				"  pause [on|off]            pause / resume the game\n" +
+				"  runto --line N            step until the program reaches line N (editor \"run to cursor\")\n" +
+				"  setreg --reg r3=5         poke chip state (--reg r3=5 / --reg sp=12 / --stack 4=9)\n" +
 				"  run <scenario.json>       run a scenario and assert expectations\n" +
 				"  watch                     stream live state events\n" +
 				"  saves                     list save folders\n" +
@@ -660,6 +662,8 @@ var Commands = []Command{
 				"  find [--name F] [--prefab P]\n" +
 				"                            按名字/预制体扫描世界设备（类似 lb/lbn）\n" +
 				"  pause [on|off]            暂停 / 恢复游戏\n" +
+				"  runto --line N            逐条执行直到程序走到第 N 行（编辑器「运行到光标」）\n" +
+				"  setreg --reg r3=5         就地改芯片状态（--reg r3=5 / --reg sp=12 / --stack 4=9）\n" +
 				"  run <scenario.json>       跑场景并断言期望值\n" +
 				"  watch                     持续推送实时状态事件\n" +
 				"  saves                     列出存档\n" +

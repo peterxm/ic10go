@@ -49,6 +49,8 @@ namespace Ic10Go.Testbench
                 case "program": return ProgramCmd(args);
                 case "writes": return Writes(args);
                 case "run": return Run(args);
+                case "runTo": return RunTo(args);
+                case "setreg": return SetReg(args);
                 case "reset": return Reset(args);
                 case "pause": return PauseCmd(args, plugin);
                 case "watch": return Watch(args);
@@ -149,6 +151,25 @@ namespace Ic10Go.Testbench
             int ticks = args["ticks"] != null ? (int)args["ticks"] : 1;
             var h = ResolveChip(args["chip"]);
             return GameApi.Run(h, ticks);
+        }
+
+        /// <summary>runTo {line, max?} steps instruction by instruction until the
+        /// chip reaches `line` (0-based), the "run to cursor" primitive.</summary>
+        private static JObject RunTo(JObject args)
+        {
+            int line = args["line"] != null ? (int)args["line"] : 0;
+            int max = args["max"] != null ? (int)args["max"] : 20000;
+            var h = ResolveChip(args["chip"]);
+            return GameApi.RunTo(h, line, max);
+        }
+
+        /// <summary>setreg {reg|stack, value} pokes a register or stack slot.</summary>
+        private static JObject SetReg(JObject args)
+        {
+            if (args["value"] == null) throw new BenchError("bad-request", "setreg needs \"value\"");
+            double value = (double)args["value"];
+            var h = ResolveChip(args["chip"]);
+            return GameApi.SetReg(h, args["reg"], args["stack"], value);
         }
 
         private static JObject PauseCmd(JObject args, TestbenchPlugin plugin)
