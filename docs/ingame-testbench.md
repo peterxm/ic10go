@@ -218,6 +218,8 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `players` | `{}` | `[{name, self, online, body?, trackable?, dist?, pos?{x,y,z}}]`（来自 `Brain.PlayerBrains`，含**离线**玩家；`body:true` = 尸体袋，`trackable` = 世界里能找到实体可被 HUD 追踪；排序：**你 → 在线 → 离线(角色在) → 尸体袋 → 无实体**，同组按名字，再按距离） |
 | `run` | `{ticks:n, mode?:"step"|"realtime"}` | `{ticks, line}` |
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
+| `runTo` | `{line:int, max?:int}` | `{steps, line, error?}`（逐条 `Execute(1)` 直到 `LineNumber == line`，`max` 默认 20000；编辑器「运行到光标」用，客户端也能用因为单步发生在宿主侧） |
+| `setreg` | `{reg?:"r0".."r15"\|"sp"\|"ra", stack?:int, value:number}` | `{reg\|stack, value}`（暂停时就地改寄存器/栈槽；`sp`/`ra` 会同时写回它们各自的字段，下一条指令即可见） |
 | `ports` | `{chip?}` | diagnostic: `Devices[]`, ids, labels, lookups |
 | `reset` | `{}` | `{ok:true}` |
 | `pause` | `{on:bool}` | `{paused:bool, requested:bool}` — `paused` 是**实际**状态（见下） |
@@ -451,6 +453,8 @@ Activity Bar「IC10」
 | `icg.bench.step` | IC10: Step One Tick | 视图标题、面板按钮、执行行 CodeLens / 行号旁 ▶、`F10`（先暂停） |
 | `icg.bench.stepIns` | IC10: Step One Instruction | 执行行 CodeLens / 行号旁 ▶、`F11`（mod 的 `trace`，逐条 `Execute(1)`） |
 | `icg.bench.runTicks` | IC10: Run Ticks | 视图标题、面板按钮（先暂停；tick 数见 `icg.bench.runTicks`） |
+| `icg.bench.runToLine` | IC10: Run to Cursor | `Ctrl+F10`、编辑器右键（把光标所在源码行经 `lineMap` 反查成 IC10 行 → mod `runTo` 一次往返跑到那儿；先暂停；客户端也能用，因为单步在宿主侧；文档没有行映射时提示先上传/拉取） |
+| `icg.bench.setValue` | IC10: Change Watch Value | 点击树/面板里的变量、寄存器或栈槽（弹输入框 → mod `setreg` 就地改值，暂停下的芯片会保留） |
 | `icg.bench.reset` | IC10: Reset Chip | 视图标题、面板按钮 |
 | `icg.bench.ports` | IC10: Show Port Wiring | 视图标题（`ports` 诊断 → 接线表） |
 | `icg.bench.writes` | IC10: Show Device Writes | 视图标题（`writes` trace → 写序列表；清空 + 单步 = 单 tick 写入；设为基线可比差异） |
@@ -466,15 +470,15 @@ Activity Bar「IC10」
 | `icg.bench.devices` | IC10: Find Devices | 视图标题 / 面板（`find` → 设备表） |
 | `icg.bench.queryIds` | IC10: Look up ReferenceIds in File | 视图标题 / 面板（扫描当前 `.icg` 里 `readById`/`writeById` 用到的 ReferenceId） |
 
-> 编辑器键位（`.icg` / `.ic10` 内）：**`F11`** 单步 1 指令、**`F10`** 单步 1 tick、**`F5`** 运行 N tick、**`F6`** 暂停/恢复。`Run` / `Step` 的步进数见 `icg.bench.runTicks`。
+> 编辑器键位（`.icg` / `.ic10` 内）：**`F11`** 单步 1 指令、**`F10`** 单步 1 tick、**`F5`** 运行 N tick、**`F6`** 暂停/恢复、**`Ctrl+F10`** 运行到光标。`Run` / `Step` 的步进数见 `icg.bench.runTicks`。
 
 ### 7.3 Webview「Chip State」面板
 
 - 顶栏：芯片名 + 连接圆点 + `Pause | Step | Run | Reset | Watch | Refresh`（`Pause` 在实时更新旁，暂停时变 `Resume` 并高亮；`Run` 显示 `icg.bench.runTicks`）。`Step` / `Run` 会先暂停世界，保证单步确定性。
 - 顶栏还有**过滤框**：按端口 / 设备名 / 预制体 / 逻辑名筛选设备卡片。
-- **Registers**：网格（r0–r15 / ra / sp），等宽数字；值变化时短暂高亮（绿色淡出）。
-- **Watch（变量）**：把 `.icg` 源码变量显示成 `名字 = 值 (寄存器·类型)` —— IC10 里寄存器是**复用**的，只看 `r0..r15` 读不出哪个是哪个。数据来自编译器 `build --json` 的调试表 **`vars`**（每条源码行上活跃的用户变量 → 物理寄存器），随上传记录；溢出到栈的变量不列。重新打开窗口后映射会持久化，对**已经在跑**的程序按源码**指纹**自动补全（不必重推）。原始 IC10 没有变量，回退成解析程序里已有的 `alias NAME rN`。面板里是 `Watch` 表，树里是「变量」分组。
-- **Stack**：默认**折叠**（`<details>`），展开后显示全部 512 槽，`sp` 行加色条。
+- **Registers**：网格（r0–r15 / ra / sp），等宽数字；值变化时短暂高亮（绿色淡出）。**点任意格可改值**（`setreg`；暂停下的芯片会保留），鼠标悬停有提示。
+- **Watch（变量）**：把 `.icg` 源码变量显示成 `名字 = 值 (寄存器·类型)` —— IC10 里寄存器是**复用**的，只看 `r0..r15` 读不出哪个是哪个。数据来自编译器 `build --json` 的调试表 **`vars`**（每条源码行上活跃的用户变量 → 物理寄存器），随上传记录；溢出到栈的变量不列。重新打开窗口后映射会持久化，对**已经在跑**的程序按源码**指纹**自动补全（不必重推）。原始 IC10 没有变量，回退成解析程序里已有的 `alias NAME rN`。面板里是 `Watch` 表，树里是「变量」分组。**点一行即改该变量当前所在的寄存器值**（`setreg`），和寄存器/栈格同一套交互。
+- **Stack**：默认**折叠**（`<details>`），展开后显示全部 512 槽，`sp` 行加色条。**点槽位可改值**。
 - **Devices**：每个设备一张**可折叠卡片**（`db` + `d0..d5`，空端口灰显 `empty`），带绑定标签与该设备的 logic 数量；展开看全部 logic，避免 `db` 那种几十条一次铺开。点击树里的 logic 可改输入；**面板里 logic 行同样可点击改值，行末 `⚡` 脉冲（写 0 再写 1）**。
 - **Network Devices**：`d0..d5` 下方列出**当前选中芯片的数据网络**上的设备（mod 的 `net`，即 `lb`/`lbn` 视角，**接不接端口都能看/改**）。每台一张可折叠卡片，显示完整 logic + 槽位（`Occupied`/`Quantity`/`Class`/…）；点击值可改、行末 `⚡` 脉冲，与端口设备同一套交互（多人客户端下写入自动走主机权威路径）。在左边树里切换芯片会一并刷新。
 - **通道**：`IConnected` 设备（如 Logic Memory）每个**数据连接**折叠出一组「通道」——8 个 `Channel0..7`，同一根电缆上共享。行可点击改值、行末 `⚡` 脉冲；写路径同 `set`（端口设备用 `dN:<conn>`，网络设备用 `id:<ref>:<conn>`，见 §4.2 注）。客户端写通道会返回 `needs-host`（§1.3）。
@@ -533,6 +537,7 @@ Activity Bar「IC10」
 | **M5 增强** | 暂停下单步（`Execute`）、`pause`、`world.*`（列存档/载入/autoload） | ✅ |
 | **M6 待办** | 多芯片场景文件（一个 scenario 驱动多块芯片）、场景自动 spawn | ⏳ |
 | **M7 多人** | 客户端权威写入（交互 / `ISetable`）、芯片代码同步上传、`net`/`find`/`device` 与面板 Network Devices | ✅ 专用服务器验证 |
+| **M8 调试体验** | `runTo`（运行到光标，宿主侧逐条，客户端可用）、`setreg`（暂停下就地改变量/寄存器/栈值）；`stackids`（把宿主栈里的设备 id 按名字解析成 `--stack-id`） | ✅ 已实现，待真机复验（mod 0.5.8 / 扩展 0.7.69） |
 
 ---
 
