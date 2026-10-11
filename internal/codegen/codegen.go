@@ -77,6 +77,10 @@ func relativeJump(text string, off int) (string, string, bool) {
 // allocator had to spill (the allocator then uses one fewer register).
 const spillScratch = "r15"
 
+// maxPortIndex is the highest IC10 port index (d0..d5); a larger number is a
+// device ReferenceId.
+const maxPortIndex = 5
+
 type line struct {
 	text   string
 	target *ir.Block
@@ -1503,9 +1507,15 @@ func dynDev(dev string, ptr ir.Value, colors map[*ir.Reg]int) string {
 	if r, ok := ptr.(*ir.Reg); ok {
 		return "d" + regName(r, colors)
 	}
-	// A constant port index folds to the fixed port name (d0..d5).
+	// A constant device operand folds to a fixed port name (d0..d5) when it is a
+	// port index. A larger constant is a ReferenceId — IC10 writes those as a
+	// bare number, exactly what readById/writeById emit — so emitting `d<id>`
+	// here would address a port that does not exist.
 	if c, ok := ptr.(*ir.Const); ok && c.Raw == "" && c.Special == "" {
-		return "d" + strconv.Itoa(int(c.V))
+		if n := int(c.V); c.V == float64(n) && n >= 0 && n <= maxPortIndex {
+			return "d" + strconv.Itoa(n)
+		}
+		return valueText(c, colors)
 	}
 	return dev
 }

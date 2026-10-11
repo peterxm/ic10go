@@ -2959,6 +2959,13 @@ func (l *lowerer) deviceLogic(e ast.Expr) ir.Value {
 			return &ir.Const{Raw: sel.Sel.Name}
 		}
 	}
+	// A string literal names the logic type too, matching the `batch.*` form
+	// (`batch.write(prefab, "On", v)`); it is validated at compile time and
+	// emitted verbatim, exactly like `LogicType.On`.
+	if s, ok := e.(*ast.StringLit); ok {
+		l.checkLogic(s.Pos(), s.Value)
+		return &ir.Const{Raw: s.Value}
+	}
 	return l.dynamicLogic(e)
 }
 

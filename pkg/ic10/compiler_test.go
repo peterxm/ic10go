@@ -1696,3 +1696,49 @@ func main() {
 		t.Fatalf("the reachable shared-stack store was dropped:\n%s", res.Code)
 	}
 }
+
+// TestConstDeviceOperand checks that a constant device operand is a port only in
+// the d0..d5 range. A larger constant is a device ReferenceId, which IC10 writes
+// as a bare number (what readById/writeById emit too) — emitting `d<id>` would
+// address a port that does not exist and fail at runtime.
+func TestConstDeviceOperand(t *testing.T) {
+	src := []byte("const p = 3\nconst id = 1550107\nfunc main() {\n\tp.On = 1\n\tid.Open = 1\n\tx := readById(id, LogicType.Open)\n\td0.Setting = x\n}\n")
+	code, diags, err := ic10.Compile("t.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("compile: diags=%v err=%v", diags.Diags, err)
+	}
+	for _, want := range []string{"s d3 On 1", "s 1550107 Open 1", "l r0 1550107 Open"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("output missing %q:\n%s", want, code)
+		}
+	}
+	if strings.Contains(code, "d1550107") {
+		t.Errorf("a ReferenceId must not be emitted as a port:\n%s", code)
+	}
+}
+
+// TestStringLogicType checks that a string literal names a logic type the same
+// way `LogicType.On` does, matching the `batch.*` form. The name is validated at
+// compile time (a typo warns with a suggestion) and emitted verbatim.
+func TestStringLogicType(t *testing.T) {
+	src := []byte("func main() {\n\tv := readById(1550107, \"Open\")\n\twriteById(1550107, \"Setting\", v)\n\td0.Setting = v\n}\n")
+	code, diags, err := ic10.Compile("t.icg", src)
+	if diags.HasErrors() || err != nil {
+		t.Fatalf("compile: diags=%v err=%v", diags.Diags, err)
+	}
+	for _, want := range []string{"l r0 1550107 Open", "s 1550107 Setting r0"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("output missing %q:\n%s", want, code)
+		}
+	}
+	_, diags, _ = ic10.Compile("t.icg", []byte("func main() {\n\tv := readById(1550107, \"Seting\")\n\td0.Setting = v\n}\n"))
+	found := false
+	for _, d := range diags.Diags {
+		if strings.Contains(d.Msg, "did you mean") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("a misspelled string logic type should suggest the fix: %v", diags.Diags)
+	}
+}
