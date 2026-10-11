@@ -1374,7 +1374,8 @@ namespace Ic10Go.Testbench
             return false;
         }
 
-        /// <summary>The chip's _Registers array (r0..r15, sp, ra), or null.</summary>
+        /// <summary>The chip's _Registers array (r0..r15, then two slots that
+        /// are not sp/ra; sp/ra live in FSp/FRa), or null.</summary>
         public static double[] ReadRegisters(ProgrammableChip chip)
         {
             try { return FRegs?.GetValue(chip) as double[]; } catch { return null; }
@@ -1424,15 +1425,15 @@ namespace Ic10Go.Testbench
                 var r = new JObject();
                 if (regs != null)
                 {
-                    for (int i = 0; i < regs.Length; i++)
-                    {
-                        // _Registers is [r0..r15, sp, ra].
-                        string key = i < 16 ? "r" + i : (i == 16 ? "sp" : i == 17 ? "ra" : "r" + i);
-                        r[key] = Num(regs[i]);
-                    }
+                    // _Registers[0..15] are r0..r15. The slots after them are NOT
+                    // sp/ra: verified in game, after `move sp 3` a `push` writes
+                    // stack[3] while _Registers[16] does not move, and `move r3 sp`
+                    // reads 3. sp/ra come from their own fields; report those only.
+                    int n = Math.Min(regs.Length, 16);
+                    for (int i = 0; i < n; i++) r["r" + i] = Num(regs[i]);
                 }
-                if (r["ra"] == null && raField.HasValue) r["ra"] = raField.Value;
-                if (r["sp"] == null && spField.HasValue) r["sp"] = spField.Value;
+                if (spField.HasValue) r["sp"] = spField.Value;
+                if (raField.HasValue) r["ra"] = raField.Value;
                 st["registers"] = r;
             }
 
@@ -1441,7 +1442,8 @@ namespace Ic10Go.Testbench
                 int size = 0;
                 try { size = chip.GetStackSize(); } catch { }
                 if (size <= 0 && FStack != null) { try { size = ((double[])FStack.GetValue(chip))?.Length ?? 0; } catch { } }
-                int spv = (regs != null && regs.Length > 16) ? (int)regs[16] : (spField ?? 0);
+                // sp is the field, not _Registers[16] (see the registers section).
+                int spv = spField ?? ((regs != null && regs.Length > 16) ? (int)regs[16] : 0);
                 int limit = allStack ? size : Math.Min(size, Math.Max(spv + 4, 16));
                 double[] stack = null;
                 try { stack = FStack?.GetValue(chip) as double[]; } catch { }
@@ -1819,11 +1821,17 @@ namespace Ic10Go.Testbench
                 int pc;
                 try { pc = (int)chip.LineNumber; } catch { break; }
                 if (pc == line) break;
+                // An errored chip stops advancing, and re-running the faulting
+                // instruction has side effects (measured: a StackUnderFlow on
+                // `pop` kept decrementing the target register), so stop instead
+                // of burning the whole budget.
+                if (ErrorOf(chip) != null) break;
                 try { chip.Execute(1); } catch { break; }
                 steps++;
             }
-            var o = new JObject { ["steps"] = steps };
-            try { o["line"] = chip.LineNumber; } catch { }
+            int final = -1;
+            try { final = (int)chip.LineNumber; } catch { }
+            var o = new JObject { ["steps"] = steps, ["line"] = final, ["reached"] = final == line };
             var err = ErrorOf(chip);
             if (err != null) o["error"] = err;
             return o;
@@ -1852,20 +1860,38 @@ namespace Ic10Go.Testbench
             if (regs == null) throw new BenchError("internal", "cannot read the chip registers");
             string name = (reg == null || reg.Type == JTokenType.Null) ? "" : ((string)reg).Trim();
             string low = name.ToLowerInvariant();
-            int slot = -1;
-            if (low == "sp") slot = 16;
-            else if (low == "ra") slot = 17;
-            else if (low.Length >= 2 && low[0] == 'r' && int.TryParse(low.Substring(1), out slot) && slot >= 0 && slot <= 15)
+
+            if (low == "sp" || low == "ra")
             {
+                // sp / ra live in their own fields (_StackPointerIndex /
+                // _ReturnAddressIndex), NOT in _Registers[16]/[17] (verified in
+                // game: after `move sp 3`, `push` writes stack[3] while
+                // _Registers[16] does not move). Both fields are readonly
+                // (Private|InitOnly), so a write may be refused; say so rather
+                // than report a success the game never saw.
+                var f = low == "sp" ? FSp : FRa;
+                bool written = false;
+                if (f != null)
+                {
+                    try { f.SetValue(chip, (int)value); } catch { }
+                    try { written = Convert.ToInt32(f.GetValue(chip)) == (int)value; } catch { }
+                }
+                if (!written)
+                    throw new BenchError("readonly-register",
+                        low + " is owned by the game (a readonly field); it cannot be set from outside. " +
+                        "Poke a stack slot instead (`stack`), or have the program `move " + low + " N`.");
+                return new JObject { ["reg"] = low, ["value"] = Num(value) };
             }
-            else throw new BenchError("bad-request", "unknown register " + name + " (want r0..r15, sp or ra)");
-            if (slot >= regs.Length) throw new BenchError("bad-request", "register " + name + " is not in the chip register file");
-            regs[slot] = value;
-            // sp/ra are mirrored in their own fields; keep both in step so the
-            // next instruction sees the change.
-            try { if (slot == 16 && FSp != null) FSp.SetValue(chip, (int)value); } catch { }
-            try { if (slot == 17 && FRa != null) FRa.SetValue(chip, (int)value); } catch { }
-            return new JObject { ["reg"] = low, ["value"] = Num(value) };
+
+            int slot = -1;
+            if (low.Length >= 2 && low[0] == 'r' && int.TryParse(low.Substring(1), out slot) && slot >= 0 && slot <= 15)
+            {
+                if (slot >= regs.Length)
+                    throw new BenchError("bad-request", "register " + name + " is not in the chip register file");
+                regs[slot] = value;
+                return new JObject { ["reg"] = low, ["value"] = Num(value) };
+            }
+            throw new BenchError("bad-request", "unknown register " + name + " (want r0..r15, sp or ra)");
         }
 
         private static int? IntField(FieldInfo f, object o)

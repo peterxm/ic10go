@@ -218,8 +218,8 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `players` | `{}` | `[{name, self, online, body?, trackable?, dist?, pos?{x,y,z}}]`（来自 `Brain.PlayerBrains`，含**离线**玩家；`body:true` = 尸体袋，`trackable` = 世界里能找到实体可被 HUD 追踪；排序：**你 → 在线 → 离线(角色在) → 尸体袋 → 无实体**，同组按名字，再按距离） |
 | `run` | `{ticks:n, mode?:"step"|"realtime"}` | `{ticks, line}` |
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
-| `runTo` | `{line:int, max?:int}` | `{steps, line, error?}`（逐条 `Execute(1)` 直到 `LineNumber == line`，`max` 默认 20000；编辑器「运行到光标」用，一次往返替代 N 次。与 `trace` 一样，**只有能驱动该芯片的一方**（单人 / 房主）才有效，多人在客户端上驱动不了宿主芯片） |
-| `setreg` | `{reg?:"r0".."r15"\|"sp"\|"ra", stack?:int, value:number}` | `{reg\|stack, value}`（暂停时就地改寄存器/栈槽；`sp`/`ra` 会同时写回它们各自的字段，下一条指令即可见） |
+| `runTo` | `{line:int, max?:int}` | `{steps, line, reached, error?}`（逐条 `Execute(1)` 直到 `LineNumber == line`，`max` 默认 20000；编辑器「运行到光标」用，一次往返替代 N 次。**芯片出错时立即停**——错误态下 `Execute` 不推进、且重跑出错指令有副作用（实测 `pop` 下溢会一直改目标寄存器）；`reached:false` 表示没走到该行。与 `trace` 一样，**只有能驱动该芯片的一方**才有效） |
+| `setreg` | `{reg?:"r0".."r15"\|"sp"\|"ra", stack?:int, value:number}` | `{reg\|stack, value}`（暂停时就地改 `r0..r15` 或栈槽，程序下一条指令即可见）。**`sp`/`ra` 改不了**：它们住在 readonly 字段里，游戏拒绝外部写 → 报 `readonly-register` 错误（别指望；要动栈请 poke 栈槽，或让程序 `move sp N`） |
 | `ports` | `{chip?}` | diagnostic: `Devices[]`, ids, labels, lookups |
 | `reset` | `{}` | `{ok:true}` |
 | `pause` | `{on:bool}` | `{paused:bool, requested:bool}` — `paused` 是**实际**状态（见下） |
@@ -292,8 +292,9 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
   连接号含义随设备而定（IC 外壳 `0` = 数据口、`1` = 电源口）；通道**易失**——电缆网络增删改或退出
   世界都会清空。panel 的 DEVICES / NETWORK DEVICES 会按端口折叠出来，点击 / ⚡ 即可写（写路径同 `set`）。
 - 栈默认只回 `0..sp`（外加少量上下文），避免一次传 512 个值；`--all` 可要全量。
-- `registers` 里 `r0..r15` 来自 `_Registers[0..15]`，`sp`/`ra` 是 `_Registers[16]`/`[17]`
-  （数组长度不足时回退到 `_StackPointerIndex`/`_ReturnAddressIndex`）。
+- `registers` 里 `r0..r15` 来自 `_Registers[0..15]`；`sp`/`ra` 取自各自的私有字段
+  `_StackPointerIndex` / `_ReturnAddressIndex`。**`_Registers[16]/[17]` 不是 `sp`/`ra`** ——
+  见 §「`_Registers` 不是 `[r0..r15, sp, ra]`」。
 
 ---
 
@@ -476,8 +477,8 @@ Activity Bar「IC10」
 
 - 顶栏：芯片名 + 连接圆点 + `Pause | Step | Run | Reset | Watch | Refresh`（`Pause` 在实时更新旁，暂停时变 `Resume` 并高亮；`Run` 显示 `icg.bench.runTicks`）。`Step` / `Run` 会先暂停世界，保证单步确定性。
 - 顶栏还有**过滤框**：按端口 / 设备名 / 预制体 / 逻辑名筛选设备卡片。
-- **Registers**：网格（r0–r15 / ra / sp），等宽数字；值变化时短暂高亮（绿色淡出）。**点任意格可改值**（`setreg`；暂停下的芯片会保留），鼠标悬停有提示。
-- **Watch（变量）**：把 `.icg` 源码变量显示成 `名字 = 值 (寄存器·类型)` —— IC10 里寄存器是**复用**的，只看 `r0..r15` 读不出哪个是哪个。数据来自编译器 `build --json` 的调试表 **`vars`**（每条源码行上活跃的用户变量 → 物理寄存器），随上传记录；溢出到栈的变量不列。重新打开窗口后映射会持久化，对**已经在跑**的程序按源码**指纹**自动补全（不必重推）。原始 IC10 没有变量，回退成解析程序里已有的 `alias NAME rN`。面板里是 `Watch` 表，树里是「变量」分组。**点一行即改该变量当前所在的寄存器值**（`setreg`），和寄存器/栈格同一套交互。
+- **Registers**：网格（r0–r15 / ra / sp），等宽数字；值变化时短暂高亮（绿色淡出）。**点 r0–r15 任一格可改值**（`setreg`；暂停下的芯片会保留），鼠标悬停有提示；`sp`/`ra` 不可改（readonly 字段，见文末「`_Registers` 不是 `[r0..r15, sp, ra]`」）。
+- **Watch（变量）**：把 `.icg` 源码变量显示成 `名字 = 值 (寄存器·类型)` —— IC10 里寄存器是**复用**的，只看 `r0..r15` 读不出哪个是哪个。数据来自编译器 `build --json` 的调试表 **`vars`**（每条源码行上活跃的用户变量 → 物理寄存器），随上传记录；溢出到栈的变量不列。重新打开窗口后映射会持久化，对**已经在跑**的程序按源码**指纹**自动补全（不必重推）。原始 IC10 没有变量，回退成解析程序里已有的 `alias NAME rN`。面板里是 `Watch` 表，树里是「变量」分组。**点一行即改该变量当前所在的寄存器值**（`setreg`），和寄存器/栈格同一套交互（`sp`/`ra` 行不可点：游戏不让外部写）。
 - **Stack**：默认**折叠**（`<details>`），展开后显示全部 512 槽，`sp` 行加色条。**点槽位可改值**。
 - **Devices**：每个设备一张**可折叠卡片**（`db` + `d0..d5`，空端口灰显 `empty`），带绑定标签与该设备的 logic 数量；展开看全部 logic，避免 `db` 那种几十条一次铺开。点击树里的 logic 可改输入；**面板里 logic 行同样可点击改值，行末 `⚡` 脉冲（写 0 再写 1）**。
 - **Network Devices**：`d0..d5` 下方列出**当前选中芯片的数据网络**上的设备（mod 的 `net`，即 `lb`/`lbn` 视角，**接不接端口都能看/改**）。每台一张可折叠卡片，显示完整 logic + 槽位（`Occupied`/`Quantity`/`Class`/…）；点击值可改、行末 `⚡` 脉冲，与端口设备同一套交互（多人客户端下写入自动走主机权威路径）。在左边树里切换芯片会一并刷新。
@@ -596,9 +597,10 @@ Activity Bar「IC10」
   由物理旋钮/按键决定，写入不报错但读回不变。测试输入请用 **Logic Memory**（`Setting` r/w，
   已真机验证）、**Logic Switch**，或芯片间 **bus 通道**（见 `testdata/bench/link.icg`）。
   LED 等输出设备的 `Setting` 写入正常。`set --force` 可跳过 `CanLogicWrite` 校验。
-- `state.registers` 里 `r0..r15` 来自 `_Registers[0..15]`；`sp`/`ra` 是 `_Registers[16]/[17]`
-  （真机上 `_Registers` 长度 18；`_Registers[16]` 就是 IC10 `sp`——早先误当成 `ra`，
-  已修正；数组不完整时才回退到 `_StackPointerIndex`/`_ReturnAddressIndex`）。
+- `state.registers` 里 `r0..r15` 来自 `_Registers[0..15]`；`sp`/`ra` 来自私有字段
+  `_StackPointerIndex` / `_ReturnAddressIndex`。**`_Registers[16]/[17]` 不是 `sp`/`ra`**
+  —— 2026-10-12 真机判别：`move sp 3` 之后 `push` 写入的是 `stack[3]`、`move r3 sp` 读到 3，
+  而 `_Registers[16]` 全程不动（旧结论反了，见文末那一节）。
 - **设备 host**（如空调）：程序用 `db` 控制宿主本身。`state` 会列出 `db` 设备；`set db.On=1`
   等生效。给设备 host 推送带 `data` 表的程序要用 `--data-access stack`。
 - **暂停/恢复**走游戏自己的 `InputSourceCode.PauseGameToggle(bool)`（社区 IC10 编辑器同款），
@@ -666,10 +668,26 @@ IC10 解释器把每行**编译成 `ProgrammableChip+_Operation` 的子类**，�
 全部实现挂 Harmony 前缀，只能看到**游戏自身**的写（传感器等 tick 时被写），**看不到芯片的写**。
 要看芯片的写，用 `trace`（逐条 `Execute(1)` + PC + 寄存器）在宿主机还原。
 
-### `_Registers` 是 `[r0..r15, sp, ra]`
-`_Registers[16]` 是 **`sp`**、`[17]` 是 `ra`。`_StackPointerIndex` / `_ReturnAddressIndex`
-**不是** IC10 的 `sp`/`ra`（实测恒为小常数），别拿来解析操作数。解码 `put db sp …` 时必须用
-`_Registers[16]`，否则地址全错。
+### `_Registers` **不是** `[r0..r15, sp, ra]`（旧结论已推翻，2026-10-12）
+
+`_Registers[0..15]` 是 `r0..r15`；但它后面那两格 **不是** `sp`/`ra`。真机判别（本地测试存档，
+暂停下逐条 `trace`）：
+
+| 步骤 | `_Registers[16]` | 效果 |
+|---|---|---|
+| `setreg sp=3`（mod 写 `_Registers[16]`） | 3 | 之后 `push 77` 仍写在 **`stack[0]`** |
+| 程序 `move sp 3` 后 `push 5` | 不变 | 写在 **`stack[3]`** ✓ |
+| 程序 `move r3 sp` | 不变 | `r3 = 3` ✓ |
+
+即：游戏的栈指针是私有字段 **`_StackPointerIndex`**（`push`/`pop` 用它，`Reset()` 会清零，
+程序可用 `move sp N` 改），`_ReturnAddressIndex` 同理是 `ra`。`_Registers[16]/[17]` 与它们无关，
+**别拿其中任何一个去解析操作数**（旧的「解码 `put db sp …` 必须用 `_Registers[16]`」说法是错的）。
+
+更关键的是这两个字段是 **`readonly`**（IL 里 `Private|InitOnly`），反射 `SetValue` 在 Mono 上会被
+拒绝 —— 所以 mod 的 `setreg --reg sp=N` **改不动游戏的 sp**（0.5.9 起改为明确报
+`readonly-register` 错误，不再假装成功）。要动栈就 poke **栈槽**（`--stack i=V`：`_Stack` 是游戏真正
+使用的那份数组，已验证 —— 写进去的值程序读得到），或让程序自己 `move sp N`。`r0..r15` 与栈槽的
+poke 都真机验证过生效（`add r6 r7 1` 在 `setreg r7=100` 后算出 101）。
 
 ### `state` 只能读端口设备；按 id 的设备用 `device`
 `state` 的设备来自 `GetLogicBindings()` / `Devices[]`（芯片的 `db` + `d0..d5`）。按

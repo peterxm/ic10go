@@ -878,6 +878,10 @@ func benchRunTo(addr string, chip any, rest []string, asJSON bool) int {
 	if asJSON {
 		return printJSON(res)
 	}
+	if !res.Reached {
+		fmt.Fprintf(os.Stderr, "ic10c: warning: the chip did not reach line %d (stopped at %v after %d instructions; it may be in an error state or loop past the line)\n",
+			line, res.Line, res.Steps)
+	}
 	fmt.Printf("ran %d instructions, line=%v\n", res.Steps, res.Line)
 	return 0
 }
