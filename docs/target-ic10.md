@@ -144,6 +144,14 @@
 | `readReagent(reg, mode, key)` | `lr r? drN`（运行期端口） |
 | `readReagentById(reg, mode, key)` | `lr r? rN`（按 ReferenceId） |
 
+> **按 ReferenceId 访问：常量用句柄，变量才用 `readById`。** `const inDoor = 1550107` 之后，
+> `inDoor.Open`（读）/ `inDoor.Setting = v`（写）就直接发**裸 ReferenceId**（`l r0 1550107 Open` /
+> `s 1550107 Setting r0`），与 `readById(inDoor, LogicType.Open)` 等价但短得多 —— 所以冗长的
+> `LogicType.` 写法可以用 `const` + 句柄消掉，**不需要新语法**。
+> 唯一的限制：这只对**常量** id 成立；**运行期变量**里的 id 不行（`x.X` 按端口解析成 `drN`），
+> 那种情况仍然要用 `readById` / `writeById`。`decompile --stack-id` 把宿主栈里的 id 折成常量之后，
+> 那段代码也可以改用句柄形式。
+
 > **网络通道只有 `d.channel[c][n]` 这一种写法**（`l/s d:c Channel<n>`）—— 没有 id 形式：
 > `readById` / `writeById` 的 ReferenceId 只到「设备」这一层，写 `Channel0` 会报
 > `IncorrectLogicType`；手写 `<ref>:conn` 则被 `int.TryParse` 拒掉（`InvalidInteger`）。真机实测。
