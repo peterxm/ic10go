@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.68",
+  "version": "0.7.69",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -389,6 +389,16 @@
         "icon": "$(debug-continue)"
       },
       {
+        "command": "icg.bench.runToLine",
+        "title": "%cmd.bench.runToLine%",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "icg.bench.setValue",
+        "title": "%cmd.bench.setValue%",
+        "icon": "$(edit)"
+      },
+      {
         "command": "icg.bench.reset",
         "title": "%cmd.bench.reset%",
         "icon": "$(debug-restart)"
@@ -502,6 +512,11 @@
         {
           "command": "icg.disasm",
           "when": "editorLangId == ic10",
+          "group": "navigation"
+        },
+        {
+          "command": "icg.bench.runToLine",
+          "when": "editorLangId == icg || editorLangId == ic10",
           "group": "navigation"
         }
       ],
@@ -711,6 +726,12 @@
         "key": "ctrl+alt+t",
         "mac": "cmd+alt+t",
         "when": "editorLangId == icg"
+      },
+      {
+        "command": "icg.bench.runToLine",
+        "key": "ctrl+f10",
+        "mac": "cmd+f10",
+        "when": "editorTextFocus && (editorLangId == icg || editorLangId == ic10)"
       },
       {
         "command": "icg.bench.stepIns",

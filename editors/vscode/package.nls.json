@@ -61,6 +61,8 @@
   "cmd.bench.step": "IC10 Go: Step One Tick",
   "cmd.bench.stepIns": "IC10 Go: Step One Instruction",
   "cmd.bench.runTicks": "IC10 Go: Run Ticks",
+  "cmd.bench.runToLine": "IC10 Go: Run to Cursor",
+  "cmd.bench.setValue": "IC10 Go: Change Watch Value",
   "cmd.bench.reset": "IC10 Go: Reset Chip",
   "cmd.bench.ports": "IC10 Go: Show Port Wiring",
   "cmd.bench.devices": "IC10 Go: Find Devices (by name)",

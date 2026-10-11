@@ -61,6 +61,8 @@
   "cmd.bench.step": "IC10 Go: 单步（1 tick）",
   "cmd.bench.stepIns": "IC10 Go: 单步（1 指令）",
   "cmd.bench.runTicks": "IC10 Go: 运行 N tick",
+  "cmd.bench.runToLine": "IC10 Go: 运行到光标",
+  "cmd.bench.setValue": "IC10 Go: 修改监视值",
   "cmd.bench.reset": "IC10 Go: 重置芯片",
   "cmd.bench.ports": "IC10 Go: 查看端口接线",
   "cmd.bench.devices": "IC10 Go: 按名字查设备",

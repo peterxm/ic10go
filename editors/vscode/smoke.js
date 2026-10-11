@@ -16,6 +16,7 @@ const registeredCommands = [];
 
 const mock = {
     StatusBarAlignment: { Left: 1, Right: 2 },
+    OverviewRulerLane: { Left: 1, Center: 2, Right: 3, Full: 4 },
     window: {
         createOutputChannel: () => ({ appendLine: noop, append: noop, show: noop, dispose: noop }),
         createStatusBarItem: () => ({ show: noop, hide: noop, dispose: noop }),
@@ -89,7 +90,7 @@ const mock = {
         executeCommand: noop,
     },
     env: { language: 'zh-cn', clipboard: { writeText: () => Promise.resolve() } },
-    Uri: { parse: (s) => s },
+    Uri: { parse: (s) => s, file: (s) => s },
     Range: class {},
     Position: class {},
     Selection: class {},
@@ -158,7 +159,8 @@ Module._load = function (request, parent, isMain) {
 };
 
 const ext = require(path.join(__dirname, 'extension.js'));
-ext.activate({ subscriptions: [], workspaceState: { get: () => undefined, update: () => Promise.resolve() } });
+const ctx = { subscriptions: [], workspaceState: { get: () => undefined, update: () => Promise.resolve() }, asAbsolutePath: (p) => p };
+ext.activate(ctx);
 
 // Panel HTML builders must render sample payloads without throwing.
 const { Bench } = require(path.join(__dirname, 'bench.js'));
@@ -184,8 +186,27 @@ if (!writes.includes('Battery') || !writes.includes('On') || !writes.includes('c
     console.error('writesHtml did not render the write row / baseline diff');
     process.exit(1);
 }
-const chunks = bench.buildStackLoader([[0, 1], [5, 2.5], [509, 79464601]], 'get', 2);
-if (chunks.length !== 2 || !chunks[0].startsWith('put db 0 1') || !chunks[1].includes('put db 509 79464601')) {
+// panelHtml evaluates every template interpolation, so generating it catches a
+// broken ${...} even though the watch/register rows are built later in the
+// webview. The poke plumbing ("run to cursor"/"change value") must be present.
+bench.panel = { webview: { cspSource: 'vscode-webview://test' } };
+const panel = bench.panelHtml();
+bench.panel = undefined;
+if (!panel.includes('acquireVsCodeApi') || !panel.includes('POKE_HINT') || !panel.includes('setValue')) {
+    console.error('panelHtml is missing the poke plumbing');
+    process.exit(1);
+}
+// runtimeLine is runLine's inverse: the first IC10 line for the source line,
+// else the first one after it (the map is IC10 line -> source line, 1-based).
+bench.programMap = { uri: 'file://t.icg', map: [0, 1, 2, 2, 3] };
+const doc = { uri: { toString: () => 'file://t.icg' }, languageId: 'icg', lineCount: 10 };
+if (bench.runtimeLine(doc, 2) !== 1 || bench.runtimeLine(doc, 3) !== 3 || bench.runtimeLine(doc, 9) !== null) {
+    console.error('runtimeLine mapping wrong: ' + [bench.runtimeLine(doc, 2), bench.runtimeLine(doc, 3), bench.runtimeLine(doc, 9)]);
+    process.exit(1);
+}
+bench.programMap = undefined;
+
+const chunks = bench.buildStackLoader([[0, 1], [5, 2.5], [509, 79464601]], 'get', 2);if (chunks.length !== 2 || !chunks[0].startsWith('put db 0 1') || !chunks[1].includes('put db 509 79464601')) {
     console.error('buildStackLoader chunking/format wrong: ' + JSON.stringify(chunks));
     process.exit(1);
 }
@@ -196,7 +217,7 @@ if (bench.buildStackLoader([[3, 0]], 'stack', 0)[0].trim() !== 'poke 3 0') {
 
 // The connected tree node must use a Command object: a bare string made VSCode
 // read command "undefined" and fail with "command 'undefined' not found".
-bench.register({ subscriptions: [], workspaceState: { get: () => undefined, update: () => Promise.resolve() } });
+bench.register(ctx);
 bench.conn = {}; // pretend connected
 bench.chips = [];
 const roots = bench.tree.getChildren(undefined);
@@ -239,6 +260,8 @@ const expected = [
     'icg.bench.selectChip',
     'icg.bench.setDevice',
     'icg.bench.pulseDevice',
+    'icg.bench.runToLine',
+    'icg.bench.setValue',
 ];
 const missing = expected.filter((c) => !registeredCommands.includes(c));
 if (missing.length) {

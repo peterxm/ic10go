@@ -478,6 +478,12 @@ class BenchTree {
             item.description = String(v.value);
             item.tooltip = `${v.name} = ${v.value}  [${v.reg}${v.type ? ' · ' + v.type : ''}]`;
             item.iconPath = new vscode.ThemeIcon('symbol-variable');
+            // Clicking a watched variable changes it in place (the mod's
+            // `setreg`): the fastest way to steer a paused chip by hand.
+            if (v.reg) {
+                item.tooltip += '\n' + t('click to change the value', '点击修改该值');
+                item.command = { command: 'icg.bench.setValue', title: t('Change value', '修改值'), arguments: [{ reg: v.reg, value: v.value, name: v.name }] };
+            }
             out.push(item);
         }
         return out;
@@ -493,6 +499,8 @@ class BenchTree {
             item.description = String(r[k]);
             item.iconPath = new vscode.ThemeIcon(k === 'sp' ? 'arrow-both' : k === 'ra' ? 'reply' : 'symbol-number');
             if (k === 'sp' || k === 'ra') item.iconPath = new vscode.ThemeIcon('symbol-constant', new vscode.ThemeColor('charts.orange'));
+            item.tooltip = `${k} = ${r[k]}\n` + t('click to change the value', '点击修改该值');
+            item.command = { command: 'icg.bench.setValue', title: t('Change value', '修改值'), arguments: [{ reg: k, value: r[k] }] };
             out.push(item);
         }
         return out;
@@ -514,6 +522,8 @@ class BenchTree {
             } else {
                 item.iconPath = new vscode.ThemeIcon('blank');
             }
+            item.tooltip = (item.tooltip ? item.tooltip + '\n' : '') + t('click to change the value', '点击修改该值');
+            item.command = { command: 'icg.bench.setValue', title: t('Change value', '修改值'), arguments: [{ stack: i, value: vals[String(i)] }] };
             out.push(item);
             if (out.length >= 128) {
                 const more = new vscode.TreeItem(t('… more in the panel', '…更多见面板'), vscode.TreeItemCollapsibleState.None);
@@ -890,6 +900,28 @@ class Bench {
         return null;
     }
 
+    // runtimeLine is runLine's inverse: the 0-based IC10 line the chip should
+    // stop at for a 1-based source line — the first IC10 line mapped to it, or
+    // the first one after it (so a comment or a blank line still runs to the
+    // next statement). Null when the document has no recorded map; raw IC10
+    // documents use their own line numbers.
+    runtimeLine(doc, srcLine) {
+        if (!doc) return null;
+        const pm = this.programMap;
+        if (pm && doc.uri.toString() === pm.uri && Array.isArray(pm.map)) {
+            let after = null;
+            for (let ic = 1; ic < pm.map.length; ic++) {
+                const s = pm.map[ic];
+                if (!s) continue;
+                if (s === srcLine) return ic - 1;
+                if (s > srcLine && after == null) after = ic - 1;
+            }
+            return after;
+        }
+        if (doc.languageId === 'ic10') return Math.min(srcLine - 1, Math.max(0, doc.lineCount - 1));
+        return null;
+    }
+
     // setProgramMap records the line map of the program that was just uploaded /
     // pulled. A saved .icg keeps a stable URI, so its map is persisted and
     // restored after a reload (an untitled document gets a new URI, where the
@@ -1150,6 +1182,8 @@ class Bench {
         cmd('icg.bench.step', () => this.runTicks(1));
         cmd('icg.bench.stepIns', () => this.stepIns());
         cmd('icg.bench.runTicks', () => this.runTicks(this.cfg().runTicks));
+        cmd('icg.bench.runToLine', () => this.runToLine());
+        cmd('icg.bench.setValue', (target) => this.promptSetValue(target));
         cmd('icg.bench.reset', () => this.reset());
         cmd('icg.bench.ports', () => this.showPorts());
         cmd('icg.bench.devices', () => this.showDevices());
@@ -1823,6 +1857,78 @@ class Bench {
         } catch (err) {
             this.client.output.appendLine(`IC10 bench step-ins failed: ${err.message}`);
             vscode.window.showErrorMessage(t('IC10: step failed. See the "IC10 Go" output.', 'IC10: 单步失败，详见 "IC10 Go" 输出面板。'));
+        }
+    }
+
+    // runToLine runs the chip forward until its PC reaches the source line under
+    // the cursor. The line map is stored as IC10-line -> source-line, so invert
+    // it to the IC10 line to stop at, then let the mod step there in one round
+    // trip (stepping instruction by instruction from here would be a round trip
+    // each, and a client cannot step the host's chip at all). Pauses first, like
+    // the step commands.
+    async runToLine() {
+        const ed = vscode.window.activeTextEditor;
+        if (!ed) return;
+        const conn = await this.connect(false);
+        if (!conn) return;
+        const target = ed.selection.active.line + 1; // the map is 1-based
+        const line = this.runtimeLine(ed.document, target);
+        if (line == null) {
+            vscode.window.showWarningMessage(t(
+                'IC10: no line map for this document — upload or pull the program first, so "run to cursor" knows the IC10 line.',
+                'IC10: 该文档没有行映射——请先上传或拉取程序，"运行到光标"才知道对应的 IC10 行。'
+            ));
+            return;
+        }
+        await this.ensurePaused(conn);
+        const args = { line, max: 20000 };
+        if (this.sel) args.chip = this.sel;
+        try {
+            const r = await conn.call('runTo', args);
+            const cerr = r && r.error;
+            const errored = typeof cerr === 'string'
+                ? cerr !== ''
+                : !!(cerr && (cerr.code || cerr.compilation || (Number(cerr.line) || 0) > 0));
+            if (errored) {
+                this.client.output.appendLine(`IC10 bench run-to-line: ${JSON.stringify(cerr)}`);
+                vscode.window.showErrorMessage(t('IC10: chip error while running to the cursor. See the "IC10 Go" output.', 'IC10: 运行到光标时报错，详见 "IC10 Go" 输出面板。'));
+            }
+            await this.refresh(false);
+            this.revealRunLine();
+        } catch (err) {
+            this.client.output.appendLine(`IC10 bench run-to-line failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('IC10: run to cursor failed. See the "IC10 Go" output.', 'IC10: 运行到光标失败，详见 "IC10 Go" 输出面板。'));
+        }
+    }
+
+    // promptSetValue asks for a new value for a register or a stack slot and
+    // pokes it into the chip (the mod's `setreg`). The watch, register and stack
+    // rows all use it: a paused chip keeps the value, so a program can be
+    // steered by hand. `target` is {reg} or {stack}, plus the current value.
+    async promptSetValue(target) {
+        if (!target) return;
+        const conn = await this.connect(false);
+        if (!conn) return;
+        const isStack = target.stack !== undefined && target.stack !== null;
+        const label = isStack ? `stack[${target.stack}]` : target.reg;
+        const cur = target.value;
+        const input = await vscode.window.showInputBox({
+            prompt: t(`New value for ${label}`, `${label} 的新值`),
+            value: cur === undefined || cur === null || cur === '' ? '' : String(cur),
+            validateInput: (s) => (s.trim() === '' || isNaN(Number(s)) ? t('enter a number', '请输入数字') : undefined),
+        });
+        if (input === undefined) return;
+        await this.ensurePaused(conn);
+        const args = { value: Number(input) };
+        if (isStack) args.stack = target.stack;
+        else args.reg = target.reg;
+        if (this.sel) args.chip = this.sel;
+        try {
+            await conn.call('setreg', args);
+            await this.refresh(false);
+        } catch (err) {
+            this.client.output.appendLine(`IC10 bench set value failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('IC10: could not change the value. See the "IC10 Go" output.', 'IC10: 改值失败，详见 "IC10 Go" 输出面板。'));
         }
     }
 
@@ -2801,6 +2907,7 @@ ${note}${diffNote}
         else if (m.type === 'step') this.runTicks(1);
         else if (m.type === 'stepIns') this.stepIns();
         else if (m.type === 'run') this.runTicks(this.cfg().runTicks);
+        else if (m.type === 'setValue') this.promptSetValue(m);
         else if (m.type === 'reset') this.reset();
         else if (m.type === 'copyHash' && m.name) this.copyHash(m.name);
         else if (m.type === 'setDevice' && m.logic && (m.port || m.id)) this.setDevice({ port: m.port, id: m.id, slot: m.slot, logic: m.logic, value: m.value });
@@ -2911,6 +3018,8 @@ ${note}${diffNote}
   .cell .v { font-family: var(--vscode-editor-font-family, monospace); font-variant-numeric: tabular-nums; }
   .cell.special { border-color: var(--vscode-charts-orange, #d18616); }
   .cell.changed { animation: flash 1.1s ease-out; }
+  .poke { cursor: pointer; }
+  .poke:hover { border-color: var(--vscode-focusBorder, #007fd4); }
   @keyframes flash { 0% { background: var(--vscode-testing-iconPassed, #3fb950); color: #000; } 100% {} }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.25)); }
@@ -2993,6 +3102,7 @@ ${note}${diffNote}
   let prefabs = {};
   let filter = '';
   let lastMsg = null;
+  const POKE_HINT = ${JSON.stringify('click to change the value')};
   document.getElementById('filter').addEventListener('input', (e) => {
     filter = (e.target.value || '').trim().toLowerCase();
     if (lastMsg) render(lastMsg);
@@ -3009,6 +3119,16 @@ ${note}${diffNote}
   const openMap = {};
   document.getElementById('main').addEventListener('click', (e) => {
     const el = e.target;
+    const poke = el && el.closest ? el.closest('.poke') : null;
+    if (poke) {
+      const stk = poke.getAttribute('data-stack');
+      vscode.postMessage({
+        type: 'setValue',
+        reg: poke.getAttribute('data-reg') || undefined,
+        stack: stk !== null && stk !== undefined ? Number(stk) : undefined,
+      });
+      return;
+    }
     const h = el && el.closest ? el.closest('.hashlabel') : null;
     if (h) {
       vscode.postMessage({ type: 'copyHash', name: h.getAttribute('data-name') });
@@ -3063,7 +3183,10 @@ ${note}${diffNote}
   }
   function cell(k, v, special) {
     const changed = prev[k] !== undefined && prev[k] !== v;
-    return '<div class="cell' + (special ? ' special' : '') + (changed ? ' changed' : '') + '">' +
+    const stk = /^\\[(\\d+)\\]$/.exec(k);
+    const poke = stk ? ' data-stack="' + stk[1] + '"' : ' data-reg="' + esc(k) + '"';
+    return '<div class="cell poke' + (special ? ' special' : '') + (changed ? ' changed' : '') + '"' + poke +
+      ' title="' + esc(POKE_HINT) + '">' +
       '<span class="k">' + k + '</span><span class="v">' + num(v) + '</span></div>';
   }
   function render(m) {
@@ -3106,7 +3229,9 @@ ${note}${diffNote}
         const key = 'w:' + w.name;
         const changed = prev[key] !== undefined && prev[key] !== w.value;
         next[key] = w.value;
-        html += '<tr' + (changed ? ' class="changed"' : '') + '><td>' + w.name +
+        const poke = w.reg ? ' data-reg="' + esc(w.reg) + '"' : '';
+        html += '<tr class="watchrow' + (poke ? ' poke' : '') + (changed ? ' changed' : '') + '"' + poke +
+          (poke ? ' title="' + esc(POKE_HINT) + '"' : '') + '><td>' + w.name +
           '</td><td class="num">' + num(w.value) + '</td><td class="muted">' + w.reg +
           (w.type ? ' · ' + w.type : '') + '</td></tr>';
       }
