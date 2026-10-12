@@ -610,7 +610,11 @@ type ChipErrors struct {
 
 // DeviceState is one device on a chip port.
 type DeviceState struct {
-	Port    string             `json:"port"`
+	Port string `json:"port"`
+	// ID is the device's ReferenceId (mod 0.5.11+). It is what `hud --id`
+	// tracks, and what the editor addresses a device by when it is not wired to a
+	// port. Nil for an older mod.
+	ID      *int               `json:"id,omitempty"`
 	Prefab  string             `json:"prefab"`
 	Name    string             `json:"name"`
 	Binding string             `json:"binding,omitempty"`
