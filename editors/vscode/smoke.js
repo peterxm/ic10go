@@ -192,6 +192,54 @@ if (!writes.includes('Battery') || !writes.includes('On') || !writes.includes('c
 bench.panel = { webview: { cspSource: 'vscode-webview://test' } };
 const panel = bench.panelHtml();
 bench.panel = undefined;
+
+// The chip-state panel's search box must find a device by ReferenceId and order
+// the network list by name. Run the helpers straight out of the generated script
+// (they live in the webview template, so nothing else exercises them).
+function panelFn(src, name) {
+    const start = src.indexOf('function ' + name + '(');
+    if (start < 0) throw new Error('panel script is missing ' + name);
+    let depth = 0;
+    for (let i = src.indexOf('{', start); i < src.length; i++) {
+        if (src[i] === '{') depth++;
+        else if (src[i] === '}' && --depth === 0) return src.slice(start, i + 1);
+    }
+    throw new Error('unterminated ' + name);
+}
+const helpers = new Function(
+    panelFn(panel, 'devMatches') + '\n' + panelFn(panel, 'devSortKey') +
+    '\nreturn { devMatches: devMatches, devSortKey: devSortKey };'
+)();
+const devs = [
+    { id: 1725919, name: '', prefab: 'StructureDiode' },
+    { id: 1550107, name: 'Interior Door 01 - Main Airlock 01', prefab: 'StructureAirlockWide' },
+    { id: 1554176, name: 'Gas Sensor 01 - Main Airlock 01', prefab: 'StructureGasSensor' },
+];
+if (!helpers.devMatches(devs[1], '1550107')) {
+    console.error('the panel filter must match a ReferenceId');
+    process.exit(1);
+}
+if (helpers.devMatches(devs[0], 'interior')) {
+    console.error('the panel filter matched an unrelated device');
+    process.exit(1);
+}
+if (!helpers.devMatches(devs[2], 'gassensor')) {
+    console.error('the panel filter must match the prefab');
+    process.exit(1);
+}
+const ordered = devs
+    .slice()
+    .sort((a, b) => {
+        const ka = helpers.devSortKey(a);
+        const kb = helpers.devSortKey(b);
+        return ka < kb ? -1 : ka > kb ? 1 : 0;
+    })
+    .map((d) => d.id)
+    .join(',');
+if (ordered !== '1554176,1550107,1725919') {
+    console.error('network devices should sort by name then id, got ' + ordered);
+    process.exit(1);
+}
 if (!panel.includes('acquireVsCodeApi') || !panel.includes('POKE_HINT') || !panel.includes('setValue')) {
     console.error('panelHtml is missing the poke plumbing');
     process.exit(1);

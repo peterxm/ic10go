@@ -3182,10 +3182,17 @@ ${note}${diffNote}
     return ' <span class="muted hashlabel" data-name="' + esc(e.name) + '"' + tip + '>' + esc(e.name) + '</span>';
   }
   function devMatches(d, f) {
-    const hay = [d.port, d.binding, d.name, d.prefab].filter(Boolean).join(' ').toLowerCase();
+    const hay = [d.id, d.port, d.binding, d.name, d.prefab].filter(Boolean).join(' ').toLowerCase();
     if (hay.indexOf(f) >= 0) return true;
     for (const k of Object.keys(d.logic || {})) if (k.toLowerCase().indexOf(f) >= 0) return true;
     return false;
+  }
+  // devSortKey orders the network list by name (then prefab), with the numeric
+  // ReferenceId as the tie-breaker: the game's cable order is arbitrary, and a
+  // scannable list beats a stable-but-opaque one.
+  function devSortKey(d) {
+    const id = d.id === undefined || d.id === null ? '' : String(d.id).padStart(12, '0');
+    return ((d.name || d.prefab || '') + '\u0000' + id).toLowerCase();
   }
   function cell(k, v, special) {
     const changed = prev[k] !== undefined && prev[k] !== v;
@@ -3338,8 +3345,11 @@ ${note}${diffNote}
       html += '</section>';
     }
     if (m.netDevices && m.netDevices.length) {
-      const nds = m.netDevices;
-      html += '<section><h2>Network Devices <span class="pill">' + nds.length + '</span></h2>';
+      const nds = (filter ? m.netDevices.filter((d) => devMatches(d, filter)) : m.netDevices.slice())
+        .sort((a, b) => (devSortKey(a) < devSortKey(b) ? -1 : devSortKey(a) > devSortKey(b) ? 1 : 0));
+      html += '<section><h2>Network Devices <span class="pill">' + nds.length +
+        (filter && nds.length !== m.netDevices.length ? ' / ' + m.netDevices.length : '') + '</span></h2>';
+      if (!nds.length) html += '<p class="muted">no match</p>';
       for (const d of nds) {
         const dkeys = Object.keys(d.logic || {}).sort();
         const did = d.id !== undefined ? d.id : (d.name || d.prefab || '');
