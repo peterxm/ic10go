@@ -214,6 +214,22 @@ namespace Ic10Go.Testbench
             return result;
         }
 
+        /// <summary>The display name of a Thing: custom name, then the name the game
+        /// gave it, then the prefab. Empty when it has none. Used for HUD labels.</summary>
+        public static string ThingName(Thing t)
+        {
+            if (t == null) return "";
+            try
+            {
+                var custom = FCustomName?.GetValue(t) as string;
+                if (!string.IsNullOrEmpty(custom)) return custom;
+            }
+            catch { }
+            try { if (!string.IsNullOrEmpty(t.name)) return t.name; } catch { }
+            try { if (!string.IsNullOrEmpty(t.PrefabName)) return t.PrefabName; } catch { }
+            return "";
+        }
+
         private static string NameOf(Thing t, int index)
         {
             if (t != null)
@@ -969,6 +985,14 @@ namespace Ic10Go.Testbench
             return null;
         }
 
+        /// <summary>Resolves a device ReferenceId to the world Thing carrying it, so
+        /// the HUD can follow it. Null when the id is unknown or the device is not a
+        /// Thing (the editor's "track" button on a device row uses this).</summary>
+        public static Thing ThingById(int id)
+        {
+            return DeviceById(id) as Thing;
+        }
+
         /// <summary>Describe a device by ReferenceId (logic + slots), or null when
         /// no device with that id is found on any circuit holder's network.</summary>
         public static JObject DescribeDeviceById(int id)
@@ -1509,6 +1533,10 @@ namespace Ic10Go.Testbench
                 return entry;
             }
             entry["present"] = true;
+            // The ReferenceId, so an editor can address the device by id (a HUD
+            // target, a readById, ...) without knowing which port it is on.
+            long refId;
+            if (TryRefId(dev, out refId)) entry["id"] = (int)refId;
 
             var logic = new JObject();
             foreach (LogicType t in Enum.GetValues(typeof(LogicType)))

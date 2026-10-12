@@ -215,7 +215,7 @@ testdata/bench/                  # 回归场景（counter / mem / ac / link + �
 | `writes` | `{clear?:bool, from?:int}` | `{writes:[{seq,id,device,logic,slot,value}], count}` |
 | `trace` | `{n:int}` | `{steps, hitCount, hits:[{pc,text,regs}]}`（逐条 `Execute(1)`，只回存储指令） |
 | `program` | `{}` | `{lines, code}`（芯片当前 IC10 源码） |
-| `hud` | `{on?, clear?, offset?, target?:{x,y,z,label?}|{chip}|{player}}` | `{on, offset, player?{x,y,z,yaw,pitch}, target?{x,y,z,label?,entity?}}`（`target.player` 可为在线玩家的 Human，也可是**离线但角色还在**的 Human 或**尸体袋**） |
+| `hud` | `{on?, clear?, offset?, target?:{x,y,z,label?}|{chip}|{player}|{id,label?}}` | `{on, offset, player?{x,y,z,yaw,pitch}, target?{x,y,z,label?,entity?}}`（`target.player` 可为在线玩家的 Human，也可是**离线但角色还在**的 Human 或**尸体袋**） |
 | `players` | `{}` | `[{name, self, online, body?, trackable?, dist?, pos?{x,y,z}}]`（来自 `Brain.PlayerBrains`，含**离线**玩家；`body:true` = 尸体袋，`trackable` = 世界里能找到实体可被 HUD 追踪；排序：**你 → 在线 → 离线(角色在) → 尸体袋 → 无实体**，同组按名字，再按距离） |
 | `run` | `{ticks:n, mode?:"step"|"realtime"}` | `{ticks, line}` |
 | `step` | `{ticks:n}` (alias of `run`) | `{ticks, line}` |
@@ -463,7 +463,7 @@ Activity Bar「IC10」
 | `icg.bench.exportStack` | IC10: Export Stack as Loader | 视图标题（栈 → `put db`/`poke` loader，分段 ≤128 行） |
 | `icg.bench.loadSave` | IC10: Load Save | 视图标题（快速选择存档） |
 | `icg.bench.selectChip` | IC10: Select Chip | 树（点击某块 host） |
-| `icg.bench.track` | IC10: Track in Game (HUD compass) | 树（右键 host）→ `hud --chip`，游戏内罗盘指向它 |
+| `icg.bench.track` | IC10: Track in Game (HUD compass) | 树（右键 host 或设备行）→ `hud --chip` / `hud --id`；面板每张设备卡的 **📍** 走同一条路 |
 | `icg.bench.trackPlayer` | IC10: Track a Player | 标题栏：列出玩家（按距离）→ 选中后 `hud --player`，罗盘实时指向该玩家 |
 | `icg.bench.findAt` | IC10: Find Hosts by Position | 标题栏 🔍：输入 `X Y Z`（+可选半径）→ QuickPick（精确忽略小数 / 大致按距离），选中即切芯片 |
 | `icg.bench.filterNear` / `clearNear` | IC10: Only Hosts Near Me (±4) / Show All | 标题栏漏斗：只显示玩家 ±4 格内的 host（空心/实心图标切换） |
@@ -481,6 +481,7 @@ Activity Bar「IC10」
 - **Watch（变量）**：把 `.icg` 源码变量显示成 `名字 = 值 (寄存器·类型)` —— IC10 里寄存器是**复用**的，只看 `r0..r15` 读不出哪个是哪个。数据来自编译器 `build --json` 的调试表 **`vars`**（每条源码行上活跃的用户变量 → 物理寄存器），随上传记录；溢出到栈的变量不列。重新打开窗口后映射会持久化，对**已经在跑**的程序按源码**指纹**自动补全（不必重推）。原始 IC10 没有变量，回退成解析程序里已有的 `alias NAME rN`。面板里是 `Watch` 表，树里是「变量」分组。**点一行即改该变量当前所在的寄存器值**（`setreg`），和寄存器/栈格同一套交互。
 - **Stack**：默认**折叠**（`<details>`），展开后显示全部 512 槽，`sp` 行加色条。**点槽位可改值**。
 - **Devices**：每个设备一张**可折叠卡片**（`db` + `d0..d5`，空端口灰显 `empty`），带绑定标签与该设备的 logic 数量；展开看全部 logic，避免 `db` 那种几十条一次铺开。点击树里的 logic 可改输入；**面板里 logic 行同样可点击改值，行末 `⚡` 脉冲（写 0 再写 1）**。
+- **追踪设备**：每张设备卡（DEVICES 与 NETWORK DEVICES）右上角有 **📍**，点了游戏内罗盘就指向该设备 —— 按 ReferenceId（`hud {id}`）解析，且 mod 追踪的是**实体本身**（`SetEntity`），所以装在漫游车上的设备罗盘会跟着走。没有 id 的条目（旧版 mod 的端口设备）不显示这个按钮。树里的设备项右键同样有「追踪」。
 - **Network Devices**：`d0..d5` 下方列出**当前选中芯片的数据网络**上的设备（mod 的 `net`，即 `lb`/`lbn` 视角，**接不接端口都能看/改**）。每台一张可折叠卡片，显示完整 logic + 槽位（`Occupied`/`Quantity`/`Class`/…）；点击值可改、行末 `⚡` 脉冲，与端口设备同一套交互（多人客户端下写入自动走主机权威路径）。在左边树里切换芯片会一并刷新。
 - **通道**：`IConnected` 设备（如 Logic Memory）每个**数据连接**折叠出一组「通道」——8 个 `Channel0..7`，同一根电缆上共享。行可点击改值、行末 `⚡` 脉冲；写路径同 `set`（端口设备用 `dN:<conn>`，网络设备用 `id:<ref>:<conn>`，见 §4.2 注）。客户端写通道会返回 `needs-host`（§1.3）。
 - **Program**：当前行 + `line/total`。

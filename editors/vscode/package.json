@@ -2,7 +2,7 @@
   "name": "icg",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.7.70",
+  "version": "0.7.71",
   "publisher": "ic10go",
   "license": "Apache-2.0",
   "engines": {
@@ -686,7 +686,7 @@
       "view/item/context": [
         {
           "command": "icg.bench.track",
-          "when": "view == icg.bench && viewItem == chip",
+          "when": "view == icg.bench && (viewItem == chip || viewItem == device)",
           "group": "inline@1"
         },
         {

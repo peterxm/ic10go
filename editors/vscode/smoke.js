@@ -240,6 +240,23 @@ if (ordered !== '1554176,1550107,1725919') {
     console.error('network devices should sort by name then id, got ' + ordered);
     process.exit(1);
 }
+
+// Every device row in the panel offers a track button -- but only when the mod
+// gave the entry a ReferenceId (an older mod's port devices have none).
+const trackBtn = new Function(
+    'const TRACK_HINT = "hint"; const TRACK_ICON = "T";\n' +
+    panelFn(panel, 'esc') + '\n' + panelFn(panel, 'trackBtn') +
+    '\nreturn trackBtn;'
+)();
+const btn = trackBtn(1550107, 'Interior Door 01');
+if (!btn.includes('class="trackdev"') || !btn.includes('data-id="1550107"') || !btn.includes('data-label="Interior Door 01"')) {
+    console.error('the panel track button is missing its target: ' + btn);
+    process.exit(1);
+}
+if (trackBtn(undefined, 'x') !== '') {
+    console.error('an id-less device must not get a track button');
+    process.exit(1);
+}
 if (!panel.includes('acquireVsCodeApi') || !panel.includes('POKE_HINT') || !panel.includes('setValue')) {
     console.error('panelHtml is missing the poke plumbing');
     process.exit(1);

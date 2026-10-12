@@ -738,6 +738,29 @@ func benchHud(addr, chipName, playerName string, args []string, offset float64, 
 	}
 	defer c.Close()
 
+	// --id / --label name a device by ReferenceId (what the editor's device rows
+	// show), so any device can be tracked, not just a chip.
+	var devID int
+	var devLabel string
+	kept := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--id":
+			if i+1 < len(args) {
+				i++
+				devID, _ = strconv.Atoi(args[i])
+			}
+		case "--label":
+			if i+1 < len(args) {
+				i++
+				devLabel = args[i]
+			}
+		default:
+			kept = append(kept, args[i])
+		}
+	}
+	args = kept
+
 	req := map[string]any{}
 	if offsetSet {
 		req["offset"] = offset
@@ -746,8 +769,14 @@ func benchHud(addr, chipName, playerName string, args []string, offset float64, 
 		req["target"] = map[string]any{"player": playerName}
 	} else if chipName != "" {
 		req["target"] = map[string]any{"chip": chipSelector(chipName)}
+	} else if devID > 0 {
+		t := map[string]any{"id": devID}
+		if devLabel != "" {
+			t["label"] = devLabel
+		}
+		req["target"] = t
 	}
-	if len(args) > 0 && chipName == "" && playerName == "" {
+	if len(args) > 0 && chipName == "" && playerName == "" && devID == 0 {
 		switch strings.ToLower(args[0]) {
 		case "on", "true", "1":
 			req["on"] = true
@@ -757,7 +786,7 @@ func benchHud(addr, chipName, playerName string, args []string, offset float64, 
 			req["clear"] = true
 		default:
 			if len(args) < 3 {
-				fmt.Fprintln(os.Stderr, "ic10c: usage: ic10c testbench hud [on|off|clear|X Y Z] [--chip NAME|INDEX]")
+				fmt.Fprintln(os.Stderr, "ic10c: usage: ic10c testbench hud [on|off|clear|X Y Z] [--chip NAME|INDEX] [--id REFID] [--label NAME]")
 				return 2
 			}
 			x, e1 := strconv.ParseFloat(args[0], 64)

@@ -553,6 +553,11 @@ class BenchTree {
                 present ? undefined : new vscode.ThemeColor('disabledForeground')
             );
             item._logic = present ? d.logic || {} : {};
+            // Trackable from the context menu (same as a host); the panel has its
+            // own button. Present but id-less (an older mod) simply has no entry.
+            item.contextValue = present ? 'device' : 'deviceEmpty';
+            item._id = d.id;
+            item._label = d.name || d.prefab || d.port;
             out.push(item);
         }
         return out;
@@ -2687,6 +2692,8 @@ ${note}${diffNote}
     // trackChip points the in-game HUD at a host so the player can follow the
     // compass arrow to the chip (mod >= 0.3.0; F8 toggles the overlay).
     async trackChip(arg) {
+        // A tree device row carries an id: track the device rather than a chip.
+        if (arg && arg._id !== undefined) return this.trackDevice(arg);
         const chip = (arg && arg._chip) ? arg._chip : arg;
         if (!chip || chip.index === undefined) return;
         const name = chip.name || chip.prefab || `chip#${chip.index}`;
@@ -2699,6 +2706,27 @@ ${note}${diffNote}
         vscode.window.setStatusBarMessage(
             t(`IC10: tracking ${name} in game (F8 toggles the HUD)`,
               `IC10: 游戏中追踪 ${name}（F8 开关 HUD）`), 6000);
+    }
+
+    // trackDevice points the in-game HUD at a device by ReferenceId. The mod
+    // follows the Thing rather than a fixed position, so a device on a rover keeps
+    // the compass on it. `arg` is {id, label} (the panel) or a tree item with _id.
+    async trackDevice(arg) {
+        const id = arg && arg._id !== undefined ? arg._id : arg && arg.id;
+        if (id === undefined || id === null || id === '') return;
+        const label = (arg && (arg._label || arg.label)) || '';
+        const cli = ['testbench', 'hud', '--id', String(id)];
+        if (label) cli.push('--label', label);
+        const res = await this.client.execCli(cli);
+        if (res.code !== 0) {
+            const msg = (res.stderr || res.stdout || '').trim();
+            vscode.window.showErrorMessage(t('IC10: track failed: ', 'IC10: 追踪失败：') + msg);
+            return;
+        }
+        const what = label || 'id ' + id;
+        vscode.window.setStatusBarMessage(
+            t(`IC10: tracking ${what} in game (F8 toggles the HUD)`,
+              `IC10: 游戏中追踪 ${what}（F8 开关 HUD）`), 6000);
     }
 
     // setNear turns the "only hosts within ±4 of me" filter on/off and refreshes.
@@ -2914,6 +2942,7 @@ ${note}${diffNote}
         else if (m.type === 'stepIns') this.stepIns();
         else if (m.type === 'run') this.runTicks(this.cfg().runTicks);
         else if (m.type === 'setValue') this.promptSetValue(m);
+        else if (m.type === 'track') this.trackDevice(m);
         else if (m.type === 'reset') this.reset();
         else if (m.type === 'copyHash' && m.name) this.copyHash(m.name);
         else if (m.type === 'setDevice' && m.logic && (m.port || m.id)) this.setDevice({ port: m.port, id: m.id, slot: m.slot, logic: m.logic, value: m.value });
@@ -3025,6 +3054,8 @@ ${note}${diffNote}
   .cell.special { border-color: var(--vscode-charts-orange, #d18616); }
   .cell.changed { animation: flash 1.1s ease-out; }
   .poke { cursor: pointer; }
+  .trackdev { background: none; border: none; color: var(--vscode-descriptionForeground); cursor: pointer; padding: 0 4px; font-size: 12px; }
+  .trackdev:hover { color: var(--vscode-focusBorder, #007fd4); }
   .poke:hover { border-color: var(--vscode-focusBorder, #007fd4); }
   @keyframes flash { 0% { background: var(--vscode-testing-iconPassed, #3fb950); color: #000; } 100% {} }
   table { width: 100%; border-collapse: collapse; }
@@ -3108,7 +3139,9 @@ ${note}${diffNote}
   let prefabs = {};
   let filter = '';
   let lastMsg = null;
-  const POKE_HINT = ${JSON.stringify('click to change the value')};
+  const POKE_HINT = ${JSON.stringify(t('click to change the value', '点击修改该值'))};
+  const TRACK_HINT = ${JSON.stringify(t('track in game (HUD compass)', '游戏中追踪（罗盘 HUD）'))};
+  const TRACK_ICON = ${JSON.stringify('📍')};
   document.getElementById('filter').addEventListener('input', (e) => {
     filter = (e.target.value || '').trim().toLowerCase();
     if (lastMsg) render(lastMsg);
@@ -3125,6 +3158,12 @@ ${note}${diffNote}
   const openMap = {};
   document.getElementById('main').addEventListener('click', (e) => {
     const el = e.target;
+    const trk = el && el.closest ? el.closest('.trackdev') : null;
+    if (trk) {
+      vscode.postMessage({ type: 'track', id: Number(trk.getAttribute('data-id')), label: trk.getAttribute('data-label') || '' });
+      e.stopPropagation();
+      return;
+    }
     const poke = el && el.closest ? el.closest('.poke') : null;
     if (poke) {
       const stk = poke.getAttribute('data-stack');
@@ -3180,6 +3219,11 @@ ${note}${diffNote}
     if (!e) return '';
     const tip = e.title ? ' title="' + esc(e.title) + '"' : '';
     return ' <span class="muted hashlabel" data-name="' + esc(e.name) + '"' + tip + '>' + esc(e.name) + '</span>';
+  }
+  function trackBtn(id, label) {
+    if (id === undefined || id === null || id === '') return '';
+    return ' <button class="trackdev" data-id="' + esc(id) + '" data-label="' + esc(label || '') +
+      '" title="' + esc(TRACK_HINT) + '">' + TRACK_ICON + '</button>';
   }
   function devMatches(d, f) {
     const hay = [d.id, d.port, d.binding, d.name, d.prefab].filter(Boolean).join(' ').toLowerCase();
@@ -3285,7 +3329,8 @@ ${note}${diffNote}
         const slotCount = d.slots && d.slots.length ? d.slots.length : 0;
         const chanCount = d.channels && d.channels.length ? d.channels.length : 0;
         html += '<details class="dev"' + (openMap['dev:' + d.port] ? ' open' : '') + ' data-key="dev:' + d.port + '"><summary><span class="port">' + d.port + '</span> ' + binding +
-          ' <span class="muted">' + desc + '</span> <span class="pill">' + keys.length + ' logic' + (slotCount ? ' · ' + slotCount + ' slots' : '') + (chanCount ? ' · ' + chanCount + ' ${t('ports', '端口')}' : '') + '</span></summary><table>';
+          ' <span class="muted">' + desc + '</span> <span class="pill">' + keys.length + ' logic' + (slotCount ? ' · ' + slotCount + ' slots' : '') + (chanCount ? ' · ' + chanCount + ' ${t('ports', '端口')}' : '') +
+          '</span>' + trackBtn(d.id, desc || d.port) + '</summary><table>';
         for (const k of keys) {
           next[d.port + '.' + k] = d.logic[k];
           html += '<tr class="logicrow" data-port="' + d.port + '" data-logic="' + k + '" data-value="' + num(d.logic[k]) +
@@ -3359,7 +3404,8 @@ ${note}${diffNote}
         html += '<details class="dev"' + (openMap[key] ? ' open' : '') + ' data-key="' + key +
           '"><summary><span class="port">' + did + '</span> ' + (d.name || '') +
           ' <span class="muted">' + esc(d.prefab || '') + '</span> <span class="pill">' + dkeys.length + ' logic' +
-          (slotCount ? ' · ' + slotCount + ' slots' : '') + (ndChan ? ' · ' + ndChan + ' ${t('ports', '端口')}' : '') + '</span></summary>';
+          (slotCount ? ' · ' + slotCount + ' slots' : '') + (ndChan ? ' · ' + ndChan + ' ${t('ports', '端口')}' : '') +
+          '</span>' + trackBtn(d.id, d.name || d.prefab || '') + '</summary>';
         if (dkeys.length) {
           html += '<table>';
           for (const k of dkeys) {

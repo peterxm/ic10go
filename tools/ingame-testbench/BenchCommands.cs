@@ -218,9 +218,23 @@ namespace Ic10Go.Testbench
                     if (found == null) throw new BenchError("no-player", "\"" + pname + "\" is not in the world");
                     Hud.SetEntity(found, pname);
                 }
+                else if (t["id"] != null)
+                {
+                    // Track any device by ReferenceId (the editor's device rows all
+                    // show one). SetEntity follows it, so a device on a rover moves
+                    // with the compass.
+                    int did = (int)t["id"];
+                    var thing = GameApi.ThingById(did);
+                    if (thing == null)
+                        throw new BenchError("no-device", "no device with id " + did + " to track");
+                    string label = (string)t["label"];
+                    if (string.IsNullOrEmpty(label)) label = GameApi.ThingName(thing);
+                    if (string.IsNullOrEmpty(label)) label = "id " + did;
+                    Hud.SetEntity(thing, label);
+                }
                 else
                 {
-                    throw new BenchError("bad-request", "hud target needs {x,y,z} or {chip} or {player}");
+                    throw new BenchError("bad-request", "hud target needs {x,y,z} or {chip} or {player} or {id}");
                 }
             }
             return Hud.State();
