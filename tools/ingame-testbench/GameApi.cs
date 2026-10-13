@@ -894,9 +894,29 @@ namespace Ic10Go.Testbench
                     }
                     else
                     {
+                        // Loaders are straight-line stores, so a fixed budget is
+                        // plenty -- but a chip stuck in an *error* state does not
+                        // advance and re-runs the faulting instruction for every
+                        // step, which is what froze the main thread (and with it the
+                        // whole testbench on port 7800) on 2026-10-14, when a
+                        // broken loader (`put db -1`, review C5) was executed here.
+                        // Run in small slices and stop at the first error.
+                        chip.Reset();
                         int ops = Math.Max(4096, LineCount(loader) * 16);
-                        loaderOps += ops;
-                        chip.Execute(ops); // bounded: loaders are straight-line stores
+                        int done = 0;
+                        while (done < ops)
+                        {
+                            int slice = Math.Min(128, ops - done);
+                            chip.Execute(slice);
+                            done += slice;
+                            if (ErrorOf(chip) != null) break;
+                        }
+                        loaderOps += done;
+                        var lerr = ErrorOf(chip);
+                        if (lerr != null)
+                            throw new BenchError("loader-error",
+                                "the chip errored while its one-time loader ran (run it once more after fixing it): " +
+                                lerr.ToString(Newtonsoft.Json.Formatting.None));
                     }
                 }
             }
