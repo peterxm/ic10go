@@ -1965,8 +1965,13 @@ func (l *lowerer) lowerDeviceRead(e *ast.SelectorExpr) ir.Value {
 			return &ir.Const{V: v}
 		}
 		// LogicType members are emitted verbatim; the game assembler resolves
-		// them, so the compiler does not need their numeric values.
+		// them, so the compiler does not need their numeric values. But a typo
+		// like `LogicType.Openn` was also emitted verbatim with no diagnostic
+		// (the game rejects it at runtime); validate against the known set and
+		// suggest (review L3, §2.1). A genuinely new LogicType not yet in the
+		// table still emits verbatim — it only warns.
 		if id.Name == "LogicType" {
+			l.checkLogic(e.Sel.Pos(), e.Sel.Name)
 			return &ir.Const{Raw: "LogicType." + e.Sel.Name}
 		}
 		// Escape hatch: an unknown `Enum.Member` is emitted verbatim so new
