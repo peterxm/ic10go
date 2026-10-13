@@ -725,7 +725,11 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		// A write that happens twice in one pass with nothing reading the device
 		// between is dead weight in a segment that already exceeds the budget.
 		if seg.Exceeds && len(seg.Path) > 0 {
-			seg.Duplicates = dupWrites(seg.Path, nodes, seg.Dominant)
+			headers := map[int]bool{}
+			for _, lp := range rep.Loops {
+				headers[lp.Header] = true
+			}
+			seg.Duplicates = dupWrites(seg.Path, nodes, headers)
 			for i := range seg.Duplicates {
 				for _, ln := range seg.Duplicates[i].Lines {
 					seg.Duplicates[i].Source = append(seg.Duplicates[i].Source, srcOf(ln))
@@ -1534,16 +1538,20 @@ func isLiteralDevice(s string) bool {
 // by visits to a loop header, so "once per iteration" is not reported (that is
 // the group-guard case, not a duplicate), and only the executed path is walked,
 // so the two arms of an if/else can never be mistaken for one.
-func dupWrites(path []int, nodes map[int]*node, header int) []DupWrite {
+func dupWrites(path []int, nodes map[int]*node, headers map[int]bool) []DupWrite {
 	type target struct{ dev, key string }
 
 	// Split the path at each return to the dominant loop header: one iteration
 	// is one pass. (With no dominant loop the whole path is one pass.)
+	// One pass is one iteration of the innermost loop on the path, so a write
+	// that repeats every iteration (a deliberate re-assertion, or a poll loop's
+	// read) is not mistaken for dead weight: cut at *every* loop header, not just
+	// the dominant one.
 	start := 0
 	passes := [][2]int{}
-	if header >= 0 {
+	if len(headers) > 0 {
 		for i, ln := range path {
-			if i > start && ln == header {
+			if i > start && headers[ln] {
 				passes = append(passes, [2]int{start, i})
 				start = i
 			}
