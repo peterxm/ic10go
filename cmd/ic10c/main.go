@@ -628,6 +628,15 @@ func cmdRun(args []string) int {
 		case "--trace":
 			trace = true
 		default:
+			// An unrecognised `--` flag was previously swallowed as the input
+			// file, producing a misleading "open --rel-jump: no such file"
+			// (review T7, §2.9.3). `run` accepts a subset of build flags; name
+			// the real problem so the typo is visible. A genuine filename does
+			// not start with "--".
+			if strings.HasPrefix(args[i], "--") {
+				fmt.Fprintf(os.Stderr, "ic10c: unknown or unsupported flag %q for run (run accepts a subset of build flags)\n", args[i])
+				return 2
+			}
 			file = args[i]
 		}
 	}
