@@ -1620,24 +1620,22 @@ func deviceOperand(n *node) (dev, key string, write, known bool) {
 	}
 	dev = n.args[idx]
 	known = isLiteralDevice(dev)
+	// Every store form the compiler emits (IR Store/StoreSlot/StoreDyn and the
+	// three BatchStore kinds). The target key is everything between the device
+	// operand and the value: `s` -> the logic, `ss` -> slot+logic, `sbn` ->
+	// name-hash+logic, and so on. Getting this wrong is easy and it silently
+	// turns "wrote two different logics" into "wrote the same target twice".
 	switch n.op {
-	case "s":
+	case "s", "ss", "sb", "sbn", "sbs":
 		write = true
-		if len(n.args) > 1 {
-			key = dev + "." + n.args[1]
-		}
-	case "ss": // DEVICE VALUE SLOT_LOGIC_TYPE REGISTER
-		write = true
-		if len(n.args) > 2 {
-			key = dev + "." + n.args[2]
-		}
-	case "sb":
-		write = true
-		if len(n.args) > 1 {
-			key = dev + "." + n.args[1]
+		if len(n.args) > idx+1 {
+			key = dev + "." + strings.Join(n.args[idx+1:len(n.args)-1], " ")
 		}
 	default:
 		key = dev // a read: the key is unused
+	}
+	if write && key == "" {
+		key = dev
 	}
 	if key == "" {
 		key = dev
