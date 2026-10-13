@@ -363,3 +363,57 @@ func TestTicksPerRound(t *testing.T) {
 		t.Errorf("report should mention the round:\n%s", out)
 	}
 }
+
+// TestHintsIdlePollAndWriteTargets covers the three advisory fields the report
+// grew: an idle segment (nothing but yields and jumps), a poll segment (no yield,
+// spins re-reading a device), and the count of device targets a segment writes
+// per pass (what the group-guard advice is about).
+func TestHintsIdlePollAndWriteTargets(t *testing.T) {
+	// idle: a yield followed by a jump back to another yield.
+	rep, err := Analyze("yield\nd0.On = 1\nyield\nj 0\n", 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idle := 0
+	for _, s := range rep.Segments {
+		if s.Idle {
+			idle++
+		}
+	}
+	if idle == 0 {
+		t.Errorf("two yields in a row should mark a segment idle:\n%s", rep.String())
+	}
+	if !strings.Contains(rep.String(), "idle:") {
+		t.Errorf("report should mention the idle segment:\n%s", rep.String())
+	}
+
+	// poll: no yield in the loop, reads a device, writes none.
+	rep, err = Analyze("yield\nl r0 d0 On\nbeqz r0 1\nj 0\n", 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	polls := 0
+	for _, s := range rep.Segments {
+		if s.Poll {
+			polls++
+		}
+	}
+	if polls == 0 {
+		t.Errorf("a busy-wait should be marked poll:\n%s", rep.String())
+	}
+	if !strings.Contains(rep.String(), "poll:") {
+		t.Errorf("report should mention the poll segment:\n%s", rep.String())
+	}
+
+	// write targets: five device writes in one pass of an over-budget segment.
+	rep, err = Analyze("yield\ns d0 On 1\ns d1 On 1\ns d2 On 1\ns d3 On 1\ns d4 On 1\nj 1\n", 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rep.Segments[1].WriteTargets; got != 5 {
+		t.Errorf("writeTargets = %d, want 5:\n%s", got, rep.String())
+	}
+	if !strings.Contains(rep.String(), "state check around the whole block") {
+		t.Errorf("report should give the group-guard hint:\n%s", rep.String())
+	}
+}

@@ -70,6 +70,24 @@ type Segment struct {
 	// no read of that device in between. Only filled for segments that exceed
 	// the budget, where such a write is a merge candidate.
 	Duplicates []DupWrite `json:"duplicates,omitempty"`
+
+	// Idle marks a segment that only yields and jumps: the chip spends a whole
+	// tick there. Two yields in a row look exactly like this, and they make the
+	// loop run at half rate (a bare single-yield segment has cost 1 and is not
+	// idle in this sense).
+	Idle bool `json:"idle,omitempty"`
+
+	// Poll marks a segment with no yield at all whose dominant loop is tiny and
+	// only reads devices: the chip spins in it until a value changes, spending
+	// the whole tick re-reading. A yield inside the loop makes it check once per
+	// tick instead.
+	Poll bool `json:"poll,omitempty"`
+
+	// WriteTargets counts the distinct device targets written in one pass over
+	// the worst-case path (device+logic, plus the slot for slot writes). A high
+	// number is what the group-guard advice talks about: many device writes that
+	// repeat every tick. Only filled for segments that exceed the budget.
+	WriteTargets int `json:"writeTargets,omitempty"`
 }
 
 // DupWrite is a device target written more than once in one pass. The
@@ -722,6 +740,9 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 				seg.SourcePath[i] = srcOf(ln)
 			}
 		}
+		// Idle segments (nothing but yields and jumps) matter regardless of the
+		// budget: they cost a whole tick.
+		seg.Idle = idleSegment(seg.Path, nodes)
 		// A write that happens twice in one pass with nothing reading the device
 		// between is dead weight in a segment that already exceeds the budget.
 		if seg.Exceeds && len(seg.Path) > 0 {
@@ -730,6 +751,8 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 				headers[lp.Header] = true
 			}
 			seg.Duplicates = dupWrites(seg.Path, nodes, headers)
+			seg.WriteTargets = passWriteTargets(seg.Path, nodes, headers)
+			seg.Poll = pollSegment(seg, nodes)
 			for i := range seg.Duplicates {
 				for _, ln := range seg.Duplicates[i].Lines {
 					seg.Duplicates[i].Source = append(seg.Duplicates[i].Source, srcOf(ln))
@@ -753,6 +776,7 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 			}
 		}
 		l.Source = srcOf(l.Header)
+
 		// SourceStart/End: the source-line span of the loop's IC10 range, so an
 		// editor can highlight the whole loop. Mapping only Start/End is wrong
 		// when the latch (a back jump) maps back to the header's source line.
@@ -914,6 +938,98 @@ func newBoundedWalk(nodes map[int]*node, lines []int, dom map[int]map[int]bool) 
 		product *= b.cap + 1
 	}
 	return w
+}
+
+// idleSegment reports whether a segment only yields and jumps: the chip spends a
+// whole tick there for nothing. A bare single-yield segment (cost 1) is the
+// normal loop boundary and is not idle; a yield *plus* a jump back is the
+// "two yields in a row" signature, which halves the loop's rate.
+func idleSegment(path []int, nodes map[int]*node) bool {
+	if len(path) < 2 {
+		return false
+	}
+	for _, ln := range path {
+		n := nodes[ln]
+		if n == nil {
+			continue
+		}
+		switch n.op {
+		case "yield", "sleep", "j", "jr":
+			// control only
+		default:
+			if strings.HasPrefix(n.op, "b") || strings.HasPrefix(n.op, "br") {
+				continue
+			}
+			return false
+		}
+	}
+	return true
+}
+
+// pollSegment reports whether a segment is a busy-wait: it never yields (so the
+// chip cannot leave it until the tick budget runs out), its dominant loop is tiny
+// and that loop only reads devices. The loop *body* is what matters here, not the
+// loop's Spans flag: a small spin loop can sit inside a bigger loop that does
+// contain a yield.
+func pollSegment(seg Segment, nodes map[int]*node) bool {
+	if seg.Barrier >= 0 || seg.Dominant < 0 || len(seg.Path) == 0 {
+		return false
+	}
+	reads, writes := 0, 0
+	distinct := map[int]bool{}
+	for _, ln := range seg.Path {
+		distinct[ln] = true
+		n := nodes[ln]
+		if n == nil {
+			continue
+		}
+		if dev, _, write, _ := deviceOperand(n); dev != "" {
+			if write {
+				writes++
+			} else {
+				reads++
+			}
+		}
+	}
+	// A spin loop repeats a couple of instructions until the value changes, so
+	// the *distinct* instructions (not the path length) tell the two apart: a
+	// segment that reads devices, writes none, and reuses a handful of lines is
+	// waiting; a bigger one is doing work and this hint would mislead.
+	return reads > 0 && writes == 0 && len(distinct) <= 6
+}
+
+// passWriteTargets counts the distinct device targets written in one pass, using
+// the same pass splitting as dupWrites: a target written once per iteration is
+// one, not many.
+func passWriteTargets(path []int, nodes map[int]*node, headers map[int]bool) int {
+	start := 0
+	passes := [][2]int{}
+	if len(headers) > 0 {
+		for i, ln := range path {
+			if i > start && headers[ln] {
+				passes = append(passes, [2]int{start, i})
+				start = i
+			}
+		}
+	}
+	passes = append(passes, [2]int{start, len(path)})
+	best := 0
+	for _, p := range passes {
+		seen := map[string]bool{}
+		for _, ln := range path[p[0]:p[1]] {
+			n := nodes[ln]
+			if n == nil {
+				continue
+			}
+			if dev, key, write, known := deviceOperand(n); write && known && dev != "" {
+				seen[key] = true
+			}
+		}
+		if len(seen) > best {
+			best = len(seen)
+		}
+	}
+	return best
 }
 
 func (w *boundedWalk) steps(i, rem int, counts [maxTrackedLoops]byte) int {
@@ -1430,6 +1546,19 @@ func (r *Report) String() string {
 			b.WriteString("      (the program only sees the last one; the device still sees each — merge them if none is a\n" +
 				"       deliberate pulse, and prefer one state check around the whole block)\n")
 		}
+		if s.Idle {
+			b.WriteString("    idle: this segment only yields and jumps back, so the chip spends a whole tick on it —\n" +
+				"          two yields in a row look like this and halve the loop's rate.\n")
+		}
+		if s.Poll {
+			b.WriteString("    poll: this segment never yields and only re-reads devices — the chip spins until the\n" +
+				"          value changes, burning the tick. Put a yield() in the loop to check once per tick.\n")
+		}
+		if s.Exceeds && s.WriteTargets >= 4 {
+			fmt.Fprintf(&b, "    hint: this segment writes %d device targets every pass — if their values rarely change, one\n"+
+				"          state check around the whole block is much cheaper than guarding each write (keep the\n"+
+				"          transitions outside the check; see docs/tick-budget.md).\n", s.WriteTargets)
+		}
 	}
 	for _, l := range r.Loops {
 		trips := "?"
@@ -1463,8 +1592,7 @@ func (r *Report) String() string {
 	}
 	if anyExceeds {
 		b.WriteString("  worst case: a loop between yields can exceed the budget, so the chip resumes mid-loop on the next tick.\n")
-		b.WriteString("  hint: if a loop writes the same devices every tick, one state-change check around the whole\n" +
-			"        block is far cheaper than guarding each write (see docs/tick-budget.md).\n")
+
 	}
 	return b.String()
 }

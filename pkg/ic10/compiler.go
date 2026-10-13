@@ -589,6 +589,25 @@ func warnTickBudget(name, code string, lineMap []int, diags *diag.Bag) {
 		diags.WarnfCode("tick-budget", source.Pos{File: name, Line: line, Col: 1},
 			"the worst-case path between two yields exceeds the %d-instruction tick budget; the chip resumes mid-loop on the next tick (see `ic10c tick`)", tick.DefaultLimit)
 	}
+	// A loop with no yield that only re-reads devices is a busy-wait: it burns a
+	// whole tick's instructions spinning. Checked here (not in sema) because it
+	// needs the compiled shape, not the source.
+	polled := map[int]bool{}
+	for _, s := range rep.Segments {
+		if !s.Poll {
+			continue
+		}
+		line := s.DominantSource
+		if line == 0 {
+			line = s.Source
+		}
+		if line == 0 || polled[line] {
+			continue
+		}
+		polled[line] = true
+		diags.WarnfCode("poll-loop", source.Pos{File: name, Line: line, Col: 1},
+			"this loop has no yield() and only re-reads devices: it spins until a value changes, burning the whole tick. Put a yield() inside so the chip checks once per tick")
+	}
 }
 
 // busUse records which chips read and write one bus slot.
