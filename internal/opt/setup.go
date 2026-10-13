@@ -1,6 +1,10 @@
 package opt
 
-import "ic10go/internal/ir"
+import (
+	"strconv"
+
+	"ic10go/internal/ir"
+)
 
 // SplitSetup moves one-time setup instructions out of fn into a new function.
 //
@@ -10,10 +14,29 @@ import "ic10go/internal/ir"
 // need to run once; hoisting them into a separate loader lets the runtime stay
 // inside the line budget.
 //
+// It also hoists a constant device write from *inside* a loop when the write runs
+// on every iteration of every loop that contains it and the device has no other
+// writer anywhere. Re-asserting the same constant every tick is normally
+// redundant (device state persists), and those repetitions are what push state
+// machines over the per-tick instruction budget. Two cases are deliberately left
+// alone:
+//
+//   - a write in a conditional arm (a state machine's `if mode == 0 { d0.On = 1 }`):
+//     leaving the loop would stop re-asserting the value when that state is
+//     entered again, so only writes that run on every iteration qualify;
+//   - a device that some other instruction also writes: the loader runs before
+//     the runtime, so hoisting part of a device's writes would reorder them.
+//
+// Moving a pre-loop write is semantically a no-op (it happened once either way,
+// in the same order), so the caller may do that whenever a loader exists for
+// another reason. Moving an in-loop write *changes how often the device is
+// written*, so it only happens when hoistInLoop is set -- the explicit
+// `--extract-setup` -- because a device may deliberately act on each write.
+//
 // It returns the setup function, or nil when nothing is hoistable. The caller
 // generates the two functions separately (the loader runs once, then the
 // runtime replaces it).
-func SplitSetup(fn *ir.Function) *ir.Function {
+func SplitSetup(fn *ir.Function, hoistInLoop bool) *ir.Function {
 	fn.BuildCFG()
 	succs := ir.Successors(fn)
 	preds := ir.Preds(fn)
@@ -44,20 +67,86 @@ func SplitSetup(fn *ir.Function) *ir.Function {
 		}
 	}
 
+	// A block runs on every iteration of a loop when it dominates each of the
+	// loop's latches (the blocks whose back edge returns to the header). Requiring
+	// it for every loop that contains the block also covers a loop that is itself
+	// entered conditionally: then no block inside it dominates the outer latch.
+	everyIteration := map[*ir.Block]bool{}
+	for _, b := range fn.Blocks {
+		if !inLoop[b] {
+			continue
+		}
+		ok := true
+		for _, lp := range loops {
+			if !lp.blocks[b] {
+				continue
+			}
+			latches := 0
+			for _, src := range fn.Blocks {
+				for _, s := range succs[src] {
+					if s != lp.header || !dom[src][lp.header] {
+						continue
+					}
+					latches++
+					if !dom[src][b] {
+						ok = false
+					}
+				}
+			}
+			if latches == 0 {
+				ok = false
+			}
+		}
+		everyIteration[b] = ok
+	}
+
+	// How each device is written across the whole function: an in-loop hoist is
+	// only safe when every write of that device is hoistable too (see above).
+	writes := map[string]int{}
+	for _, b := range fn.Blocks {
+		for _, ins := range b.Instrs {
+			if d, ok := deviceOfWrite(ins); ok {
+				writes[d]++
+			}
+		}
+	}
+	hoistableWriters := map[string]int{}
+	for _, b := range fn.Blocks {
+		for _, ins := range b.Instrs {
+			d, ok := deviceOfWrite(ins)
+			if !ok || !isSetupWrite(ins) {
+				continue
+			}
+			if preLoop[b] || (everyIteration[b] && writes[d] > 0) {
+				hoistableWriters[d]++
+			}
+		}
+	}
+	deviceOK := map[string]bool{}
+	for d, n := range writes {
+		deviceOK[d] = hoistableWriters[d] == n
+	}
+
 	setup := ir.NewBuilder("__setup")
 	moved := 0
 	for _, b := range fn.Blocks {
-		if !preLoop[b] {
+		if !preLoop[b] && !everyIteration[b] {
 			continue
 		}
 		kept := make([]ir.Instr, 0, len(b.Instrs))
 		for _, ins := range b.Instrs {
-			if isSetupWrite(ins) {
-				setup.Emit(ins)
-				moved++
+			if !isSetupWrite(ins) {
+				kept = append(kept, ins)
 				continue
 			}
-			kept = append(kept, ins)
+			if !preLoop[b] && (!hoistInLoop || !deviceOK[deviceKey(ins)]) {
+				// Inside a loop: only with --extract-setup, and only when the
+				// device has no writer left behind.
+				kept = append(kept, ins)
+				continue
+			}
+			setup.Emit(ins)
+			moved++
 		}
 		b.Instrs = kept
 	}
@@ -84,6 +173,70 @@ func isSetupWrite(ins ir.Instr) bool {
 		}
 	}
 	return false
+}
+
+// deviceOfWrite names the device a write addresses, or reports that this is not
+// a device write. The name is an identity key for "does anything else write this
+// device", so two instructions addressing the same device must agree; a
+// runtime-selected device (a register) is not nameable.
+func deviceOfWrite(ins ir.Instr) (string, bool) {
+	switch x := ins.(type) {
+	case *ir.Store:
+		return "d:" + x.Dev, true
+	case *ir.StoreSlot:
+		if x.DevPtr != nil {
+			return "", false
+		}
+		return "d:" + x.Dev, true
+	case *ir.StoreDyn:
+		if x.DevPtr != nil {
+			return "", false
+		}
+		if x.Dev != "" {
+			return "d:" + x.Dev, true
+		}
+		if id, ok := constKey(x.DevID); ok {
+			return "id:" + id, true
+		}
+		return "", false
+	case *ir.Batch:
+		switch x.Kind {
+		case ir.BatchStore, ir.BatchStoreName, ir.BatchStoreSlot:
+			dev, ok1 := constKey(x.Device)
+			name, ok2 := constKey(x.Name)
+			if !ok1 || !ok2 {
+				return "", false
+			}
+			return "b:" + dev + "/" + name, true
+		}
+	}
+	return "", false
+}
+
+// deviceKey is deviceOfWrite for a write we already know is one.
+func deviceKey(ins ir.Instr) string {
+	d, _ := deviceOfWrite(ins)
+	return d
+}
+
+// constKey renders a constant operand as text, so two identical constants
+// compare equal. A non-constant (nil is the "absent" operand) reports false.
+func constKey(v ir.Value) (string, bool) {
+	if v == nil {
+		return "", false
+	}
+	c, ok := v.(*ir.Const)
+	if !ok {
+		return "", false
+	}
+	switch {
+	case c.Raw != "":
+		return "raw:" + c.Raw, true
+	case c.Special != "":
+		return "sp:" + c.Special, true
+	default:
+		return "num:" + strconv.FormatFloat(c.V, 'g', -1, 64), true
+	}
 }
 
 func constValue(v ir.Value) bool {

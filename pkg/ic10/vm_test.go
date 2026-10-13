@@ -28,6 +28,62 @@ func runProgram(t *testing.T, src string, steps int, setup func(m *vm.Machine)) 
 	return m
 }
 
+// TestVMExtractSetupInLoop: hoisting an in-loop constant write into the loader
+// must leave the same device state as writing it every tick, when the loader has
+// run once before the runtime.
+func TestVMExtractSetupInLoop(t *testing.T) {
+	src := "func main() {\n" +
+		"    for {\n" +
+		"        yield()\n" +
+		"        d0.On = 1\n" +
+		"        d1.Setting = 7\n" +
+		"        if d2.On {\n" +
+		"            d0.Mode = 4\n" + // in a conditional arm: must stay
+		"        }\n" +
+		"    }\n" +
+		"}\n"
+	plain := mustCompile(t, src)
+	ex, diags, err := ic10.CompileResult("t.icg", []byte(src), ic10.Options{ExtractSetup: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if ex.Loader == "" {
+		t.Fatal("expected a loader")
+	}
+	if strings.Contains(ex.Loader, "d0 Mode 4") {
+		t.Errorf("a conditional arm must not be hoisted:\n%s", ex.Loader)
+	}
+	state := func(m *vm.Machine) string {
+		return fmt.Sprintf("d0.On=%v d0.Mode=%v d1.Setting=%v",
+			m.Get("d0", "On"), m.Get("d0", "Mode"), m.Get("d1", "Setting"))
+	}
+	plainM := vm.New()
+	if err := plainM.Load(plain); err != nil {
+		t.Fatal(err)
+	}
+	if err := plainM.Run(500); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	// Loader first (once), then the runtime, as the deployment does.
+	m := vm.New()
+	if err := m.Load(ex.Loader); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(50); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	if err := m.Load(ex.Code); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(500); err != nil && err != vm.ErrStepLimit {
+		t.Fatal(err)
+	}
+	if got, want := state(m), state(plainM); got != want {
+		t.Fatalf("loader+runtime changed the device state:\n got %s\nwant %s\n--- runtime ---\n%s\n--- loader ---\n%s",
+			got, want, ex.Code, ex.Loader)
+	}
+}
+
 // TestVMRedundantDeviceWrites checks the opt-in dedupe keeps the final device
 // state identical, including across inlined helper calls (separate blocks).
 func TestVMRedundantDeviceWrites(t *testing.T) {

@@ -562,7 +562,7 @@ ic10go/
 - `Bus.槽位` → `l/s <dev>:<conn> ChannelN`；唯一写者 / 被读却无写者 / 未绑定 / 超通道校验
 - CLI 按芯片写文件、`--chip`、JSON `chips[]`、`stats` 分组；VM `World` 多芯片锁步并按 bus 自动接线
 - LSP 按光标所在 chip 隔离补全/签名；VSCode 编译命令弹芯片选择
-- 另：超预算时、程序本就需要 loader（`data` 段）时、或 `--extract-setup` 时，把一次性设置写入外提到 loader（`internal/opt/setup.go`）；同步新气体比例逻辑类型
+- 另：超预算时、程序本就需要 loader（`data` 段）时、或 `--extract-setup` 时，把一次性设置写入外提到 loader（`internal/opt/setup.go`）。范围含**循环内每轮无条件重复的常量写**（每 tick 重新断言同一常量通常是冗余的）；**条件臂里的常量写不动**（状态机 `if mode == 0 { d0.On = 1 }` 一旦外提，再次进入该状态就不会置位），同一设备还有别的写者时也不动（loader 先于 runtime 运行，会改变顺序）；同步新气体比例逻辑类型
 - 详见 [`multichip.md`](multichip.md)
 
 ---

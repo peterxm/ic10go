@@ -683,7 +683,7 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			// the plain runtime as a candidate so the shorter one wins.
 			consider(Result{Code: code, LineMap: lineMap, Vars: vars})
 		}
-		setup := opt.SplitSetup(fn)
+		setup := opt.SplitSetup(fn, o.ExtractSetup)
 		if setup == nil {
 			if err == nil {
 				consider(Result{Code: code, LineMap: lineMap, Vars: vars})

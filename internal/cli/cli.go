@@ -161,8 +161,8 @@ var mergeRenamedTailsFlag = Flag{Long: "--merge-renamed-tails", Desc: text{
 }}
 
 var extractSetupFlag = Flag{Long: "--extract-setup", Desc: text{
-	EN: "hoist one-time constant device writes into a one-time loader (shorter runtime; run the loader once). build already points at this when a program is close to the line limit and it would help",
-	ZH: "把序言里的一次性常量设备写外提到一次性装载器（runtime 更短；需先运行一次 loader）。行数接近上限且确有收益时，build 会主动提示它",
+	EN: "hoist one-time constant device writes into a one-time loader (shorter runtime; run the loader once). Covers the prologue and constant writes a loop repeats unconditionally every iteration; writes in a conditional arm stay put (hoisting them would stop re-asserting when that state is entered again)",
+	ZH: "把一次性常量设备写外提到一次性装载器（runtime 更短；需先运行一次 loader）。范围含序言与「循环内每轮无条件重复」的常量写；**条件臂里的写不动**（外提后再次进入该状态就不会置位）",
 }}
 
 var dynamicStackFlag = Flag{Long: "--dynamic-stack", Desc: text{

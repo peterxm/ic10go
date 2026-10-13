@@ -508,6 +508,97 @@ func TestExtractSetupUnderLimit(t *testing.T) {
 	}
 }
 
+// TestExtractSetupInLoop: a constant device write that runs on every iteration
+// of every enclosing loop is redundant re-assertion and moves to the loader.
+func TestExtractSetupInLoop(t *testing.T) {
+	src := []byte("func main() {\n" +
+		"    for {\n" +
+		"        yield()\n" +
+		"        d0.Mode = 1\n" +
+		"        d1.Setting = 5\n" +
+		"    }\n" +
+		"}\n")
+	plain, diags, err := ic10.CompileResult("e.icg", src, ic10.Options{})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("plain: %v %v", diags.Diags, err)
+	}
+	ex, diags, err := ic10.CompileResult("e.icg", src, ic10.Options{ExtractSetup: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("extract: %v %v", diags.Diags, err)
+	}
+	for _, want := range []string{"s d0 Mode 1", "s d1 Setting 5"} {
+		if !strings.Contains(ex.Loader, want) {
+			t.Errorf("loader missing %q:\n%s", want, ex.Loader)
+		}
+		if strings.Contains(ex.Code, want) {
+			t.Errorf("%q must leave the runtime:\n%s", want, ex.Code)
+		}
+	}
+	if strings.Count(ex.Code, "\n") >= strings.Count(plain.Code, "\n") {
+		t.Errorf("runtime should shrink: %d >= %d", strings.Count(ex.Code, "\n"), strings.Count(plain.Code, "\n"))
+	}
+}
+
+// TestExtractSetupKeepsConditionalArms: a state machine's per-mode constant
+// writes must stay in the loop. Hoisting them would stop re-asserting the value
+// when that state is entered again, and the other arm writes the same device.
+func TestExtractSetupKeepsConditionalArms(t *testing.T) {
+	// The mode must actually change, or the compiler folds the branch away and
+	// the writes become unconditional (which is a different, also-correct case).
+	src := []byte("func main() {\n" +
+		"    m := 0\n" +
+		"    for {\n" +
+		"        yield()\n" +
+		"        if d3.On {\n" +
+		"            m = 1\n" +
+		"        }\n" +
+		"        if m == 0 {\n" +
+		"            d0.On = 1\n" +
+		"            d1.Mode = 3\n" +
+		"        } else {\n" +
+		"            d0.On = 0\n" +
+		"        }\n" +
+		"    }\n" +
+		"}\n")
+	ex, diags, err := ic10.CompileResult("e.icg", src, ic10.Options{ExtractSetup: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("extract: %v %v", diags.Diags, err)
+	}
+	for _, bad := range []string{"s d0 On 1", "s d0 On 0", "s d1 Mode 3"} {
+		if strings.Contains(ex.Loader, bad) {
+			t.Errorf("a conditional arm must not be hoisted, found %q in the loader:\n%s", bad, ex.Loader)
+		}
+		if !strings.Contains(ex.Code, bad) {
+			t.Errorf("%q must stay in the runtime:\n%s", bad, ex.Code)
+		}
+	}
+}
+
+// TestExtractSetupKeepsDeviceWithOtherWriter: an unconditional in-loop write
+// stays when the same device has another writer left behind, because the loader
+// runs before the runtime and would reorder them.
+func TestExtractSetupKeepsDeviceWithOtherWriter(t *testing.T) {
+	src := []byte("func main() {\n" +
+		"    for {\n" +
+		"        yield()\n" +
+		"        d0.On = 1\n" +
+		"        if d1.On {\n" +
+		"            d0.On = 0\n" +
+		"        }\n" +
+		"    }\n" +
+		"}\n")
+	ex, diags, err := ic10.CompileResult("e.icg", src, ic10.Options{ExtractSetup: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("extract: %v %v", diags.Diags, err)
+	}
+	if strings.Contains(ex.Loader, "d0 On") {
+		t.Errorf("device d0 has a second writer, so nothing of it may be hoisted:\n%s", ex.Loader)
+	}
+	if !strings.Contains(ex.Code, "s d0 On 1") || !strings.Contains(ex.Code, "s d0 On 0") {
+		t.Errorf("both writes must stay:\n%s", ex.Code)
+	}
+}
+
 func TestExtractSetupEnv(t *testing.T) {
 	src := []byte("func main() { d0.Mode = 1; for { yield() } }\n")
 	t.Setenv("IC10C_EXTRACT_SETUP", "1")
