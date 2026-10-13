@@ -268,7 +268,13 @@ func (d *decompiler) translate(l icLine) []string {
 		}
 		return []string{d.jumpStatement(l, 0, true)}
 	case "jr":
-		if !d.jumpTargetOK(l) {
+		// A jr with a constant offset is a plain relative goto. A *register*
+		// operand is a relative computed jump, and .icg has no form for it:
+		// jump(expr) is the absolute `j rX`, so rendering it as jump(reg)
+		// silently produced a program that jumps somewhere else entirely
+		// (verified: a --jump-table switch round-tripped to wrong device
+		// values). Treat it like the computed call below -- say so instead.
+		if _, ok := d.jumpTarget(l); !ok {
 			return d.unsupported(l)
 		}
 		return []string{d.jumpStatement(l, 0, false)}

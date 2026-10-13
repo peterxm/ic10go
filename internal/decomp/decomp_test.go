@@ -30,6 +30,34 @@ s s Setting r1
 	}
 }
 
+// A relative computed jump (jr rX) has no .icg form -- jump(expr) is the
+// absolute `j rX`. It used to be emitted as jump(reg), which compiles and jumps
+// somewhere else entirely, so a --jump-table program round-tripped to wrong
+// values. It must be reported instead (review D2).
+func TestDecompileRelativeComputedJumpIsReported(t *testing.T) {
+	// A jump table: the classic `jr rX` idiom the compiler emits for a switch.
+	src := "sltz r1 r0\nsgt r2 r0 1\nor r1 r1 r2\nbnez r1 8\nadd r0 r0 1\njr r0\nj 8\nj 5\ns d0 Setting 1\nj 0\ns d0 Setting 2\nj 0\n"
+	code, warns, err := Decompile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, w := range warns {
+		if strings.Contains(w.Text, "jr r0") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("jr with a register operand must be reported: %v", warns)
+	}
+	if strings.Contains(code, "jump(r0)") {
+		t.Errorf("a relative computed jump must not be rendered as the absolute jump():\n%s", code)
+	}
+	if !strings.Contains(code, "// unsupported: jr r0") {
+		t.Errorf("the jr line should be kept as a comment:\n%s", code)
+	}
+}
+
 func TestDecompileControlFlow(t *testing.T) {
 	src := `loop:
 add r0 r0 1
