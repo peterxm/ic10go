@@ -292,6 +292,23 @@ if (!connItem.command || typeof connItem.command !== 'object' || typeof connItem
     process.exit(1);
 }
 
+// scoreNote renders the per-tick numbers (and the grade) for the push message.
+// locale-independent: the mock runs zh-cn, and both wordings contain these.
+const sn = bench.scoreNote({ tick: { cost: 29, limit: 128, ticksPerRound: 1 }, score: { grade: 'A' } });
+if (!sn.includes('29/128') || !sn.includes('A') || /round|每轮/.test(sn)) {
+    console.error('scoreNote wrong for a one-tick program: ' + sn);
+    process.exit(1);
+}
+const sn2 = bench.scoreNote({ tick: { cost: 129, limit: 128, ticksPerRound: 2 }, score: { grade: 'D' } });
+if (!sn2.includes('129/128') || !sn2.includes('2 tick') || !sn2.includes('D')) {
+    console.error('scoreNote wrong for an over-budget program: ' + sn2);
+    process.exit(1);
+}
+if (bench.scoreNote(undefined) !== '' || bench.scoreNote({}) !== '') {
+    console.error('scoreNote should be empty without a build report');
+    process.exit(1);
+}
+
 ext.deactivate();
 
 const expected = [

@@ -1695,9 +1695,10 @@ class Bench {
                 const lines = r.lines || 0;
                 const tail = chipLabel ? ` [${chipLabel}]` : '';
                 const loaderNote = loaders.length ? ` (+${loaders.length} loader)` : '';
+                const note = this.scoreNote(out);
                 vscode.window.setStatusBarMessage(
-                    t(`IC10: uploaded ${lines} lines${tail}${loaderNote}`,
-                        `IC10: 已上传 ${lines} 行${tail}${loaders.length ? `（+${loaders.length} 段 loader）` : ''}`),
+                    t(`IC10: uploaded ${lines} lines${tail}${loaderNote}${note}`,
+                        `IC10: 已上传 ${lines} 行${tail}${loaders.length ? `（+${loaders.length} 段 loader）` : ''}${note}`),
                     4000
                 );
                 await this.refresh(false);
@@ -2727,6 +2728,28 @@ ${note}${diffNote}
         vscode.window.setStatusBarMessage(
             t(`IC10: tracking ${what} in game (F8 toggles the HUD)`,
               `IC10: 游戏中追踪 ${what}（F8 开关 HUD）`), 6000);
+    }
+
+    // scoreNote renders a build's per-tick numbers for the push status message:
+    // the worst tick against the budget, the round length when the loop spans
+    // ticks ("how slow is my control loop"), and the grade -- which takes the
+    // worse of the line and tick axes. See `ic10c tick --run N` for the measured
+    // steady state, which is often far lower than the static worst.
+    scoreNote(out) {
+        const tick = out && out.tick;
+        const sc = out && out.score;
+        if (!tick && !sc) return '';
+        const parts = [];
+        if (tick) {
+            const cost = tick.cost || 0;
+            const limit = tick.limit || 128;
+            parts.push(t(`tick ${cost}/${limit}`, `每 tick ${cost}/${limit}`));
+            if (tick.ticksPerRound > 1) {
+                parts.push(t(`round ${tick.ticksPerRound} ticks`, `每轮 ${tick.ticksPerRound} tick`));
+            }
+        }
+        if (sc && sc.grade) parts.push(sc.grade);
+        return parts.length ? ' · ' + parts.join(' · ') : '';
     }
 
     // setNear turns the "only hosts within ±4 of me" filter on/off and refreshes.
