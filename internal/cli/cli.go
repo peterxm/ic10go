@@ -116,8 +116,8 @@ var autoTableFlag = Flag{Long: "--auto-table", Desc: text{
 }}
 
 var jumpTableFlag = Flag{Long: "--jump-table", Desc: text{
-	EN: "lower dense integer switches (>=8 cases) to a computed jump table",
-	ZH: "把稠密整数 switch（≥8 case）降为计算跳转表",
+	EN: "lower a tagged switch with >=8 dense integer cases (single assignment/call bodies) to an inline table of jumps + `jr`; shorter dispatch, more lines. `jr` is relative and the table is verified in game",
+	ZH: "把「带 tag、≥8 个稠密整数 case、体只有一条赋值/调用」的 switch 降为内联跳转表 + `jr`：派发更短、行数更多。`jr` 是相对跳转，跳表已真机验证",
 }}
 
 var fastFlag = Flag{Long: "--fast", Desc: text{

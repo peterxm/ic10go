@@ -1918,3 +1918,46 @@ func TestScoreGradesBothLimits(t *testing.T) {
 		t.Errorf("grade should not improve by relaxing the line limit: %s", sc2.String())
 	}
 }
+
+// TestJumpTableConditions pins the trigger: a tagged switch with >=8 *dense*
+// integer cases whose bodies are a single assignment or call. Below the
+// threshold, gapped values or a multi-statement body keep the comparison chain.
+func TestJumpTableConditions(t *testing.T) {
+	build := func(body string) string {
+		code, diags, err := ic10.CompileWithOptions("t.icg", []byte("func main() {\n"+body+"}\n"), ic10.Options{JumpTable: true})
+		if err != nil || diags.HasErrors() {
+			t.Fatalf("compile: %v %v", diags.Diags, err)
+		}
+		return code
+	}
+	sw := func(cases string) string { return "    switch d0.Setting {\n" + cases + "    }\n" }
+
+	seven := ""
+	for i := 0; i < 7; i++ {
+		seven += fmt.Sprintf("    case %d: d1.On = %d\n", i, i)
+	}
+	if c := build(sw(seven)); strings.Contains(c, "jr ") {
+		t.Errorf("7 cases must stay a comparison chain:\n%s", c)
+	}
+	gapped := ""
+	for i := 0; i < 8; i++ {
+		gapped += fmt.Sprintf("    case %d: d1.On = %d\n", i*2, i)
+	}
+	if c := build(sw(gapped)); strings.Contains(c, "jr ") {
+		t.Errorf("non-dense cases must stay a comparison chain:\n%s", c)
+	}
+	multi := ""
+	for i := 0; i < 8; i++ {
+		multi += fmt.Sprintf("    case %d:\n        d1.On = %d\n        d1.Mode = %d\n", i, i, i)
+	}
+	if c := build(sw(multi)); strings.Contains(c, "jr ") {
+		t.Errorf("multi-statement bodies must stay a comparison chain:\n%s", c)
+	}
+	ok := ""
+	for i := 0; i < 8; i++ {
+		ok += fmt.Sprintf("    case %d: d1.On = %d\n", i, i)
+	}
+	if c := build(sw(ok)); !strings.Contains(c, "jr ") {
+		t.Errorf("8 dense single-statement cases should become a jump table:\n%s", c)
+	}
+}
