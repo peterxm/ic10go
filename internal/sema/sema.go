@@ -298,6 +298,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 
 	collectTableSwitches(info, diags, opts)
 	assignData(info, opts.FixedDataBase)
+	checkRecursion(info, diags)
 	checkBodies(info, diags)
 	return info
 }
@@ -325,6 +326,65 @@ func assignData(info *Info, fixedBase int) {
 		cur += len(t.Values)
 	}
 	info.DataVersion = dataVersion(info.Data)
+}
+
+// checkRecursion detects recursive (direct or mutual) user functions and
+// reports them. IC10 functions are inlined or outlined as straight-line
+// subroutines; recursion is not part of the language (docs/builtin). The only
+// previous detection lived in the lowerer's inlineInto path, so whether a
+// recursive program was accepted depended on the outlining switch (review
+// T6, §2.9.3): outlined recursive calls compiled to a self-referencing
+// subroutine (terminate-on-base-case but unbounded by the user stack) while
+// the inlined path rejected them. This static check makes acceptance
+// independent of codegen options.
+func checkRecursion(info *Info, diags *diag.Bag) {
+	calls := map[string]map[string]bool{}
+	for name, fi := range info.Funcs {
+		if fi.Decl == nil || fi.Decl.Body == nil {
+			continue
+		}
+		edges := calls[name]
+		if edges == nil {
+			edges = map[string]bool{}
+			calls[name] = edges
+		}
+		walkBodyCalls(fi.Decl.Body, func(c *ast.CallExpr) {
+			if id, ok := c.Fun.(*ast.Ident); ok {
+				if _, isFunc := info.Funcs[id.Name]; isFunc {
+					edges[id.Name] = true
+				}
+			}
+		})
+	}
+	// canReach reports whether target is reachable from start via call edges
+	// (excluding the trivial zero-length path, so start->start needs >=1 edge).
+	canReach := func(start, target string) bool {
+		seen := map[string]bool{}
+		var dfs func(n string) bool
+		dfs = func(n string) bool {
+			for next := range calls[n] {
+				if next == target {
+					return true
+				}
+				if !seen[next] {
+					seen[next] = true
+					if dfs(next) {
+						return true
+					}
+				}
+			}
+			return false
+		}
+		return dfs(start)
+	}
+	reported := map[string]bool{}
+	for name, fi := range info.Funcs {
+		if fi.Decl == nil || reported[name] || !canReach(name, name) {
+			continue
+		}
+		diags.Errorf(fi.Decl.Name.Pos(), "function %q is recursive; IC10 does not support recursion", name)
+		reported[name] = true
+	}
 }
 
 // dataVersion derives a stable version number from the table contents so a
