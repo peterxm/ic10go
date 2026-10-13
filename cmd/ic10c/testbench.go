@@ -1334,14 +1334,16 @@ func benchStackIDs(addr string, chip any, rest []string, asJSON bool) int {
 		slots := order
 		if len(slots) == 0 {
 			for k, v := range st.Stack.Values {
-				if n, err := strconv.Atoi(k); err == nil && v != 0 {
+				if n, err := strconv.Atoi(k); err == nil && v != nil && *v != 0 {
 					slots = append(slots, n)
 				}
 			}
 			sort.Ints(slots)
 		}
 		for _, n := range slots {
-			ids[n] = int(st.Stack.Values[strconv.Itoa(n)])
+			if v := st.Stack.Values[strconv.Itoa(n)]; v != nil {
+				ids[n] = int(*v)
+			}
 		}
 	} else {
 		for _, n := range order {
@@ -1713,7 +1715,7 @@ func benchState(addr string, chip any, all, asJSON bool) int {
 	if st.Stack != nil {
 		fmt.Printf("stack  sp=%d size=%d\n", st.Stack.SP, st.Stack.Size)
 		for i := 0; i <= st.Stack.SP; i++ {
-			if v, ok := st.Stack.Values[strconv.Itoa(i)]; ok && v != 0 {
+			if v, ok := st.Stack.Values[strconv.Itoa(i)]; ok && v != nil && *v != 0 {
 				fmt.Printf("       [%d] = %v\n", i, v)
 			}
 		}
@@ -2151,16 +2153,16 @@ func chipName(c testbench.Chip) string {
 	return fmt.Sprintf("chip#%d", c.Index)
 }
 
-func formatRegisters(r map[string]float64) string {
+func formatRegisters(r map[string]*testbench.Num) string {
 	order := []string{"r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
 		"r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "ra", "sp"}
 	var b strings.Builder
 	for _, k := range order {
-		if v, ok := r[k]; ok {
+		if v, ok := r[k]; ok && v != nil {
 			if b.Len() > 0 {
 				b.WriteString("  ")
 			}
-			fmt.Fprintf(&b, "%s=%v", k, v)
+			fmt.Fprintf(&b, "%s=%v", k, *v)
 		}
 	}
 	return b.String()

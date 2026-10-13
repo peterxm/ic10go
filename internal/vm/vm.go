@@ -1117,7 +1117,13 @@ func (m *Machine) execOp(ins *Instr) error {
 		d.Stack[i] = mustNum(m, a[2])
 		return nil
 	case "clr":
-		d := m.dev(a[0])
+		// Resolve like get/put: a port or drN selects the device, otherwise the
+		// operand is a device id. Using the nil-tolerant dev() here crashed the
+		// VM under --strict (review V3).
+		d, err := m.deviceArg(a[0])
+		if err != nil {
+			return err
+		}
 		if d.Name == "db" {
 			// Keep the shared backing array so push/pop see the clear too.
 			for i := range d.Stack {

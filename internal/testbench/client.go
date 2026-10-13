@@ -13,9 +13,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +56,9 @@ type Client struct {
 	mu      sync.Mutex
 	nextID  int
 	pending map[int]chan reply
+	// strayErr is the last error response that matched no pending request
+	// (review B30).
+	strayErr *Error
 
 	events chan json.RawMessage
 
@@ -140,6 +145,14 @@ func (c *Client) readLoop() {
 			case c.events <- raw:
 			default: // drop if nobody is keeping up
 			}
+		case env.Error != nil:
+			// An error the client cannot match to a request: the mod answers a
+			// request line it could not parse with {"id":null,...}. Without this
+			// the reply is dropped and the caller's request just times out with
+			// no reason (review B30).
+			c.mu.Lock()
+			c.strayErr = env.Error
+			c.mu.Unlock()
 		}
 	}
 }
@@ -166,6 +179,11 @@ func (c *Client) Call(cmd string, args any) (json.RawMessage, error) {
 		req["args"] = args
 	}
 	err := c.enc.Encode(req)
+	if err != nil {
+		// The request never went out, so nothing will ever answer it: drop the
+		// slot instead of leaking it (review B32).
+		delete(c.pending, id)
+	}
 	c.mu.Unlock()
 	if err != nil {
 		return nil, err
@@ -179,9 +197,24 @@ func (c *Client) Call(cmd string, args any) (json.RawMessage, error) {
 	case <-time.After(60 * time.Second):
 		c.mu.Lock()
 		delete(c.pending, id)
+		stray := c.strayErr
 		c.mu.Unlock()
+		if stray != nil {
+			return nil, fmt.Errorf("testbench: %s timed out; the mod reported: %w", cmd, stray)
+		}
 		return nil, fmt.Errorf("testbench: %s timed out", cmd)
 	}
+}
+
+// StrayError returns the last error the mod sent that the client could not match
+// to a request (typically a reply to a request line it could not parse), or nil.
+func (c *Client) StrayError() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.strayErr == nil {
+		return nil // not `return c.strayErr`: that would be a non-nil interface
+	}
+	return c.strayErr
 }
 
 // CallInto sends a command and decodes the result into out.
@@ -512,9 +545,9 @@ type TraceResult struct {
 // TraceHit is one executed storage instruction (set/get/put/poke/...) with the
 // registers right before it ran.
 type TraceHit struct {
-	PC   int       `json:"pc"`
-	Text string    `json:"text"`
-	Regs []float64 `json:"regs"`
+	PC   int    `json:"pc"`
+	Text string `json:"text"`
+	Regs []Num  `json:"regs"`
 }
 
 // RunTo steps the chip one instruction at a time until it reaches a line (the
@@ -628,26 +661,87 @@ func (c *Client) State(include []string, all bool, chip any) (*State, error) {
 
 // State is a chip snapshot.
 type State struct {
-	Chip      Chip               `json:"chip"`
-	Registers map[string]float64 `json:"registers"`
-	Stack     *Stack             `json:"stack"`
-	PC        int                `json:"pc"`
-	Line      float64            `json:"line"`
-	Program   *Program           `json:"program"`
-	Errors    *ChipErrors        `json:"errors"`
-	Devices   []DeviceState      `json:"devices"`
+	Chip Chip `json:"chip"`
+	// Registers maps a register name to its value; a nil entry is the protocol's
+	// null (never written / quiet NaN), NOT 0 (review B21).
+	Registers map[string]*Num `json:"registers"`
+	Stack     *Stack          `json:"stack"`
+	PC        int             `json:"pc"`
+	Line      float64         `json:"line"`
+	Program   *Program        `json:"program"`
+	Errors    *ChipErrors     `json:"errors"`
+	Devices   []DeviceState   `json:"devices"`
 }
 
 // Stack is the chip's persistent stack.
 type Stack struct {
-	Size   int                `json:"size"`
-	SP     int                `json:"sp"`
-	Values map[string]float64 `json:"values"`
+	Size   int             `json:"size"`
+	SP     int             `json:"sp"`
+	Values map[string]*Num `json:"values"`
 }
 
 // Program is program metadata.
 type Program struct {
 	Lines int `json:"lines"`
+}
+
+// Num is a JSON number that tolerates the game serializer's spellings and,
+// used through a pointer, keeps null distinct from 0.
+//
+// Two protocol facts drive it (docs/ingame-testbench.md §4.3, review B21/P1):
+// a `null` means "never written" (quiet NaN) and is explicitly NOT 0, and the
+// game's serializer writes the non-finite values as the strings "NaN",
+// "Infinity" and "-Infinity" -- valid JSON but the wrong type, which would fail
+// a plain float64 field and destroy the whole response.
+type Num float64
+
+// UnmarshalJSON accepts a number, or one of the game's non-finite spellings.
+// A JSON null never reaches here: the pointer stays nil.
+func (n *Num) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	switch s {
+	case "":
+		return nil
+	case "NaN":
+		*n = Num(math.NaN())
+	case "Infinity", "inf", "+Inf":
+		*n = Num(math.Inf(1))
+	case "-Infinity", "-inf":
+		*n = Num(math.Inf(-1))
+	default:
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return err
+		}
+		*n = Num(f)
+	}
+	return nil
+}
+
+// MarshalJSON keeps the JSON valid: a non-finite value is written as null
+// (which is what the protocol means by it), never as the unsupported bare
+// NaN/Infinity tokens.
+func (n Num) MarshalJSON() ([]byte, error) {
+	v := float64(n)
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return []byte("null"), nil
+	}
+	return json.Marshal(v)
+}
+
+// String renders the value for terminals, spelling the non-finite ones the way
+// the game does.
+func (n Num) String() string {
+	v := float64(n)
+	switch {
+	case math.IsNaN(v):
+		return "NaN"
+	case math.IsInf(v, 1):
+		return "+Inf"
+	case math.IsInf(v, -1):
+		return "-Inf"
+	}
+	return strconv.FormatFloat(v, 'g', -1, 64)
 }
 
 // ChipErrors is the chip's compile/runtime error state.
@@ -690,14 +784,14 @@ type DeviceState struct {
 	// ID is the device's ReferenceId (mod 0.5.11+). It is what `hud --id`
 	// tracks, and what the editor addresses a device by when it is not wired to a
 	// port. Nil for an older mod.
-	ID      *int               `json:"id,omitempty"`
-	Prefab  string             `json:"prefab"`
-	Name    string             `json:"name"`
-	Binding string             `json:"binding,omitempty"`
-	Present *bool              `json:"present,omitempty"`
-	Logic   map[string]float64 `json:"logic"`
-	Slots   []SlotState        `json:"slots,omitempty"`
-	Probe   map[string]string  `json:"probe,omitempty"`
+	ID      *int              `json:"id,omitempty"`
+	Prefab  string            `json:"prefab"`
+	Name    string            `json:"name"`
+	Binding string            `json:"binding,omitempty"`
+	Present *bool             `json:"present,omitempty"`
+	Logic   map[string]*Num   `json:"logic"`
+	Slots   []SlotState       `json:"slots,omitempty"`
+	Probe   map[string]string `json:"probe,omitempty"`
 	// Channels, when present, are the device's cable-network channels: one
 	// entry per data connection, each with the eight shared Channel0..7 values
 	// (IC10 `dN:<conn> ChannelM`). Nil for a device that is not on a network.
@@ -715,6 +809,6 @@ type ConnectionState struct {
 
 // SlotState is one logic slot (inventory slot) of a device.
 type SlotState struct {
-	Index int                `json:"index"`
-	Logic map[string]float64 `json:"logic"`
+	Index int             `json:"index"`
+	Logic map[string]*Num `json:"logic"`
 }

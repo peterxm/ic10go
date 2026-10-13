@@ -201,10 +201,13 @@ func (r *Runner) runCase(cs Case, chip any, force bool) CaseResult {
 		}
 		for k, want := range cs.ExpectReg {
 			g, ok := st.Registers[k]
-			if !ok {
+			if !ok || g == nil {
+				// A null register is "never written" (quiet NaN), which is
+				// explicitly not 0 -- it must not satisfy an expectation of 0
+				// (review B21).
 				res.Failures = append(res.Failures, Failure{Key: k, Want: fmtNum(want), Got: "?"})
-			} else if !closeEnough(want, g) {
-				res.Failures = append(res.Failures, Failure{Key: k, Want: fmtNum(want), Got: fmtNum(g)})
+			} else if !closeEnough(want, float64(*g)) {
+				res.Failures = append(res.Failures, Failure{Key: k, Want: fmtNum(want), Got: fmtNum(float64(*g))})
 			}
 		}
 	}

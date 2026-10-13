@@ -2683,6 +2683,14 @@ func redundantStoresInRegion(b *ir.Block, last map[string]*ir.Const, pending map
 					continue
 				}
 				last[key] = c
+			} else {
+				// A store we cannot see through (a register, an expression) leaves
+				// the device holding something unknown, so the recorded value must
+				// be forgotten: otherwise a later identical constant store looks
+				// redundant and is dropped, changing the final device value
+				// (measured: `s d0 On 1; s d0 On r0; s d0 On 1` lost the trailing
+				// constant, leaving the LED at r0's value).
+				delete(last, key)
 			}
 			dev := key[:strings.IndexByte(key, '|')]
 			// A later write to this target makes the pending one invisible to the

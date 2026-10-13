@@ -3,6 +3,7 @@ package testbench
 import (
 	"bufio"
 	"encoding/json"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -28,6 +29,9 @@ type fakeServer struct {
 	// pauseHonoured makes `pause` report the requested state; when false it
 	// reports the world as still running (a multiplayer client).
 	pauseHonoured bool
+	// sendStray makes the server emit an id-less error reply right after the
+	// hello (what the mod does for a request line it cannot parse).
+	sendStray bool
 }
 
 func startFake(t *testing.T) *fakeServer {
@@ -90,6 +94,14 @@ func (f *fakeServer) serve(conn net.Conn) {
 		w.Flush()
 	}
 	send(map[string]any{"event": "hello", "mod": "ic10go-testbench", "version": "0.1.0"})
+	f.mu.Lock()
+	stray := f.sendStray
+	f.mu.Unlock()
+	if stray {
+		send(map[string]any{"id": nil, "ok": false, "error": map[string]any{
+			"code": "bad-request", "message": "malformed request line",
+		}})
+	}
 
 	sc := bufio.NewScanner(conn)
 	for sc.Scan() {
@@ -169,8 +181,10 @@ func (f *fakeServer) serve(conn net.Conn) {
 			send(map[string]any{"id": req.ID, "ok": true, "result": res})
 		case "state":
 			send(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{
-				"chip":      map[string]any{"name": "TestChip"},
-				"registers": map[string]any{"r0": 105, "sp": 4},
+				"chip": map[string]any{"name": "TestChip"},
+				// r5 is the protocol's null ("never written"/quiet NaN), and r6/r7
+				// are the game serializer's non-finite spellings.
+				"registers": map[string]any{"r0": 105, "sp": 4, "r5": nil, "r6": "NaN", "r7": "Infinity"},
 			}})
 		case "hud":
 			var a map[string]any
@@ -288,7 +302,7 @@ func TestClientSetGetRunState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("state: %v", err)
 	}
-	if st.Registers["r0"] != 105 {
+	if v := st.Registers["r0"]; v == nil || float64(*v) != 105 {
 		t.Fatalf("registers: %+v", st.Registers)
 	}
 }
@@ -404,6 +418,91 @@ func TestPauseForRunNotHonoured(t *testing.T) {
 	}
 	if rerr := resume(); rerr != nil {
 		t.Errorf("resume after a failed pause should be a no-op: %v", rerr)
+	}
+}
+
+// A protocol null means "never written" (quiet NaN) and is NOT 0, and the
+// game's serializer also spells the non-finite values as strings; neither may
+// silently become 0 (review B21/P1).
+func TestStateKeepsNullDistinctFromZero(t *testing.T) {
+	c, _ := dialFake(t)
+	st, err := c.State([]string{"registers"}, false, nil)
+	if err != nil {
+		t.Fatalf("state: %v", err)
+	}
+	if v := st.Registers["r0"]; v == nil || float64(*v) != 105 {
+		t.Fatalf("r0 = %v", v)
+	}
+	if v, ok := st.Registers["r5"]; !ok || v != nil {
+		t.Errorf("a null register must stay nil (present=%v), got %v", ok, v)
+	}
+	if v := st.Registers["r6"]; v == nil || !math.IsNaN(float64(*v)) {
+		t.Errorf(`the "NaN" spelling must decode to NaN, got %v`, v)
+	}
+	if v := st.Registers["r7"]; v == nil || !math.IsInf(float64(*v), 1) {
+		t.Errorf(`the "Infinity" spelling must decode to +Inf, got %v`, v)
+	}
+
+	// An expectation of 0 must NOT be satisfied by a null register.
+	sc := &Scenario{Program: "x.icg", Cases: []Case{
+		{Name: "null is not zero", ExpectReg: map[string]float64{"r5": 0}},
+	}}
+	rep, err := (&Runner{C: c, Code: "yield"}).Run(sc)
+	if err != nil {
+		t.Fatalf("scenario: %v", err)
+	}
+	if rep.Passed != 0 || rep.Failed != 1 {
+		t.Fatalf("expectReg 0 on a null register must fail: %+v", rep)
+	}
+
+	// Re-exporting must stay valid JSON (NaN/Inf are not JSON numbers).
+	b, err := json.Marshal(st)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !json.Valid(b) {
+		t.Fatalf("state JSON is invalid: %s", b)
+	}
+}
+
+// A reply the client cannot match to a request must be surfaced rather than
+// dropped, or the caller waits out the full timeout with no reason (review B30).
+func TestStrayErrorResponseIsSurfaced(t *testing.T) {
+	f := startFake(t)
+	f.mu.Lock()
+	f.sendStray = true
+	f.mu.Unlock()
+	c, err := Dial(f.addr())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if e := c.StrayError(); e != nil {
+			if !strings.Contains(e.Error(), "malformed request line") {
+				t.Errorf("stray error = %v", e)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("the id-less error response was dropped")
+}
+
+// A request that cannot even be encoded must not leak its pending slot
+// (review B32).
+func TestEncodeFailureDoesNotLeakPending(t *testing.T) {
+	c, _ := dialFake(t)
+	if _, err := c.Call("set", map[string]any{"n": math.NaN()}); err == nil {
+		t.Fatal("encoding NaN should fail")
+	}
+	c.mu.Lock()
+	n := len(c.pending)
+	c.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("pending leaked: %d", n)
 	}
 }
 
