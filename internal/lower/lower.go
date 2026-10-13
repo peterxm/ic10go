@@ -942,6 +942,9 @@ func (l *lowerer) storeTo(target ast.Expr, val ir.Value) {
 		l.diags.Errorf(t.Pos(), "unsupported assignment target")
 	case *ast.IndexExpr:
 		if dev, conn, ch, ok := l.channelOf(t); ok {
+			if !l.checkChannelRange(t, conn, ch) {
+				return
+			}
 			l.b.Emit(&ir.Store{Dev: channelDev(dev, conn), Logic: "Channel" + itoa(ch), Src: val})
 			return
 		}
@@ -1607,6 +1610,9 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Value {
 			return l.emitDataRead(addr)
 		}
 		if dev, conn, ch, ok := l.channelOf(e); ok {
+			if !l.checkChannelRange(e, conn, ch) {
+				return &ir.Const{V: 0}
+			}
 			r := l.b.NewReg("channel")
 			l.b.Emit(&ir.Load{Dst: r, Dev: channelDev(dev, conn), Logic: "Channel" + itoa(ch)})
 			return r
@@ -3284,6 +3290,31 @@ func (l *lowerer) channelOf(e ast.Expr) (dev string, conn, ch float64, ok bool) 
 		return "", 0, 0, false
 	}
 	return d, conn, ch, true
+}
+
+// checkChannelRange validates a parsed connection/channel pair. IC10 has 8
+// channels (Channel0..Channel7) per connection and 8 connections; higher
+// indices emit `Channel9`/`d0:9` which the game rejects at runtime with no
+// compile-time diagnostic (review M5, §2.1). The outer IndexExpr
+// `d.channel[conn][ch]` is passed so positions point at each index. Returns
+// true when in range; otherwise reports and returns false so the caller can
+// bail without emitting an invalid Channel write/load (and without falling
+// through to a misleading "unsupported target").
+func (l *lowerer) checkChannelRange(t *ast.IndexExpr, conn, ch float64) bool {
+	connIdx, ok := t.X.(*ast.IndexExpr)
+	if !ok {
+		return true // channelOf already confirmed the shape; defensive
+	}
+	valid := true
+	if conn != math.Trunc(conn) || conn < 0 || conn > 7 {
+		l.diags.Errorf(connIdx.Index.Pos(), "connection index %v out of range [0..7]", conn)
+		valid = false
+	}
+	if ch != math.Trunc(ch) || ch < 0 || ch > 7 {
+		l.diags.Errorf(t.Index.Pos(), "channel index %v out of range [0..7]", ch)
+		valid = false
+	}
+	return valid
 }
 
 // dataTable reports whether e names a top-level `data` table (not shadowed by a

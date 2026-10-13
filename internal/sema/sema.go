@@ -293,6 +293,15 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 				continue
 			}
 			info.BusBindings[d.Bus.Name] = BusConn{Device: dev, Conn: b.Conn}
+		case *ast.VarDecl:
+			// Top-level mutable variables are not supported (IC10 has no
+			// globals slot; use `const` for compile-time constants or a local
+			// `var` inside `main`). Previously the declaration was silently
+			// ignored and only the later reference failed with "undefined
+			// variable", hiding the real cause (review L1, §2.1).
+			diags.Errorf(d.Name.Pos(),
+				"top-level var %q is not supported; use a const or move it into main",
+				d.Name.Name)
 		}
 	}
 
