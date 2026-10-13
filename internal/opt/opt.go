@@ -2581,11 +2581,12 @@ func blockHasRelativeStackAccess(b *ir.Block) bool {
 	return false
 }
 
-// redundantDeviceStores removes a constant device write whose device+logic
-// already holds that same constant, with no read or barrier in between. The
-// device's final value is unchanged, but the write sequence is not, so this is
-// opt-in (fn.RedundantDeviceWrites) and off by default; the differential tests
-// require the exact write sequence.
+// redundantDeviceStores removes a device write that the program cannot observe:
+// either it repeats the value the device already holds, or a later write to the
+// same target overwrites it before anything reads that device. The device's final
+// value is unchanged, but the write sequence is not -- the device itself sees each
+// write, so a deliberate pulse looks the same -- hence opt-in
+// (fn.RedundantDeviceWrites) and off by default.
 //
 // The scan follows straight-line block chains (an unconditional jump whose
 // target's only predecessor is the current block), so a repeated write is seen
@@ -2603,10 +2604,34 @@ func redundantDeviceStores(fn *ir.Function) bool {
 			continue
 		}
 		last := map[string]*ir.Const{}
-		for b := start; b != nil && !done[b]; {
+		// pending maps a target to the write that is currently the only one the
+		// program could see, as (block, index): the chain is straight-line, so a
+		// later block can still make an earlier block's write dead. Drops are
+		// applied once the whole chain has been walked.
+		pending := map[string]blockRef{}
+		drops := map[*ir.Block][]int{}
+		var chain []*ir.Block
+		for b := start; b != nil && !done[b]; b = nextStraightLine(b) {
 			done[b] = true
-			b.Instrs = redundantStoresInRegion(b.Instrs, last, &changed)
-			b = nextStraightLine(b)
+			chain = append(chain, b)
+			redundantStoresInRegion(b, last, pending, drops, &changed)
+		}
+		for _, b := range chain {
+			if len(drops[b]) == 0 {
+				continue
+			}
+			dropSet := map[int]bool{}
+			for _, i := range drops[b] {
+				dropSet[i] = true
+			}
+			kept := b.Instrs[:0]
+			for i, ins := range b.Instrs {
+				if dropSet[i] {
+					continue
+				}
+				kept = append(kept, ins)
+			}
+			b.Instrs = kept
 		}
 	}
 	return changed
@@ -2614,24 +2639,130 @@ func redundantDeviceStores(fn *ir.Function) bool {
 
 // redundantStoresInRegion scans one straight-line region, dropping a constant
 // device write whose key already holds the same constant.
-func redundantStoresInRegion(instrs []ir.Instr, last map[string]*ir.Const, changed *bool) []ir.Instr {
-	out := instrs[:0]
-	for _, ins := range instrs {
-		if key, c, ok := constDeviceStore(ins); ok {
-			if prev, seen := last[key]; seen && sameConst(prev, c) {
-				*changed = true
-				continue
+// blockRef is a write's position: the block it is in and its index there.
+type blockRef struct {
+	b   *ir.Block
+	idx int
+}
+
+// redundantStoresInRegion rewrites one block of a straight-line chain in place.
+// It records, in drops, the earlier writes that a later write makes invisible.
+func redundantStoresInRegion(b *ir.Block, last map[string]*ir.Const, pending map[string]blockRef, drops map[*ir.Block][]int, changed *bool) {
+	clearDev := func(dev string, keep string) {
+		for k, r := range pending {
+			if strings.HasPrefix(k, dev+"|") && k != keep {
+				_ = r
+				delete(pending, k)
 			}
-			last[key] = c
+		}
+	}
+	out := b.Instrs[:0]
+	for i, ins := range b.Instrs {
+		key, isStore := deviceTarget(ins)
+		if isStore {
+			if c, ok := constStoreValue(ins); ok {
+				if prev, seen := last[key]; seen && sameConst(prev, c) {
+					*changed = true
+					continue
+				}
+				last[key] = c
+			}
+			dev := key[:strings.IndexByte(key, '|')]
+			// A later write to this target makes the pending one invisible to the
+			// program (the device still sees it): drop the earlier one. A write to
+			// another logic of the same device may change this value, so those
+			// pendings go too.
+			clearDev(dev, key)
+			if r, seen := pending[key]; seen {
+				drops[r.b] = append(drops[r.b], r.idx)
+				*changed = true
+			}
 			out = append(out, ins)
+			pending[key] = blockRef{b: b, idx: i}
 			continue
+		}
+		if dev, ok := deviceLoadDev(ins); ok {
+			// Reading the device consumes whatever was written before.
+			clearDev(dev, "")
 		}
 		if mayChangeDeviceState(ins) {
 			clear(last)
+			clear(pending)
 		}
 		out = append(out, ins)
 	}
-	return out
+	b.Instrs = out
+}
+
+// constStoreValue returns the constant value of a device store, when it has one.
+func constStoreValue(ins ir.Instr) (*ir.Const, bool) {
+	switch v := ins.(type) {
+	case *ir.Store:
+		c, ok := v.Src.(*ir.Const)
+		return c, ok
+	case *ir.StoreSlot:
+		if v.DevPtr != nil {
+			return nil, false
+		}
+		c, ok := v.Src.(*ir.Const)
+		return c, ok
+	}
+	return nil, false
+}
+
+// deviceTarget names the device write's target at device+logic (+slot)
+// granularity, the same one the tick diagnostic reports: "dev|logic[|slot]".
+func deviceTarget(ins ir.Instr) (string, bool) {
+	switch v := ins.(type) {
+	case *ir.Store:
+		return v.Dev + "|" + v.Logic, true
+	case *ir.StoreSlot:
+		if v.DevPtr != nil {
+			return "", false
+		}
+		idx := "?"
+		if c, ok := v.Index.(*ir.Const); ok {
+			idx = strconv.FormatFloat(c.V, 'g', -1, 64)
+		}
+		return v.Dev + "|" + v.Logic + "|" + idx, true
+	case *ir.StoreDyn:
+		if v.DevPtr != nil || v.Dev == "" {
+			return "", false
+		}
+		return v.Dev + "|dyn", true
+	case *ir.Batch:
+		switch v.Kind {
+		case ir.BatchStore, ir.BatchStoreName, ir.BatchStoreSlot:
+			// Batch writes name their target by device type / name hash / slot;
+			// a stable identity is enough (the invalidation is per "batch").
+			return fmt.Sprintf("batch|%v|%v|%v|%d", v.Device, v.Name, v.Slot, v.Kind), true
+		}
+	}
+	return "", false
+}
+
+// deviceLoadDev names the device a load reads, if any.
+func deviceLoadDev(ins ir.Instr) (string, bool) {
+	switch v := ins.(type) {
+	case *ir.Load:
+		return v.Dev, true
+	case *ir.LoadSlot:
+		if v.DevPtr != nil {
+			return "", false
+		}
+		return v.Dev, true
+	case *ir.LoadDyn:
+		if v.DevPtr != nil || v.Dev == "" {
+			return "", false
+		}
+		return v.Dev, true
+	case *ir.Batch:
+		switch v.Kind {
+		case ir.BatchLoad, ir.BatchLoadName, ir.BatchLoadSlot, ir.BatchLoadNameSlot:
+			return "batch", true
+		}
+	}
+	return "", false
 }
 
 // nextStraightLine returns the block a straight-line region continues into: an

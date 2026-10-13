@@ -151,8 +151,8 @@ var spillFlag = Flag{Long: "--spill", Arg: "db|stack", Desc: text{
 }}
 
 var redundantDeviceWritesFlag = Flag{Long: "--redundant-device-writes", Desc: text{
-	EN: "drop constant device writes that repeat the previous value in the same straight-line run (shorter, but changes the write sequence)",
-	ZH: "删除同一段直落代码（含内联展开的连续调用）内重复的同值常量设备写（更短，但会改变写序列）",
+	EN: "drop device writes the program cannot observe: a repeat of the value already there, or one a later write overwrites before any read of that device (the device itself still sees each write, so a deliberate pulse differs)",
+	ZH: "去掉程序观察不到的设备写：重复写已有的同值，或被后一次写覆盖且中间没有读该设备（设备本身仍会看到每次写，所以刻意的脉冲会不同）",
 }}
 
 var mergeRenamedTailsFlag = Flag{Long: "--merge-renamed-tails", Desc: text{
