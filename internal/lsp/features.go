@@ -1617,10 +1617,50 @@ func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 		chip string
 	}
 	var hits []hit
+	// Advisory diagnostics that do not depend on the budget: a busy-wait poll
+	// burns the whole tick, and an idle segment spends a tick doing nothing.
+	// Both are worth showing even when nothing exceeds.
+	advisory := []lspDiagnostic{}
+	seenAdvisory := map[string]bool{}
+	mkAdvisory := func(code string, severity int, msg string, line int) lspDiagnostic {
+		i := 0
+		if line > 0 {
+			i = line - 1 // LSP lines are 0-based
+		}
+		r := lspRange{Start: lspPosition{Line: i}, End: lspPosition{Line: i}}
+		return lspDiagnostic{Range: r, Severity: severity, Source: "ic10c", Code: code, Message: msg}
+	}
 	for _, u := range units {
 		rep, err := tick.AnalyzeOpts(u.code, tick.Options{Limit: tick.DefaultLimit, LineMap: u.lineMap})
 		if err != nil {
 			continue
+		}
+		for i := range rep.Segments {
+			s := rep.Segments[i]
+			line := s.DominantSource
+			if line == 0 {
+				line = s.Source
+			}
+			if line == 0 {
+				continue
+			}
+			key := u.chip + "|" + strconv.Itoa(line)
+			switch {
+			case s.Poll && !seenAdvisory["poll|"+key]:
+				seenAdvisory["poll|"+key] = true
+				m := "this loop has no yield() and only re-reads devices: the chip spins until a value changes, burning the whole tick. Put a yield() inside so it checks once per tick."
+				if zh {
+					m = "这个循环没有 yield()，只在反复读设备：芯片会一直自旋到值变化，把整 tick 烧掉。在循环里加一句 yield()，改成每 tick 查一次。"
+				}
+				advisory = append(advisory, mkAdvisory("poll-loop", 2, m, line))
+			case s.Idle && !seenAdvisory["idle|"+key]:
+				seenAdvisory["idle|"+key] = true
+				m := "this segment only yields and jumps back, so the chip spends a whole tick on it. Two yields in a row look like this, and they halve the loop's rate."
+				if zh {
+					m = "这一段只由 yield 和回跳组成，芯片会在它上面空转一整 tick。连续两个 yield 就是这个形状，会让循环半速运行。"
+				}
+				advisory = append(advisory, mkAdvisory("idle-segment", 3, m, line))
+			}
 		}
 		for i := range rep.Segments {
 			s := rep.Segments[i]
@@ -1652,7 +1692,7 @@ func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 		}
 	}
 	if len(hits) == 0 {
-		return nil
+		return advisory
 	}
 	// Collapse hits that share the same dominant loop (or, without one, the same
 	// cross-tick loop or tick-body start) within the same chip.
@@ -1768,6 +1808,15 @@ func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 				fmt.Fprintf(&msg, "\nthis tick body belongs to the cross-tick loop at source line %d: a full pass is about %s instructions.",
 					g.span.Source, bodyText(g.span))
 			}
+			maxWT := 0
+			for _, s := range g.segs {
+				if s.WriteTargets > maxWT {
+					maxWT = s.WriteTargets
+				}
+			}
+			if maxWT >= 4 {
+				fmt.Fprintf(&msg, "\nthis loop writes %d device targets every pass: if their values rarely change, one state check around the whole block is much cheaper than guarding each write (keep the transitions outside the check).", maxWT)
+			}
 			msg.WriteString("\nrun `ic10c tick --path` for the worst-case path.")
 		}
 		d := lspDiagnostic{
@@ -1814,7 +1863,7 @@ func tickDiagnostics(units []tickUnit, uri string, zh bool) []lspDiagnostic {
 		d.RelatedInformation = related
 		out = append(out, d)
 	}
-	return out
+	return append(advisory, out...)
 }
 
 // joinInts renders a slice of ints as a separator-joined string.

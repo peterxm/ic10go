@@ -1095,3 +1095,36 @@ func TestImportDiagnosticsKeepOpenImported(t *testing.T) {
 		t.Errorf("open imported file diagnostics must not be cleared:\n%s", out)
 	}
 }
+
+// TestTickAdvisoryDiagnostics: a busy-wait loop and an idle segment are reported
+// even when nothing exceeds the budget, because both waste a whole tick.
+func TestTickAdvisoryDiagnostics(t *testing.T) {
+	// poll: no yield inside the loop, only re-reading a device.
+	poll := "yield\nl r0 d0 On\nbeqz r0 1\nj 0\n"
+	units := []tickUnit{{code: poll, lineMap: identityLineMap(poll)}}
+	diags := tickDiagnostics(units, "file:///t.ic", true)
+	codes := map[string]bool{}
+	for _, d := range diags {
+		codes[d.Code] = true
+	}
+	if !codes["poll-loop"] {
+		t.Errorf("a busy-wait should be reported as poll-loop, got %+v", diags)
+	}
+
+	// idle: a yield followed by a jump back to another yield.
+	idle := "yield\nd0.On = 1\nyield\nj 0\n"
+	diags = tickDiagnostics([]tickUnit{{code: idle, lineMap: identityLineMap(idle)}}, "file:///t.ic", true)
+	codes = map[string]bool{}
+	for _, d := range diags {
+		codes[d.Code] = true
+	}
+	if !codes["idle-segment"] {
+		t.Errorf("two yields in a row should be reported as idle-segment, got %+v", diags)
+	}
+
+	// A clean program produces neither.
+	clean := "yield\nd0.On = 1\nj 0\n"
+	if d := tickDiagnostics([]tickUnit{{code: clean, lineMap: identityLineMap(clean)}}, "file:///t.ic", true); len(d) != 0 {
+		t.Errorf("a clean program should produce no advisory, got %+v", d)
+	}
+}

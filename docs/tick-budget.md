@@ -112,6 +112,16 @@ examples/…-表驱动.icg: ... worst-case 129 instructions [EXCEEDS 128]
 
 ### 编辑器诊断
 
+除 `tick-budget` 外，LSP 还发两条**与预算无关**的建议（空转与自旋在没超限时也值得看）：
+
+| code | 级别 | 含义 |
+|---|---|---|
+| `poll-loop` | warning | 某段从不 yield、只反复读设备 → 忙等；在该循环里加 `yield()`（锚在支配循环的源码行） |
+| `idle-segment` | information | 某段只由 `yield`/回跳组成 → 空转一整 tick（连续两个 `yield` 即此形状，循环半速） |
+
+另外，超限诊断在**该循环一遍内写了 ≥4 个设备目标**时会追加一句：值很少变时用一个状态判断包住整块，
+比逐条判断便宜（并把转移逻辑留在判断外）。
+
 除了状态栏，LSP 会对**每个超限分段**发一条 **Information** 级诊断（code `tick-budget`），并带上
 数字与相关位置。同一支配循环（或同一跨 tick 循环 / tick 体起点）撑爆多个分段时**只报一条**
 （把各段的 tick 体起点合并在一条里）：
