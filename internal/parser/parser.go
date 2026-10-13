@@ -6,6 +6,8 @@
 package parser
 
 import (
+	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -472,7 +474,24 @@ func (p *parser) parseStmt() ast.Stmt {
 		t := p.advance()
 		return &ast.RetStmt{NodeBase: base(t.Pos)}
 	default:
-		return p.parseSimpleStmt()
+		st := p.parseSimpleStmt()
+		// A bare expression statement must reference something external — a
+		// function call, a stack-slot read (`db.stack[k]`), or a device access
+		// — otherwise it is a pure value computed and discarded: a typo the
+		// parser previously swallowed silently (review C3, §2.1: `d1.Setting =
+		// 1 2` dropping the `2`, `break 2`'s trailing `2`). Whether a device
+		// read is meaningful is for semantic analysis; the parser only rejects
+		// the unambiguous no-effect forms. This applies to block statements
+		// only: parseSimpleStmt also serves the switch tag and for-header,
+		// where a bare expression is legitimate.
+		if es, ok := st.(*ast.ExprStmt); ok {
+			switch es.X.(type) {
+			case *ast.CallExpr, *ast.IndexExpr, *ast.SelectorExpr:
+			default:
+				p.errorf(es.Pos(), "expression statement has no effect")
+			}
+		}
+		return st
 	}
 }
 
@@ -662,6 +681,7 @@ func (p *parser) parseSwitch() ast.Stmt {
 	}
 	p.expect(token.LBrace)
 	sw := &ast.SwitchStmt{NodeBase: base(kw.Pos), Init: init, Tag: tag, Table: table}
+	seenDefault := false
 	for {
 		p.skipSemis()
 		switch p.cur().Kind {
@@ -678,6 +698,12 @@ func (p *parser) parseSwitch() ast.Stmt {
 			sw.Cases = append(sw.Cases, c)
 		case token.Default:
 			dpos := p.advance().Pos
+			if seenDefault {
+				// Previously the first default's body was silently dropped and
+				// only the last one took effect (review M2, §2.1).
+				p.errorf(dpos, "multiple default clauses in switch")
+			}
+			seenDefault = true
 			c := &ast.CaseClause{NodeBase: base(dpos), Default: true}
 			p.expect(token.Colon)
 			c.Body = p.parseCaseBody()
@@ -793,7 +819,11 @@ func (p *parser) parseUnary() ast.Expr {
 		if p.cur().Kind == token.Number {
 			n := p.advance()
 			text := t.Text + n.Text
-			return &ast.NumberLit{NodeBase: base(t.Pos), Value: parseNumber(text), Text: text}
+			v, err := parseNumber(text)
+			if err != nil {
+				p.errorf(t.Pos, "%s", err)
+			}
+			return &ast.NumberLit{NodeBase: base(t.Pos), Value: v, Text: text}
 		}
 		x := p.parseUnary()
 		return &ast.UnaryExpr{NodeBase: base(t.Pos), Op: t.Kind, X: x}
@@ -845,7 +875,11 @@ func (p *parser) parsePrimary() ast.Expr {
 		return &ast.Ident{NodeBase: base(t.Pos), Name: t.Text}
 	case token.Number:
 		p.advance()
-		return &ast.NumberLit{NodeBase: base(t.Pos), Value: parseNumber(t.Text), Text: t.Text}
+		v, err := parseNumber(t.Text)
+		if err != nil {
+			p.errorf(t.Pos, "%s", err)
+		}
+		return &ast.NumberLit{NodeBase: base(t.Pos), Value: v, Text: t.Text}
 	case token.String:
 		p.advance()
 		return &ast.StringLit{NodeBase: base(t.Pos), Value: t.Text}
@@ -878,10 +912,14 @@ func (p *parser) parsePrimary() ast.Expr {
 
 func base(pos source.Pos) ast.NodeBase { return ast.NodeBase{Pos_: pos} }
 
-func parseNumber(text string) float64 {
+// parseNumber converts a numeric literal token's text to a float64. Malformed
+// literals (empty hex/binary digits, invalid digits, overflow) return an
+// error instead of silently becoming 0 (review C2, §2.1): previously `0x`,
+// `0b2`, `1e999` and 65-bit hex all compiled to 0 with zero diagnostics.
+func parseNumber(text string) (float64, error) {
 	s := strings.ReplaceAll(text, "_", "")
 	if v, ok := token.ConvertUnit(s); ok {
-		return v
+		return v, nil
 	}
 	neg := false
 	switch {
@@ -894,22 +932,31 @@ func parseNumber(text string) float64 {
 	var v float64
 	switch {
 	case strings.HasPrefix(s, "0x"), strings.HasPrefix(s, "0X"):
-		if u, err := strconv.ParseUint(s[2:], 16, 64); err == nil {
-			v = float64(u)
+		u, err := strconv.ParseUint(s[2:], 16, 64)
+		if err != nil {
+			return 0, fmt.Errorf("malformed hexadecimal literal %q", text)
 		}
+		v = float64(u)
 	case strings.HasPrefix(s, "0b"), strings.HasPrefix(s, "0B"):
-		if u, err := strconv.ParseUint(s[2:], 2, 64); err == nil {
-			v = float64(u)
+		u, err := strconv.ParseUint(s[2:], 2, 64)
+		if err != nil {
+			return 0, fmt.Errorf("malformed binary literal %q", text)
 		}
+		v = float64(u)
 	default:
-		if f, err := strconv.ParseFloat(s, 64); err == nil {
-			v = f
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return 0, fmt.Errorf("malformed number literal %q", text)
 		}
+		if math.IsInf(f, 0) {
+			return 0, fmt.Errorf("number literal %q overflows float64", text)
+		}
+		v = f
 	}
 	if neg {
 		v = -v
 	}
-	return v
+	return v, nil
 }
 
 // syncTop skips tokens until the next likely top-level declaration.

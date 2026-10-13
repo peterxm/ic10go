@@ -265,8 +265,20 @@ func TestParseUnits(t *testing.T) {
 		{"0b10", 2},
 	}
 	for _, c := range cases {
-		if got := parseNumber(c.in); got != c.want {
+		got, err := parseNumber(c.in)
+		if err != nil {
+			t.Errorf("parseNumber(%q) unexpected error: %v", c.in, err)
+			continue
+		}
+		if got != c.want {
 			t.Errorf("parseNumber(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+
+	// Malformed literals must error, not silently become 0 (review C2).
+	for _, in := range []string{"0x", "0b", "0b2", "0xg", "1e999", "1.2.3"} {
+		if v, err := parseNumber(in); err == nil {
+			t.Errorf("parseNumber(%q) = %v, want error", in, v)
 		}
 	}
 }
