@@ -905,7 +905,15 @@ func benchRunTo(addr string, chip any, rest []string, asJSON bool) int {
 		return 1
 	}
 	if asJSON {
-		return printJSON(res)
+		printJSON(res)
+		if res.Error != nil {
+			return 2
+		}
+		return 0
+	}
+	if res.Error != nil {
+		fmt.Fprintln(os.Stderr, "ic10c: the chip is stuck on an error:", res.Error)
+		return 2
 	}
 	if res.Reached != nil && !*res.Reached {
 		fmt.Fprintf(os.Stderr, "ic10c: warning: the chip did not reach line %d (stopped at %v after %d instructions; it may be in an error state or loop past the line)\n",
@@ -1002,9 +1010,19 @@ func benchStep(addr string, chip any, ticks int, asJSON bool) int {
 		return 1
 	}
 	if asJSON {
-		return printJSON(res)
+		printJSON(res)
+		if res.Error != nil {
+			return 2
+		}
+		return 0
 	}
 	fmt.Printf("stepped %d ticks, line=%v\n", res.Ticks, res.Line)
+	if res.Error != nil {
+		// Nothing advanced: the chip is pinned on an error line and every tick
+		// re-runs it (review B22).
+		fmt.Fprintln(os.Stderr, "ic10c: the chip is stuck on an error, so the step did nothing:", res.Error)
+		return 2
+	}
 	return 0
 }
 
@@ -1807,21 +1825,18 @@ func benchPause(addr string, args []string, asJSON bool) int {
 
 // benchPauseForRun pauses the world unless it already is, and returns a function
 // that restores the previous state. Stepping with a paused world keeps the run
-// deterministic.
-func benchPauseForRun(c *testbench.Client) func() {
-	h, err := c.Ping()
-	if err != nil || h.Paused {
-		return func() {}
-	}
-	if _, err := c.Call("pause", map[string]any{"on": true}); err != nil {
-		fmt.Fprintln(os.Stderr, "ic10c: warning: could not pause the game:", err)
-		return func() {}
+// deterministic; a pause that does not take effect is an error, not a warning
+// (review B23).
+func benchPauseForRun(c *testbench.Client) (func(), error) {
+	resume, err := c.PauseForRun()
+	if err != nil {
+		return func() {}, err
 	}
 	return func() {
-		if _, err := c.Call("pause", map[string]any{"on": false}); err != nil {
+		if err := resume(); err != nil {
 			fmt.Fprintln(os.Stderr, "ic10c: warning: could not unpause the game:", err)
 		}
-	}
+	}, nil
 }
 
 func benchRun(addr, file string, chip any, stableIns, nanSafe bool, libDirs []string, lim limitArgs, diff, asJSON bool) int {
@@ -1868,7 +1883,11 @@ func benchRun(addr, file string, chip any, stableIns, nanSafe bool, libDirs []st
 	// chip is stepped with ProgrammableChip.Execute). The automatic resume does
 	// not take effect in game, so the world stays paused; resume it manually
 	// (`pause off`).
-	resume := benchPauseForRun(c)
+	resume, perr := benchPauseForRun(c)
+	if perr != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", perr)
+		return 2
+	}
 	defer resume()
 
 	rep, err := (&testbench.Runner{C: c, Code: code, Loaders: loaders}).Run(sc)

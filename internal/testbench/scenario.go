@@ -157,8 +157,15 @@ func (r *Runner) runCase(cs Case, chip any, force bool) CaseResult {
 	}
 
 	if cs.Run > 0 {
-		if _, err := r.C.Run(cs.Run, chip); err != nil {
+		rr, err := r.C.Run(cs.Run, chip)
+		if err != nil {
 			return CaseResult{Name: name, Err: err.Error()}
+		}
+		if rr.Error != nil {
+			// A chip stuck on an error line never advances, so the run did not
+			// do what the case assumes and the assertions below would be
+			// meaningless (review B22).
+			return CaseResult{Name: name, Err: "the chip is stuck on an error, so this case proves nothing: " + rr.Error.Error()}
 		}
 	}
 

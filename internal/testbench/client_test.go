@@ -18,9 +18,16 @@ type fakeServer struct {
 	mu     sync.Mutex
 	values map[string]float64 // "d1.Setting" -> value
 	conns  map[net.Conn]bool
+	paused bool
 	// compileErr, when set, is echoed as the push result's `compileError`.
 	// The mod answers ok:true even then (the chip keeps its old program).
 	compileErr any
+	// runErr, when set, is echoed as the run result's `error` (a chip pinned on
+	// an error line).
+	runErr any
+	// pauseHonoured makes `pause` report the requested state; when false it
+	// reports the world as still running (a multiplayer client).
+	pauseHonoured bool
 }
 
 func startFake(t *testing.T) *fakeServer {
@@ -29,7 +36,7 @@ func startFake(t *testing.T) *fakeServer {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	f := &fakeServer{ln: ln, values: map[string]float64{}, conns: map[net.Conn]bool{}}
+	f := &fakeServer{ln: ln, values: map[string]float64{}, conns: map[net.Conn]bool{}, pauseHonoured: true, paused: true}
 	go f.accept()
 	t.Cleanup(func() { f.stop() })
 	return f
@@ -92,9 +99,22 @@ func (f *fakeServer) serve(conn net.Conn) {
 		}
 		switch req.Cmd {
 		case "ping":
+			f.mu.Lock()
+			paused := f.pauseHonoured || f.paused
+			f.mu.Unlock()
 			send(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{
-				"mod": "ic10go-testbench", "version": "0.1.0", "gameVersion": "test", "paused": true, "chips": 1,
+				"mod": "ic10go-testbench", "version": "0.1.0", "gameVersion": "test", "paused": paused, "chips": 1,
 			}})
+		case "pause":
+			var a struct {
+				On bool `json:"on"`
+			}
+			json.Unmarshal(req.Args, &a)
+			f.mu.Lock()
+			f.paused = a.On && f.pauseHonoured
+			got := f.paused
+			f.mu.Unlock()
+			send(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{"paused": got, "requested": a.On}})
 		case "chip.list":
 			send(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{
 				"chips": []map[string]any{{
@@ -139,7 +159,14 @@ func (f *fakeServer) serve(conn net.Conn) {
 			f.mu.Unlock()
 			send(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{"values": vals}})
 		case "run":
-			send(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{"ticks": 1, "line": 1}})
+			f.mu.Lock()
+			re := f.runErr
+			f.mu.Unlock()
+			res := map[string]any{"ticks": 1, "line": 1}
+			if re != nil {
+				res["error"] = re
+			}
+			send(map[string]any{"id": req.ID, "ok": true, "result": res})
 		case "state":
 			send(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{
 				"chip":      map[string]any{"name": "TestChip"},
@@ -317,6 +344,66 @@ func TestPushCompileErrorIsFatal(t *testing.T) {
 	sc := &Scenario{Program: "x.icg", Cases: []Case{{Name: "ok"}}}
 	if _, err := (&Runner{C: c, Code: "yield"}).Run(sc); err == nil {
 		t.Fatal("a scenario whose push did not compile must fail, not pass")
+	}
+}
+
+// A run that leaves the chip pinned on an error line must fail the case: the
+// chip never advances, so the assertions would be meaningless (review B22).
+func TestRunChipErrorFailsCase(t *testing.T) {
+	c, f := dialFake(t)
+	f.mu.Lock()
+	f.runErr = map[string]any{
+		"code":        "在第 3 行出现 <color=red>StackUnderFlow</color> 错误\n",
+		"compilation": false, "line": 2,
+	}
+	f.mu.Unlock()
+
+	rr, err := c.Run(2, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if rr.Error == nil || !strings.Contains(rr.Error.Error(), "StackUnderFlow") || rr.Error.Line != 2 {
+		t.Fatalf("run error not decoded: %+v", rr.Error)
+	}
+
+	sc := &Scenario{Program: "x.icg", Cases: []Case{
+		{Name: "runs", Run: 2, Expect: map[string]float64{"d1.Setting": 10}},
+	}}
+	rep, err := (&Runner{C: c, Code: "yield"}).Run(sc)
+	if err != nil {
+		t.Fatalf("scenario: %v", err)
+	}
+	if rep.Failed != 1 || rep.Cases[0].Passed {
+		t.Fatalf("a case whose chip is stuck must fail: %+v", rep)
+	}
+	if !strings.Contains(rep.Cases[0].Err, "stuck on an error") {
+		t.Errorf("case error = %q", rep.Cases[0].Err)
+	}
+}
+
+// A pause that does not take effect must be an error, not a silent green run
+// (review B23): on a multiplayer client the world keeps ticking, so a scenario
+// would be non-deterministic.
+func TestPauseForRunNotHonoured(t *testing.T) {
+	c, f := dialFake(t)
+	if _, err := c.PauseForRun(); err != nil {
+		t.Fatalf("an already-paused world should be fine: %v", err)
+	}
+
+	f.mu.Lock()
+	f.paused = false
+	f.pauseHonoured = false
+	f.mu.Unlock()
+
+	resume, err := c.PauseForRun()
+	if err == nil {
+		t.Fatal("a pause that was not honoured must be an error")
+	}
+	if resume == nil {
+		t.Fatal("resume must not be nil even on error")
+	}
+	if rerr := resume(); rerr != nil {
+		t.Errorf("resume after a failed pause should be a no-op: %v", rerr)
 	}
 }
 

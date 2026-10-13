@@ -11,6 +11,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -478,6 +479,12 @@ func (c *Client) Run(ticks int, chip any) (*RunResult, error) {
 type RunResult struct {
 	Ticks int     `json:"ticks"`
 	Line  float64 `json:"line"`
+	// Error is the chip's error state after the run. A chip stuck on an error
+	// line never advances (and re-running the faulting instruction has side
+	// effects), so "the step succeeded" is meaningless then -- the mod still
+	// answers ok:true, which makes ignoring this field a silent green (review
+	// B22).
+	Error *ChipErrors `json:"error"`
 }
 
 // Trace executes n instructions one at a time (the mod's `trace`) and returns
@@ -534,6 +541,42 @@ type RunToResult struct {
 	Steps   int     `json:"steps"`
 	Line    float64 `json:"line"`
 	Reached *bool   `json:"reached"`
+	// Error is set when the chip is stuck on an error line (see RunResult).
+	Error *ChipErrors `json:"error"`
+}
+
+// PauseForRun makes sure the world is paused before a tool drives a chip, and
+// returns a function that restores the previous state. Stepping a chip only
+// does anything while paused (a multiplayer client cannot drive the host's
+// simulation), and a scenario run against a live world is non-deterministic, so
+// a pause that silently does not take effect is reported as an error rather
+// than left as a green run (review B23). Only the host of a single-player world
+// or a client-less server can pause.
+func (c *Client) PauseForRun() (func() error, error) {
+	noop := func() error { return nil }
+	h, err := c.Ping()
+	if err != nil {
+		// Best effort: if even the hello fails the caller's next call reports
+		// the broken connection.
+		return noop, nil
+	}
+	if h.Paused {
+		return noop, nil
+	}
+	var res struct {
+		Paused    bool `json:"paused"`
+		Requested bool `json:"requested"`
+	}
+	if err := c.CallInto("pause", map[string]any{"on": true}, &res); err != nil {
+		return noop, fmt.Errorf("pause: %w", err)
+	}
+	if !res.Paused {
+		return noop, errors.New("the game did not pause (only the host of a single-player or client-less server can); a run now would be non-deterministic")
+	}
+	return func() error {
+		_, err := c.Call("pause", map[string]any{"on": false})
+		return err
+	}, nil
 }
 
 // SetReg pokes a chip register or stack slot while the world is paused, so a
