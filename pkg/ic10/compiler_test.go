@@ -539,6 +539,44 @@ func TestExtractSetupInLoop(t *testing.T) {
 	}
 }
 
+// TestExtractSetupKeepsReadDevices: a device the loop reads must keep its
+// in-loop write. Hoisting it stops the program re-asserting the value, so the
+// read could observe whatever another writer left behind (review §2.6).
+func TestExtractSetupKeepsReadDevices(t *testing.T) {
+	src := []byte("func main() {\n" +
+		"    for {\n" +
+		"        yield()\n" +
+		"        d1.Setting = 1\n" +
+		"        d0.Setting = d1.Setting\n" +
+		"    }\n" +
+		"}\n")
+	ex, diags, err := ic10.CompileResult("e.icg", src, ic10.Options{ExtractSetup: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("extract: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(ex.Code, "s d1 Setting 1") {
+		t.Errorf("the write to a device the loop reads must stay in the runtime:\n%s", ex.Code)
+	}
+}
+
+// TestExtractSetupStillHoistsPurePoll pins the documented trade-off: with no
+// read of the device, a constant in-loop write is still redundant re-assertion.
+func TestExtractSetupStillHoistsPurePoll(t *testing.T) {
+	src := []byte("func main() {\n" +
+		"    for {\n" +
+		"        yield()\n" +
+		"        d1.Setting = 1\n" +
+		"    }\n" +
+		"}\n")
+	ex, diags, err := ic10.CompileResult("e.icg", src, ic10.Options{ExtractSetup: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("extract: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(ex.Loader, "s d1 Setting 1") {
+		t.Errorf("a pure poll write should still hoist:\nloader:\n%s\nruntime:\n%s", ex.Loader, ex.Code)
+	}
+}
+
 // TestExtractSetupKeepsConditionalArms: a state machine's per-mode constant
 // writes must stay in the loop. Hoisting them would stop re-asserting the value
 // when that state is entered again, and the other arm writes the same device.

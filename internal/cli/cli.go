@@ -307,7 +307,7 @@ var Commands = []Command{
 		},
 	},
 	{
-		Name: "run", Args: "<file.icg> [--steps N | --ticks N] [--set name.logic=v] [--device name=hash[,namehash]] [--seed N] [--strict] [--dump] [--json] [--trace] [--stable-ins]",
+		Name: "run", Args: "<file.icg> [--steps N | --ticks N] [--set name.logic=v] [--device name=hash[,namehash]] [--seed N] [--strict] [--dump] [--json] [--trace] [--raw] [--stable-ins]",
 		Summary: text{EN: "compile and run in the built-in VM", ZH: "编译并在内置 VM 中运行"},
 		Long: text{
 			EN: "Compile the file and run it in the built-in IC10 VM, then print\n" +
@@ -360,6 +360,10 @@ var Commands = []Command{
 			{Long: "--trace", Desc: text{
 				EN: "print every executed instruction",
 				ZH: "打印每条执行的指令",
+			}},
+			{Long: "--raw", Desc: text{
+				EN: "run a raw IC10 script as-is instead of compiling .icg (a .ic/.ic10 file selects this too)",
+				ZH: "把文件当原始 IC10 直接运行，不编译 .icg（.ic/.ic10 扩展名也会自动走这条）",
 			}},
 			{Long: "--stable-ins", Desc: text{
 				EN: "compile with the stable branch's ins argument order",

@@ -584,6 +584,7 @@ func cmdRun(args []string) int {
 	strict := false
 	dump := false
 	jsonOut := false
+	raw := false
 	var sets []string
 	var devices []string
 	var file string
@@ -627,6 +628,9 @@ func cmdRun(args []string) int {
 			jsonOut = true
 		case "--trace":
 			trace = true
+		case "--raw":
+			// Run a raw IC10 script as-is instead of compiling .icg (review T8).
+			raw = true
 		default:
 			// An unrecognised `--` flag was previously swallowed as the input
 			// file, producing a misleading "open --rel-jump: no such file"
@@ -649,22 +653,36 @@ func cmdRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	ic10Hint(file)
-	compiled, diags, err := ic10.CompileResult(file, data, ic10.Options{
-		StableInsOrder: stableIns, ExtractSetup: extractSetup,
-		MaxLines: lim.lines, MaxBytes: lim.bytes, MaxLineLen: lim.line,
-		Imports: true, LibDirs: libDirs,
-	})
-	if rc := report(source.NewFile(file, data), diags); rc != 0 {
-		return rc
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "ic10c:", err)
-		return 1
+	// A raw IC10 script runs as-is: the VM loads IC10 assembly, so nothing needs
+	// compiling. The testbench ecosystem produces exactly this (program
+	// readback, `locate --program`, community .ic), and without an entry point
+	// the only way to run one offline was to transcribe it by hand (review T8).
+	// --raw forces it; a .ic/.ic10 file selects it automatically.
+	raw = raw || hasRawExt(file)
+	var code string
+	var loaders []string
+	var chips []ic10.ChipResult
+	if raw {
+		code = string(data)
+	} else {
+		ic10Hint(file)
+		compiled, diags, err := ic10.CompileResult(file, data, ic10.Options{
+			StableInsOrder: stableIns, ExtractSetup: extractSetup,
+			MaxLines: lim.lines, MaxBytes: lim.bytes, MaxLineLen: lim.line,
+			Imports: true, LibDirs: libDirs,
+		})
+		if rc := report(source.NewFile(file, data), diags); rc != 0 {
+			return rc
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ic10c:", err)
+			return 1
+		}
+		code, loaders, chips = compiled.Code, compiled.Loaders, compiled.Chips
 	}
 
 	multi := false
-	for _, ch := range compiled.Chips {
+	for _, ch := range chips {
 		if ch.Name != "" {
 			multi = true
 		}
@@ -675,7 +693,7 @@ func cmdRun(args []string) int {
 		applyRunOpts(m, seed, strict)
 		// Run the one-time loader first (data segment and/or hoisted setup), so
 		// a program that needs it runs like it would on the chip.
-		for _, chunk := range compiled.Loaders {
+		for _, chunk := range loaders {
 			if err := m.Load(chunk); err != nil {
 				fmt.Fprintln(os.Stderr, "ic10c:", err)
 				return 1
@@ -706,7 +724,7 @@ func cmdRun(args []string) int {
 			d := m.Device(name)
 			d.Hash, d.NameHash = hash, nameHash
 		}
-		if err := m.Load(compiled.Code); err != nil {
+		if err := m.Load(code); err != nil {
 			fmt.Fprintln(os.Stderr, "ic10c:", err)
 			return 1
 		}
@@ -745,7 +763,7 @@ func cmdRun(args []string) int {
 		d := w.Device(name)
 		d.Hash, d.NameHash = hash, nameHash
 	}
-	for _, ch := range compiled.Chips {
+	for _, ch := range chips {
 		m := w.AddChip()
 		applyRunOpts(m, seed, strict)
 		if err := m.Load(ch.Code); err != nil {
@@ -760,7 +778,7 @@ func cmdRun(args []string) int {
 	// run matches the declared buses (a connection shared by several slots is
 	// merged into one network).
 	busAccess := map[string][]string{}
-	for _, ch := range compiled.Chips {
+	for _, ch := range chips {
 		for slot, conns := range ch.BusAccess {
 			busAccess[slot] = append(busAccess[slot], conns...)
 		}
@@ -772,8 +790,8 @@ func cmdRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	names := make([]string, len(compiled.Chips))
-	for i, ch := range compiled.Chips {
+	names := make([]string, len(chips))
+	for i, ch := range chips {
 		names[i] = ch.Name
 	}
 	reportRun(jsonOut, dump, w.Chips, names)
@@ -1917,6 +1935,16 @@ func readSource(path string) (*source.File, *diag.Bag, error) {
 		return nil, nil, err
 	}
 	return source.NewFile(path, data), &diag.Bag{}, nil
+}
+
+// hasRawExt reports whether path names a raw IC10 script rather than .icg
+// source (review T8).
+func hasRawExt(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".ic", ".ic10":
+		return true
+	}
+	return false
 }
 
 // ic10Hint prints a hint when a raw IC10 script is passed to an .icg command.

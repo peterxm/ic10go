@@ -1894,8 +1894,10 @@ func benchRun(addr, file string, chip any, stableIns, nanSafe bool, libDirs []st
 
 	rep, err := (&testbench.Runner{C: c, Code: code, Loaders: loaders}).Run(sc)
 	if err != nil {
+		// Setup failed (push did not compile, the connection dropped): that is
+		// an environment failure, not a failing assertion (review B28).
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
-		return 1
+		return 2
 	}
 
 	if diff {
@@ -1914,6 +1916,11 @@ func benchRun(addr, file string, chip any, stableIns, nanSafe bool, libDirs []st
 		fmt.Println(rep.String())
 	}
 	if !rep.OK() {
+		// Keep the two apart on CI: 2 means the rig could not run the scenario,
+		// 1 means the program under test failed an assertion (review B28).
+		if rep.EnvFailed > 0 {
+			return 2
+		}
 		return 1
 	}
 	return 0

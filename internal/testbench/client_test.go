@@ -32,6 +32,8 @@ type fakeServer struct {
 	// sendStray makes the server emit an id-less error reply right after the
 	// hello (what the mod does for a request line it cannot parse).
 	sendStray bool
+	// setErr, when set, makes `set` answer with that protocol error.
+	setErr any
 }
 
 func startFake(t *testing.T) *fakeServer {
@@ -147,6 +149,13 @@ func (f *fakeServer) serve(conn net.Conn) {
 			}
 			send(map[string]any{"id": req.ID, "ok": true, "result": res})
 		case "set":
+			f.mu.Lock()
+			se := f.setErr
+			f.mu.Unlock()
+			if se != nil {
+				send(map[string]any{"id": req.ID, "ok": false, "error": se})
+				break
+			}
 			var a struct {
 				Writes []DeviceWrite `json:"writes"`
 			}
@@ -503,6 +512,33 @@ func TestEncodeFailureDoesNotLeakPending(t *testing.T) {
 	c.mu.Unlock()
 	if n != 0 {
 		t.Fatalf("pending leaked: %d", n)
+	}
+}
+
+// An environment failure (the rig) must be reported apart from a failing
+// assertion (the program), so CI can tell them apart (review B28).
+func TestEnvFailureIsNotAnAssertionFailure(t *testing.T) {
+	c, f := dialFake(t)
+	f.mu.Lock()
+	f.setErr = map[string]any{"code": "no-chip", "message": "no chip selected"}
+	f.mu.Unlock()
+
+	sc := &Scenario{Program: "x.icg", Cases: []Case{
+		{Name: "rig is broken", Set: map[string]float64{"d1.Setting": 10}},
+		{Name: "assertion fails", Expect: map[string]float64{"d1.Setting": 999}},
+	}}
+	rep, err := (&Runner{C: c, Code: "yield"}).Run(sc)
+	if err != nil {
+		t.Fatalf("scenario: %v", err)
+	}
+	if rep.EnvFailed != 1 || rep.Failed != 1 {
+		t.Fatalf("want 1 env + 1 assertion failure, got %+v", rep)
+	}
+	if !rep.Cases[0].Env || rep.Cases[1].Env {
+		t.Errorf("misclassified: %+v", rep.Cases)
+	}
+	if rep.OK() {
+		t.Error("a report with an environment failure is not OK")
 	}
 }
 

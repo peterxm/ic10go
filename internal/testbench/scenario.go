@@ -59,6 +59,12 @@ type CaseResult struct {
 	Passed   bool      `json:"passed"`
 	Failures []Failure `json:"failures,omitempty"`
 	Err      string    `json:"error,omitempty"`
+	// Env marks a case that could not run because of the environment (no chip,
+	// an unknown logic name, the connection dropping) rather than because the
+	// program under test behaved wrongly. The two must not share an exit code:
+	// on CI a broken rig has to be distinguishable from a codegen regression
+	// (review B28).
+	Env bool `json:"envError,omitempty"`
 }
 
 // Report is the outcome of a scenario run.
@@ -66,15 +72,20 @@ type Report struct {
 	Cases  []CaseResult `json:"cases"`
 	Passed int          `json:"passed"`
 	Failed int          `json:"failed"`
+	// EnvFailed counts cases that failed for an environmental reason.
+	EnvFailed int `json:"envFailed,omitempty"`
 }
 
 // OK reports whether every case passed.
-func (r *Report) OK() bool { return r.Failed == 0 && len(r.Cases) > 0 }
+func (r *Report) OK() bool { return r.Failed == 0 && r.EnvFailed == 0 && len(r.Cases) > 0 }
 
 func (r *Report) add(c CaseResult) {
-	if c.Passed {
+	switch {
+	case c.Passed:
 		r.Passed++
-	} else {
+	case c.Env:
+		r.EnvFailed++
+	default:
 		r.Failed++
 	}
 	r.Cases = append(r.Cases, c)
@@ -89,7 +100,11 @@ func (r *Report) String() string {
 			name = "case " + strconv.Itoa(i+1)
 		}
 		if c.Err != "" {
-			fmt.Fprintf(&b, "✗ %s: %s\n", name, c.Err)
+			mark := "✗"
+			if c.Env {
+				mark = "!" // could not run: the rig, not the program
+			}
+			fmt.Fprintf(&b, "%s %s: %s\n", mark, name, c.Err)
 			continue
 		}
 		if c.Passed {
@@ -102,6 +117,9 @@ func (r *Report) String() string {
 		}
 	}
 	fmt.Fprintf(&b, "\n%d passed, %d failed", r.Passed, r.Failed)
+	if r.EnvFailed > 0 {
+		fmt.Fprintf(&b, ", %d could not run (environment)", r.EnvFailed)
+	}
 	return b.String()
 }
 
@@ -141,25 +159,30 @@ func (r *Runner) Run(s *Scenario) (*Report, error) {
 
 func (r *Runner) runCase(cs Case, chip any, force bool) CaseResult {
 	name := cs.Name
+	// env marks an error that came out of a client call: the rig, not the
+	// program, is at fault (review B28).
+	env := func(err error) CaseResult {
+		return CaseResult{Name: name, Err: err.Error(), Env: true}
+	}
 
 	writes := make([]DeviceWrite, 0, len(cs.Set))
 	for k, v := range cs.Set {
 		port, logic, err := splitKey(k)
 		if err != nil {
-			return CaseResult{Name: name, Err: err.Error()}
+			return env(err)
 		}
 		writes = append(writes, DeviceWrite{Port: port, Logic: logic, Value: v})
 	}
 	if len(writes) > 0 {
 		if _, err := r.C.SetWrites(writes, chip, force); err != nil {
-			return CaseResult{Name: name, Err: err.Error()}
+			return env(err)
 		}
 	}
 
 	if cs.Run > 0 {
 		rr, err := r.C.Run(cs.Run, chip)
 		if err != nil {
-			return CaseResult{Name: name, Err: err.Error()}
+			return env(err)
 		}
 		if rr.Error != nil {
 			// A chip stuck on an error line never advances, so the run did not
@@ -176,13 +199,15 @@ func (r *Runner) runCase(cs Case, chip any, force bool) CaseResult {
 		for k := range cs.Expect {
 			port, logic, err := splitKey(k)
 			if err != nil {
-				return CaseResult{Name: name, Err: err.Error()}
+				// A malformed key in the scenario file is a rig/config problem,
+				// not a codegen regression (review B28).
+				return CaseResult{Name: name, Err: err.Error(), Env: true}
 			}
 			reads = append(reads, DeviceRead{Port: port, Logic: logic})
 		}
 		got, err := r.C.GetValues(reads, chip)
 		if err != nil {
-			return CaseResult{Name: name, Err: err.Error()}
+			return env(err)
 		}
 		for k, want := range cs.Expect {
 			g, ok := got[k]
@@ -197,7 +222,7 @@ func (r *Runner) runCase(cs Case, chip any, force bool) CaseResult {
 	if len(cs.ExpectReg) > 0 {
 		st, err := r.C.State([]string{"registers"}, false, chip)
 		if err != nil {
-			return CaseResult{Name: name, Err: err.Error()}
+			return env(err)
 		}
 		for k, want := range cs.ExpectReg {
 			g, ok := st.Registers[k]

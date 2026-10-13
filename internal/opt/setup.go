@@ -127,6 +127,23 @@ func SplitSetup(fn *ir.Function, hoistInLoop bool) *ir.Function {
 		deviceOK[d] = hoistableWriters[d] == n
 	}
 
+	// A device that is *read* inside a loop must keep its in-loop write: hoisting
+	// it stops the program re-asserting the value, so the read can observe
+	// whatever another writer left behind -- a behaviour change the
+	// "re-asserting the same constant each tick is redundant" rationale does not
+	// cover (review §2.6).
+	readInLoop := map[string]bool{}
+	for _, b := range fn.Blocks {
+		if !inLoop[b] {
+			continue
+		}
+		for _, ins := range b.Instrs {
+			if d, ok := deviceOfRead(ins); ok {
+				readInLoop[d] = true
+			}
+		}
+	}
+
 	setup := ir.NewBuilder("__setup")
 	moved := 0
 	for _, b := range fn.Blocks {
@@ -139,9 +156,10 @@ func SplitSetup(fn *ir.Function, hoistInLoop bool) *ir.Function {
 				kept = append(kept, ins)
 				continue
 			}
-			if !preLoop[b] && (!hoistInLoop || !deviceOK[deviceKey(ins)]) {
-				// Inside a loop: only with --extract-setup, and only when the
-				// device has no writer left behind.
+			if !preLoop[b] && (!hoistInLoop || !deviceOK[deviceKey(ins)] || readInLoop[deviceKey(ins)]) {
+				// Inside a loop: only with --extract-setup, only when the device
+				// has no writer left behind, and only when the loop does not read
+				// the device it writes.
 				kept = append(kept, ins)
 				continue
 			}
@@ -217,6 +235,42 @@ func deviceOfWrite(ins ir.Instr) (string, bool) {
 func deviceKey(ins ir.Instr) string {
 	d, _ := deviceOfWrite(ins)
 	return d
+}
+
+// deviceOfRead names the device a load addresses, using the same identity keys
+// as deviceOfWrite so the two sets can be compared.
+func deviceOfRead(ins ir.Instr) (string, bool) {
+	switch x := ins.(type) {
+	case *ir.Load:
+		return "d:" + x.Dev, true
+	case *ir.LoadSlot:
+		if x.DevPtr != nil {
+			return "", false
+		}
+		return "d:" + x.Dev, true
+	case *ir.LoadDyn:
+		if x.DevPtr != nil {
+			return "", false
+		}
+		if x.Dev != "" {
+			return "d:" + x.Dev, true
+		}
+		if id, ok := constKey(x.DevID); ok {
+			return "id:" + id, true
+		}
+		return "", false
+	case *ir.Batch:
+		switch x.Kind {
+		case ir.BatchLoad, ir.BatchLoadName, ir.BatchLoadSlot, ir.BatchLoadNameSlot:
+			dev, ok1 := constKey(x.Device)
+			name, ok2 := constKey(x.Name)
+			if !ok1 || !ok2 {
+				return "", false
+			}
+			return "b:" + dev + "/" + name, true
+		}
+	}
+	return "", false
 }
 
 // constKey renders a constant operand as text, so two identical constants
