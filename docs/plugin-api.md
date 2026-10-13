@@ -74,20 +74,27 @@ ic10c build --json <file.icg>
 | `data.layout` | `top` 或 `middle`。 |
 | `stats` | 行 / 字节 / 最长行 / 引用到的寄存器数。 |
 | `limits` | 编译器校验所用的 IC10 上限（默认 128 / 4096 / 90，寄存器恒为 16）。可用 `--max-lines` / `--max-bytes` / `--max-line` 或 `IC10C_MAX_LINES` / `IC10C_MAX_BYTES` / `IC10C_MAX_LINE` 覆盖，以跟随游戏变化；这里的值就是本次构建实际生效的值。 |
-| `tick` | 每 tick 指令预算分析（见 [`tick-budget.md`](tick-budget.md)）：`cost` = 两个 `yield`/`sleep` 之间最坏路径的指令数（`exceeds=true` 时被预算封顶，只知超过 `limit`）；`loops` / `segments` 为识别到的循环与分段数。多芯片取最坏的一块。 |
+| `tick` | 每 tick 指令预算分析（见 [`tick-budget.md`](tick-budget.md)）：`cost` = 两个 `yield`/`sleep` 之间最坏路径的指令数（`exceeds=true` 时被预算封顶，只知超过 `limit`）；`loops` / `segments` 为识别到的循环与分段数；`ticksPerRound` = 跨 tick 循环一轮要几个 tick（1 = 一轮在一个 tick 内跑完）。多芯片取最坏的一块。 |
+| `score` | 两个硬上限的分数（**取更差的一维**分档）：`lines`/`lineLimit`/`lineUsed`、`tickWorst`/`tickLimit`/`tickUsed`、`ticksPerRound`、`grade`（`D` = 超了某个上限；`A`/`B`/`C` 按余量）。它是**静态最坏**分：最坏路径可能几乎不走不到，用 `ic10c tick --run N` 看实测稳态。 |
 | `diagnostics[]` | 诊断列表，按源码位置排序。 |
 
 ### 一次性设置写入（`data.setup`）
 
-编译器会把**序言里的一次性设备写入**（`Mode`、`On`、常量 `Setting` 等，操作数
-全为编译期常量）外提到 loader：设备状态是持久的，这些写入只需在安装时执行一次。
-触发条件是 runtime 超过 128 行，或程序本来就需要 loader（有 `data` 表）。
+编译器会把**一次性设备写入**（`Mode`、`On`、常量 `Setting` 等，操作数全为编译期常量）外提到 loader：
+设备状态是持久的，这些写入只需在安装时执行一次。范围有两类：
+
+- **序言里**的（循环外、支配循环头）：**全自动、不可关闭**，会与「不拆分」的产物比较取更短的 runtime；
+  触发条件是 runtime 超过 128 行，或程序本来就需要 loader（有 `data` 表）；
+- **循环内每轮无条件重复**的（常量的重复断言通常是冗余的）：**只在显式 `--extract-setup` 时**才做 ——
+  它改变"设备被写几次"，而设备可能故意对每次写作出反应（弹簧式按钮/杆）。
+  条件臂里的写**不动**（状态机 `if mode == 0 { d0.On = 1 }` 外提后再次进入该状态就不会置位），
+  同一设备还有别的写者时也不动（loader 先于 runtime 运行，会改变顺序）。
 
 此时 `data.needed = true`、`data.setup = true`，`data.loader` 同时包含数据段写入
 （若有）与外提的设置写入；桥接程序应先跑 loader 再写 runtime。runtime 自身仍
 ≤128 行。loader 超过 128 行时改用 `data.loaders[]` 分块，按序全部运行。
 
-外提是**全自动、不可关闭**的（无对应开关），并会与「不拆分」的产物比较、取
+序言的外提是**全自动、不可关闭**的（无对应开关），并会与「不拆分」的产物比较、取
 runtime 更短者，所以拆分只会减小 runtime。语义前提：这些常量写被视为一次性
 初始化；若循环会改该设备、序言想每 tick 复位，则外提会改变行为。
 

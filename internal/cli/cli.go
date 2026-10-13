@@ -244,8 +244,12 @@ var Commands = []Command{
 		},
 		Flags: []Flag{
 			{Long: "--json", Desc: text{
-				EN: "emit a machine-readable JSON result (code, data loader, stats, diagnostics)",
-				ZH: "输出机器可读的 JSON 结果（代码、数据段装载器、统计、诊断）",
+				EN: "emit a machine-readable JSON result (code, data loader, stats, diagnostics, score)",
+				ZH: "输出机器可读的 JSON 结果（代码、数据段装载器、统计、诊断、打分）",
+			}},
+			{Long: "--score", Desc: text{
+				EN: "print the score for both hard limits (lines and worst per-tick instructions) to stderr; a C or D grade prints anyway",
+				ZH: "把两个硬上限（行数与最坏每-tick 指令）的分数打到 stderr；C/D 档自动打印",
 			}},
 			{Long: "--stable-ins", Desc: text{
 				EN: "emit 'ins' with the stable branch's argument order",

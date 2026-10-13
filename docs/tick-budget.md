@@ -66,6 +66,16 @@ examples/…-表驱动.icg: per-tick budget: limit 128, 122 instructions
   含 `yield`/`sleep`、会**跨 tick**的循环也会列出（行尾标「跨 tick」）——它正是最该关注的 tick 循环，
   `body` 是它**一圈**的指令数（沿分段边界的续接统计，见下）。
   VSCode 状态栏悬停里也会逐个循环列出「每圈 最快..最慢 条 × N 次」。
+- **`round ~N ticks` / `round >=2 ticks`**：跨 tick 循环一轮要几个 tick。`round ~N ticks: … (body 142 instructions, 128 per tick)`
+  是"循环体本身太大"；`round >=2 ticks: some interval between yields cannot finish within 128 instructions`
+  是"两个 yield 之间装不下" —— 两种原因分开说，不含糊。`--json` 里是 `ticksPerRound`（1 = 一轮在一个 tick 内跑完）。
+- **冷热分诊（`--run N`）**：实测数据除了打印，也进了 `--json`（`dynamic: {ticks,max,avg,halted}` ✓ —— 此前它跟着 JSON 后面
+  当一行纯文本输出 ✗，整段不是合法 JSON）。文本模式会多一句判断：
+  - 实测平均远低于上限 → `the overrun is on a rarely-taken path … the steady state is still ~1 tick per round`；
+  - 实测接近上限 → `this loop really is over the budget every tick`。
+- **打分**：`ic10c build` 的 `score`（`build --json` 的 `score` 字段 / `--score` 打到 stderr）把两个硬上限并排给出，
+  分档取**更差的一维**：`D: lines 123/128 (96%) · worst tick 129/128 (101%) · round >=2 ticks`。
+  注意它是**静态最坏**分 —— 上一条的分诊才说明它是真烫还是冷路径。
 - `--path`：`.icg` 给出映射后的**源码行**序列（`sourcePath`），原生 IC10 给出 0 基 IC10 行号。
 
 ### 多芯片

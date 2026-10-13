@@ -106,6 +106,26 @@ type Report struct {
 	Segments []Segment `json:"segments"`
 	Loops    []Loop    `json:"loops"`
 	Indirect bool      `json:"indirect,omitempty"` // any unresolved computed target was hit
+
+	// TicksPerRound estimates how many ticks the loop that spans ticks needs for
+	// one round: ceil(body/limit) of its largest spanning loop, so 1 means the
+	// loop finishes within a tick. This is the number a user cares about ("how
+	// slow is my control loop"), unlike the raw instruction count.
+	TicksPerRound int `json:"ticksPerRound"`
+
+	// Dynamic, when set, is a measured run (the CLI's --run N): how many
+	// instructions each tick actually executed. The static analysis reports the
+	// worst path; this is what the program does in practice, and the two
+	// together say whether an overrun is a hot loop or a rarely-taken path.
+	Dynamic *Dynamic `json:"dynamic,omitempty"`
+}
+
+// Dynamic is a measured per-tick run.
+type Dynamic struct {
+	Ticks  int     `json:"ticks"`
+	Max    int     `json:"max"`
+	Avg    float64 `json:"avg"`
+	Halted int     `json:"halted,omitempty"` // tick it halted on, if it did
 }
 
 type node struct {
@@ -626,6 +646,7 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 	walk := newBoundedWalk(nodes, lines, dom)
 
 	rep.Loops = findLoops(nodes, lines, dom, &rep.Indirect)
+	rep.TicksPerRound = 1
 
 	for _, st := range starts {
 		if _, ok := nodes[st]; !ok {
@@ -639,6 +660,10 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		}
 		seg := Segment{Start: st, Barrier: -1, Cost: cost}
 		seg.Exceeds = cost > limit
+		if seg.Exceeds && rep.TicksPerRound < 2 {
+			// A segment that cannot finish inside one tick needs at least two.
+			rep.TicksPerRound = 2
+		}
 		// Reconstruct the worst-case path and find its terminal barrier.
 		cur, rem := st, limit+1
 		counts := [maxTrackedLoops]byte{}
@@ -712,6 +737,17 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 
 	for i := range rep.Loops {
 		l := &rep.Loops[i]
+		// Ticks-per-round only counts loops that span ticks (they contain a
+		// yield/sleep): those are the control loops whose period is perceived.
+		if l.Spans {
+			r := (l.Body + limit - 1) / limit
+			if r < 1 {
+				r = 1
+			}
+			if r > rep.TicksPerRound {
+				rep.TicksPerRound = r
+			}
+		}
 		l.Source = srcOf(l.Header)
 		// SourceStart/End: the source-line span of the loop's IC10 range, so an
 		// editor can highlight the whole loop. Mapping only Start/End is wrong
@@ -1407,6 +1443,20 @@ func (r *Report) String() string {
 		fmt.Fprintf(&b, "  loop %s..%s (header %s): body %s x %s iterations%s\n",
 			loc(l.Start, 0), loc(l.End, 0), loc(l.Header, l.Source), body, trips, spans)
 	}
+	if r.TicksPerRound > 1 {
+		body := 0
+		for _, l := range r.Loops {
+			if l.Spans && l.Body > body {
+				body = l.Body
+			}
+		}
+		if body > 0 && (body+r.Limit-1)/r.Limit >= r.TicksPerRound {
+			fmt.Fprintf(&b, "  round ~%d ticks: the loop that spans ticks needs that many per pass (body %d instructions, %d per tick)\n",
+				r.TicksPerRound, body, r.Limit)
+		} else {
+			fmt.Fprintf(&b, "  round >=2 ticks: some interval between yields cannot finish within %d instructions, so it carries over\n", r.Limit)
+		}
+	}
 	if anyExceeds {
 		b.WriteString("  worst case: a loop between yields can exceed the budget, so the chip resumes mid-loop on the next tick.\n")
 		b.WriteString("  hint: if a loop writes the same devices every tick, one state-change check around the whole\n" +
@@ -1546,6 +1596,38 @@ func dupWrites(path []int, nodes map[int]*node, header int) []DupWrite {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Target < out[j].Target })
 	return out
+}
+
+// Triage contrasts the static worst case with a measured run, so an overrun on a
+// rarely-taken path is not mistaken for a loop that is hot every tick. It
+// returns "" when there is nothing to say (no measurement, or nothing exceeds).
+func (r *Report) Triage() string {
+	if r.Dynamic == nil {
+		return ""
+	}
+	exceeds := false
+	for _, s := range r.Segments {
+		if s.Exceeds {
+			exceeds = true
+			break
+		}
+	}
+	if !exceeds {
+		return ""
+	}
+	d := r.Dynamic
+	switch {
+	case d.Avg*3 < float64(r.Limit):
+		return fmt.Sprintf("  note: the overrun is on a rarely-taken path (measured avg %.0f of %d over %d ticks): the chip just\n"+
+			"        spans ticks there, so the steady state is still ~1 tick per round. Add a yield on that path\n"+
+			"        if you want it explicit, otherwise ignore this.\n",
+			d.Avg, r.Limit, d.Ticks)
+	case d.Avg*4 >= float64(r.Limit)*3:
+		return fmt.Sprintf("  note: this loop really is over the budget every tick (measured avg %.0f of %d over %d ticks).\n",
+			d.Avg, r.Limit, d.Ticks)
+	default:
+		return fmt.Sprintf("  note: measured avg %.0f of %d instructions/tick over %d ticks.\n", d.Avg, r.Limit, d.Ticks)
+	}
 }
 
 // loc renders an IC10 line, adding its source line when known.

@@ -152,6 +152,11 @@
 > 那种情况仍然要用 `readById` / `writeById`。`decompile --stack-id` 把宿主栈里的 id 折成常量之后，
 > 那段代码也可以改用句柄形式。
 
+> **同一 tick 内的读写语义**（2026-10-13 真机验证，A CHIP）：芯片自己写下的值，**同一条 tick 内后续的读立即可见**
+> （`s d3 Setting 7` 之后紧跟 `l r0 d3 Setting` 读到 7）；而**别的设备/芯片不会在这块芯片执行中途改值**
+> （同一 tick 内两次读同一设备、中间隔若干条指令，得到同一个值）。因此「在同一 tick 内缓存设备读」是安全的
+> ——前提是**对同一设备的任何写都要作废缓存**，`yield`/`sleep`（tick 边界）也要清空。
+
 > **网络通道只有 `d.channel[c][n]` 这一种写法**（`l/s d:c Channel<n>`）—— 没有 id 形式：
 > `readById` / `writeById` 的 ReferenceId 只到「设备」这一层，写 `Channel0` 会报
 > `IncorrectLogicType`；手写 `<ref>:conn` 则被 `int.TryParse` 拒掉（`InvalidInteger`）。真机实测。

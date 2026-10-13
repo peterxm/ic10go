@@ -1,6 +1,7 @@
 package ic10
 
 import (
+	"fmt"
 	"strings"
 
 	"ic10go/internal/diag"
@@ -110,6 +111,99 @@ type TickInfo struct {
 	Exceeds  bool `json:"exceeds"`
 	Loops    int  `json:"loops"`
 	Segments int  `json:"segments"`
+	// TicksPerRound is how many ticks the loop that spans ticks needs per pass
+	// (1 = it finishes within a tick). See tick.Report.TicksPerRound.
+	TicksPerRound int `json:"ticksPerRound"`
+}
+
+// Score grades a build on both hard limits: the line count and the worst per-tick
+// instruction count. The grade comes from the **worse** axis on purpose -- a
+// weighted average would hide a hard failure and would let saving lines pay for a
+// tick regression. D means a limit is exceeded (a line overrun does not upload);
+// A/B/C are headroom bands of the worse axis.
+type Score struct {
+	Lines         int     `json:"lines"`
+	LineLimit     int     `json:"lineLimit"`
+	LineUsed      float64 `json:"lineUsed"` // lines / lineLimit
+	TickWorst     int     `json:"tickWorst"`
+	TickLimit     int     `json:"tickLimit"`
+	TickUsed      float64 `json:"tickUsed"` // tickWorst / tickLimit
+	TicksPerRound int     `json:"ticksPerRound"`
+	Grade         string  `json:"grade"`
+}
+
+// ScoreFor grades one compiled runtime against the line limit (the tick limit is
+// tick.DefaultLimit). It is what `ic10c build --score` prints.
+func ScoreFor(code string, lineLimit int) Score {
+	if lineLimit <= 0 {
+		lineLimit = 128
+	}
+	tickLimit := tick.DefaultLimit
+	sc := Score{Lines: len(splitLines(code)), LineLimit: lineLimit, TickLimit: tickLimit}
+	sc.LineUsed = float64(sc.Lines) / float64(lineLimit)
+	if t := tickInfo(code); t != nil {
+		sc.TickWorst = t.Cost
+		sc.TicksPerRound = t.TicksPerRound
+	}
+	sc.TickUsed = float64(sc.TickWorst) / float64(tickLimit)
+	worst := sc.LineUsed
+	if sc.TickUsed > worst {
+		worst = sc.TickUsed
+	}
+	switch {
+	case sc.Lines > lineLimit || sc.TickWorst > tickLimit:
+		sc.Grade = "D"
+	case worst >= 0.75:
+		sc.Grade = "C"
+	case worst >= 0.5:
+		sc.Grade = "B"
+	default:
+		sc.Grade = "A"
+	}
+	return sc
+}
+
+// ScoreOf grades the built result. It uses the static worst per-tick cost; run
+// `ic10c tick --run N` for the measured steady state, which is often much lower
+// (an overrun on a rarely-taken path).
+func ScoreOf(res BuildResult) Score {
+	lineLimit := res.Limits.Lines
+	if lineLimit <= 0 {
+		lineLimit = 128
+	}
+	tickLimit := tick.DefaultLimit
+	sc := Score{Lines: len(res.Lines), LineLimit: lineLimit, TickLimit: tickLimit}
+	sc.LineUsed = float64(sc.Lines) / float64(lineLimit)
+	if res.Tick != nil {
+		sc.TickWorst = res.Tick.Cost
+		sc.TicksPerRound = res.Tick.TicksPerRound
+	}
+	sc.TickUsed = float64(sc.TickWorst) / float64(tickLimit)
+	worst := sc.LineUsed
+	if sc.TickUsed > worst {
+		worst = sc.TickUsed
+	}
+	switch {
+	case sc.Lines > lineLimit || sc.TickWorst > tickLimit:
+		sc.Grade = "D"
+	case worst >= 0.75:
+		sc.Grade = "C"
+	case worst >= 0.5:
+		sc.Grade = "B"
+	default:
+		sc.Grade = "A"
+	}
+	return sc
+}
+
+// String renders the score as one line for a terminal or CI log.
+func (s Score) String() string {
+	round := ""
+	if s.TicksPerRound > 1 {
+		round = fmt.Sprintf(" · round >=%d ticks", s.TicksPerRound)
+	}
+	return fmt.Sprintf("%s: lines %d/%d (%.0f%%) · worst tick %d/%d (%.0f%%)%s",
+		s.Grade, s.Lines, s.LineLimit, s.LineUsed*100, s.TickWorst, s.TickLimit, s.TickUsed*100, round)
 }
 
 // BuildResult is the JSON document emitted by `ic10c build --json`. It is a
@@ -125,6 +219,7 @@ type BuildResult struct {
 	Stats      Stats       `json:"stats"`
 	Limits     Limits      `json:"limits"`
 	Tick       *TickInfo   `json:"tick,omitempty"`
+	Score      *Score      `json:"score,omitempty"`
 	// LineMap maps a 1-based runtime IC10 line to the 1-based .icg source line
 	// it came from (0 when unknown). It mirrors the first chip.
 	LineMap []int `json:"lineMap,omitempty"`
@@ -219,6 +314,8 @@ func BuildJSON(name string, src []byte, opts Options) (BuildResult, error) {
 			}
 		}
 	}
+	sc := ScoreOf(res)
+	res.Score = &sc
 	return res, nil
 }
 
@@ -228,7 +325,7 @@ func tickInfo(code string) *TickInfo {
 	if err != nil {
 		return nil
 	}
-	info := &TickInfo{Limit: rep.Limit, Loops: len(rep.Loops), Segments: len(rep.Segments)}
+	info := &TickInfo{Limit: rep.Limit, Loops: len(rep.Loops), Segments: len(rep.Segments), TicksPerRound: rep.TicksPerRound}
 	for _, s := range rep.Segments {
 		if s.Cost > info.Cost {
 			info.Cost = s.Cost

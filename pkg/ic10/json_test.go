@@ -67,7 +67,7 @@ func TestBuildJSONSuccessWithData(t *testing.T) {
 	if len(res.Diagnostics) != 0 {
 		t.Errorf("unexpected diagnostics: %+v", res.Diagnostics)
 	}
-	assertJSONFields(t, res, "apiVersion", "ok", "code", "lines", "data", "chips", "stats", "limits", "tick", "lineMap", "diagnostics")
+	assertJSONFields(t, res, "apiVersion", "ok", "code", "lines", "data", "chips", "stats", "limits", "tick", "score", "lineMap", "diagnostics")
 	if res.Tick == nil || res.Tick.Limit != 128 || res.Tick.Cost <= 0 {
 		t.Errorf("tick = %+v, want a positive per-tick cost at limit 128", res.Tick)
 	}

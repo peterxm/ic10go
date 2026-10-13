@@ -272,6 +272,7 @@ func cmdBuild(args []string) int {
 	dataOut := ""
 	chipName := ""
 	jsonOut := false
+	scoreOut := false
 	var files []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -326,6 +327,8 @@ func cmdBuild(args []string) int {
 			noDataCheck = true
 		case "--json":
 			jsonOut = true
+		case "--score":
+			scoreOut = true
 		case "--data-layout":
 			if i+1 < len(args) {
 				dataLayout = args[i+1]
@@ -473,6 +476,14 @@ func cmdBuild(args []string) int {
 		}
 	}
 
+	// The score grades both hard limits (lines and worst per-tick instructions).
+	// It goes to stderr so that stdout stays the program itself; print it when
+	// asked, or whenever it is notable (a C or D grade).
+	score := ic10.ScoreFor(compiled.Code, lim.lines)
+	if scoreOut || score.Grade == "C" || score.Grade == "D" {
+		fmt.Fprintln(os.Stderr, score.String())
+	}
+
 	// Single chip: runtime to stdout, one-time loader beside it.
 	if !multi {
 		fmt.Print(compiled.Code)
@@ -491,6 +502,10 @@ func cmdBuild(args []string) int {
 		for _, ch := range compiled.Chips {
 			if ch.Name != chipName {
 				continue
+			}
+			sc := ic10.ScoreFor(ch.Code, lim.lines)
+			if scoreOut || sc.Grade == "C" || sc.Grade == "D" {
+				fmt.Fprintln(os.Stderr, sc.String())
 			}
 			fmt.Print(ch.Code)
 			if ch.Loader == "" {
@@ -1226,6 +1241,11 @@ func cmdTick(args []string) int {
 			if u.chip != "" {
 				name = file + " chip " + u.chip
 			}
+			if runTicks > 0 {
+				if d := measureTicks(u.code, u.loaders, runTicks, limit, sets); d != nil {
+					rep.Dynamic = d
+				}
+			}
 			if asJSON {
 				out := struct {
 					File string `json:"file"`
@@ -1239,6 +1259,12 @@ func cmdTick(args []string) int {
 				}
 			} else {
 				fmt.Printf("%s: %s", name, rep.String())
+				if rep.Dynamic != nil {
+					fmt.Print(dynamicLine(rep.Dynamic, limit))
+					if tri := rep.Triage(); tri != "" {
+						fmt.Print(tri)
+					}
+				}
 				if showPath {
 					for i, s := range rep.Segments {
 						if len(s.SourcePath) > 0 {
@@ -1254,9 +1280,6 @@ func cmdTick(args []string) int {
 					status = 1
 				}
 			}
-			if runTicks > 0 {
-				measureTicks(u.code, u.loaders, runTicks, limit, sets)
-			}
 		}
 	}
 	if !strict {
@@ -1268,7 +1291,7 @@ func cmdTick(args []string) int {
 // measureTicks runs the program in the built-in VM (which models the game's
 // 128-instruction tick) and reports the measured instructions per tick. It
 // complements the static worst case: exact for the paths actually taken.
-func measureTicks(code string, loaders []string, ticks, limit int, sets []string) {
+func measureTicks(code string, loaders []string, ticks, limit int, sets []string) *tick.Dynamic {
 	m := vm.New()
 	m.TickLimit = limit // match the budget under test
 	for _, ld := range loaders {
@@ -1277,19 +1300,19 @@ func measureTicks(code string, loaders []string, ticks, limit int, sets []string
 		}
 		if err := m.Load(ld); err != nil {
 			fmt.Fprintln(os.Stderr, "ic10c: loader:", err)
-			return
+			return nil
 		}
 		_ = m.Run(1 << 16) // loaders are straight-line stores
 	}
 	if err := m.Load(code); err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
-		return
+		return nil
 	}
 	for _, s := range sets {
 		name, logic, slot, hasSlot, value, ok := parseSet(s)
 		if !ok {
 			fmt.Fprintf(os.Stderr, "ic10c: bad --set %q (want name.logic=value)\n", s)
-			return
+			return nil
 		}
 		if hasSlot {
 			m.SetSlot(name, slot, logic, value)
@@ -1303,7 +1326,7 @@ func measureTicks(code string, loaders []string, ticks, limit int, sets []string
 	for t := 0; t < ticks; t++ {
 		if err := m.RunTicks(1); err != nil {
 			fmt.Fprintln(os.Stderr, "ic10c: run:", err)
-			return
+			return nil
 		}
 		n := c.n - prev
 		prev = c.n
@@ -1321,14 +1344,19 @@ func measureTicks(code string, loaders []string, ticks, limit int, sets []string
 	if ran > 0 {
 		avg = float64(sum) / float64(ran)
 	}
+	return &tick.Dynamic{Ticks: ran, Max: max, Avg: avg, Halted: halted}
+}
+
+// dynamicLine renders a measured run the way the text output has always shown it.
+func dynamicLine(d *tick.Dynamic, limit int) string {
 	note := ""
 	switch {
-	case halted > 0:
-		note = fmt.Sprintf("  (halted after %d tick(s); a raw IC10 program that needs its data loader may stop early)", halted)
-	case max >= limit:
+	case d.Halted > 0:
+		note = fmt.Sprintf("  (halted after %d tick(s); a raw IC10 program that needs its data loader may stop early)", d.Halted)
+	case d.Max >= limit:
 		note = "  (a tick hit the budget: the loop spans ticks)"
 	}
-	fmt.Printf("  dynamic: %d ticks, max %d instructions/tick, avg %.1f (limit %d)%s\n", ran, max, avg, limit, note)
+	return fmt.Sprintf("  dynamic: %d ticks, max %d instructions/tick, avg %.1f (limit %d)%s\n", d.Ticks, d.Max, d.Avg, limit, note)
 }
 
 // tickCounter counts instructions via the VM's trace (one line each).

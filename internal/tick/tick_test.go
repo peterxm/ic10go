@@ -333,3 +333,33 @@ func TestDuplicateWritesOnlyWhenExceeding(t *testing.T) {
 		}
 	}
 }
+
+// TestTicksPerRound: a program whose loop finishes inside a tick reports 1; one
+// whose interval between yields cannot finish within the budget reports >=2
+// (the user-facing "how slow is my control loop" number).
+func TestTicksPerRound(t *testing.T) {
+	small := "yield\nd0.On = 1\nj 0\n"
+	rep, err := Analyze(small, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.TicksPerRound != 1 {
+		t.Errorf("a one-tick loop reported %d ticks/round", rep.TicksPerRound)
+	}
+	// 140 instructions between yields.
+	big := "yield\n"
+	for i := 0; i < 140; i++ {
+		big += "add r0 r0 1\n"
+	}
+	big += "j 0\n"
+	rep, err = Analyze(big, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.TicksPerRound != 2 {
+		t.Errorf("an over-budget interval reported %d ticks/round, want 2", rep.TicksPerRound)
+	}
+	if out := rep.String(); !strings.Contains(out, "round ") || !strings.Contains(out, "ticks") {
+		t.Errorf("report should mention the round:\n%s", out)
+	}
+}

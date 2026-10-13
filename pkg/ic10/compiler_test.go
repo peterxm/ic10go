@@ -1890,3 +1890,31 @@ func TestSetupExtractHint(t *testing.T) {
 		t.Errorf("hint must not fire with room to spare: %v", diags3.Diags)
 	}
 }
+
+// TestScoreGradesBothLimits: the grade comes from the worse of the two hard
+// limits, D means one is exceeded, and a small program is an A.
+func TestScoreGradesBothLimits(t *testing.T) {
+	small, diags, err := ic10.CompileResult("t.icg", []byte("func main() {\n for {\n  yield()\n  d0.On = 1\n }\n}\n"), ic10.Options{})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	if sc := ic10.ScoreFor(small.Code, 128); sc.Grade != "A" {
+		t.Errorf("small program graded %s, want A: %s", sc.Grade, sc.String())
+	}
+	// A small program whose inner loop makes the tick cost exceed the budget: a
+	// 100-iteration loop is ~300 instructions per tick in a handful of lines.
+	big := "func main() {\n for {\n  yield()\n  i := 0\n  for i < 100 {\n   d0.Setting = i\n   i = i + 1\n  }\n }\n}\n"
+	over, diags, err := ic10.CompileResult("t.icg", []byte(big), ic10.Options{})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile big: %v %v", diags.Diags, err)
+	}
+	sc := ic10.ScoreFor(over.Code, 128)
+	if sc.Grade != "D" {
+		t.Errorf("over-budget program graded %s, want D: %s", sc.Grade, sc.String())
+	}
+	// The same program with a roomy line limit is still D: the tick axis is the
+	// worse one, so the line limit cannot buy a better grade.
+	if sc2 := ic10.ScoreFor(over.Code, 100000); sc2.Grade != "D" {
+		t.Errorf("grade should not improve by relaxing the line limit: %s", sc2.String())
+	}
+}
