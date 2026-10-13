@@ -240,7 +240,13 @@ func (c *typeChecker) checkStmt(s ast.Stmt) {
 			for _, e := range cc.Exprs {
 				c.expr(e)
 			}
+			// Each case body is its own block (like Go): `case 1: y:=…`
+			// and `case 2: y:=…` must not conflict. Previously all clauses
+			// shared one scope and reported a false "redeclared" (review M4,
+			// §2.1).
+			c.pushScope()
 			c.checkStmts(cc.Body)
+			c.popScope()
 		}
 		c.popScope()
 	case *ast.ReturnStmt:

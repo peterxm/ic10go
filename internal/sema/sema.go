@@ -116,6 +116,47 @@ func Check(file *ast.File, diags *diag.Bag) *Info {
 	return CheckWithOptions(file, diags, Options{})
 }
 
+// existingName reports the declaration kind already occupying name across all
+// registries, or ("", false) when the name is free.
+func (info *Info) existingName(name string) (string, bool) {
+	if _, ok := info.Consts[name]; ok {
+		return "constant", true
+	}
+	if _, ok := info.RawConsts[name]; ok {
+		return "raw constant", true
+	}
+	if _, ok := info.Devices[name]; ok {
+		return "device alias", true
+	}
+	if _, ok := info.Funcs[name]; ok {
+		return "function", true
+	}
+	if _, ok := info.DataIndex[name]; ok {
+		return "data table", true
+	}
+	if _, ok := info.Buses[name]; ok {
+		return "bus", true
+	}
+	return "", false
+}
+
+// nameTaken reports whether name is already declared and, if so, errors. kind
+// labels the new declaration. The previous per-case conflict matrix had gaps
+// (a func vs a raw/str const, or a bus vs a func/data table, were not reported
+// in either direction); this single check closes them all (review M3, §2.1).
+func (info *Info) nameTaken(name string, pos source.Pos, kind string, diags *diag.Bag) bool {
+	existing, ok := info.existingName(name)
+	if !ok {
+		return false
+	}
+	if existing == kind {
+		diags.Errorf(pos, "%s %q redeclared", kind, name)
+	} else {
+		diags.Errorf(pos, "%s %q conflicts with an existing %s", kind, name, existing)
+	}
+	return true
+}
+
 // CheckWithOptions is Check with explicit options.
 func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 	info := &Info{
@@ -139,24 +180,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 	for _, d := range file.Decls {
 		switch d := d.(type) {
 		case *ast.ConstDecl:
-			if _, exists := info.Consts[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "constant %q redeclared", d.Name.Name)
-				continue
-			}
-			if _, exists := info.RawConsts[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "constant %q redeclared", d.Name.Name)
-				continue
-			}
-			if _, exists := info.Devices[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "constant %q redeclared", d.Name.Name)
-				continue
-			}
-			if _, exists := info.Funcs[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "constant %q conflicts with a function", d.Name.Name)
-				continue
-			}
-			if _, exists := info.DataIndex[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "constant %q conflicts with a data table", d.Name.Name)
+			if info.nameTaken(d.Name.Name, d.Name.Pos(), "constant", diags) {
 				continue
 			}
 			// const NAME = dN / db aliases a device port; const NAME = other
@@ -173,24 +197,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 			// (see evalPending), so it may call pure user functions.
 			pendingConsts = append(pendingConsts, pendingConst{d.Name.Name, d.Value})
 		case *ast.DataDecl:
-			if _, exists := info.DataIndex[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "data table %q redeclared", d.Name.Name)
-				continue
-			}
-			if _, exists := info.Consts[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "data table %q conflicts with a constant", d.Name.Name)
-				continue
-			}
-			if _, exists := info.RawConsts[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "data table %q conflicts with a constant", d.Name.Name)
-				continue
-			}
-			if _, exists := info.Devices[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "data table %q conflicts with a constant", d.Name.Name)
-				continue
-			}
-			if _, exists := info.Funcs[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "data table %q conflicts with a function", d.Name.Name)
+			if info.nameTaken(d.Name.Name, d.Name.Pos(), "data table", diags) {
 				continue
 			}
 			// Register the table now (so name conflicts are still caught) and
@@ -201,20 +208,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 			info.DataIndex[d.Name.Name] = t
 			pendingTables = append(pendingTables, pendingTable{table: t, decl: d})
 		case *ast.FuncDecl:
-			if _, exists := info.Funcs[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "function %q redeclared", d.Name.Name)
-				continue
-			}
-			if _, exists := info.Consts[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "function %q conflicts with a constant", d.Name.Name)
-				continue
-			}
-			if _, exists := info.Devices[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "function %q conflicts with a constant", d.Name.Name)
-				continue
-			}
-			if _, exists := info.DataIndex[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "function %q conflicts with a data table", d.Name.Name)
+			if info.nameTaken(d.Name.Name, d.Name.Pos(), "function", diags) {
 				continue
 			}
 			fi := &FuncInfo{Decl: d}
@@ -244,12 +238,7 @@ func CheckWithOptions(file *ast.File, diags *diag.Bag, opts Options) *Info {
 				info.Main = d
 			}
 		case *ast.BusDecl:
-			if _, exists := info.Buses[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "bus %q redeclared", d.Name.Name)
-				continue
-			}
-			if _, exists := info.Consts[d.Name.Name]; exists {
-				diags.Errorf(d.Name.Pos(), "bus %q conflicts with a constant", d.Name.Name)
+			if info.nameTaken(d.Name.Name, d.Name.Pos(), "bus", diags) {
 				continue
 			}
 			if len(d.Slots) > 8 {
@@ -1466,6 +1455,13 @@ func evalPending(info *Info, diags *diag.Bag, consts []pendingConst, tables []pe
 		v, ok := ev.expr(pc.expr)
 		if !ok {
 			diags.Errorf(pc.expr.Pos(), "constant %q is not a compile-time expression", pc.name)
+			continue
+		}
+		// Numeric constants are resolved here, after the declaration walk, so
+		// a duplicate like `const A = 1` then `const A = 2` was not caught by
+		// nameTaken (neither had registered yet) and silently took the last
+		// value. Report it now.
+		if info.nameTaken(pc.name, pc.expr.Pos(), "constant", diags) {
 			continue
 		}
 		info.Consts[pc.name] = v
