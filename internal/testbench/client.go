@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -416,10 +417,15 @@ func (c *Client) Push(code string, loaders []string, chip any) (*PushResult, err
 
 // PushResult is the result of a push.
 type PushResult struct {
-	Chip    Chip            `json:"chip"`
-	Lines   int             `json:"lines"`
-	Loaders int             `json:"loaderOps"`
-	Error   json.RawMessage `json:"compileError"`
+	Chip    Chip `json:"chip"`
+	Lines   int  `json:"lines"`
+	Loaders int  `json:"loaderOps"`
+	// CompileError is the chip's error state immediately after the source was
+	// uploaded. The mod answers `ok:true` even when the program did not
+	// compile -- the chip simply keeps running its previous program -- so a
+	// caller that ignores this field silently asserts against the wrong
+	// binary (review B17).
+	CompileError *ChipErrors `json:"compileError"`
 }
 
 // DeviceWrite sets one device logic value.
@@ -606,6 +612,33 @@ type ChipErrors struct {
 	Code        string `json:"code"`
 	Compilation bool   `json:"compilation"`
 	Line        int    `json:"line"`
+}
+
+// Error implements error, so a chip error state can be reported directly. The
+// game's message carries rich-text markup, which is stripped for plain-text
+// surfaces like the CLI.
+func (e *ChipErrors) Error() string {
+	if e == nil {
+		return ""
+	}
+	kind := "runtime"
+	if e.Compilation {
+		kind = "compile"
+	}
+	if code := stripMarkup(e.Code); code != "" {
+		return kind + " error: " + code
+	}
+	return fmt.Sprintf("%s error at line %d", kind, e.Line)
+}
+
+// markupTag matches the game's rich-text tags (<color=red>, </color>, ...).
+// Only tag-shaped runs are removed, so a message containing `<` as an operator
+// survives.
+var markupTag = regexp.MustCompile(`</?[a-zA-Z][^<>]*>`)
+
+// stripMarkup removes rich-text tags and collapses whitespace.
+func stripMarkup(s string) string {
+	return strings.Join(strings.Fields(markupTag.ReplaceAllString(s, "")), " ")
 }
 
 // DeviceState is one device on a chip port.

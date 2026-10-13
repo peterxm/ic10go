@@ -121,8 +121,15 @@ func (r *Runner) Run(s *Scenario) (*Report, error) {
 			return nil, fmt.Errorf("bad chip selector: %w", err)
 		}
 	}
-	if _, err := r.C.Push(r.Code, r.Loaders, chip); err != nil {
+	res, err := r.C.Push(r.Code, r.Loaders, chip)
+	if err != nil {
 		return nil, err
+	}
+	if res.CompileError != nil {
+		// The mod answers ok:true and leaves the chip running whatever program
+		// it had, so continuing here would assert against the wrong binary and
+		// report a green run (review B17).
+		return nil, fmt.Errorf("push did not compile; the chip still runs its previous program: %w", res.CompileError)
 	}
 
 	rep := &Report{}

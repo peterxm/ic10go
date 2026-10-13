@@ -1550,6 +1550,16 @@ func benchPush(addr, file string, chip any, asName string, stableIns, nanSafe, d
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
+	if res.CompileError != nil {
+		// ok:true with a compileError means the chip kept its previous program;
+		// succeeding here would look like a successful upload of a program that
+		// never compiled (review B17). Report it, with the JSON if asked.
+		if asJSON {
+			printJSON(res)
+		}
+		fmt.Fprintln(os.Stderr, "ic10c: push did not compile; the chip still runs its previous program:", res.CompileError)
+		return 2
+	}
 	if asJSON {
 		return printJSON(res)
 	}

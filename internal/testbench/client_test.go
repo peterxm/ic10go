@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +18,9 @@ type fakeServer struct {
 	mu     sync.Mutex
 	values map[string]float64 // "d1.Setting" -> value
 	conns  map[net.Conn]bool
+	// compileErr, when set, is echoed as the push result's `compileError`.
+	// The mod answers ok:true even then (the chip keeps its old program).
+	compileErr any
 }
 
 func startFake(t *testing.T) *fakeServer {
@@ -100,9 +104,16 @@ func (f *fakeServer) serve(conn net.Conn) {
 				}},
 			}})
 		case "push":
-			send(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{
+			f.mu.Lock()
+			ce := f.compileErr
+			f.mu.Unlock()
+			res := map[string]any{
 				"chip": map[string]any{"name": "TestChip"}, "lines": 3,
-			}})
+			}
+			if ce != nil {
+				res["compileError"] = ce
+			}
+			send(map[string]any{"id": req.ID, "ok": true, "result": res})
 		case "set":
 			var a struct {
 				Writes []DeviceWrite `json:"writes"`
@@ -275,6 +286,37 @@ func TestScenarioRun(t *testing.T) {
 	}
 	if rep.Cases[0].Passed != true || rep.Cases[1].Passed != false {
 		t.Fatalf("cases: %+v", rep.Cases)
+	}
+}
+
+// A push that did not compile must fail loudly (review B17): the mod answers
+// ok:true and leaves the chip running its previous program, so a caller that
+// ignores compileError reports a green scenario against the wrong binary.
+func TestPushCompileErrorIsFatal(t *testing.T) {
+	c, f := dialFake(t)
+	f.mu.Lock()
+	f.compileErr = map[string]any{
+		"code":        "在第 2 行出现 <color=red>UnrecognisedInstruction</color> 错误\n",
+		"compilation": true, "line": 1,
+	}
+	f.mu.Unlock()
+
+	res, err := c.Push("yield", nil, nil)
+	if err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	if res.CompileError == nil || !res.CompileError.Compilation || res.CompileError.Line != 1 {
+		t.Fatalf("compileError not decoded: %+v", res.CompileError)
+	}
+	// The message must be readable and free of the game's rich-text markup.
+	msg := res.CompileError.Error()
+	if !strings.Contains(msg, "UnrecognisedInstruction") || strings.Contains(msg, "<color") {
+		t.Errorf("error text = %q", msg)
+	}
+
+	sc := &Scenario{Program: "x.icg", Cases: []Case{{Name: "ok"}}}
+	if _, err := (&Runner{C: c, Code: "yield"}).Run(sc); err == nil {
+		t.Fatal("a scenario whose push did not compile must fail, not pass")
 	}
 }
 
