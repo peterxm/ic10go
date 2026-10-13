@@ -683,9 +683,21 @@ func applyOp(op token.Kind, x, y float64) (float64, bool) {
 	case token.Star:
 		return x * y, true
 	case token.Slash:
-		return x / y, true
+		// IEEE (review §2.9-G1): `1/0`→+Inf, `-1/0`→-Inf, `0/0`→NaN.
+		// Do not fold a NaN: a bare `nan` literal written to a device halts the
+		// chip (§2.9-G2), so NaN must stay a runtime `div`. ±Inf folds.
+		r := x / y
+		if math.IsNaN(r) {
+			return 0, false
+		}
+		return r, true
 	case token.Percent:
-		return ic10Mod(x, y), true
+		// `%0` → NaN (IEEE/G1). Keep NaN as a runtime op (§2.9-G2).
+		r := ic10Mod(x, y)
+		if math.IsNaN(r) {
+			return 0, false
+		}
+		return r, true
 	case token.Amp:
 		return float64(int64(x) & int64(y)), true
 	case token.Pipe:

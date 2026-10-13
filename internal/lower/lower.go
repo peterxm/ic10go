@@ -3469,14 +3469,31 @@ func foldBin(op ir.BinOp, a, b *ir.Const) (*ir.Const, bool) {
 	case ir.Mul:
 		return &ir.Const{V: x * y}, true
 	case ir.Div:
-		// IC10's div yields NaN when the divisor is zero (not ±inf as IEEE
-		// would): `1/0` and `0/0` both fold to NaN.
-		if y == 0 {
-			return &ir.Const{V: math.NaN()}, true
+		// IC10 arithmetic is pure IEEE (review §2.9-G1, verified against the
+		// decompiled game `_DIV_Operation`): `1/0`→+Inf, `-1/0`→-Inf, `0/0`→NaN.
+		// Go's native float division follows IEEE 754. The previous special-case
+		// `y == 0 → NaN` was doubly wrong: the value was incorrect AND the
+		// resulting NaN constant was the injection source for the C1 compiler
+		// hang (opt constProp never converged because NaN != NaN).
+		//
+		// A NaN is *not* folded to a constant: a bare `nan` literal written to a
+		// device halts the chip (review §2.9-G2: TryParseValueAsValue rejects it).
+		// NaN must reach the device through a register (the runtime `div` path),
+		// so return ok=false and keep the Bin instruction. ±Inf folds normally
+		// (it is a value; the device stores 0, matching the game's behaviour).
+		r := x / y
+		if math.IsNaN(r) {
+			return nil, false
 		}
-		return &ir.Const{V: x / y}, true
+		return &ir.Const{V: r}, true
 	case ir.Mod:
-		return &ir.Const{V: ic10Mod(x, y)}, true
+		// As with Div: `%0` yields NaN (IEEE/G1). Keep it a runtime op so the
+		// NaN reaches devices via a register, never as a bare `nan` literal (G2).
+		r := ic10Mod(x, y)
+		if math.IsNaN(r) {
+			return nil, false
+		}
+		return &ir.Const{V: r}, true
 	case ir.BitAnd:
 		return &ir.Const{V: float64(int64(x) & int64(y))}, true
 	case ir.BitOr:
@@ -3525,7 +3542,10 @@ func constBinWarn(op token.Kind, a, b *ir.Const) string {
 	switch op {
 	case token.Slash:
 		if y == 0 {
-			return "division by zero yields NaN"
+			if x == 0 {
+				return "0 / 0 yields NaN"
+			}
+			return "division by zero yields +Inf or -Inf"
 		}
 		if math.IsInf(x, 0) && math.IsInf(y, 0) {
 			return "inf / inf yields NaN"

@@ -1229,9 +1229,22 @@ func checkInfo(tree *ast.File, name string, diags *diag.Bag, opts Options) *sema
 		FixedDataBase: fixedDataBase(opts),
 		AutoTable:     opts.AutoTable,
 	})
-	if info.DataSize > 0 && info.Sentinel+info.DataSize > sema.StackSize {
-		diags.ErrorfCode("data-too-large", source.Pos{File: name, Line: 1, Col: 1},
-			"data segment [%d..%d] exceeds the %d-slot stack", info.Sentinel, info.Sentinel+info.DataSize-1, sema.StackSize)
+	if info.DataSize > 0 {
+		switch {
+		case info.Sentinel < 0:
+			// The data segment (with version sentinel) is larger than the whole
+			// stack, so the sentinel slot wraps negative. --dynamic-stack skips
+			// the user-stack overflow check in checkStackRegion, so this guard is
+			// the only thing stopping the loader/runtime from emitting
+			// `put/get db -1` and halting the chip on the first instruction
+			// (review C5, §2.9-G4).
+			diags.ErrorfCode("data-too-large", source.Pos{File: name, Line: 1, Col: 1},
+				"data segment needs %d slots but the stack has only %d; reduce the table size",
+				info.DataSize, sema.StackSize)
+		case info.Sentinel+info.DataSize > sema.StackSize:
+			diags.ErrorfCode("data-too-large", source.Pos{File: name, Line: 1, Col: 1},
+				"data segment [%d..%d] exceeds the %d-slot stack", info.Sentinel, info.Sentinel+info.DataSize-1, sema.StackSize)
+		}
 	}
 	return info
 }

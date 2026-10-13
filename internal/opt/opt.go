@@ -73,7 +73,7 @@ func nonnegFold(fn *ir.Function) bool {
 		in[b] = nil // nil = TOP (no facts ruled out)
 	}
 	in[fn.Entry] = map[*ir.Reg]bool{}
-	for changed := true; changed; {
+	for changed, rounds := true, 0; changed && rounds < maxFixpointRounds; rounds++ {
 		changed = false
 		for _, b := range fn.Blocks {
 			if b == fn.Entry {
@@ -693,6 +693,14 @@ func reversePostorder(fn *ir.Function) []*ir.Block {
 	return order
 }
 
+// maxFixpointRounds bounds the dataflow fixpoint passes. Convergence for a
+// well-formed function needs at most (blocks * loop-nesting-depth) passes;
+// this generous cap is purely a safety net against adversarial input or any
+// unforeseen oscillation (e.g. a NaN slipping past floatEq). On the rare
+// occasion it is hit the pass stops early — under-optimised but still correct
+// — and warns, so the compiler never hangs (review C1/C9, §2.1/§2.9.4).
+const maxFixpointRounds = 10000
+
 func constProp(fn *ir.Function) bool {
 	fn.BuildCFG()
 	in := map[*ir.Block]map[*ir.Reg]*ir.Const{}
@@ -704,7 +712,7 @@ func constProp(fn *ir.Function) bool {
 	// RPO order keeps the fixpoint at one pass per nesting level.
 	computed := map[*ir.Block]bool{}
 	order := reversePostorder(fn)
-	for changed := true; changed; {
+	for changed, rounds := true, 0; changed && rounds < maxFixpointRounds; rounds++ {
 		changed = false
 		for _, b := range order {
 			ni := meetPreds(b, out, computed)
@@ -919,11 +927,20 @@ func replaceConstUses(i ir.Instr, state map[*ir.Reg]*ir.Const) bool {
 	return changed
 }
 
+// floatEq compares two float64 constants bit-for-bit so that NaN compares
+// equal to itself (math.NaN yields a canonical bit pattern). A folded NaN
+// (e.g. from x/0) otherwise made constProp/CSE fixed-point iteration never
+// converge, hanging the compiler (review C1, §2.1). -0.0 and +0.0 are
+// distinct, which is the desired behaviour for tracking distinct constants.
+func floatEq(a, b float64) bool {
+	return math.Float64bits(a) == math.Float64bits(b)
+}
+
 func constEqual(a, b *ir.Const) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	return a.Special == b.Special && a.Raw == b.Raw && a.V == b.V
+	return a.Special == b.Special && a.Raw == b.Raw && floatEq(a.V, b.V)
 }
 
 func copyConstMap(m map[*ir.Reg]*ir.Const) map[*ir.Reg]*ir.Const {
@@ -1108,7 +1125,7 @@ func sameValue(a, b ir.Value) bool {
 	ca, ok1 := a.(*ir.Const)
 	cb, ok2 := b.(*ir.Const)
 	if ok1 && ok2 {
-		return ca.Special == cb.Special && ca.Raw == cb.Raw && ca.V == cb.V
+		return ca.Special == cb.Special && ca.Raw == cb.Raw && floatEq(ca.V, cb.V)
 	}
 	return false
 }
@@ -1587,7 +1604,7 @@ func availableExprs(fn *ir.Function) (in, out map[*ir.Block]map[string]availExpr
 		in[b] = map[string]availExpr{}
 		out[b] = map[string]availExpr{}
 	}
-	for changed := true; changed; {
+	for changed, rounds := true, 0; changed && rounds < maxFixpointRounds; rounds++ {
 		changed = false
 		for _, b := range fn.Blocks {
 			var ni map[string]availExpr
@@ -2813,7 +2830,7 @@ func constDeviceStore(ins ir.Instr) (string, *ir.Const, bool) {
 }
 
 func sameConst(a, b *ir.Const) bool {
-	return a.V == b.V && a.Raw == b.Raw && a.Special == b.Special
+	return floatEq(a.V, b.V) && a.Raw == b.Raw && a.Special == b.Special
 }
 
 // mayChangeDeviceState reports whether an instruction could read or change a
@@ -3215,9 +3232,21 @@ func foldBin(op ir.BinOp, a, b *ir.Const) (*ir.Const, bool) {
 	case ir.Mul:
 		return &ir.Const{V: x * y}, true
 	case ir.Div:
-		return &ir.Const{V: x / y}, true
+		// IEEE (review §2.9-G1). Do not fold a NaN result to a constant: a bare
+		// `nan` literal written to a device halts the chip (§2.9-G2), so NaN must
+		// stay a runtime `div` and reach devices through a register. ±Inf folds.
+		r := x / y
+		if math.IsNaN(r) {
+			return nil, false
+		}
+		return &ir.Const{V: r}, true
 	case ir.Mod:
-		return &ir.Const{V: ic10Mod(x, y)}, true
+		// As with Div: `%0` → NaN (IEEE/G1). Keep NaN as a runtime op (§2.9-G2).
+		r := ic10Mod(x, y)
+		if math.IsNaN(r) {
+			return nil, false
+		}
+		return &ir.Const{V: r}, true
 	case ir.BitAnd:
 		return &ir.Const{V: float64(int64(x) & int64(y))}, true
 	case ir.BitOr:
@@ -3392,7 +3421,7 @@ func stackLive(fn *ir.Function, all map[string]bool, private bool) (in, out map[
 		in[b] = map[string]bool{}
 		out[b] = map[string]bool{}
 	}
-	for changed := true; changed; {
+	for changed, rounds := true, 0; changed && rounds < maxFixpointRounds; rounds++ {
 		changed = false
 		for _, b := range fn.Blocks {
 			no := map[string]bool{}
