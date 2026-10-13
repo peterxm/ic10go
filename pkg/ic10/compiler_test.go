@@ -1961,3 +1961,37 @@ func TestJumpTableConditions(t *testing.T) {
 		t.Errorf("8 dense single-statement cases should become a jump table:\n%s", c)
 	}
 }
+
+// TestRelJumpUsesRelativeFormWhenShorter pins what --rel-jump actually does: a
+// branch whose target is far enough that the absolute line number is longer than
+// the offset switches to br*; the target of br* is this line plus the offset
+// (verified in game 2026-10-14: brgt on 0-based line 3 with offset 2 lands on
+// line 5). Line count is unchanged either way.
+func TestRelJumpUsesRelativeFormWhenShorter(t *testing.T) {
+	src := "func main() {\n    n := 0\n    for {\n        yield()\n"
+	for i := 0; i < 100; i++ {
+		src += "        n = n + 1\n"
+	}
+	src += "        d4.Setting = n\n        if d3.Setting > 5 {\n            d0.Setting = 111\n        } else {\n            d0.Setting = 222\n        }\n    }\n}\n"
+
+	abs, diags, err := ic10.Compile("t.icg", []byte(src))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	rel, diags, err := ic10.CompileWithOptions("t.icg", []byte(src), ic10.Options{RelJump: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile rel: %v %v", diags.Diags, err)
+	}
+	if !strings.Contains(abs, "ble ") {
+		t.Errorf("the absolute build should branch with ble:\n%s", abs)
+	}
+	if !strings.Contains(rel, "brle ") {
+		t.Errorf("--rel-jump should switch that far branch to brle:\n%s", rel)
+	}
+	if strings.Contains(abs, "brle ") {
+		t.Errorf("the absolute build must not use br*:\n%s", abs)
+	}
+	if a, b := strings.Count(abs, "\n"), strings.Count(rel, "\n"); a != b {
+		t.Errorf("--rel-jump should not change the line count: %d vs %d", a, b)
+	}
+}

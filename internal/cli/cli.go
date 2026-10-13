@@ -126,8 +126,8 @@ var fastFlag = Flag{Long: "--fast", Desc: text{
 }}
 
 var relJumpFlag = Flag{Long: "--rel-jump", Desc: text{
-	EN: "use relative jumps (jr / br*) when shorter than the absolute form (verify the base in game)",
-	ZH: "在相对跳转（jr / br*）更短时使用（需真机验证基准行）",
+	EN: "use a relative jump (jr / br*) when its offset is shorter than the absolute line number (helps near the 90-character line limit). `br*` targets this line + the offset, verified in game",
+	ZH: "当相对偏移比绝对行号更短时改用 `jr`/`br*`（在接近 90 字符行上限时有帮助）。`br*` 的目标 = 本行 + 偏移，已真机验证",
 }}
 
 var legacyByIDFlag = Flag{Long: "--legacy-by-id", Desc: text{
