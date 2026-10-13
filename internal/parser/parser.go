@@ -368,7 +368,12 @@ func (p *parser) parseUseDecl() *ast.UseDecl {
 		}
 		p.expect(token.Colon)
 		connTok := p.expect(token.Number)
-		conn, _ := strconv.Atoi(connTok.Text)
+		conn, err := strconv.Atoi(connTok.Text)
+		if err != nil {
+			// Previously the Atoi error was discarded and the binding silently
+			// used conn 0 (review M1, §2.1: `use B on db:0x2` -> conn 0).
+			p.errorf(connTok.Pos, "connection number %q is not a decimal integer", connTok.Text)
+		}
 		binds = append(binds, &ast.ConnRef{NodeBase: base(bpos), Device: dev, Conn: conn})
 		if p.at(token.Comma) {
 			p.advance()

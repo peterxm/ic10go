@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ic10go/internal/source"
+	"ic10go/internal/token"
 )
 
 // Format renders a file back to .icg source. It is intended for debugging.
@@ -523,6 +524,22 @@ func (p *printer) expr(e Expr) {
 		p.write(e.Name)
 	case *UnaryExpr:
 		p.write(e.Op.String())
+		// Insert a separator so the output does not form a `--`/`++` token,
+		// which would not re-parse (review L2, §2.1). `- -5` folds the inner
+		// `-5` into a NumberLit whose text starts with '-'; `- -x` is a nested
+		// UnaryExpr.
+		if e.Op == token.Minus || e.Op == token.Plus {
+			switch inner := e.X.(type) {
+			case *NumberLit:
+				if strings.HasPrefix(inner.Text, "-") || strings.HasPrefix(inner.Text, "+") {
+					p.write(" ")
+				}
+			case *UnaryExpr:
+				if inner.Op == token.Minus || inner.Op == token.Plus {
+					p.write(" ")
+				}
+			}
+		}
 		p.expr(e.X)
 	case *BinaryExpr:
 		p.expr(e.X)
