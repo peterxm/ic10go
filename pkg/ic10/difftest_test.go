@@ -18,6 +18,13 @@ import (
 // catches optimisation bugs (e.g. a wrong hoist or a bad common-subexpression
 // merge) that unit tests miss.
 func TestDifferentialRandom(t *testing.T) {
+	if testing.Short() {
+		// The randomized differential is the slow part of this package (it
+		// compiles and runs thousands of generated programs); the -race CI job
+		// runs with -short so it stays bounded (review §2.8 -- an unbounded
+		// `go test -race ./...` times out at the 10 minute default).
+		t.Skip("randomized differential: skipped under -short")
+	}
 	for _, opts := range []ic10.Options{
 		{NaNSafe: true},
 		{NaNSafe: true, StableInsOrder: true},
@@ -48,6 +55,13 @@ func TestDifferentialRandom(t *testing.T) {
 // the opt-in structural tail merge and checks that the device write sequences
 // are identical, so the register-renaming rewrite cannot change behaviour.
 func TestDifferentialRenamedTails(t *testing.T) {
+	if testing.Short() {
+		// The randomized differential is the slow part of this package (it
+		// compiles and runs thousands of generated programs); the -race CI job
+		// runs with -short so it stays bounded (review §2.8 -- an unbounded
+		// `go test -race ./...` times out at the 10 minute default).
+		t.Skip("randomized differential: skipped under -short")
+	}
 	for seed := int64(0); seed < 800; seed++ {
 		src := genProgram(seed)
 		plain, diags, err := ic10.CompileResult("t.icg", []byte(src), ic10.Options{NaNSafe: true})
@@ -81,6 +95,13 @@ func TestDifferentialRenamedTails(t *testing.T) {
 // covers the default layout and both data-segment options
 // (--data-access stack, --data-layout middle).
 func TestDifferentialData(t *testing.T) {
+	if testing.Short() {
+		// The randomized differential is the slow part of this package (it
+		// compiles and runs thousands of generated programs); the -race CI job
+		// runs with -short so it stays bounded (review §2.8 -- an unbounded
+		// `go test -race ./...` times out at the 10 minute default).
+		t.Skip("randomized differential: skipped under -short")
+	}
 	for _, tc := range []struct {
 		name string
 		opts ic10.Options
@@ -681,6 +702,13 @@ func (g *gen) devRead() string {
 // use reserveRegs / setIreg / ireg (IC10 rrN). The optimiser must not reorder
 // or common up indirect register accesses across an indirect write.
 func TestDifferentialIndirect(t *testing.T) {
+	if testing.Short() {
+		// The randomized differential is the slow part of this package (it
+		// compiles and runs thousands of generated programs); the -race CI job
+		// runs with -short so it stays bounded (review §2.8 -- an unbounded
+		// `go test -race ./...` times out at the 10 minute default).
+		t.Skip("randomized differential: skipped under -short")
+	}
 	runDifferential(t, ic10.Options{NaNSafe: true}, 800, genIndirectProgram, false)
 }
 
@@ -720,6 +748,13 @@ func genIndirectProgram(seed int64) string {
 // without optimisation and checks that the lockstep device-write sequence
 // matches.
 func TestDifferentialMultiChip(t *testing.T) {
+	if testing.Short() {
+		// The randomized differential is the slow part of this package (it
+		// compiles and runs thousands of generated programs); the -race CI job
+		// runs with -short so it stays bounded (review §2.8 -- an unbounded
+		// `go test -race ./...` times out at the 10 minute default).
+		t.Skip("randomized differential: skipped under -short")
+	}
 	for seed := int64(0); seed < 400; seed++ {
 		src := genMultiChipProgram(seed)
 

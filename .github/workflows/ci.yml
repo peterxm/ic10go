@@ -41,8 +41,12 @@ jobs:
         with:
           go-version: "1.27.x"
           cache: false
-      - name: test -race
-        run: go test -race ./...
+      # -short drops the randomized differential and the whole-corpus port
+      # matrix: measured here, `go test -race ./...` blows past the default 10
+      # minute test timeout on those alone (the 2026-10-14 review reported the
+      # race run as green; it times out unless they are skipped).
+      - name: test -race -short
+        run: go test -race -short -timeout 20m ./...
 
   cli:
     runs-on: ubuntu-latest

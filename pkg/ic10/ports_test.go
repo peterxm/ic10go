@@ -100,6 +100,13 @@ func portSetupSeed(m *vm.Machine, seed int64) {
 // up (see 主气闸管理IC).
 func TestIc10CodePorts(t *testing.T) {
 	requireIc10Code(t)
+	if testing.Short() {
+		// Compiling the whole corpus under every option combination is the
+		// single slowest test in the repo (~80s plain, and the race detector
+		// multiplies that past the default 10 minute test timeout). The -race CI
+		// job runs with -short; the plain job covers it in full.
+		t.Skip("whole-corpus port matrix: skipped under -short")
+	}
 	ports := corpusFiles(t, ".icg")
 	if len(ports) == 0 {
 		t.Skip("no .icg ports found")
