@@ -307,6 +307,113 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 		}
 	}
 
+	// jrTableTargets recognises the verified codegen jump-table idiom:
+	//
+	//	sltz rA idx        # idx = tag - lo
+	//	sgt  rB idx K      # K = hi - lo
+	//	or   rB rA rB      # rB = (idx < 0) | (idx > K)
+	//	bnez rB out        # out of range -> default arm
+	//	add  idx idx 1
+	//	jr   idx           # relative: lands on line jr+1 .. jr+K+1
+	//	j <case0>          # exactly K+1 consecutive absolute `j` lines
+	//	...
+	//
+	// When the lines match exactly (every operand line a real instruction, no
+	// label or blank line holes the run), reaching the `jr` proves idx is in
+	// [0, K] — ±Inf is caught by sgt — so the successors are exactly the entry
+	// lines, and each entry contributes its own `j` to the path cost. A NaN idx
+	// would slip past the checks, but no line count can be derived from it: the
+	// VM faults the chip (pc out of range) rather than continuing, and the game
+	// does not resume execution at a computable instruction either, so the
+	// entry set stays an upper bound on instructions executed per tick.
+	//
+	// Anything the shape does not prove keeps the old conservative handling:
+	// a jump-table-shaped but unproven `jr` is reported as indirect and its
+	// successors widened, because for "does this fit the budget" a false
+	// underestimate is worse than an overestimate (docs/fast-statemachine.md §2.4).
+	jrTableTargets := func(i int) ([]int, bool) {
+		if i < 5 || i+1 >= len(instrs) {
+			return nil, false
+		}
+		arg := func(j int) (*vm.Instr, bool) {
+			ins := instrs[j]
+			return ins, ins != nil
+		}
+		isReg := func(s string) bool {
+			if len(s) < 2 || s[0] != 'r' {
+				return false
+			}
+			for _, c := range s[1:] {
+				if c < '0' || c > '9' {
+					return false
+				}
+			}
+			return true
+		}
+		one := func(j int, op string, n int) (*vm.Instr, bool) {
+			ins, ok := arg(j)
+			if !ok || ins.Op != op || len(ins.Args) != n {
+				return nil, false
+			}
+			return ins, true
+		}
+		idx := instrs[i].Args[0]
+		if !isReg(idx) || idx == "ra" {
+			return nil, false
+		}
+		// add idx idx 1
+		a, ok := one(i-1, "add", 3)
+		if !ok || a.Args[0] != idx || a.Args[1] != idx || a.Args[2] != "1" {
+			return nil, false
+		}
+		// bnez flag <anything>: the branch that gates the table
+		b, ok := one(i-2, "bnez", 2)
+		if !ok {
+			return nil, false
+		}
+		flag := b.Args[0]
+		// or flag ltreg flag | or flag flag ltreg
+		o, ok := one(i-3, "or", 3)
+		if !ok || o.Args[0] != flag ||
+			!(o.Args[1] != o.Args[2] && (o.Args[1] == flag || o.Args[2] == flag)) {
+			return nil, false
+		}
+		lt := o.Args[1]
+		if lt == flag {
+			lt = o.Args[2]
+		}
+		// sgt flag idx K
+		g, ok := one(i-4, "sgt", 3)
+		if !ok || g.Args[0] != flag || g.Args[1] != idx {
+			return nil, false
+		}
+		K, err := strconv.Atoi(g.Args[2])
+		if err != nil || K < 0 {
+			return nil, false
+		}
+		// sltz lt idx
+		l, ok := one(i-5, "sltz", 2)
+		if !ok || l.Args[0] != lt || l.Args[1] != idx {
+			return nil, false
+		}
+		// K+1 consecutive `j` entry lines right after the jr, all resolvable.
+		if i+K+1 >= len(instrs) {
+			return nil, false
+		}
+		succ := make([]int, 0, K+1)
+		for j := i + 1; j <= i+K+1; j++ {
+			e, ok := one(j, "j", 1)
+			if !ok {
+				return nil, false
+			}
+			if _, ok := resolveTarget(j, e.Args[0]); !ok {
+				return nil, false
+			}
+			succ = append(succ, j)
+		}
+		return succ, true
+	}
+
 	nodes := make(map[int]*node, len(lines))
 	for _, i := range lines {
 		ins := instrs[i]
@@ -345,6 +452,11 @@ func analyzeProg(prog *vm.Program, opts Options) (*Report, error) {
 				n.raReturn = true
 				n.succ = append([]int(nil), calls...)
 				n.indirect = true
+			} else if ts, ok := jrTableTargets(i); ok {
+				// Proven-bounded codegen jump table: the entry lines are the
+				// exact successor set (no widening, no indirect flag) — see
+				// jrTableTargets.
+				n.succ = ts
 			} else if len(calls) > 0 {
 				n.succ = append([]int(nil), calls...)
 				n.indirect = true
