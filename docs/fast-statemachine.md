@@ -284,7 +284,7 @@
 
 ## 6. 验收标准
 
-> 实测值已于 **2026-10-15** 回填（`ic10c 0.8.54` + 本分支，语料 `testdata/bench/fast/` 与
+> 实测值已于 **2026-10-15** 回填（`ic10c 0.8.55`，语料 `testdata/bench/fast/` 与
 > `examples/` + `testdata/` + `ic10code/` 共 275 个 `.icg`）。
 
 - `testdata/bench/fast`（默认 → `--fast`，静态 worst tick）：
