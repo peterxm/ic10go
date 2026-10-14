@@ -1,7 +1,9 @@
 package tick_test
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -98,5 +100,41 @@ s d0 On 2
 	}
 	if !rep.Indirect {
 		t.Errorf("table with a label hole must not be recognized:\n%s", rep)
+	}
+}
+
+// TestAnalyzeIsDeterministic pins a bug where detectTrips scanned a loop body in
+// Go's randomised map order and returned the first matching exit branch it
+// happened to see, so the same input reported different trip counts -- and
+// therefore a different worst-case tick -- on different runs. Under --fast that
+// reached the user: the candidate scorer consumes this analysis, so one source
+// compiled to two different binaries across runs. The compiled output of
+// sugar.icg exposes it (nested counting loops whose exit branch is ambiguous).
+func TestAnalyzeIsDeterministic(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "testdata", "programs", "sugar.icg"))
+	if err != nil {
+		t.Skipf("corpus file: %v", err)
+	}
+	code, diags, err := ic10.Compile("sugar.icg", src)
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", diags.Diags, err)
+	}
+	var first string
+	for i := 0; i < 30; i++ {
+		rep, err := tick.Analyze(code, 128)
+		if err != nil {
+			t.Fatalf("analyze: %v", err)
+		}
+		b, err := json.Marshal(rep)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		if i == 0 {
+			first = string(b)
+			continue
+		}
+		if string(b) != first {
+			t.Fatalf("run %d differs from run 0:\n%s\n%s", i, first, b)
+		}
 	}
 }

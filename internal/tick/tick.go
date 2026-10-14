@@ -1401,6 +1401,20 @@ var regDestOps = map[string]bool{
 	"get": true, "getd": true, "peek": true, "pop": true, "rmap": true,
 }
 
+// setKeys returns the lines of a loop body in ascending order. Detecting trips
+// must not depend on Go's randomised map iteration order: the scan below returns
+// the first exit branch that matches, so it used to pick a different branch (and
+// report a different trip count, and therefore a different worst-case tick) on
+// different runs of the same input.
+func setKeys(set map[int]bool) []int {
+	ks := make([]int, 0, len(set))
+	for x := range set {
+		ks = append(ks, x)
+	}
+	sort.Ints(ks)
+	return ks
+}
+
 // detectTrips recognises a canonical counting loop and returns its trip count,
 // or 0 when it cannot be determined. It handles both compiler output (exit check
 // at the header, e.g. `bge rX BOUND out`) and hand-written loops (exit check at
@@ -1410,7 +1424,7 @@ func detectTrips(nodes map[int]*node, set map[int]bool, header int) int {
 	// Candidate induction registers: exactly one write in the loop, of the form
 	// add/sub reg reg k.
 	writes := map[string][]*node{}
-	for x := range set {
+	for _, x := range setKeys(set) {
 		n := nodes[x]
 		if regDestOps[n.op] && len(n.args) > 0 {
 			writes[n.args[0]] = append(writes[n.args[0]], n)
@@ -1444,7 +1458,7 @@ func detectTrips(nodes map[int]*node, set map[int]bool, header int) int {
 		if !ok {
 			continue
 		}
-		for x := range set {
+		for _, x := range setKeys(set) {
 			n := nodes[x]
 			cond, _, _, ok := ic10asm.BranchInfo(n.op)
 			if !ok || len(n.dsucc) != 2 {
