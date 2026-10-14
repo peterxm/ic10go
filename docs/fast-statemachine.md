@@ -8,6 +8,9 @@
 > 跳转表的过估。实测（`testdata/bench/fast/`）：决策树派发把 12 状态机的最坏 tick 从 16 降到
 > ≈8–9（**由省复核参照推导的估计，待实测**），case 重排降最坏 tick 2 条、行数 +1，均零语义风险。
 
+> **状态（2026-10-15）**：P0–P4 已落地（提交 `b50b9ab`/`962e22a`/`b97654c`/`3c74cc0`），
+> 带叶复核的树实测 worst 16→**9**（行数 +n−1）；实现记录、实测与偏差见 **§8**。
+
 > **复核备注（2026-10-14，`ic10c 0.8.54`/`acbdfa1`）**：本文档**所有实测数字已逐条复现**
 > （§2.1/§2.2/§2.4/§2.5 与附录 A，含 `--jump-table` 的 `129` 误报、examples 18 个里恰好 2 个
 > 产物不同、`arm.icg` 动态 max 128 / avg 124.0）。复核同时给方案加了 5 处收紧：**P1 的门控必须
@@ -279,23 +282,33 @@
 
 ## 6. 验收标准
 
-> 阈值里标注 **(待实测)** 的两个数字目前是**估计**（叶复核后的树行数/成本、`--fast` 编译耗时），
-> 落地时以实测回填，不要拿估计值当门槛。
+> 实测值已于 **2026-10-15** 回填（`ic10c 0.8.54` + 本分支，语料 `testdata/bench/fast/` 与
+> `examples/` + `testdata/` + `ic10code/` 共 275 个 `.icg`）。
 
-- `testdata/bench/fast`：`var8_2`/`var12_2`/`db8_2` 在 `--fast` 下静态 worst tick 比默认下降 ≥25%
-  （**先量出带叶复核的树**，再定具体阈值；参照上界：省复核的 `tree8.ic`=7、`tree12.ic`=8，
-  带复核后预计 ≈9/≈10 **(待实测)**）；行数允许增长但必须入预算。
-- `var*_1 --jump-table`：静态**不再** `EXCEEDS` 误报，且给出 **≤ 动态 max（10）** 的诚实上界；
-  同时新增"手写越界 `jr rX` 的上界仍成立"用例（§4.7）。
-- `气闸控制-四门 --fast`：维持 ≤75（展开收益不回退）；`printer 表驱动 --fast`：**编译成功**
-  （回落到入预算候选），且**给出回落 warning**，产物两轴不劣于默认。
-- **默认模式产物逐字节不变**（硬要求）；`--fast` 在 **tick 轴不劣于默认**，行数/字节允许增长但入预算
-  ——注意这**不是**「两轴支配」：P2 的全部意义就是拿行数换 tick，要求两轴都不劣等于要求本方案无效。
-- **全语料两轴对照**：examples + `testdata/`（含 `ic10code/`，可用时）跑「默认 vs `--fast`」，
-  报告每维的改善/恶化计数（沿用 `backlog.md` 里那条 240 程序口径）。
-- 编译时间：`--fast` 构建 ≤3× 默认 **(待实测)**；`go test ./... -race` 全绿；
-  `ic10c tick --strict` 进 CI 的语料清单扩充 fast 列（`testdata/bench/fast/` 已入库 ✓）。
-- `testdata/server-captures/` 是 **gitignore 的社区捕获**，**验收不依赖** `arm.icg`（可作手工验证）。
+- `testdata/bench/fast`（默认 → `--fast`，静态 worst tick）：
+
+  | 程序 | 行数 | worst | 降幅 |
+  |---|---|---|---|
+  | `var8_2` | 34→41 | 12→**8** | −33% |
+  | `var12_2` | 50→61 | 16→**9** | −44% |
+  | `db8_2` | 33→40 | 12→**8** | −33% |
+  | `db12_2` | 49→60 | 16→**9** | −44% |
+  | `var8_1` | 23→32 | 10→**7** | −30% |
+  | `ord_asc12` | 71→82 | 18→**13** | −28% |
+
+  全部 ≥25% ✓，且都在 128 行预算内（`var12_2` 的 +11 行就是叶复核成本）。
+- `var*_1 --jump-table`：静态 **10**（不再 `EXCEEDS` 129），与动态 max **10** 一致；
+  手写越界 `jr rX` 仍保守（§4.7 的两条回归均在 `internal/tick/jumptable_test.go`）。
+- `气闸控制-四门 --fast`：103 行 / worst **75**（展开收益未回退）；`printer 表驱动 --fast`：**编译成功**
+  （118 行）且发 `fast-fallback` 告警，产物与默认一致。
+- **默认模式产物逐字节不变** ✓ 实测 **270/270** 与 `v0.8.54`（`acbdfa1`）完全相同。
+- **全语料 tick 轴**：269 个可编译程序中 **更好 19 / 相同 250 / 更差 0**，`--fast` 编译失败 0 ✓。
+- 编译时间（5 次均值）：`var12_2` ×1.8、`sugar` ×1.5、**`气闸控制-四门` ×3.0（2.9s → 8.6s）**
+  —— 大程序正好压在 ≤3× 的边界上，`--fast` 是 opt-in，可接受但要知情。
+- `go test ./...` 全绿；CLI 断言 70/0；`testdata/cli/run.sh` 已含本特性的断言。
+- `testdata/server-captures/` 是 **gitignore 的社区捕获**，验收**不依赖** `arm.icg`。
+- ⚠ **真机场景 `s30_dispatch_chain/tree` 本轮未复跑**（检查时游戏未启动）。它们只声明
+  `d0: LED` / `d4: Memory`（当前机台满足接线预检），下次开游戏应连 `--diff` 补验一次。
 
 ## 7. 风险与回退
 
@@ -314,6 +327,75 @@
   的写序列，不是 fast vs 默认 → 不受影响 ✓）与扩展的 `icg.fast` 透传，验收按 §6 跑一遍全语料即可。
 - **真机语义未知**（本方案不需要新指令语义：`bge/blt/bne` 绝对跳转与融合分支都是现有产物；
   `jr` 已真机验证；无需新的游戏侧验证项——若 P3c 复活跳表再单独真机对拍）。
+
+## 8. 实现记录（2026-10-15，分支 `feat/fast-statemachine-balance`）
+
+### 8.1 落地内容
+
+| 步 | 提交 | 要点 |
+|---|---|---|
+| P0 | `b50b9ab` | `compileInfo` 候选池抽成 `runPool()`；无候选可编译时以默认展开策略重试并发 **`fast-fallback` warning**（写明超预算原因）。P2 后该兜底并入池维度。 |
+| P1 | `962e22a` | `internal/tick` 识别 codegen 跳表 idiom：`sltz/sgt/or/bnez` 界检查 + 紧邻 `add rX rX 1; jr rX` + **K+1 条连续可解析 `j` 行**才收窄后继到表目标（保持上界；界外/带标签空洞/手写 `jr` 维持保守）。回归三条：识别产物静态 10 == 动态 max 10；未证明 `jr` 仍 `indirect`；破洞表不识别。 |
+| P2 | `b97654c` | Fast 下候选评分 `(入预算 → worst tick → Exceeds且indirect → ticksPerRound → lines → bytes)`（`tickInfo` 增 `indirect` 字段，按 code memoize）；`--fast` 池 = {激进,保守}×{链,树(门控)} + **未排序保守池**（排序生效时必跑）→ 「fast 的 worst tick ≤ 默认」有构造性保证。默认模式产物逐字节不变（golden + 全量差分绿，pkg/ic10 521s）。 |
+| P3a | `b97654c` | `lowerSwitch`：常量 case 按**体估计成本降序**（minimax），marker `DispatchSorted`；range/重复值/非 tag switch 一律回退原链。 |
+| P3b | `b97654c` | 二分决策树：整数稠密常量 ≥5 值，序比较节点 + **每叶等值复核**（NaN/小数/±Inf/越界 → default，与链逐值等价）；树根直接落在 switch 所在块（0 额外行）。marker `DispatchTreed`，仅探测命中才加跑树池。 |
+| P4 | `3c74cc0` | CLI/扩展 nls 文案重写；`tick-budget` 诊断在有行数余量时附「可试 `--fast`」提示；`testdata/cli/run.sh` 增 6 项 fast 冒烟（编译/树形/worst 下降/树链 40-tick 设备快照一致/回落 exit 0/诊断码）。 |
+| 附 | `3c74cc0` | **场景框架补 `reset` 接线**（`Scenario.Reset` 此前声明未用）：游戏侧 `reset` + VM 侧 `vm.Machine.Reset()` 同步生效，tick 相位敏感的多 case 场景才可复现；现有场景未开该字段行为不变。 |
+
+### 8.2 实测（本分支 ic10c，`ic10c build[/--fast] + tick [+--run 40]`）
+
+派发（`testdata/bench/fast/`，格式 行数/静态 worst/动态 max）：
+
+| 程序 | 默认 | `--fast` | Δworst |
+|---|---|---|---|
+| `var8_2` | 34/12/12 | 41/**8**/8 | −33% |
+| `var12_2` | 50/16/16 | 61/**9**/9 | −44% |
+| `db8_2`（`db.stack` tag） | 33/12/12 | 40/**8**/8 | −33% |
+| `db12_2` | 49/16/16 | 60/**9**/9 | −44% |
+| `ord_asc12`（异体 handler） | 71/18/18 | 82/**13**/13 | −28% |
+| examples 气闸三兄弟 | 72/26、102/117、77/20 | 74/**23**、103/**75**、94/**15** | −12%/−36%/−25% |
+| 其余 15 个 examples | — | 与默认一致（无适用形状） | 0 |
+
+- 带叶复核的树 = §2.2 省复核参照 (7/8) 各 **+1 worst**（8/9），行数增量恰为 **n−1**（`var12_2` +11），
+  与 §4.2 模型吻合 → 该节估计值正式回填。
+- 跳表（P1 后）：`var12_1 --jump-table` 静态 worst **10**（原 129 误报），≤ 动态 max 10 ✓。
+- 回落（P0）：printer 表驱动 `--fast`（激进版 6218B>4096）→ 0.47s 编译成功 + warning ✓。
+
+编译时间（进程级，`time -p ic10c build`）：
+
+| 程序 | 默认 | `--fast` | 倍率 |
+|---|---|---|---|
+| `var12_2` | 0.02s | 0.04s | 2.0× |
+| printer 表驱动 | 0.38s | 0.47s | **1.3×** |
+| 气闸控制-四门 | 2.78s | 8.10s | **2.9×**（3 个全量池） |
+| `arm.icg`（119 行 + 8 状态 + 同 tick 重派发） | 0.50s | 5.53s | **11×**（5 池 + 每候选分析 40–100ms） |
+
+§6 的「≤3×」在中小型与预算压力程序达成；arm 类（近满行 + 树可触发 + tick 体巨大）超出，
+缓解方向记录在 8.4#4。
+
+### 8.3 真机验证（mod 0.5.13 / game 0.2.6428.27798，A CHIP）
+
+- 新场景 `testdata/bench/ingame/s30_dispatch(.icg + chain/tree .json)`：7 态 Memory/LED 状态机，
+  逐 case `reset` + 每 tick 一步；链版与 `--fast` 树版各 **5/5**，且 `--diff` 游戏与 VM 全一致
+  （含小数 3.5 / 越界 9 / 负数 −1 tag 落 default）。树派发只用既有指令（融合 `bXX r c line`），
+  无需新的游戏侧语义验证项。
+- `testdata/bench/ingame/run.sh` 全套：**13 通过 / 8 失败**；8 个失败全部是**既有存档接线漂移**
+  （`the rig does not match…`），用改动前的二进制复现同样失败，与本分支无关
+  （需要时在匹配接线的存档上重跑，或 `--allow-rig-drift`）。
+- 测毕已 `pause off` 恢复世界。
+
+### 8.4 偏差与后续（明确记录）
+
+1. **树在 lowering 实现**（`internal/lower/dispatch.go`），未按 §3 P3b 做成 `internal/opt` pass：
+   定点幂等性与块编号布局更易控；代价是**手写/反编译的 if/else-if 链暂不覆盖**——后续可加
+   `balanceDispatch` opt pass（链形状与 lowering 产物同构）。
+2. `build --json` 的「默认 vs fast 两轴对照表」未实现：产物自身两轴已在 `tick`/`score` 字段，
+   对照组需再跑一遍默认池外输出；列为后续。
+3. LSP「尝试 --fast」quick-fix 降级为 `tick-budget` 诊断文案提示（codeAction 需改扩展 JS，价值低）。
+4. arm 类程序 `--fast` 编译 11×：后续做**候选池并行**（池间无共享可变状态的拆分 + 锁住 `consider`）
+   与「树池只测主 outline 计划」进一步收窄（本轮已把树池降为精简矩阵、护栏池保持全量）。
+5. §4.2 的整数域可证免复核 / `floor` 全局守卫两档未实现（实测叶复核 +n−1 行在预算内可接受）。
+6. P3c 跳表原样保留（`--jump-table` 语义、门控未动）；P1 已让它获得诚实的静态度量。
 
 ## 附录 A — 复现
 
@@ -335,3 +417,26 @@ $C build --jump-table var12_1.icg > x.ic && $C tick x.ic | head -4   # Q4：129 
 $C stats ../../../examples/气闸控制-四门.icg && $C tick ../../../examples/气闸控制-四门.icg
 $C build --fast ../../../examples/气闸控制-四门.icg >/tmp/f.ic && $C tick /tmp/f.ic | head -3  # 117→75
 ```
+
+---
+
+## 8. 实施状态（2026-10-15）
+
+已按 §5 的顺序落地：**P0**（`compileInfo` 的 `runPool(full)` + 保守档回落 + `fast-fallback` 告警）、
+**P1**（`internal/tick` 的跳表 idiom，门控到可证形状）、**P2**（`--fast` 评分轴改为
+`cost → indRank → tpr → lines → bytes`；诊断路径不涉及 Fast —— LSP 从不设 `Options.Fast`）、
+**P3a/P3b**（`internal/lower/dispatch.go`：常量 case 按体成本降序；≥5 个整数常量 case 降为平衡比较树，
+每叶等值复核）、**P4**（帮助/README/扩展 nls/`tick.indirect` 文档；`Scenario.Reset` opt-in 接线，
+新真机场景 `s30_dispatch_chain/tree`）。
+
+与方案有两处**收窄**（都不影响验收，但记录在案）：
+
+1. **树/排序没有用户开关**：只由 `--fast` 的候选池启用（方案里提过 `// icg: dispatch=tree` 逃生门），
+   默认模式完全不变 ✓ —— 少一个语法面，代价是手写链在默认模式下得不到树化。
+2. **`--jump-table` 保持原样**（P3c 的"降级为遗留项"）✓，未扩门控。
+
+另外修了一个**既有缺陷**（不是本方案引入，但被 P2 放大成用户可见症状）：
+`internal/tick` 的 `detectTrips` 按 map 顺序扫描循环体、返回**第一个**匹配的退出分支，导致同一输入
+每次运行算出不同的 `trips`（进而不同的 worst tick）；`--fast` 用它评分 → 同一源码两次编译
+产出不同二进制。已改为按行号升序扫描，并把 `sugar.icg`（暴露该问题的那份语料）的
+30 次一致性固化成 `TestAnalyzeIsDeterministic`。
