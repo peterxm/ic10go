@@ -40,6 +40,16 @@ type Options struct {
 	// JumpTable lowers dense integer switches to a computed jump through a
 	// table of `j` instructions. Off by default.
 	JumpTable bool
+	// TickDispatch enables the switch-dispatch transforms for tick cost:
+	// constant cases are tested in descending body-cost order (minimax on the
+	// worst path). Pairs with --fast's scoring; off by default so default
+	// builds stay byte-identical.
+	TickDispatch bool
+	// DispatchTree lowers eligible constant switches (whole-number distinct
+	// values, >= treeDispatchMin) to a balanced compare tree with per-leaf
+	// equality re-checks instead of the linear chain. Implies TickDispatch
+	// eligibility checks. See docs/fast-statemachine.md P3b.
+	DispatchTree bool
 	// Fast prefers runtime speed over size: it unrolls more loops.
 	Fast bool
 	// NoCheck disables logic-type validation.
@@ -1328,6 +1338,39 @@ func (l *lowerer) lowerSwitch(s *ast.SwitchStmt) {
 	for i, c := range s.Cases {
 		if c.Default {
 			defaultIdx = i
+		}
+	}
+
+	// Tick-cost dispatch (docs/fast-statemachine.md P3): for switches whose
+	// cases are distinct compile-time constants, either a balanced compare
+	// tree (worst path ~log2 n + 1 recheck) or a chain ordered by descending
+	// body cost (minimax: worst = max_k k tests + body_k). Bodies are lowered
+	// first here so their instruction counts can drive the choice; the
+	// original chain below is untouched for every other shape.
+	if s.Tag != nil && l.opts.TickDispatch {
+		if vals, ok := l.constCaseValues(s); ok {
+			// Bodies are lowered first so their measured costs can order the
+			// dispatch; remember the block the switch statement sits in and
+			// return to it for the chain/tree, or the dispatch would attach to
+			// the last lowered body block and strand the entry.
+			cur := l.b.Cur()
+			costs := l.lowerSwitchBodies(s, bodyBlocks, endB)
+			ints := true
+			for _, e := range vals {
+				if e.v != math.Trunc(e.v) {
+					ints = false
+				}
+			}
+			l.b.SetBlock(cur)
+			if l.opts.DispatchTree && ints && len(vals) >= treeDispatchMin {
+				l.b.Fn().DispatchTreed++
+				l.lowerSwitchTree(cur, tag, vals, bodyBlocks, defaultIdx, endB)
+				l.b.SetBlock(endB)
+				return
+			}
+			l.lowerSwitchSortedChain(tag, s, bodyBlocks, costs, defaultIdx, endB)
+			l.b.SetBlock(endB)
+			return
 		}
 	}
 

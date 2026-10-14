@@ -3,8 +3,11 @@ package ic10_test
 import (
 	"flag"
 	"fmt"
+	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1211,7 +1214,7 @@ func TestFastBudgetFallback(t *testing.T) {
 	sb.WriteString("        }\n        d3.On = s\n    }\n}\n")
 	src := []byte(sb.String())
 
-	def, ddef, err := ic10.CompileResult("t.icg", src, ic10.Options{})
+	_, ddef, err := ic10.CompileResult("t.icg", src, ic10.Options{})
 	if err != nil || ddef.HasErrors() {
 		t.Fatalf("default compile failed: %v %v", err, ddef.Diags)
 	}
@@ -1228,15 +1231,150 @@ func TestFastBudgetFallback(t *testing.T) {
 	if !sawFallback {
 		t.Fatalf("missing fast-fallback warning: %v", diags.Diags)
 	}
-	// The fallback pool is a superset of the default pool (it also sees the
-	// unoptimised variants once a candidate errored), so lines must not exceed
-	// the default build, and no fast-fallback warning may appear there.
-	if n := strings.Count(res.Code, "\n"); n > strings.Count(def.Code, "\n") {
-		t.Errorf("fallback output longer than default: %d vs %d", n, strings.Count(def.Code, "\n"))
-	}
+	// The fallback candidate is chosen by the tick scorer, so it may differ
+	// from the default (shortest-first) pick and use more lines — allowed as
+	// long as it stays inside the budget. It must fit: generate() drops
+	// over-budget candidates, so a compiled result is proof enough.
+	_ = res.Code
 	for _, d := range ddef.Diags {
 		if d.Code == "fast-fallback" {
 			t.Errorf("default build unexpectedly warns fast-fallback: %v", d)
+		}
+	}
+}
+
+// TestFastTreeDispatchEquivalence pins the P3b contract: under --fast an
+// eligible constant-case switch lowers to a compare tree, and the tree build
+// performs exactly the same per-tick device writes as the default chain for
+// every tag value - including fractional, negative and NaN tags, which must
+// all fall to the default arm just as the linear chain does.
+func TestFastTreeDispatchEquivalence(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("func main() {\n    for {\n        yield()\n        switch d0.Setting {\n")
+	const n = 8
+	for k := 0; k < n; k++ {
+		fmt.Fprintf(&sb, "    case %d:\n        d1.On = %d\n        d0.Setting = %d\n", k, k+100, (k+1)%n)
+	}
+	sb.WriteString("    default:\n        d1.On = -1\n        d0.Setting = 0\n    }\n    }\n}\n")
+	src := []byte(sb.String())
+
+	chain, _, err := ic10.Compile("t.icg", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fast, _, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{Fast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fast, "bge ") || strings.Contains(fast, "jr ") {
+		t.Fatalf("expected compare-tree dispatch (bge nodes, no jump table):\n%s", fast)
+	}
+	tags := []float64{0, 1, 2, 3, 4, 5, 6, 7, -1, 8, 1.5, -0.5, math.NaN()}
+	for _, tag := range tags {
+		init := map[[2]string]float64{{"d0", "Setting"}: tag}
+		wa, _ := runWrites(chain, init)
+		wb, _ := runWrites(fast, init)
+		// Both runs stop on the shared step limit; a cheaper dispatch
+		// simply completes more cycles, so compare the common prefix and
+		// require it to be long enough to cover several state cycles.
+		n := len(wa)
+		if len(wb) < n {
+			n = len(wb)
+		}
+		if n < 40 {
+			t.Fatalf("tag %v: only %d common writes, too short to compare", tag, n)
+		}
+		if strings.Join(wa[:n], "|") != strings.Join(wb[:n], "|") {
+			t.Errorf("tag %v: prefix mismatch\nchain %v\nfast  %v", tag, wa[:n], wb[:n])
+		}
+	}
+}
+
+// TestDefaultUnchangedWithDispatch asserts the tick-dispatch pools only exist
+// under --fast: a default build of an eligible switch is the plain chain.
+func TestDefaultUnchangedWithDispatch(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("func main() {\n    for {\n        yield()\n        switch d0.Setting {\n")
+	for k := 0; k < 8; k++ {
+		fmt.Fprintf(&sb, "    case %d: d1.On = %d\n", k, k)
+	}
+	sb.WriteString("    default: d1.On = 9\n    }\n    }\n}\n")
+	code, _, err := ic10.Compile("t.icg", []byte(sb.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(code, "bge ") {
+		t.Errorf("default build must keep the plain chain:\n%s", code)
+	}
+}
+
+// TestRangeCaseDispatchFallback: overlapping/range cases are order-sensitive,
+// so --fast must keep the plain chain for them (no sort, no tree).
+func TestRangeCaseDispatchFallback(t *testing.T) {
+	src := "func main() {\n    for {\n        yield()\n        switch d0.Setting {\n" +
+		"    case 0..1: d1.On = 1\n" +
+		"    case 2: d1.On = 2\n    case 3: d1.On = 3\n    case 4: d1.On = 4\n" +
+		"    case 5: d1.On = 5\n    case 6: d1.On = 6\n    case 7: d1.On = 7\n" +
+		"    default: d1.On = 0\n    }\n    }\n}\n"
+	_, _, err := ic10.Compile("t.icg", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fast, _, err := ic10.CompileWithOptions("t.icg", []byte(src), ic10.Options{Fast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(fast, "bge ") {
+		t.Errorf("range case must block dispatch transforms:\n%s", fast)
+	}
+}
+
+// TestFastDenseSwitchesDifferential sweeps generated machines with distinct
+// constant cases (the tree-eligible shape the seeded fuzz usually dilutes
+// with overlapping range cases) and compares per-tick device writes against
+// the default build.
+func TestFastDenseSwitchesDifferential(t *testing.T) {
+	for seed := int64(1); seed <= 40; seed++ {
+		rng := rand.New(rand.NewSource(seed))
+		n := 5 + rng.Intn(8) // 5..12 states
+		var sb strings.Builder
+		sb.WriteString("func main() {\n    for {\n        yield()\n        switch d0.Setting {\n")
+		for k := 0; k < n; k++ {
+			sb.WriteString("    case " + strconv.Itoa(k) + ":\n")
+			nstmt := 1 + rng.Intn(3)
+			for s := 0; s < nstmt; s++ {
+				fmt.Fprintf(&sb, "        d%d.On = %d\n", rng.Intn(4), rng.Intn(50))
+			}
+			fmt.Fprintf(&sb, "        d0.Setting = %d\n", rng.Intn(n))
+		}
+		sb.WriteString("    default:\n        d2.On = 99\n        d0.Setting = 0\n    }\n    }\n}\n")
+		src := []byte(sb.String())
+		chain, diags, err := ic10.Compile("t.icg", src)
+		if err != nil || diags.HasErrors() {
+			t.Fatalf("seed %d default: %v %v", seed, err, diags.Diags)
+		}
+		fast, diags2, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{Fast: true})
+		if err != nil || diags2.HasErrors() {
+			t.Fatalf("seed %d fast: %v %v", seed, err, diags2.Diags)
+		}
+		tags := []float64{0, 1, -2, float64(n), float64(n) + 0.5, math.NaN()}
+		for _, tag := range tags {
+			init := map[[2]string]float64{{"d0", "Setting"}: tag}
+			wa, _ := runWrites(chain, init)
+			wb, _ := runWrites(fast, init)
+			// a cheaper dispatch finishes more cycles under the step cap;
+			// the semantics contract is the common prefix
+			nw := len(wa)
+			if len(wb) < nw {
+				nw = len(wb)
+			}
+			if nw < 20 {
+				t.Fatalf("seed %d tag %v: only %d common writes", seed, tag, nw)
+			}
+			if strings.Join(wa[:nw], "|") != strings.Join(wb[:nw], "|") {
+				t.Fatalf("seed %d tag %v: prefix mismatch\nchain %v\nfast %v",
+					seed, tag, wa[:min(nw, 40)], wb[:min(nw, 40)])
+			}
 		}
 	}
 }

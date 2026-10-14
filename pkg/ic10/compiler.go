@@ -62,6 +62,11 @@ type Options struct {
 	// Fast prefers runtime speed over size: it unrolls more loops (at the cost
 	// of program size). Off by default.
 	Fast bool
+	// tickDispatch/dispatchTree are internal candidate-pool toggles that
+	// compileInfo drives under --fast (switch case sorting / compare-tree
+	// dispatch; docs/fast-statemachine.md P3). Not user-facing.
+	tickDispatch bool
+	dispatchTree bool
 	// RelJump emits relative jumps (jr / br*) instead of absolute ones to save
 	// bytes. Off by default; requires the game's relative-jump base to match
 	// the VM (relative to the jump's own line).
@@ -649,13 +654,55 @@ const fallbackMargin = 16
 func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error) {
 	noCheck, noOutline, noOpt := envSwitches()
 	plan := lower.PlanOutlines(info, noOutline)
+	fastMode := opts.Fast
 	var best Result
 	haveBest := false
 	var bestErr error
 	var failed *diag.Bag
 	sawSpill := false
+	// Candidate scoring (docs/fast-statemachine.md P2): the default mode picks
+	// the shortest build as always; --fast picks the cheapest per-tick build
+	// first and only spends line budget within the hard limits. The tick axes
+	// come from internal/tick (the same analysis as `ic10c tick` / `--score`),
+	// memoised per chip. A candidate that exceeds the budget with an
+	// unresolved computed target ranks behind one with the same reported cost,
+	// so unknown-but-capped shapes never beat known-good ones.
+	type tickScore struct{ cost, indRank, tpr, lines, bytes int }
+	scores := map[string]tickScore{}
+	scoreOf := func(code string) tickScore {
+		if s, ok := scores[code]; ok {
+			return s
+		}
+		s := tickScore{cost: tick.DefaultLimit + 1, indRank: 1, tpr: 1,
+			lines: strings.Count(code, "\n"), bytes: len(code)}
+		if ti := tickInfo(code); ti != nil {
+			s.cost, s.tpr, s.indRank = ti.Cost, ti.TicksPerRound, 0
+			if ti.Exceeds && ti.Indirect {
+				s.indRank = 1
+			}
+		}
+		scores[code] = s
+		return s
+	}
+	betterCand := func(a, b string) bool {
+		if !fastMode || os.Getenv("IC10C_NOSCORE") != "" {
+			return better(a, b)
+		}
+		sa, sb := scoreOf(a), scoreOf(b)
+		switch {
+		case sa.cost != sb.cost:
+			return sa.cost < sb.cost
+		case sa.indRank != sb.indRank:
+			return sa.indRank < sb.indRank
+		case sa.tpr != sb.tpr:
+			return sa.tpr < sb.tpr
+		case sa.lines != sb.lines:
+			return sa.lines < sb.lines
+		}
+		return sa.bytes < sb.bytes
+	}
 	consider := func(r Result) {
-		if !haveBest || better(r.Code, best.Code) {
+		if !haveBest || betterCand(r.Code, best.Code) {
 			best, haveBest = r, true
 		}
 	}
@@ -819,19 +866,49 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			}
 		}
 	}
-	runPool()
-	// --fast's aggressive unrolling happens in lowering, so it can overflow the
-	// line/byte budget on programs the default policy fits. If no Fast variant
-	// compiled, retry with the default unroll policy and say so: a silent
-	// fallback would make --fast quietly become the default mode.
-	if !haveBest && opts.Fast {
-		reason := bestErr
-		opts.Fast = false
-		runPool()
-		if haveBest && reason != nil {
-			diags.WarnfCode("fast-fallback", info.Main.Pos(),
-				"--fast build exceeded the budget (%v); compiled with the default unroll policy instead", reason)
+	if fastMode {
+		// --fast grows the pool and flips the scoring axis (P2): the unroll
+		// policy becomes a pool dimension, so an aggressive candidate that
+		// overflows the line/byte budget is dropped by codegen and the
+		// conservative half still compiles the program (P0 — loudly, see the
+		// fast-fallback warning), and switches with distinct constant cases
+		// get cost-sorted chains or compare-tree dispatch (P3). The tick
+		// scorer picks across every pool. The unsorted conservative pool is
+		// included whenever sorting fires, so the fast winner's worst tick
+		// is provably no worse than the default build's.
+		type pool struct{ fastLower, td, tree bool }
+		pools := []pool{{true, true, false}, {false, true, false}}
+		sortedP, treeP := dispatchCandidates(info, opts, noCheck)
+		if treeP {
+			pools = append(pools, pool{true, true, true}, pool{false, true, true})
 		}
+		if sortedP {
+			pools = append(pools, pool{false, false, false})
+		}
+		aggrOK := false
+		var aggrErr error
+		for _, p := range pools {
+			opts.Fast, opts.tickDispatch, opts.dispatchTree = p.fastLower, p.td, p.tree
+			runPool()
+			if p.fastLower {
+				if haveBest {
+					aggrOK = true
+				} else if aggrErr == nil {
+					aggrErr = bestErr
+				}
+			}
+		}
+		opts.Fast, opts.tickDispatch, opts.dispatchTree = true, true, false
+		if haveBest && !aggrOK {
+			msg := "every aggressively unrolled variant exceeded the budget"
+			if aggrErr != nil {
+				msg = aggrErr.Error()
+			}
+			diags.WarnfCode("fast-fallback", info.Main.Pos(),
+				"--fast lowering did not fit the budget (%s); the chosen candidate uses the default unroll policy", msg)
+		}
+	} else {
+		runPool()
 	}
 	// Each candidate re-runs lowering, so warnings can repeat; keep one copy.
 	dedupeDiags(diags)
@@ -844,6 +921,25 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 		return Result{}, bestErr
 	}
 	return best, nil
+}
+
+// dispatchCandidates probes lowering (no optimisation) to see whether the
+// dispatch transforms actually fire: sorted reports a switch whose constant
+// cases were reordered, tree reports a switch eligible for compare-tree
+// dispatch. Programs without either skip the corresponding candidate pools.
+func dispatchCandidates(info *sema.Info, opts Options, noCheck bool) (sorted, tree bool) {
+	po := opts
+	po.Fast = false
+	po.tickDispatch = true
+	po.dispatchTree = false
+	if fn := lowerAndOptimize(info, po, nil, false, noCheck, true, &diag.Bag{}); fn != nil {
+		sorted = fn.DispatchSorted > 0
+	}
+	po.dispatchTree = true
+	if fn := lowerAndOptimize(info, po, nil, false, noCheck, true, &diag.Bag{}); fn != nil {
+		tree = fn.DispatchTreed > 0
+	}
+	return sorted, tree
 }
 
 // dedupeDiags removes duplicate diagnostics in place, preserving order.
@@ -1287,6 +1383,8 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, in
 		InlineConstArgs: inlineConstArgs,
 		JumpTable:       opts.JumpTable,
 		Fast:            opts.Fast,
+		TickDispatch:    opts.tickDispatch,
+		DispatchTree:    opts.dispatchTree,
 		NoCheck:         noCheck,
 		// Folding a data read removes the stack load, so it would also bypass
 		// --unsafe/--no-data-check (which the tests use to observe the raw
@@ -1307,6 +1405,17 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, in
 	fn.NoGlobalProp = opts.NoGlobalProp
 	fn.NoLICM = opts.NoLICM
 	fn.RedundantDeviceWrites = opts.RedundantDeviceWrites
+	// Budget skip (docs/fast-statemachine.md P2 cost control): an --fast
+	// candidate whose lowered form is far larger than the line budget can
+	// ever hold is dropped before the fixpoint optimiser runs — unrolled IR
+	// makes the optimiser super-linearly expensive (measured: the aggressive
+	// pool spent seconds on IR 4x over budget that codegen was going to
+	// reject anyway). The bound is deliberately loose (3x the runtime line
+	// limit) and only applies to the aggressive half of the --fast pool;
+	// default-mode and conservative candidates compile untouched.
+	if opts.Fast && countLoweredInstrs(fn) > 3*opts.editorLimits().Lines {
+		return nil
+	}
 	if !noOpt {
 		if err := opt.Optimize(fn); err != nil {
 			diags.Errorf(info.Main.Pos(), "internal error: %v", err)
@@ -1314,4 +1423,17 @@ func lowerAndOptimize(info *sema.Info, opts Options, outline map[string]bool, in
 		}
 	}
 	return fn
+}
+
+// countLoweredInstrs sums the instructions (including terminators) of a
+// freshly lowered function, used as a cheap size proxy before optimisation.
+func countLoweredInstrs(fn *ir.Function) int {
+	n := 0
+	for _, b := range fn.Blocks {
+		n += len(b.Instrs)
+		if b.Term != nil {
+			n++
+		}
+	}
+	return n
 }

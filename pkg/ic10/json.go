@@ -114,6 +114,10 @@ type TickInfo struct {
 	// TicksPerRound is how many ticks the loop that spans ticks needs per pass
 	// (1 = it finishes within a tick). See tick.Report.TicksPerRound.
 	TicksPerRound int `json:"ticksPerRound"`
+	// Indirect marks a conservative upper bound: an unresolved computed jump
+	// (a `jr` whose range cannot be proven) widened the worst-case walk. The
+	// cost is still an upper bound, just not a tight one.
+	Indirect bool `json:"indirect,omitempty"`
 }
 
 // Score grades a build on both hard limits: the line count and the worst per-tick
@@ -325,7 +329,8 @@ func tickInfo(code string) *TickInfo {
 	if err != nil {
 		return nil
 	}
-	info := &TickInfo{Limit: rep.Limit, Loops: len(rep.Loops), Segments: len(rep.Segments), TicksPerRound: rep.TicksPerRound}
+	info := &TickInfo{Limit: rep.Limit, Loops: len(rep.Loops), Segments: len(rep.Segments),
+		TicksPerRound: rep.TicksPerRound, Indirect: rep.Indirect}
 	for _, s := range rep.Segments {
 		if s.Cost > info.Cost {
 			info.Cost = s.Cost

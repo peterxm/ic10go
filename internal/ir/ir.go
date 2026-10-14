@@ -551,6 +551,18 @@ type Function struct {
 	// one `pop rrN` bank loop. The compiler uses it to decide whether trying the
 	// pop-bank-disabled variant is worth an extra compile.
 	PopBankApplied bool
+	// DispatchTreed counts the switches lowering turned into a compare tree
+	// (docs/fast-statemachine.md P3b). The size model probes it to decide
+	// whether the tree-dispatch candidate pool could differ from the chain
+	// one at all, so programs without eligible switches skip the extra
+	// compile.
+	DispatchTreed int
+	// DispatchSorted counts the switches whose constant cases were actually
+	// reordered by estimated body cost (docs/fast-statemachine.md P3a). When
+	// a --fast program has a reordered switch, compileInfo also runs an
+	// unsorted conservative pool so the tick-scored winner can never be
+	// worse per tick than the default (shortest-first) build.
+	DispatchSorted int
 	// UserStackManual is the highest user stack slot touched by an explicit
 	// absolute access (db.stack[addr], poke, get/put db), stored as slot+1.
 	// UserStackDynamic is set when such an address is not a compile-time
