@@ -75,7 +75,7 @@ ic10c build --json <file.icg>
 | `stats` | 行 / 字节 / 最长行 / 引用到的寄存器数。 |
 | `limits` | 编译器校验所用的 IC10 上限（默认 128 / 4096 / 90，寄存器恒为 16）。可用 `--max-lines` / `--max-bytes` / `--max-line` 或 `IC10C_MAX_LINES` / `IC10C_MAX_BYTES` / `IC10C_MAX_LINE` 覆盖，以跟随游戏变化；这里的值就是本次构建实际生效的值。 |
 | `tick.segments[]` | 每段还带三个提示字段：`idle`（只由 yield/回跳组成 = 空转一整 tick，连续两个 `yield` 即此形状，循环会半速）、`poll`（从不 yield 且只读设备 = 忙等；`build --tick-warn` 会报 `poll-loop`）、`writeTargets`（一遍内写到的不同设备目标数，≥4 时报告给分组守卫建议）。 |
-| `tick` | 每 tick 指令预算分析（见 [`tick-budget.md`](tick-budget.md)）：`cost` = 两个 `yield`/`sleep` 之间最坏路径的指令数（`exceeds=true` 时被预算封顶，只知超过 `limit`）；`loops` / `segments` 为识别到的循环与分段数；`ticksPerRound` = 跨 tick 循环一轮要几个 tick（1 = 一轮在一个 tick 内跑完）。多芯片取最坏的一块。 |
+| `tick` | 每 tick 指令预算分析（见 [`tick-budget.md`](tick-budget.md)）：`cost` = 两个 `yield`/`sleep` 之间最坏路径的指令数（`exceeds=true` 时被预算封顶，只知超过 `limit`）；`loops` / `segments` 为识别到的循环与分段数；`ticksPerRound` = 跨 tick 循环一轮要几个 tick（1 = 一轮在一个 tick 内跑完）；`indirect`（可选，缺省 false）= 分析里遇到过**未证明界限**的计算跳转（`jr rX`），此时 `cost` 是保守上界（codegen 的跳表惯用法已能精确建模，不会置此位）。多芯片取最坏的一块。 |
 | `score` | 两个硬上限的分数（**取更差的一维**分档）：`lines`/`lineLimit`/`lineUsed`、`tickWorst`/`tickLimit`/`tickUsed`、`ticksPerRound`、`grade`（`D` = 超了某个上限；`A`/`B`/`C` 按余量）。它是**静态最坏**分：最坏路径可能几乎不走不到，用 `ic10c tick --run N` 看实测稳态。 |
 | `diagnostics[]` | 诊断列表，按源码位置排序。 |
 

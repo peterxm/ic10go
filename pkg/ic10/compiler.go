@@ -59,8 +59,12 @@ type Options struct {
 	// through a table of `j` instructions, saving about one line per case.
 	// Off by default.
 	JumpTable bool
-	// Fast prefers runtime speed over size: it unrolls more loops (at the cost
-	// of program size). Off by default.
+	// Fast prefers per-tick speed over size: candidates are scored by the
+	// worst-case instruction count between yields within the line/byte budget
+	// (docs/fast-statemachine.md), unroll gates are relaxed, and switch
+	// dispatch is re-ordered / lowered to a compare tree where eligible.
+	// Over-budget aggressive builds fall back with a fast-fallback warning.
+	// Off by default.
 	Fast bool
 	// tickDispatch/dispatchTree are internal candidate-pool toggles that
 	// compileInfo drives under --fast (switch case sorting / compare-tree
@@ -689,7 +693,7 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 		return s
 	}
 	betterCand := func(a, b string) bool {
-		if !fastMode || os.Getenv("IC10C_NOSCORE") != "" {
+		if !fastMode {
 			return better(a, b)
 		}
 		sa, sb := scoreOf(a), scoreOf(b)
@@ -823,30 +827,39 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	// every variant through run(). Extracted so --fast can re-run with the
 	// conservative unroll policy when the aggressive lowering cannot fit the
 	// budget (see docs/fast-statemachine.md P0).
-	runPool := func() {
+	runPool := func(full bool) {
 		// User-stack promotion and pop-bank folding only apply in specific shapes;
 		// probe with a cheap lowering (no optimisation) to avoid extra compiles.
+		// Secondary pools (the compare-tree runs) pass full=false: one outline
+		// plan per side, no extra dimensions, so an extra --fast pool costs a
+		// small multiple of one compile instead of the whole matrix.
+		poolOutlines := outlines
+		poolGlobalProps := []bool{false, true}
+		if !full {
+			poolOutlines = outlines[:min(2, len(outlines))]
+			poolGlobalProps = []bool{false}
+		}
 		probe := lowerAndOptimize(info, opts, nil, false, noCheck, true, &diag.Bag{})
 		mem2regs := []bool{false}
-		if probe != nil && probe.PrivateStack && probe.UserStackManual > 0 && !probe.UserStackDynamic {
+		if full && probe != nil && probe.PrivateStack && probe.UserStackManual > 0 && !probe.UserStackDynamic {
 			mem2regs = append(mem2regs, true)
 		}
 		popBanks := []bool{opts.NoPopBank}
-		if !opts.NoPopBank && probe != nil && probe.PopBankApplied {
+		if full && !opts.NoPopBank && probe != nil && probe.PopBankApplied {
 			popBanks = append(popBanks, true)
 		}
 		// Loop-invariant code motion can lengthen a program, so try both when the
 		// program actually has a loop.
 		licms := []bool{opts.NoLICM}
-		if !opts.NoLICM && probe != nil && opt.HasLoops(probe) {
+		if full && !opts.NoLICM && probe != nil && opt.HasLoops(probe) {
 			licms = append(licms, true)
 		}
-		for _, outline := range outlines {
+		for _, outline := range poolOutlines {
 			for _, noFold := range folds {
 				for _, noMem2Reg := range mem2regs {
 					for _, noPopBank := range popBanks {
 						for _, noLICM := range licms {
-							for _, noGlobalProp := range []bool{false, true} {
+							for _, noGlobalProp := range poolGlobalProps {
 								run(outline, false, noFold, noMem2Reg, noPopBank, noLICM, noGlobalProp, false)
 								// A plan can both share the body and specialise constant calls;
 								// try the specialising variant too and keep the shorter.
@@ -863,7 +876,7 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 		// propagation can extend live ranges and force the allocator to spill, which
 		// costs more lines than it saves. When that happened, also build an
 		// unoptimised program and keep whichever is shorter.
-		if !noOpt && sawSpill {
+		if full && !noOpt && sawSpill {
 			run(nil, false, false, false, false, false, false, true)
 			if len(plan) > 0 {
 				run(plan, false, false, false, false, false, false, true)
@@ -880,20 +893,21 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 		// scorer picks across every pool. The unsorted conservative pool is
 		// included whenever sorting fires, so the fast winner's worst tick
 		// is provably no worse than the default build's.
-		type pool struct{ fastLower, td, tree bool }
-		pools := []pool{{true, true, false}, {false, true, false}}
+		// pool: unroll policy, dispatch on, tree shape, full candidate matrix.
+		type pool struct{ fastLower, td, tree, full bool }
+		pools := []pool{{true, true, false, true}, {false, true, false, true}}
 		sortedP, treeP := dispatchCandidates(info, opts, noCheck)
 		if treeP {
-			pools = append(pools, pool{true, true, true}, pool{false, true, true})
+			pools = append(pools, pool{true, true, true, false}, pool{false, true, true, false})
 		}
 		if sortedP {
-			pools = append(pools, pool{false, false, false})
+			pools = append(pools, pool{false, false, false, true})
 		}
 		aggrOK := false
 		var aggrErr error
 		for _, p := range pools {
 			opts.Fast, opts.tickDispatch, opts.dispatchTree = p.fastLower, p.td, p.tree
-			runPool()
+			runPool(p.full || !p.tree)
 			if p.fastLower {
 				if haveBest {
 					aggrOK = true
@@ -912,7 +926,7 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 				"--fast lowering did not fit the budget (%s); the chosen candidate uses the default unroll policy", msg)
 		}
 	} else {
-		runPool()
+		runPool(true)
 	}
 	// Each candidate re-runs lowering, so warnings can repeat; keep one copy.
 	dedupeDiags(diags)

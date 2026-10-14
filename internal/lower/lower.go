@@ -50,7 +50,9 @@ type Options struct {
 	// equality re-checks instead of the linear chain. Implies TickDispatch
 	// eligibility checks. See docs/fast-statemachine.md P3b.
 	DispatchTree bool
-	// Fast prefers runtime speed over size: it unrolls more loops.
+	// Fast prefers per-tick speed over size: it relaxes the loop-unroll gates
+	// (larger trip/body, calls allowed) and enables the tick-priority
+	// candidate model in pkg/ic10 (see docs/fast-statemachine.md).
 	Fast bool
 	// NoCheck disables logic-type validation.
 	NoCheck bool
