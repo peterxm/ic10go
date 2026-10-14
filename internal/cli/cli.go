@@ -699,6 +699,10 @@ var Commands = []Command{
 			{Long: "--all", Desc: text{EN: "state: include the whole stack", ZH: "state：返回整段栈"}},
 			{Long: "--force", Desc: text{EN: "set: write even if the device reports the logic as read-only", ZH: "set：即使设备报告该逻辑为只读也强制写入"}},
 			{Long: "--diff", Desc: text{EN: "run: also run the scenario in the built-in VM", ZH: "run：同时用内置 VM 跑场景做对比"}},
+			{Long: "--allow-rig-drift", Desc: text{
+				EN: "run: skip the check that the chip's wired devices match the scenario's ports",
+				ZH: "run：跳过“芯片接线与场景 ports 声明是否一致”的预检",
+			}},
 			{Long: "--json", Desc: text{EN: "machine-readable output", ZH: "输出机器可读的 JSON"}},
 			{Long: "--stable-ins", Desc: text{EN: "compile with the stable branch's ins argument order", ZH: "用稳定版的 ins 参数顺序编译"}},
 			libDirsFlag,

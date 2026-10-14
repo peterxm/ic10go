@@ -573,6 +573,27 @@ Activity Bar「IC10」
 | `WorldManager.SetGamePause(true)` 确实停住逻辑 | ✅ |
 | 可写输入 `Logic Memory`（现 A CHIP `d4`，早期在 `d3`）：`set d4.Setting=42` 读回 42，程序镜像到 d0 | ✅ |
 | 设备 host（空调）：`db` 伪端口读到空调自身逻辑，`set db.On=1` 生效 | ✅ |
+
+### 11.1 机台接线要求（场景 `ports` 声明）
+
+`testbench run` 现在会**先核对接线**：把芯片上实际接的设备与场景里 `ports` 声明的角色比对，
+不一致就报一条点名到端口的错误并以 **exit 2** 结束（`--allow-rig-drift` 可跳过）。
+角色匹配规则是"设备 prefab 名里包含角色名"（`ElectronicsPrinter` → `StructureElectronicsPrinter`），
+`spare`/`any` 之类的非设备角色跳过。
+
+按 `testdata/bench/**/*.json` 的声明，`A CHIP` 需要：
+
+| 端口 | 设备 | 依赖它的场景数 |
+|---|---|---|
+| `d0` | LED（`StructureConsoleLED1x3`） | 24（全部） |
+| `d1` | Logic Dial（`StructureLogicDial`） | 4 |
+| `d3` | **ElectronicsPrinter**（`StructureElectronicsPrinter`） | 8（`s23/s25/s61/s62/s63/s63_plain/s64/s64_plain`） |
+| `d4` | Logic Memory（`StructureLogicMemory`） | 16 |
+
+> ⚠ **`d3` 必须是 ElectronicsPrinter。** 2026-10-14 复核时本机 `d3` 是"逻辑内存 B"，
+> 于是那 8 个场景全部失败 —— 以前表现为 7 条"断言失败"+1 条杂错，看起来像编译器回归
+> （见 `docs/review-2026-10-14.md` §1.2）；加了预检后只剩一条点名的接线错误。
+> 复核那轮的结果是 **16 通过 / 0 断言失败 / 8 接线错误**。
 | `state` 全量栈（`all:true`）：512 槽 | ✅ |
 | 暂停恢复可操作性：改用 `InputSourceCode.PauseGameToggle`（反射），不再直接写 `IsGamePaused` | ✅（用户确认） |
 | 自动载入存档：`autoload`+`autoloadDelay`，门控在主菜单场景 `Base` 之后走 `LoadHelper.LoadGame`，真机免手动进存档 | ✅ |

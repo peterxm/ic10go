@@ -27,7 +27,7 @@ func cmdTestbench(args []string) int {
 	}
 
 	addr := testbench.Addr()
-	stableIns, asJSON, all, diff, nanSafe := false, false, false, false, false
+	stableIns, asJSON, all, diff, nanSafe, allowRigDrift := false, false, false, false, false, false
 	force := false
 	pulse := false
 	dataAccessStack := false
@@ -136,6 +136,10 @@ func cmdTestbench(args []string) int {
 			dataAccessStack = strings.TrimPrefix(a, "--data-access=") == "stack"
 		case a == "--diff":
 			diff = true
+		case a == "--allow-rig-drift":
+			// Run anyway when the wiring legitimately differs from the
+			// scenario's declared ports (see testbench.CheckRig).
+			allowRigDrift = true
 		case a == "--stable-ins":
 			stableIns = true
 		case a == "--nan-safe":
@@ -224,7 +228,7 @@ func cmdTestbench(args []string) int {
 		if len(rest) > 0 {
 			file = rest[0]
 		}
-		return benchRun(addr, file, chip, stableIns, nanSafe, libDirs, lim, diff, asJSON)
+		return benchRun(addr, file, chip, stableIns, nanSafe, libDirs, lim, diff, allowRigDrift, asJSON)
 	case "watch":
 		return benchWatch(addr, chip, interval, count, asJSON)
 	case "saves":
@@ -1841,7 +1845,7 @@ func benchPauseForRun(c *testbench.Client) (func(), error) {
 	}, nil
 }
 
-func benchRun(addr, file string, chip any, stableIns, nanSafe bool, libDirs []string, lim limitArgs, diff, asJSON bool) int {
+func benchRun(addr, file string, chip any, stableIns, nanSafe bool, libDirs []string, lim limitArgs, diff, allowRigDrift, asJSON bool) int {
 	if file == "" {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "testbench"))
 		return 2
@@ -1892,7 +1896,7 @@ func benchRun(addr, file string, chip any, stableIns, nanSafe bool, libDirs []st
 	}
 	defer resume()
 
-	rep, err := (&testbench.Runner{C: c, Code: code, Loaders: loaders}).Run(sc)
+	rep, err := (&testbench.Runner{C: c, Code: code, Loaders: loaders, AllowRigDrift: allowRigDrift}).Run(sc)
 	if err != nil {
 		// Setup failed (push did not compile, the connection dropped): that is
 		// an environment failure, not a failing assertion (review B28).

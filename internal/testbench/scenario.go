@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -129,6 +130,10 @@ type Runner struct {
 	Code    string
 	Loaders []string
 	// KeepFailed optionally retains the chip paused after a failure; unused in v1.
+	KeepFailed bool
+	// AllowRigDrift skips the wiring check (see CheckRig) for a rig that
+	// legitimately differs from the scenario's declared ports.
+	AllowRigDrift bool
 }
 
 // Run uploads the program and runs every case.
@@ -148,6 +153,16 @@ func (r *Runner) Run(s *Scenario) (*Report, error) {
 		// it had, so continuing here would assert against the wrong binary and
 		// report a green run (review B17).
 		return nil, fmt.Errorf("push did not compile; the chip still runs its previous program: %w", res.CompileError)
+	}
+
+	if !r.AllowRigDrift {
+		st, err := r.C.State([]string{"devices"}, false, chip)
+		if err != nil {
+			return nil, fmt.Errorf("rig check: %w", err)
+		}
+		if err := CheckRig(s, st); err != nil {
+			return nil, err
+		}
 	}
 
 	rep := &Report{}
@@ -273,6 +288,53 @@ func (c *Client) GetValues(reads []DeviceRead, chip any) (map[string]float64, er
 		out[v.Port+"."+v.Logic] = *v.Value
 	}
 	return out, nil
+}
+
+// CheckRig compares a scenario's declared ports with the chip's actual wiring
+// and reports every mismatch at once. Without it a save whose devices drifted
+// turns into a pile of confusing case failures that look like compiler
+// regressions -- the 2026-10-14 review spent a whole round on exactly that (its
+// §1.2: A CHIP d3 held a LogicMemory where every printer scenario needs an
+// ElectronicsPrinter). A role matches when the device's prefab name contains it,
+// so `ElectronicsPrinter` needs `StructureElectronicsPrinter`; a role that names
+// no device kind is skipped.
+func CheckRig(s *Scenario, st *State) error {
+	if s == nil || len(s.Ports) == 0 || st == nil {
+		return nil
+	}
+	got := map[string]string{}
+	for _, d := range st.Devices {
+		got[d.Port] = d.Prefab
+	}
+	var problems []string
+	for port, role := range s.Ports {
+		if isNotADeviceRole(role) {
+			continue
+		}
+		prefab, ok := got[port]
+		if !ok || prefab == "" {
+			problems = append(problems, fmt.Sprintf("%s: nothing is wired there (the scenario wants %s)", port, role))
+			continue
+		}
+		if !strings.Contains(strings.ToLower(prefab), strings.ToLower(role)) {
+			problems = append(problems, fmt.Sprintf("%s: wired to %s (the scenario wants %s)", port, prefab, role))
+		}
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	sort.Strings(problems)
+	return fmt.Errorf("the rig does not match the scenario (pass --allow-rig-drift to run anyway):\n  %s",
+		strings.Join(problems, "\n  "))
+}
+
+// isNotADeviceRole reports roles that name no particular device kind.
+func isNotADeviceRole(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "", "spare", "any", "any device", "none":
+		return true
+	}
+	return false
 }
 
 // splitKey parses "d1.Setting" into a port and a logic name.

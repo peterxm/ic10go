@@ -194,6 +194,12 @@ func (f *fakeServer) serve(conn net.Conn) {
 				// r5 is the protocol's null ("never written"/quiet NaN), and r6/r7
 				// are the game serializer's non-finite spellings.
 				"registers": map[string]any{"r0": 105, "sp": 4, "r5": nil, "r6": "NaN", "r7": "Infinity"},
+				// The wiring the scenarios declare, so the rig preflight passes.
+				"devices": []map[string]any{
+					{"port": "d0", "prefab": "StructureConsoleLED1x3", "name": "LED"},
+					{"port": "d1", "prefab": "StructureLogicDial", "name": "Dial"},
+					{"port": "d3", "prefab": "StructureLogicMemory", "name": "Mem"},
+				},
 			}})
 		case "hud":
 			var a map[string]any
@@ -539,6 +545,33 @@ func TestEnvFailureIsNotAnAssertionFailure(t *testing.T) {
 	}
 	if rep.OK() {
 		t.Error("a report with an environment failure is not OK")
+	}
+}
+
+// A rig that does not match the scenario's declared ports must fail before any
+// case runs, naming every port -- otherwise a drifted save produces a pile of
+// case failures that look like compiler regressions (review §4 P1-5).
+func TestRigMismatchIsNamedUpFront(t *testing.T) {
+	c, _ := dialFake(t)
+	sc := &Scenario{
+		Program: "x.icg",
+		Ports:   map[string]string{"d0": "LED", "d3": "ElectronicsPrinter", "d2": "spare"},
+		Cases:   []Case{{Name: "ok", Expect: map[string]float64{"d1.Setting": 10}}},
+	}
+	_, err := (&Runner{C: c, Code: "yield"}).Run(sc)
+	if err == nil {
+		t.Fatal("a mismatched rig must fail before the cases")
+	}
+	if !strings.Contains(err.Error(), "d3") || !strings.Contains(err.Error(), "ElectronicsPrinter") {
+		t.Errorf("the mismatch must name the port and the role: %v", err)
+	}
+	// "spare" (and an absent-but-unconstrained role) is not a device kind.
+	if strings.Contains(err.Error(), "d2") {
+		t.Errorf("a non-device role must not be checked: %v", err)
+	}
+	// The escape hatch.
+	if _, err := (&Runner{C: c, Code: "yield", AllowRigDrift: true}).Run(sc); err != nil {
+		t.Errorf("--allow-rig-drift should skip the check: %v", err)
 	}
 }
 
