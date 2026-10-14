@@ -1,0 +1,37 @@
+func main() {
+    for {
+        yield()
+        step()
+    }
+}
+
+func step() {
+    switch db.stack[0] {
+    case 0:
+        db.stack[0] = 1
+        d0.On = 0
+    case 1:
+        db.stack[0] = 2
+        d0.On = 1
+    case 2:
+        db.stack[0] = 3
+        d0.On = 2
+    case 3:
+        db.stack[0] = 4
+        d0.On = 3
+    case 4:
+        db.stack[0] = 5
+        d0.On = 4
+    case 5:
+        db.stack[0] = 6
+        d0.On = 5
+    case 6:
+        db.stack[0] = 7
+        d0.On = 6
+    case 7:
+        db.stack[0] = 0
+        d0.On = 7
+    default:
+        db.stack[0] = 0
+    }
+}

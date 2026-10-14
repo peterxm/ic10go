@@ -1,0 +1,47 @@
+func main() {
+    st := 0
+    for {
+        yield()
+        switch st {
+    case 0:
+        d0.Setting = 0
+        st = 1
+    case 1:
+        d0.Setting = 1
+        d1.Setting = 2
+        st = 2
+    case 2:
+        d0.Setting = 2
+        d1.Setting = 3
+        d2.Setting = 4
+        st = 3
+    case 3:
+        d0.Setting = 3
+        d1.Setting = 4
+        d2.Setting = 5
+        d3.Setting = 6
+        st = 4
+    case 4:
+        d0.Setting = 4
+        d1.Setting = 5
+        d2.Setting = 6
+        d3.Setting = 7
+        d4.Setting = 8
+        st = 5
+    case 5:
+        d0.Setting = 5
+        st = 6
+    case 6:
+        d0.Setting = 6
+        d1.Setting = 7
+        st = 7
+    case 7:
+        d0.Setting = 7
+        d1.Setting = 8
+        d2.Setting = 9
+        st = 0
+    default:
+        st = 0
+    }
+    }
+}
