@@ -310,7 +310,13 @@
   这个代价是**结构性的**：要保住「`--fast` 的每-tick 最坏不劣于默认」这条保证
   （§5 的 pool 结构，`TestFastNeverWorseThanDefaultOnTheTickAxis` 钉住它），
   保守档必须跑完整候选矩阵，所以大致是一倍矩阵起步 + 树档的增量。`--fast` 是 opt-in，可接受但要知情。
-- `go test ./...` 全绿；CLI 断言 70/0；`testdata/cli/run.sh` 已含本特性的断言。
+- **`--fast` 会改变「是否需要一次性 loader」**：评分轴偏好把常量设置写留在 runtime 序言
+  （yield 之前 = 更短的 yield 后最坏路径），所以同一源码可能从「需要 loader」变成
+  `data.needed=false`。实测例（社区程序 `pid fuel mixer`）：默认 119 行 + loader、`--fast`
+  124 行无 loader。**稳态不变** —— 各自跑完 loader+runtime 后，逐 tick 设备状态完全相同
+  （tick 1 起即一致；一开始以为 tick 1 有差异，是我漏跑默认版 loader 的测量误差）。
+  调用方按 `data` 块判断，别假定一定有 loader（见 `plugin-api.md`「一次性设置写入」）。
+- `go test ./...` 全绿；CLI 断言 75/0；`testdata/cli/run.sh` 已含本特性的断言。
 - `testdata/server-captures/` 是 **gitignore 的社区捕获**，验收**不依赖** `arm.icg`。
 - ⚠ **真机场景 `s30_dispatch_chain/tree` 本轮未复跑**（检查时游戏未启动）。它们只声明
   `d0: LED` / `d4: Memory`（当前机台满足接线预检），下次开游戏应连 `--diff` 补验一次。

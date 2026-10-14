@@ -97,7 +97,15 @@ ic10c build --json <file.icg>
 ≤128 行。loader 超过 128 行时改用 `data.loaders[]` 分块，按序全部运行。
 
 序言的外提是**全自动、不可关闭**的（无对应开关），并会与「不拆分」的产物比较、取
-runtime 更短者，所以拆分只会减小 runtime。语义前提：这些常量写被视为一次性
+runtime 更短者，所以拆分只会减小 runtime。
+
+> ⚠ **`--fast` 会让这些字段随候选变化**：`--fast` 按每-tick 最坏指令数为候选评分，
+> 而「把设置写留在 runtime 序言里（yield 之前）」本身就缩短了 yield 之后的最坏路径，
+> 所以同一份源码在 `--fast` 下**可能不再需要 loader**（`data.needed=false`，设置写内联
+> 在 runtime 里），代价是 runtime 更长。实测例（`ic10code/` 的社区程序 `pid fuel mixer`）：
+> 默认 119 行 + loader（`needed/setup=true`），`--fast` 124 行、`needed=false`。
+> **调用方必须按 `data` 块判断**（有则先跑、无则跳过），不要假定任何一份产物一定带 loader；
+> 两种产物跑完 loader+runtime 后的设备状态逐 tick 相同（已在 VM 上核对）。语义前提：这些常量写被视为一次性
 初始化；若循环会改该设备、序言想每 tick 复位，则外提会改变行为。
 
 ### 栈私有 / 共享 pragma
