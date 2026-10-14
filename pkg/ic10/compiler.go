@@ -768,49 +768,69 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 	if info.DataSize > 0 {
 		folds = append(folds, true)
 	}
-	// User-stack promotion and pop-bank folding only apply in specific shapes;
-	// probe with a cheap lowering (no optimisation) to avoid extra compiles.
-	probe := lowerAndOptimize(info, opts, nil, false, noCheck, true, &diag.Bag{})
-	mem2regs := []bool{false}
-	if probe != nil && probe.PrivateStack && probe.UserStackManual > 0 && !probe.UserStackDynamic {
-		mem2regs = append(mem2regs, true)
-	}
-	popBanks := []bool{opts.NoPopBank}
-	if !opts.NoPopBank && probe != nil && probe.PopBankApplied {
-		popBanks = append(popBanks, true)
-	}
-	// Loop-invariant code motion can lengthen a program, so try both when the
-	// program actually has a loop.
-	licms := []bool{opts.NoLICM}
-	if !opts.NoLICM && probe != nil && opt.HasLoops(probe) {
-		licms = append(licms, true)
-	}
-	for _, outline := range outlines {
-		for _, noFold := range folds {
-			for _, noMem2Reg := range mem2regs {
-				for _, noPopBank := range popBanks {
-					for _, noLICM := range licms {
-						for _, noGlobalProp := range []bool{false, true} {
-							run(outline, false, noFold, noMem2Reg, noPopBank, noLICM, noGlobalProp, false)
-							// A plan can both share the body and specialise constant calls;
-							// try the specialising variant too and keep the shorter.
-							if len(outline) > 0 {
-								run(outline, true, noFold, noMem2Reg, noPopBank, noLICM, noGlobalProp, false)
+	// runPool probes the program, picks the candidate dimensions, and runs
+	// every variant through run(). Extracted so --fast can re-run with the
+	// conservative unroll policy when the aggressive lowering cannot fit the
+	// budget (see docs/fast-statemachine.md P0).
+	runPool := func() {
+		// User-stack promotion and pop-bank folding only apply in specific shapes;
+		// probe with a cheap lowering (no optimisation) to avoid extra compiles.
+		probe := lowerAndOptimize(info, opts, nil, false, noCheck, true, &diag.Bag{})
+		mem2regs := []bool{false}
+		if probe != nil && probe.PrivateStack && probe.UserStackManual > 0 && !probe.UserStackDynamic {
+			mem2regs = append(mem2regs, true)
+		}
+		popBanks := []bool{opts.NoPopBank}
+		if !opts.NoPopBank && probe != nil && probe.PopBankApplied {
+			popBanks = append(popBanks, true)
+		}
+		// Loop-invariant code motion can lengthen a program, so try both when the
+		// program actually has a loop.
+		licms := []bool{opts.NoLICM}
+		if !opts.NoLICM && probe != nil && opt.HasLoops(probe) {
+			licms = append(licms, true)
+		}
+		for _, outline := range outlines {
+			for _, noFold := range folds {
+				for _, noMem2Reg := range mem2regs {
+					for _, noPopBank := range popBanks {
+						for _, noLICM := range licms {
+							for _, noGlobalProp := range []bool{false, true} {
+								run(outline, false, noFold, noMem2Reg, noPopBank, noLICM, noGlobalProp, false)
+								// A plan can both share the body and specialise constant calls;
+								// try the specialising variant too and keep the shorter.
+								if len(outline) > 0 {
+									run(outline, true, noFold, noMem2Reg, noPopBank, noLICM, noGlobalProp, false)
+								}
 							}
 						}
 					}
 				}
 			}
 		}
+		// Optimisation must not make the program longer: passes like copy
+		// propagation can extend live ranges and force the allocator to spill, which
+		// costs more lines than it saves. When that happened, also build an
+		// unoptimised program and keep whichever is shorter.
+		if !noOpt && sawSpill {
+			run(nil, false, false, false, false, false, false, true)
+			if len(plan) > 0 {
+				run(plan, false, false, false, false, false, false, true)
+			}
+		}
 	}
-	// Optimisation must not make the program longer: passes like copy
-	// propagation can extend live ranges and force the allocator to spill, which
-	// costs more lines than it saves. When that happened, also build an
-	// unoptimised program and keep whichever is shorter.
-	if !noOpt && sawSpill {
-		run(nil, false, false, false, false, false, false, true)
-		if len(plan) > 0 {
-			run(plan, false, false, false, false, false, false, true)
+	runPool()
+	// --fast's aggressive unrolling happens in lowering, so it can overflow the
+	// line/byte budget on programs the default policy fits. If no Fast variant
+	// compiled, retry with the default unroll policy and say so: a silent
+	// fallback would make --fast quietly become the default mode.
+	if !haveBest && opts.Fast {
+		reason := bestErr
+		opts.Fast = false
+		runPool()
+		if haveBest && reason != nil {
+			diags.WarnfCode("fast-fallback", info.Main.Pos(),
+				"--fast build exceeded the budget (%v); compiled with the default unroll policy instead", reason)
 		}
 	}
 	// Each candidate re-runs lowering, so warnings can repeat; keep one copy.

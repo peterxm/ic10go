@@ -1197,6 +1197,50 @@ func TestJumpTableEquivalence(t *testing.T) {
 	}
 }
 
+// TestFastBudgetFallback pins the P0 contract from docs/fast-statemachine.md:
+// when --fast's aggressive lowering overflows the budget, Compile retries with
+// the default unroll policy, succeeds, and says so (code fast-fallback) instead
+// of failing the build or falling back silently.
+func TestFastBudgetFallback(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("func main() {\n    s := 0\n    for {\n        yield()\n        for i := 0; i < 8; i++ {\n")
+	const term = "            d0.On = i + d0.Temperature + d1.Temperature + d2.Temperature + d3.Temperature + d4.Temperature + d5.Temperature\n" +
+		"            d1.On = i + d0.Temperature + d1.Temperature + d2.Temperature + d3.Temperature + d4.Temperature + d5.Temperature\n" +
+		"            d2.On = i + d0.Temperature + d1.Temperature + d2.Temperature + d3.Temperature + d4.Temperature + d5.Temperature\n"
+	sb.WriteString(term)
+	sb.WriteString("        }\n        d3.On = s\n    }\n}\n")
+	src := []byte(sb.String())
+
+	def, ddef, err := ic10.CompileResult("t.icg", src, ic10.Options{})
+	if err != nil || ddef.HasErrors() {
+		t.Fatalf("default compile failed: %v %v", err, ddef.Diags)
+	}
+	res, diags, err := ic10.CompileResult("t.icg", src, ic10.Options{Fast: true})
+	if err != nil {
+		t.Fatalf("--fast build should fall back instead of failing: %v", err)
+	}
+	var sawFallback bool
+	for _, d := range diags.Diags {
+		if d.Code == "fast-fallback" && d.Severity == diag.Warning {
+			sawFallback = true
+		}
+	}
+	if !sawFallback {
+		t.Fatalf("missing fast-fallback warning: %v", diags.Diags)
+	}
+	// The fallback pool is a superset of the default pool (it also sees the
+	// unoptimised variants once a candidate errored), so lines must not exceed
+	// the default build, and no fast-fallback warning may appear there.
+	if n := strings.Count(res.Code, "\n"); n > strings.Count(def.Code, "\n") {
+		t.Errorf("fallback output longer than default: %d vs %d", n, strings.Count(def.Code, "\n"))
+	}
+	for _, d := range ddef.Diags {
+		if d.Code == "fast-fallback" {
+			t.Errorf("default build unexpectedly warns fast-fallback: %v", d)
+		}
+	}
+}
+
 func TestMultiChipCompile(t *testing.T) {
 	src := "const Shared = 10\n" +
 		"func helper(x) num { return x + Shared }\n" +
