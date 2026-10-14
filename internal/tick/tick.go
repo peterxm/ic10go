@@ -1293,6 +1293,12 @@ func preds(nodes map[int]*node, v int) []int {
 			}
 		}
 	}
+	// Ascending order: callers like findInit take the FIRST match they see, so a
+	// map-ordered slice made the result depend on Go's randomised iteration order
+	// (two predecessor blocks that each write the induction register with a
+	// different constant gave different trip counts -- and therefore different
+	// worst-case ticks -- on different runs of the same input).
+	sort.Ints(out)
 	return out
 }
 

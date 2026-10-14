@@ -138,3 +138,44 @@ func TestAnalyzeIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestFindInitIsDeterministic pins the other half of the same bug family as
+// TestAnalyzeIsDeterministic. preds() returned a slice in map order, and findInit
+// returns the first write of the induction register it meets, so a loop header
+// reached from two blocks that each write that register with a different
+// constant reported a different trip count per run -- and a different worst-case
+// tick. Measured before the fix: 12 runs gave trips=7 ten times, trips=5 twice.
+// Here A (line 3) and B (line 5) both write r2 and both reach the header, so the
+// BFS level that reaches them decides, unless preds() is ordered.
+func TestFindInitIsDeterministic(t *testing.T) {
+	const src = "yield\n" +
+		"l r0 d1 Setting\n" +
+		"bgt r0 0 5\n" + // -> B
+		"move r2 5\n" + // A: i = 5
+		"j 7\n" + // A -> header
+		"move r2 7\n" + // B: i = 7
+		"j 7\n" + // B -> header
+		"bge r2 12 11\n" + // header: exit when i >= 12
+		"s d0 Setting r2\n" +
+		"add r2 r2 1\n" +
+		"j 7\n" + // latch
+		"j 0\n"
+	var first string
+	for i := 0; i < 30; i++ {
+		rep, err := tick.Analyze(src, 128)
+		if err != nil {
+			t.Fatalf("analyze: %v", err)
+		}
+		b, err := json.Marshal(rep)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		if i == 0 {
+			first = string(b)
+			continue
+		}
+		if string(b) != first {
+			t.Fatalf("run %d differs from run 0:\n%s\n%s", i, first, b)
+		}
+	}
+}
