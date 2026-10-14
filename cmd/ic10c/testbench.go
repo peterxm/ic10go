@@ -1896,7 +1896,8 @@ func benchRun(addr, file string, chip any, stableIns, nanSafe bool, libDirs []st
 	}
 	defer resume()
 
-	rep, err := (&testbench.Runner{C: c, Code: code, Loaders: loaders, AllowRigDrift: allowRigDrift}).Run(sc)
+	rep, err := (&testbench.Runner{C: c, Code: code, Loaders: loaders, AllowRigDrift: allowRigDrift,
+		Reset: sc.Reset != nil && *sc.Reset}).Run(sc)
 	if err != nil {
 		// Setup failed (push did not compile, the connection dropped): that is
 		// an environment failure, not a failing assertion (review B28).
@@ -2066,7 +2067,13 @@ func benchDiff(sc *testbench.Scenario, code string, loaders []string) (*testbenc
 		return nil, err
 	}
 	rep := &testbench.Report{}
+	reset := sc.Reset != nil && *sc.Reset
+	first := true
 	for _, cs := range sc.Cases {
+		if reset && !first {
+			m.Reset()
+		}
+		first = false
 		res := testbench.CaseResult{Name: cs.Name, Passed: true}
 		for k, v := range cs.Set {
 			port, logic, err := splitPortLogic(k)

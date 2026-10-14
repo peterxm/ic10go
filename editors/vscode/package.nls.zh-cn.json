@@ -9,7 +9,7 @@
   "icg.jumpTable.desc": "用 `--jump-table` 编译：把稠密整数 switch 降为计算跳转表。",
   "icg.relJump.desc": "用 `--rel-jump` 编译：生成相对跳转（jr / br*）以节省字节（需真机验证）。",
   "icg.legacyById.desc": "用 `--legacy-by-id` 编译：readById/writeById 发已弃用的 `ld`/`sd`。仅老版本游戏需要；默认发 `l`/`s` + ReferenceId。",
-  "icg.fast.desc": "用 `--fast` 编译：优先运行速度而非体积（展开更多循环）。",
+  "icg.fast.desc": "用 `--fast` 编译：优先每 tick 速度而非体积（按「两次 yield 间最坏指令数」在行数预算内选候选，展开更多、状态机派发重排/二分；超预算自动回落并告警）。",
   "icg.unsafe.desc": "用 `--unsafe` 编译：跳过数据段运行时校验以进一步压缩代码。",
   "icg.dataLayout.desc": "数据段位置（`--data-layout`）：`top`（默认）或 `middle`。",
   "icg.dataAccess.desc": "数据段安装代码访问芯片栈的方式：`get` 用于标准 IC host，`stack` 用于设备 host（如空调）。",

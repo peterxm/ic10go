@@ -316,6 +316,15 @@ func (m *Machine) Load(src string) error {
 	return nil
 }
 
+// Reset restarts the program from its first line, mirroring the mod's `reset`
+// (the chip's Reset): PC and halted state are cleared, registers and device
+// values persist, like on the rig. Scenario runners use it between cases so
+// both the game and the VM model see the same phase (see Scenario.Reset).
+func (m *Machine) Reset() {
+	m.PC = 0
+	m.Halted = false
+}
+
 // Run executes at most maxSteps instructions. It returns ErrStepLimit if the
 // limit is reached before the program ends.
 func (m *Machine) Run(maxSteps int) error {

@@ -129,6 +129,11 @@ type Runner struct {
 	C       *Client
 	Code    string
 	Loaders []string
+	// Reset restarts the chip before the first case and between cases so each
+	// case's set/run/expect starts at the program top. Cases whose program is
+	// phase-sensitive (tick-counted state machines) need it; without it the
+	// PC drifts from case to case (the ab_trace README's reset caveat).
+	Reset bool
 	// KeepFailed optionally retains the chip paused after a failure; unused in v1.
 	KeepFailed bool
 	// AllowRigDrift skips the wiring check (see CheckRig) for a rig that
@@ -166,7 +171,20 @@ func (r *Runner) Run(s *Scenario) (*Report, error) {
 	}
 
 	rep := &Report{}
+	if r.Reset {
+		// Reset right after the push too: the chip may have been left
+		// mid-program by whatever ran before.
+		if err := r.C.Reset(chip); err != nil {
+			return nil, fmt.Errorf("reset: %w", err)
+		}
+	}
 	for _, cs := range s.Cases {
+		if r.Reset && len(rep.Cases) > 0 {
+			if err := r.C.Reset(chip); err != nil {
+				rep.add(CaseResult{Name: cs.Name, Err: "reset: " + err.Error(), Env: true})
+				continue
+			}
+		}
 		rep.add(r.runCase(cs, chip, s.ForceSet))
 	}
 	return rep, nil

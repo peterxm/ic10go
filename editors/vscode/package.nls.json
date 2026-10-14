@@ -9,7 +9,7 @@
   "icg.jumpTable.desc": "Compile with `--jump-table`: lower dense integer switches to a computed jump table.",
   "icg.relJump.desc": "Compile with `--rel-jump`: emit relative jumps (jr / br*) to save bytes (verify in game).",
   "icg.legacyById.desc": "Compile with `--legacy-by-id`: emit the deprecated `ld`/`sd` for readById/writeById. Only for old game versions; the default uses `l`/`s` with a ReferenceId.",
-  "icg.fast.desc": "Compile with `--fast`: prefer runtime speed over size (unroll more loops).",
+  "icg.fast.desc": "Compile with `--fast`: prefer per-tick speed over size (score builds by worst-case instructions between yields within the line budget; unroll more, re-order/binary-search switch dispatch; falls back with a warning when the budget overflows).",
   "icg.unsafe.desc": "Compile with `--unsafe`: skip the data-segment runtime check to shrink the code.",
   "icg.dataLayout.desc": "Data segment placement (`--data-layout`): `top` (default) or `middle`.",
   "icg.dataAccess.desc": "How the data-segment loader accesses the chip stack: `get` for a standard IC host, `stack` for device hosts (e.g. air conditioners).",

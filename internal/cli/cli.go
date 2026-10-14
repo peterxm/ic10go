@@ -121,8 +121,8 @@ var jumpTableFlag = Flag{Long: "--jump-table", Desc: text{
 }}
 
 var fastFlag = Flag{Long: "--fast", Desc: text{
-	EN: "prefer runtime speed over size (unroll more loops)",
-	ZH: "优先运行速度而非体积（展开更多循环）",
+	EN: "prefer per-tick speed over size: score candidates by worst-case instructions between yields within the line budget, unroll more loops, re-order / binary-search switch dispatch (falls back to budget-fitting candidates with a warning)",
+	ZH: "优先每 tick 速度而非体积：在行数预算内按「两次 yield 间最坏指令数」为候选评分，展开更多循环，重排/二分状态机派发；超预算时自动回落并告警",
 }}
 
 var relJumpFlag = Flag{Long: "--rel-jump", Desc: text{

@@ -1,0 +1,43 @@
+// 状态机派发真机回归（docs/fast-statemachine.md P3b）。
+//
+//   d4 = Memory（跨 tick 状态，写/读 Setting）
+//   d0 = LED（每步输出，读 Setting 验证）
+//
+// --fast 下 7 个稠密整数 case 的派发从比较链降为二分决策树（叶子带等值
+// 复核）；链版与树版（s30_dispatch_tree.json 的 --fast args）必须产生逐
+// tick 相同的设备写序列。非整数 / 越界 tag 落 default。
+func main() {
+    for {
+        yield()
+        step()
+    }
+}
+
+func step() {
+    switch d4.Setting {
+    case 0:
+        d0.Setting = 11
+        d4.Setting = 1
+    case 1:
+        d0.Setting = 22
+        d4.Setting = 2
+    case 2:
+        d0.Setting = 33
+        d4.Setting = 3
+    case 3:
+        d0.Setting = 44
+        d4.Setting = 4
+    case 4:
+        d0.Setting = 55
+        d4.Setting = 5
+    case 5:
+        d0.Setting = 66
+        d4.Setting = 6
+    case 6:
+        d0.Setting = 77
+        d4.Setting = 0
+    default:
+        d0.Setting = 0
+        d4.Setting = 0
+    }
+}

@@ -227,6 +227,75 @@ tickmc=$("$IC10C" tick "$TEST_DIR/tickmc.icg" 2>/dev/null)
 has "tick: 多芯片 ChipA" "$tickmc" "chip ChipA"
 has "tick: 多芯片 ChipB" "$tickmc" "chip ChipB"
 
+# ---------------------------------------------------------------- 7.4 --fast: tick 评分与状态机派发
+# 见 docs/fast-statemachine.md：--fast 按最坏每-tick 指令数选候选，常量 switch
+# 降为二分派发；激进展开超预算时回落并给出 fast-fallback 诊断。
+FS="$TEST_DIR/fastsm.icg"
+cat > "$FS" <<'EOF'
+func main() {
+    for {
+        yield()
+        switch d0.Setting {
+    case 0:
+        d1.On = 1
+        d0.Setting = 1
+    case 1:
+        d1.On = 2
+        d0.Setting = 2
+    case 2:
+        d1.On = 3
+        d0.Setting = 3
+    case 3:
+        d1.On = 4
+        d0.Setting = 4
+    case 4:
+        d1.On = 5
+        d0.Setting = 5
+    case 5:
+        d1.On = 6
+        d0.Setting = 6
+    case 6:
+        d1.On = 7
+        d0.Setting = 7
+    case 7:
+        d1.On = 8
+        d0.Setting = 0
+    default:
+        d0.Setting = 0
+    }
+    }
+}
+EOF
+fj0=$(json "$FS")
+fj1=$("$IC10C" build --fast --json "$FS" 2>/dev/null)
+eq "fast: 编译成功" "$(jqr "$fj1" .ok)" "true"
+has "fast: 二分派发（bge 序节点）" "$(jqr "$fj1" .code)" "bge r"
+c0=$(jqr "$fj0" '.tick.cost'); c1=$(jqr "$fj1" '.tick.cost')
+if [ "${c1:-999}" -lt "${c0:-999}" ]; then ok "fast: 最坏 tick 下降" "$c0 -> $c1"; else bad "fast: 最坏 tick 下降" "未改善（$c0 -> $c1）"; fi
+"$IC10C" build "$FS" > "$TEST_DIR/fs0.ic" 2>/dev/null
+"$IC10C" build --fast "$FS" > "$TEST_DIR/fs1.ic" 2>/dev/null
+s0=$("$IC10C" run --ticks 40 --json --set d0.Setting=3 "$TEST_DIR/fs0.ic" 2>/dev/null | jq -Sc '.devices' 2>/dev/null)
+s1=$("$IC10C" run --ticks 40 --json --set d0.Setting=3 "$TEST_DIR/fs1.ic" 2>/dev/null | jq -Sc '.devices' 2>/dev/null)
+eq "fast: 树/链 40 tick 设备快照一致" "$s1" "$s0"
+FB="$TEST_DIR/fastfb.icg"
+cat > "$FB" <<'EOF'
+func main() {
+    s := 0
+    for {
+        yield()
+        for i := 0; i < 8; i++ {
+            d0.On = i + d0.Temperature + d1.Temperature + d2.Temperature + d3.Temperature + d4.Temperature + d5.Temperature
+            d1.On = i + d0.Temperature + d1.Temperature + d2.Temperature + d3.Temperature + d4.Temperature + d5.Temperature
+            d2.On = i + d0.Temperature + d1.Temperature + d2.Temperature + d3.Temperature + d4.Temperature + d5.Temperature
+        }
+        d3.On = s
+    }
+}
+EOF
+fj2=$("$IC10C" build --fast --json "$FB" 2>/dev/null)
+eq "fast: 超预算仍编译成功（回落）" "$(jqr "$fj2" .ok)" "true"
+eq "fast: 回落诊断 fast-fallback" "$(jqr "$fj2" '.diagnostics | map(select(.code=="fast-fallback")) | length')" "1"
+
 # ---------------------------------------------------------------- 8 设备/槽位
 echo ">>> 8 设备访问"
 cat > "$TEST_DIR/device.icg" <<'EOF'

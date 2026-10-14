@@ -591,8 +591,12 @@ func warnTickBudget(name, code string, lineMap []int, diags *diag.Bag) {
 			continue
 		}
 		seen[line] = true
+		hint := ""
+		if lines := len(splitLines(code)); lines < 3*128/4 {
+			hint = "; the build has room in the 128-line budget, `--fast` trades lines for per-tick speed"
+		}
 		diags.WarnfCode("tick-budget", source.Pos{File: name, Line: line, Col: 1},
-			"the worst-case path between two yields exceeds the %d-instruction tick budget; the chip resumes mid-loop on the next tick (see `ic10c tick`)", tick.DefaultLimit)
+			"the worst-case path between two yields exceeds the %d-instruction tick budget; the chip resumes mid-loop on the next tick (see `ic10c tick`)"+hint, tick.DefaultLimit)
 	}
 	// A loop with no yield that only re-reads devices is a busy-wait: it burns a
 	// whole tick's instructions spinning. Checked here (not in sema) because it

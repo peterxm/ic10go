@@ -496,6 +496,19 @@ func (c *Client) SetWrites(writes []DeviceWrite, chip any, force bool) (int, err
 }
 
 // Run advances the chip by ticks game ticks.
+// Reset restarts the chip's program from line 1 without clearing registers
+// (the mod's `reset`; see testdata/bench/ab/README.md for the phase caveat).
+// Scenario runs use it between cases so each set/run/expect starts from a
+// known PC; a chip that merely keeps running would drift across cases.
+func (c *Client) Reset(chip any) error {
+	args := map[string]any{}
+	if chip != nil {
+		args["chip"] = chip
+	}
+	return c.CallInto("reset", args, nil)
+}
+
+// Run executes n ticks (the mod's `run`).
 func (c *Client) Run(ticks int, chip any) (*RunResult, error) {
 	args := map[string]any{"ticks": ticks}
 	if chip != nil {

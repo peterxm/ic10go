@@ -1,0 +1,68 @@
+{
+  "program": "s30_dispatch.icg",
+  "reset": true,
+  "chip": {
+    "name": "A CHIP"
+  },
+  "ports": {
+    "d0": "LED",
+    "d4": "Memory"
+  },
+  "cases": [
+    {
+      "name": "chain: 0 起步 3 tick 走两步",
+      "set": {
+        "d4.Setting": 0
+      },
+      "run": 3,
+      "expect": {
+        "d0.Setting": 22,
+        "d4.Setting": 2
+      }
+    },
+    {
+      "name": "chain: 5 起步 4 tick 绕回 0",
+      "set": {
+        "d4.Setting": 5
+      },
+      "run": 4,
+      "expect": {
+        "d0.Setting": 11,
+        "d4.Setting": 1
+      }
+    },
+    {
+      "name": "chain: 小数 tag 落 default",
+      "set": {
+        "d4.Setting": 3.5
+      },
+      "run": 2,
+      "expect": {
+        "d0.Setting": 0,
+        "d4.Setting": 0
+      }
+    },
+    {
+      "name": "chain: 越界 tag 落 default",
+      "set": {
+        "d4.Setting": 9
+      },
+      "run": 2,
+      "expect": {
+        "d0.Setting": 0,
+        "d4.Setting": 0
+      }
+    },
+    {
+      "name": "chain: 负数 tag 落 default",
+      "set": {
+        "d4.Setting": -1
+      },
+      "run": 2,
+      "expect": {
+        "d0.Setting": 0,
+        "d4.Setting": 0
+      }
+    }
+  ]
+}
