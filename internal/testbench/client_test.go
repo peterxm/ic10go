@@ -32,6 +32,9 @@ type fakeServer struct {
 	// sendStray makes the server emit an id-less error reply right after the
 	// hello (what the mod does for a request line it cannot parse).
 	sendStray bool
+	// resets counts the `reset` commands, so a scenario run can be checked for
+	// resetting exactly where it should.
+	resets int
 	// setErr, when set, makes `set` answer with that protocol error.
 	setErr any
 }
@@ -119,6 +122,11 @@ func (f *fakeServer) serve(conn net.Conn) {
 			send(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{
 				"mod": "ic10go-testbench", "version": "0.1.0", "gameVersion": "test", "paused": paused, "chips": 1,
 			}})
+		case "reset":
+			f.mu.Lock()
+			f.resets++
+			f.mu.Unlock()
+			send(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{"ok": true}})
 		case "pause":
 			var a struct {
 				On bool `json:"on"`
@@ -572,6 +580,34 @@ func TestRigMismatchIsNamedUpFront(t *testing.T) {
 	// The escape hatch.
 	if _, err := (&Runner{C: c, Code: "yield", AllowRigDrift: true}).Run(sc); err != nil {
 		t.Errorf("--allow-rig-drift should skip the check: %v", err)
+	}
+}
+
+// TestRunnerResetBetweenCases: Runner.Reset is opt-in and, when set, restarts the
+// chip once after the push and once before every case after the first. Without it
+// the tests' phases drift (the mod's reset command is what the editor's reset
+// button uses too).
+func TestRunnerResetBetweenCases(t *testing.T) {
+	c, f := dialFake(t)
+	sc := &Scenario{Program: "x.icg", Cases: []Case{
+		{Name: "a", Run: 1}, {Name: "b", Run: 1}, {Name: "c", Run: 1},
+	}}
+	count := func() int {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return f.resets
+	}
+	if _, err := (&Runner{C: c, Code: "yield"}).Run(sc); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if n := count(); n != 0 {
+		t.Errorf("Reset must be opt-in: %d resets without it", n)
+	}
+	if _, err := (&Runner{C: c, Code: "yield", Reset: true}).Run(sc); err != nil {
+		t.Fatalf("run with reset: %v", err)
+	}
+	if n := count(); n != 3 {
+		t.Errorf("resets = %d, want 3 (one after the push, one before each later case)", n)
 	}
 }
 

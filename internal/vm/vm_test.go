@@ -465,3 +465,36 @@ func TestLabelAsValue(t *testing.T) {
 		t.Fatalf("r1 = %v, want 3 (the label's line number)", m.Regs[1])
 	}
 }
+
+// TestReset pins the semantics the testbench relies on: the program restarts
+// from its first line while registers keep their values. A scenario run calls
+// this between cases so a phase-sensitive program always starts from the same
+// PC; getting this wrong would make the rig's results drift from case to case.
+func TestReset(t *testing.T) {
+	m := New()
+	if err := m.Load("add r0 r0 1\ns d0 Setting r0\nj 0"); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	// Three instructions per iteration, so 30 steps is 10 iterations.
+	if err := m.Run(30); err != nil && err != ErrStepLimit {
+		t.Fatalf("run: %v", err)
+	}
+	if got := m.Get("d0", "Setting"); got != 10 {
+		t.Fatalf("Setting = %v, want 10", got)
+	}
+	m.Reset()
+	if m.PC != 0 {
+		t.Errorf("PC = %d after Reset, want 0", m.PC)
+	}
+	if m.Halted {
+		t.Error("Reset must clear Halted")
+	}
+	// r0 survived the reset, so one more iteration takes it to 11 rather than
+	// starting over from zero.
+	if err := m.Run(3); err != nil && err != ErrStepLimit {
+		t.Fatalf("rerun: %v", err)
+	}
+	if got := m.Get("d0", "Setting"); got != 11 {
+		t.Errorf("after Reset: Setting = %v, want 11 (register preserved)", got)
+	}
+}
