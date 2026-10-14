@@ -68,7 +68,7 @@ namespace Ic10Go.Testbench
             if (Chip != null)
             {
                 try { o["chipPrefab"] = Chip.PrefabName; } catch { }
-                try { o["line"] = Chip.LineNumber; } catch { }
+                try { o["line"] = GameApi.Num(Chip.LineNumber); } catch { }
                 try { o["lines"] = GameApi.LineCount(GameApi.SourceOf(Chip)); } catch { }
                 // Stable across restarts, unlike the ReferenceId: lets a client
                 // match a local program to the in-game chip running it.
@@ -1505,7 +1505,7 @@ namespace Ic10Go.Testbench
             }
 
             if (pc.HasValue) st["pc"] = pc.Value;
-            try { st["line"] = chip.LineNumber; } catch { }
+            try { st["line"] = GameApi.Num(chip.LineNumber); } catch { }
 
             if (Has("program")) st["program"] = new JObject { ["lines"] = LineCount(SourceOf(chip)) };
 
@@ -1845,7 +1845,7 @@ namespace Ic10Go.Testbench
                 catch (Exception ex) { throw new BenchError("internal", "execute: " + ex.Message); }
             }
             var o = new JObject { ["ticks"] = ticks };
-            try { o["line"] = chip.LineNumber; } catch { }
+            try { o["line"] = GameApi.Num(chip.LineNumber); } catch { }
             var err = ErrorOf(chip);
             if (err != null) o["error"] = err;
             return o;

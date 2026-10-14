@@ -104,6 +104,23 @@ func opcodes(src string) map[string]int {
 	return m
 }
 
+// The runtime guard Minify now applies to its own output: a pass that drops or
+// invents instructions must be caught rather than shipped (review D4).
+func TestSameOpcodesCatchesDamage(t *testing.T) {
+	if err := sameOpcodes("add r1 r0 1\ns d0 Setting 1\n", "add r1 r0 1\n"); err == nil {
+		t.Error("a dropped instruction must be caught")
+	}
+	if err := sameOpcodes("add r1 r0 1\n", "add r1 r0 1\ns d0 Setting 1\n"); err == nil {
+		t.Error("an invented instruction must be caught")
+	}
+	// Comments, blank lines, label lines and alias/define lines are expected to
+	// disappear, so they must not count.
+	if err := sameOpcodes("l r0 d0 Setting\n# c\n\nL:\ns d0 Setting 1\nalias x r0\n",
+		"l r0 d0 Setting\ns d0 Setting 1\n"); err != nil {
+		t.Errorf("comments/labels/defs should not count: %v", err)
+	}
+}
+
 // TestMinifyKeepsEveryInstruction is the guard against a compression pass that
 // silently drops real code. With dead-code elimination off, minify may only drop
 // comments, blank lines and labels — so the opcode multiset of the corpus files

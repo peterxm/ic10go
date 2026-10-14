@@ -120,7 +120,7 @@ namespace Ic10Go.Testbench
                         ["device"] = w.Device,
                         ["logic"] = w.Logic,
                         ["slot"] = w.Slot,
-                        ["value"] = w.Value,
+                        ["value"] = GameApi.Num(w.Value),
                     });
                 }
                 int count = Log.Count;

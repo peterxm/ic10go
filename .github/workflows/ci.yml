@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Extra differential seeds are slow, so the scheduled run covers them
+    # instead of every push (review §2.8: the push/PR job only ever exercises
+    # one seed).
+    - cron: "17 4 * * *"
 
 jobs:
   test:
@@ -12,10 +17,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.27"
+          # .x picks up patch releases; the bare "1.27" pin could drift the
+          # toolchain between runs (review §2.8).
+          go-version: "1.27.x"
           cache: false
       - name: gofmt
-        run: test -z "$(gofmt -l cmd internal pkg)"
+        run: test -z "$(gofmt -l cmd internal pkg tools experiments testdata)"
       - name: vet
         run: go vet ./...
       - name: test
@@ -23,13 +30,27 @@ jobs:
       - name: differential (extra seeds)
         run: go test ./pkg/ic10 -run 'TestDifferential' -count=1
 
+  race:
+    # The race detector is a separate job because it is much slower than the
+    # plain suite; it was run by hand during the 2026-10-14 review and found no
+    # existing races (review §2.8).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+          cache: false
+      - name: test -race
+        run: go test -race ./...
+
   cli:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.27"
+          go-version: "1.27.x"
           cache: false
       - name: build ic10c
         run: go build -o ic10c ./cmd/ic10c

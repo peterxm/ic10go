@@ -180,7 +180,52 @@ func minify(src string, opt Options) (string, error) {
 	if len(out) == 0 {
 		return "", nil
 	}
-	return strings.Join(out, "\n") + "\n", nil
+	result := strings.Join(out, "\n") + "\n"
+	if !opt.DeadCode {
+		// A compressor must never guess. Verify the output still holds exactly the
+		// instructions the input had -- only comments, blank lines and label lines
+		// may disappear -- and bail out otherwise (review D4). The corpus test
+		// checks the same property; this is the runtime guard.
+		if err := sameOpcodes(src, result); err != nil {
+			return "", err
+		}
+	}
+	return result, nil
+}
+
+// sameOpcodes reports an error unless both sources hold the same multiset of
+// mnemonics, ignoring comments, blank lines, label lines and alias/define lines
+// (whose symbols are inlined). A jump target is renumbered but the mnemonic
+// stays, so this catches a pass that drops or invents real code.
+func sameOpcodes(before, after string) error {
+	want, got := countOpcodes(before), countOpcodes(after)
+	for op, n := range want {
+		if got[op] != n {
+			return fmt.Errorf("minify would change the program (%s: %d -> %d)", op, n, got[op])
+		}
+	}
+	for op, n := range got {
+		if want[op] == 0 {
+			return fmt.Errorf("minify would invent %d %s instruction(s)", n, op)
+		}
+	}
+	return nil
+}
+
+func countOpcodes(src string) map[string]int {
+	m := map[string]int{}
+	for _, ln := range strings.Split(src, "\n") {
+		toks := strings.Fields(ic10asm.StripComment(ln))
+		if len(toks) == 0 || ic10asm.IsLabel(toks[0]) {
+			continue
+		}
+		op := strings.ToLower(toks[0])
+		if op == "alias" || op == "define" {
+			continue
+		}
+		m[op]++
+	}
+	return m
 }
 
 // parse splits source into ordered items, recording label positions and

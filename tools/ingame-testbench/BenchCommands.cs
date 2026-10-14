@@ -359,7 +359,7 @@ namespace Ic10Go.Testbench
                 {
                     var regs = GameApi.ReadRegisters(h.Chip);
                     var snap = new JArray();
-                    if (regs != null) foreach (var v in regs) snap.Add(v);
+                    if (regs != null) foreach (var v in regs) snap.Add(GameApi.Num(v));
                     hits.Add(new JObject { ["pc"] = pc, ["text"] = text, ["regs"] = snap });
                 }
                 try { h.Chip.Execute(1); } catch { break; }
