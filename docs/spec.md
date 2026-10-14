@@ -35,9 +35,12 @@
 ```go
 // icg: private-stack   // 用户栈只属于本程序，允许寄存器提升（单芯片默认）
 // icg: shared-stack    // 用户栈可能与后继程序共享，保持保守（多芯片默认）
+// icg: dynamic-stack   // 用户栈边界按实际数据段/溢出占用动态计算
+// icg: dispatch=tree   // 状态机 switch 用二分比较树派发（默认模式的 tick 换行数）
 ```
 
-见 [§4.6](#46-栈-pragma)。
+见 [§4.6](#46-栈-pragma)；`dispatch=tree` 见
+[`fast-statemachine.md`](fast-statemachine.md) P3b（≥5 个整数常量 case 才适用，不适用会告警）。
 
 ### 2.2 标识符
 

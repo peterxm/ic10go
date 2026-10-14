@@ -325,6 +325,7 @@ stack comp   9 @ [503..511] (data 9 + spills 0)
 ```
 // icg: private-stack    // 用户栈私有：允许寄存器提升
 // icg: shared-stack     // 用户栈共享（保守，默认用于多芯片）
+// icg: dispatch=tree    // switch 走二分比较树派发（P3b；默认模式下用行数换每-tick 最坏）
 ```
 
 - 默认：**单芯片 → private**，多芯片 → shared（`chip` 块存在时）。pragma 覆盖。

@@ -2215,3 +2215,141 @@ func TestRelJumpUsesRelativeFormWhenShorter(t *testing.T) {
 		t.Errorf("--rel-jump should not change the line count: %d vs %d", a, b)
 	}
 }
+
+// TestFastDispatchMatchesChainOnIngameProgram is the offline half of the
+// testdata/bench/ingame/s30_dispatch_* rig scenarios: the same source compiled by
+// the default chain and by --fast (case sorting + compare tree) must produce the
+// same device writes for every tag those scenarios use, including the fractional,
+// out-of-range and negative ones that have to fall to the default arm exactly
+// like the chain. The rig half needs the game; this half runs everywhere.
+func TestFastDispatchMatchesChainOnIngameProgram(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "ingame", "s30_dispatch.icg"))
+	if err != nil {
+		t.Skipf("corpus file: %v", err)
+	}
+	chain, diags, err := ic10.Compile("s30.icg", src)
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("chain: %v %v", diags.Diags, err)
+	}
+	fast, diags, err := ic10.CompileWithOptions("s30.icg", src, ic10.Options{Fast: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("fast: %v %v", diags.Diags, err)
+	}
+	if fast == chain {
+		t.Fatal("--fast produced the same code; this test would prove nothing")
+	}
+	for _, tag := range []float64{0, 1, 5, 6, 7, 3.5, -1, 99} {
+		init := map[[2]string]float64{{"d4", "Setting"}: tag}
+		wa, ea := runWrites(chain, init)
+		wb, eb := runWrites(fast, init)
+		if ea || eb {
+			t.Fatalf("tag %v: the program faulted (chain %v, fast %v)", tag, ea, eb)
+		}
+		// A cheaper dispatch simply completes more cycles within the shared step
+		// limit, so compare the common prefix and require it to cover several
+		// state transitions.
+		n := len(wa)
+		if len(wb) < n {
+			n = len(wb)
+		}
+		if n < 40 {
+			t.Fatalf("tag %v: only %d common writes, too short to compare", tag, n)
+		}
+		if strings.Join(wa[:n], "|") != strings.Join(wb[:n], "|") {
+			t.Errorf("tag %v: writes differ\nchain %v\nfast  %v", tag, wa[:n], wb[:n])
+		}
+	}
+}
+
+// TestFastNeverWorseThanDefaultOnTheTickAxis pins the property the fast candidate
+// pool is built around: the conservative (non-Fast lowering) pool is always run,
+// so a --fast build cannot have a worse worst-case tick than the default build of
+// the same source. That is what makes "score by tick under --fast" safe to adopt
+// rather than a new way to lose to the default policy, and it is checked here on
+// each switch shape (plain chain, sorted chain, compare tree) instead of being
+// argued in a comment.
+func TestFastNeverWorseThanDefaultOnTheTickAxis(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "testdata", "bench", "fast", "*.icg"))
+	if err != nil || len(files) == 0 {
+		t.Skip("no fast corpus")
+	}
+	worst := func(code string) int { return ic10.ScoreFor(code, 128).TickWorst }
+	for _, f := range files {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		plain, diags, err := ic10.Compile("t.icg", src)
+		if err != nil || diags.HasErrors() {
+			t.Fatalf("%s: %v %v", f, diags.Diags, err)
+		}
+		fast, diags, err := ic10.CompileWithOptions("t.icg", src, ic10.Options{Fast: true})
+		if err != nil || diags.HasErrors() {
+			t.Fatalf("%s (--fast): %v %v", f, diags.Diags, err)
+		}
+		if fw, dw := worst(fast), worst(plain); fw > dw {
+			t.Errorf("%s: --fast worst tick %d > default %d", filepath.Base(f), fw, dw)
+		}
+	}
+}
+
+// TestDispatchTreePragma: `// icg: dispatch=tree` opts into the compare-tree
+// switch dispatch in the default mode, so a file can take the tick win without
+// --fast's other effects (unrolling, budget fallback). The size model still picks
+// among the tree builds, the result must stay equivalent for fractional and
+// out-of-range tags, and a switch that is not eligible gets a warning instead of
+// a silent no-op.
+func TestDispatchTreePragma(t *testing.T) {
+	const body = "func main() {\n    for {\n        yield()\n        switch d0.Setting {\n" +
+		"        case 0:\n            d1.On = 100\n" +
+		"        case 1:\n            d1.On = 101\n" +
+		"        case 2:\n            d1.On = 102\n" +
+		"        case 3:\n            d1.On = 103\n" +
+		"        case 4:\n            d1.On = 104\n" +
+		"        case 5:\n            d1.On = 105\n" +
+		"        default:\n            d1.On = -1\n        }\n    }\n}\n"
+	plain, diags, err := ic10.Compile("t.icg", []byte(body))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("plain: %v %v", diags.Diags, err)
+	}
+	tree, diags, err := ic10.Compile("t.icg", []byte("// icg: dispatch=tree\n"+body))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("pragma: %v %v", diags.Diags, err)
+	}
+	if tree == plain {
+		t.Fatal("the pragma had no effect")
+	}
+	if !strings.Contains(tree, "bge ") {
+		t.Errorf("expected compare-tree nodes:\n%s", tree)
+	}
+	for _, tag := range []float64{0, 3, 5, -1, 6, 3.5, math.NaN()} {
+		init := map[[2]string]float64{{"d0", "Setting"}: tag}
+		wa, _ := runWrites(plain, init)
+		wb, _ := runWrites(tree, init)
+		n := len(wa)
+		if len(wb) < n {
+			n = len(wb)
+		}
+		if n < 20 {
+			t.Fatalf("tag %v: only %d common writes", tag, n)
+		}
+		if strings.Join(wa[:n], "|") != strings.Join(wb[:n], "|") {
+			t.Errorf("tag %v: pragma build differs\nplain %v\ntree  %v", tag, wa[:n], wb[:n])
+		}
+	}
+
+	// Not eligible: warn, keep compiling.
+	_, diags, err = ic10.Compile("t.icg", []byte("// icg: dispatch=tree\nfunc main() { d0.Setting = 1 }\n"))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("ineligible: %v %v", diags.Diags, err)
+	}
+	warned := false
+	for _, d := range diags.Diags {
+		if d.Code == "dispatch-tree-not-applied" {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Errorf("an ineligible switch must warn: %v", diags.Diags)
+	}
+}

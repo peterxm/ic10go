@@ -66,6 +66,11 @@ type Options struct {
 	// Over-budget aggressive builds fall back with a fast-fallback warning.
 	// Off by default.
 	Fast bool
+	// forceTree asks for the compare-tree switch dispatch in the DEFAULT mode, so
+	// a file can get the tick win without --fast's other effects (docs
+	// fast-statemachine.md P3b). Set by the `// icg: dispatch=tree` pragma; the
+	// tree pool then runs alone and the usual size model picks the shortest tree.
+	forceTree bool
 	// tickDispatch/dispatchTree are internal candidate-pool toggles that
 	// compileInfo drives under --fast (switch case sorting / compare-tree
 	// dispatch; docs/fast-statemachine.md P3). Not user-facing.
@@ -213,6 +218,24 @@ func dynamicStackPragma(src []byte) bool {
 		t = strings.TrimSpace(strings.TrimPrefix(t, "//"))
 		if strings.HasPrefix(t, "icg:") &&
 			strings.TrimSpace(strings.TrimPrefix(t, "icg:")) == "dynamic-stack" {
+			return true
+		}
+	}
+	return false
+}
+
+// dispatchTreePragma reports whether the source carries an
+// `// icg: dispatch=tree` file pragma, asking for the compare-tree switch
+// dispatch without --fast (docs/fast-statemachine.md P3b).
+func dispatchTreePragma(src []byte) bool {
+	for _, line := range strings.Split(string(src), "\n") {
+		t := strings.TrimSpace(line)
+		if !strings.HasPrefix(t, "//") {
+			continue
+		}
+		t = strings.TrimSpace(strings.TrimPrefix(t, "//"))
+		if strings.HasPrefix(t, "icg:") &&
+			strings.TrimSpace(strings.TrimPrefix(t, "icg:")) == "dispatch=tree" {
 			return true
 		}
 	}
@@ -413,6 +436,9 @@ func CompileResult(name string, src []byte, opts Options) (Result, *diag.Bag, er
 func compileResult(name string, src []byte, opts Options) (Result, *diag.Bag, error) {
 	opts = stackEnv(opts)
 	opts = applyFileStackPragmas(src, opts)
+	if !opts.Fast {
+		opts.forceTree = dispatchTreePragma(src)
+	}
 	file := source.NewFile(name, src)
 	diags := &diag.Bag{}
 	toks := lexer.Tokenize(file, diags)
@@ -925,6 +951,17 @@ func compileInfo(info *sema.Info, opts Options, diags *diag.Bag) (Result, error)
 			diags.WarnfCode("fast-fallback", info.Main.Pos(),
 				"--fast lowering did not fit the budget (%s); the chosen candidate uses the default unroll policy", msg)
 		}
+	} else if opts.forceTree {
+		// `// icg: dispatch=tree`: run only the compare-tree pool, so the tree is
+		// what gets emitted (the size model would otherwise always prefer the
+		// shorter chain). No unroll change: this is not --fast.
+		if _, treeP := dispatchCandidates(info, opts, noCheck); treeP {
+			opts.tickDispatch, opts.dispatchTree = true, true
+		} else {
+			diags.WarnfCode("dispatch-tree-not-applied", info.Main.Pos(),
+				"`// icg: dispatch=tree` did not apply: this switch has no eligible integer constant cases (needs >=5 of them, no ranges, no duplicate values)")
+		}
+		runPool(true)
 	} else {
 		runPool(true)
 	}

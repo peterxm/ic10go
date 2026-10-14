@@ -221,8 +221,10 @@
   把「同一 tag、全整数常量 case、每 case 一条融合测试」的比较链重写为二分树
   （节点 `Cmp(Lt/Gt)+Br` 复用现有分支融合，叶子 → 原 body 块 + default）。
   做成 opt pass 的好处：**手写的 if/else-if 链（社区固件常见形态、decompile 产物）同样命中**。
-  触发门控：case 数 ≥5 且（Fast 或显式 `// icg: dispatch=tree`）且经分析器确认
-  「最坏 tick 下降 且 在预算内」——即**由 P2 评分器裁决，转换本身只当候选**。
+  触发门控：case 数 ≥5 且（`--fast` 或显式 **`// icg: dispatch=tree`**）且经分析器确认
+  「最坏 tick 下降 且 在预算内」——`--fast` 下**由 P2 评分器裁决**，转换只当候选；
+  带 pragma 时改为**只跑树候选池**（否则行数/字节的大小模型永远选更短的链），
+  不适用（<5 个整数常量 case、有 range、有重复值）时发 `dispatch-tree-not-applied` 告警。
   正确性约束见 §4；`var<N>_2` 对照 `tree<N>.ic` 作为形状参照与回归目标。
 - **P3c 跳表（降级为遗留项）**：`--jump-table` 保留原样；Fast 不再建议用它
   （实际 n 范围内树深度 ≤5+复核 < 跳表常数 ≈8，且跳表多花 ~n 行、平均更差，见 §2.2）。
@@ -303,8 +305,11 @@
   （118 行）且发 `fast-fallback` 告警，产物与默认一致。
 - **默认模式产物逐字节不变** ✓ 实测 **270/270** 与 `v0.8.54`（`acbdfa1`）完全相同。
 - **全语料 tick 轴**：269 个可编译程序中 **更好 19 / 相同 250 / 更差 0**，`--fast` 编译失败 0 ✓。
-- 编译时间（5 次均值）：`var12_2` ×1.8、`sugar` ×1.5、**`气闸控制-四门` ×3.0（2.9s → 8.6s）**
-  —— 大程序正好压在 ≤3× 的边界上，`--fast` 是 opt-in，可接受但要知情。
+- 编译时间（`testdata/bench/fast` + `examples` 共 28 个程序，单次）：**总耗时 ×2.42**
+  （默认 4594ms → `--fast` 11114ms），最慢单例 **`气闸控制-四门` ×2.97（2.9s → 8.5s）**。
+  这个代价是**结构性的**：要保住「`--fast` 的每-tick 最坏不劣于默认」这条保证
+  （§5 的 pool 结构，`TestFastNeverWorseThanDefaultOnTheTickAxis` 钉住它），
+  保守档必须跑完整候选矩阵，所以大致是一倍矩阵起步 + 树档的增量。`--fast` 是 opt-in，可接受但要知情。
 - `go test ./...` 全绿；CLI 断言 70/0；`testdata/cli/run.sh` 已含本特性的断言。
 - `testdata/server-captures/` 是 **gitignore 的社区捕获**，验收**不依赖** `arm.icg`。
 - ⚠ **真机场景 `s30_dispatch_chain/tree` 本轮未复跑**（检查时游戏未启动）。它们只声明
@@ -431,12 +436,21 @@ $C build --fast ../../../examples/气闸控制-四门.icg >/tmp/f.ic && $C tick 
 
 与方案有两处**收窄**（都不影响验收，但记录在案）：
 
-1. **树/排序没有用户开关**：只由 `--fast` 的候选池启用（方案里提过 `// icg: dispatch=tree` 逃生门），
-   默认模式完全不变 ✓ —— 少一个语法面，代价是手写链在默认模式下得不到树化。
+1. **树的用户开关已补**：`// icg: dispatch=tree`（文件 pragma，与 `private-stack` 同类）在**默认模式**
+   下只用树候选池 → 拿到 tick 收益而不受 `--fast` 展开/回落的影响；不适用时发
+   `dispatch-tree-not-applied` 告警而不是静默无效。默认模式（无 pragma）依旧逐字节不变 ✓。
+   `--fast` 之外的"手写 if/else-if 链树化"仍**不做**（那条链没有 tag 常量集合，v1 不猜）。
 2. **`--jump-table` 保持原样**（P3c 的"降级为遗留项"）✓，未扩门控。
 
-另外修了一个**既有缺陷**（不是本方案引入，但被 P2 放大成用户可见症状）：
-`internal/tick` 的 `detectTrips` 按 map 顺序扫描循环体、返回**第一个**匹配的退出分支，导致同一输入
-每次运行算出不同的 `trips`（进而不同的 worst tick）；`--fast` 用它评分 → 同一源码两次编译
-产出不同二进制。已改为按行号升序扫描，并把 `sugar.icg`（暴露该问题的那份语料）的
-30 次一致性固化成 `TestAnalyzeIsDeterministic`。
+另外修了**两处既有缺陷**（不是本方案引入，但被 P2 放大成用户可见症状），它们是同一族：
+
+1. `internal/tick` 的 `detectTrips` 按 map 顺序扫描循环体、返回**第一个**匹配的退出分支 →
+   同一输入每次算出不同的 `trips`（worst tick 在 54/66/72/84 间跳）；`--fast` 用它评分 →
+   同一源码两次编译产出不同二进制（12 次构建 5:7 分裂）。改为按行号升序扫描。
+   回归：`TestAnalyzeIsDeterministic`（`sugar.icg` 30 次一致）。
+2. 同族的另一半：`preds()` 返回 **map 顺序**的切片，而 `findInit` 取"第一个找到的写" →
+   循环头有两个前置块各写不同常量时，`trips` 在 5/7 之间跳（实测 12 次：10×7 + 2×5）。
+   改为 `sort.Ints(out)`。回归：`TestFindInitIsDeterministic`（钻石形 CFG 30 次一致）。
+
+另外补了本轮发现的 CLI 缺陷：`tick`/`lex` 本就能读原始 IC10，却和 `build` 一样提示
+「请先反编译」——已去掉（`build`/`stats`/`ast` 保留）。

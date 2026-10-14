@@ -539,6 +539,38 @@ s1=$(snap "$TEST_DIR/nonleaf.icg" 60 --set d4.Setting=4 --set d0.Setting=0)
 s2=$(snap_env "IC10C_NO_OUTLINE=1" "$TEST_DIR/nonleaf.icg" 60 --set d4.Setting=4 --set d0.Setting=0)
 eq "D3a: 与全内联语义一致" "$s2" "$s1"
 
+# ------------------------------------------------- 7.6 `// icg: dispatch=tree`（默认模式的树派发）
+# 文件 pragma 让默认构建（非 --fast）走二分比较树：拿 tick 收益、不引入展开变化。
+# 不适用（<5 个整数常量 case / range / 重复值）时给诊断码，而不是静默无效。
+PT="$TEST_DIR/treepragma.icg"
+cat > "$PT" <<'EOF'
+// icg: dispatch=tree
+func main() {
+    for {
+        yield()
+        switch d0.Setting {
+        case 0:
+            d1.On = 1
+        case 1:
+            d1.On = 2
+        case 2:
+            d1.On = 3
+        case 3:
+            d1.On = 4
+        case 4:
+            d1.On = 5
+        default:
+            d1.On = 0
+        }
+    }
+}
+EOF
+pj=$(json "$PT")
+has "7.6: pragma 触发二分派发" "$(jqr "$pj" .code)" "bge r"
+PN="$TEST_DIR/treepragma_no.icg"
+printf '// icg: dispatch=tree\nfunc main() { d0.Setting = 1 }\n' > "$PN"
+has "7.6: 不适用时给诊断码" "$(json "$PN" | jq -r '[.diagnostics[].code] | join(",")')" "dispatch-tree-not-applied"
+
 # ---------------------------------------------------------------- 7.5 反编译提示只出现在真正需要的命令
 # tick/lex 直接接受原始 IC10（tick 的用法行就写着 <file.icg|file.ic>），却和
 # build/stats 一样提示「请先反编译」——那是一句自相矛盾的话。判据用两种语言都
