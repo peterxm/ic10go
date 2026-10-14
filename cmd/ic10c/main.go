@@ -1238,7 +1238,9 @@ func cmdTick(args []string) int {
 			fmt.Fprintln(os.Stderr, "ic10c:", err)
 			return 1
 		}
-		ic10Hint(file)
+		// No ic10Hint here: this command reads a raw .ic/.ic10 script directly
+		// (the branch below), so telling the user to decompile first was simply
+		// wrong.
 		var units []unit
 		if strings.HasSuffix(file, ".icg") {
 			compiled, diags, err := ic10.CompileResult(file, data, opts)
@@ -1896,12 +1898,13 @@ func cmdLex(args []string) int {
 		fmt.Fprintln(os.Stderr, cli.UsageLine(lang, "lex"))
 		return 2
 	}
+	// No ic10Hint: a tokenizer has no .icg input requirement, so pointing a raw
+	// IC10 script at `decompile` first was noise (the same defect as `tick`).
 	file, diags, err := readSource(args[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
 	}
-	ic10Hint(args[0])
 	toks := lexer.Tokenize(file, diags)
 	for _, t := range toks {
 		fmt.Printf("%-12s %q\t%s\n", t.Kind, t.Text, t.Pos)

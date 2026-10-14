@@ -539,6 +539,25 @@ s1=$(snap "$TEST_DIR/nonleaf.icg" 60 --set d4.Setting=4 --set d0.Setting=0)
 s2=$(snap_env "IC10C_NO_OUTLINE=1" "$TEST_DIR/nonleaf.icg" 60 --set d4.Setting=4 --set d0.Setting=0)
 eq "D3a: 与全内联语义一致" "$s2" "$s1"
 
+# ---------------------------------------------------------------- 7.5 反编译提示只出现在真正需要的命令
+# tick/lex 直接接受原始 IC10（tick 的用法行就写着 <file.icg|file.ic>），却和
+# build/stats 一样提示「请先反编译」——那是一句自相矛盾的话。判据用两种语言都
+# 出现的片段 "ic10c decompile"，免得依赖 IC10C_LANG。
+RT="$TEST_DIR/rawhint.ic"
+printf 'move r0 1\nyield\ns d0 Setting r0\n' > "$RT"
+case "$("$IC10C" tick "$RT" 2>&1)" in
+    *"ic10c decompile"*) bad "7.5: tick 对原始 .ic 不再提示反编译" "仍然提示";;
+    *) ok "7.5: tick 对原始 .ic 不再提示反编译" "只输出预算报告" ;;
+esac
+case "$("$IC10C" lex "$RT" 2>&1)" in
+    *"ic10c decompile"*) bad "7.5: lex 对原始 .ic 不再提示反编译" "仍然提示";;
+    *) ok "7.5: lex 对原始 .ic 不再提示反编译" "只输出词法单元" ;;
+esac
+case "$("$IC10C" build "$RT" 2>&1)" in
+    *"ic10c decompile"*) ok "7.5: build 仍提示（它确实需要 .icg）" "提示保留" ;;
+    *) bad "7.5: build 仍提示（它确实需要 .icg）" "提示消失了";;
+esac
+
 # ---------------------------------------------------------------- 汇总 + 报告
 echo "=========================================="
 echo "结果: $PASS 通过, $FAIL 失败"
