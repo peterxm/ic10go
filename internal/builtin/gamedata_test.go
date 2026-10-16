@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"ic10go/internal/ic10asm"
@@ -72,6 +73,25 @@ func TestBranchConditionCoverage(t *testing.T) {
 		if _, ok := IC10Instructions[mn]; !ok {
 			t.Errorf("指令表缺 %q：ic10asm 认识 %q 这个分支条件，"+
 				"但 IC10Instructions 里没有对应 opcode（编辑器会把它报成未知指令）", mn, cond)
+		}
+	}
+}
+
+// TestScriptCommandHelpPrefersDescription 说明文本必须优先取 ScriptDescription*。
+// 游戏对同一助记符可能有两族记录：ScriptCommand* 是编辑器里那句短的
+// （ScriptCommandAnd = "Register = 1 if a and b not zero"），ScriptDescription* 才是
+// 精确的（"Performs a bitwise logical AND ..."）。更要紧的是有 24 个助记符**只有**
+// Description 记录 —— 只认 ScriptCommand* 会把它们整条漏掉，bdnvl/bdnvs 就是这么从
+// IC10Instructions 里消失的（编辑器随后把它们报成未知指令）。
+func TestScriptCommandHelpPrefersDescription(t *testing.T) {
+	if h := ScriptCommandHelp["and"]; !strings.Contains(h, "bitwise") {
+		t.Errorf("and 取了 ScriptCommand 那句短的：%q", h)
+	}
+	for _, m := range []string{"bdnvl", "bdnvs", "clamp", "ext", "get", "getd", "put", "putd",
+		"poke", "sgn", "rol", "ror", "sll", "sra", "srl", "sla", "ins", "lerp", "rmap",
+		"clr", "clrd", "sbn"} {
+		if ScriptCommandHelp[m] == "" {
+			t.Errorf("ScriptCommandHelp 缺 %q（它只有 ScriptDescription 记录，漏读就会消失）", m)
 		}
 	}
 }

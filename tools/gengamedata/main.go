@@ -154,9 +154,27 @@ func readLocalization(path string) (things, reagents, help map[string]string, er
 				things[key] = value
 			case kind == "RecordReagent" && key != "":
 				reagents[key] = value
-			case kind == "Record" && strings.HasPrefix(key, "ScriptCommand"):
-				mnemonic := strings.ToLower(strings.TrimPrefix(key, "ScriptCommand"))
-				if mnemonic != "" && value != "" {
+			// Two record families describe the same instructions, and they
+			// disagree: ScriptCommand* is the short text the in-game editor
+			// shows (ScriptCommandAnd = "Register = 1 if a and b not zero"),
+			// while ScriptDescription* spells it out precisely
+			// (ScriptDescriptionAnd = "Performs a bitwise logical AND ...").
+			// Reading only ScriptCommand* also silently dropped the 24
+			// mnemonics that have *no* command record at all — bdnvl/bdnvs,
+			// clamp, ext, get/getd, put/putd, poke, sgn, rol/ror, sll/sra/srl/sla,
+			// ins, lerp, rmap, clr/clrd, sbn. Prefer the description family and
+			// keep ScriptCommand* as the fallback for mnemonics that lack one.
+			case kind == "Record" && (strings.HasPrefix(key, "ScriptCommand") ||
+				strings.HasPrefix(key, "ScriptDescription")):
+				prefix := "ScriptCommand"
+				if strings.HasPrefix(key, "ScriptDescription") {
+					prefix = "ScriptDescription"
+				}
+				mnemonic := strings.ToLower(strings.TrimPrefix(key, prefix))
+				if mnemonic == "" || value == "" {
+					break
+				}
+				if prefix == "ScriptDescription" || help[mnemonic] == "" {
 					help[mnemonic] = value
 				}
 			}

@@ -327,8 +327,23 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 > 数据源：`tools/gengamedata` 读取游戏的
 > `rocketstation_Data/StreamingAssets/Language/english.xml`：`RecordThing` /
 > `RecordReagent` 生成预制体名与显示标题（与上一次结果**合并**，保留本地化未收录的
-> 程序化残骸/套件名），`ScriptCommand*` 生成指令说明。游戏更新后
+> 程序化残骸/套件名），`ScriptDescription*` / `ScriptCommand*` 生成指令说明。游戏更新后
 > `go run ./tools/gengamedata` 即可——需要游戏本体，但**不用启动游戏**。
+>
+> 说明文本有**两族**记录，同一助记符可能两族都有：`ScriptCommand*` 是游戏编辑器里
+> 那句短的（`ScriptCommandAnd` = "Register = 1 if a and b not zero"），
+> `ScriptDescription*` 是精确写法（`ScriptDescriptionAnd` = "Performs a bitwise
+> logical AND …"）。生成器**优先 Description**、`Command` 只作兜底 —— 因为还有
+> **24 个助记符只有 Description 记录**（`bdnvl`/`bdnvs`、`clamp`、`ext`、
+> `get`/`put`/`poke`、`sgn`、`rol`/`ror`、`sll`/`sra`/`srl`/`sla`、`ins`、`lerp`、
+> `rmap`、`clr`/`clrd`、`sbn`），只认 `ScriptCommand` 会**整条漏掉**它们 ——
+> `bdnvl`/`bdnvs` 就是这么从 `IC10Instructions` 里消失的。
+>
+> ⚠️ 仍有 **9 条游戏自己的文本不如表里的手写版**：`bapz`/`bapzal`/`bnaz`/`bnazal`/
+> `brapz`/`brnaz`/`sapz`/`snaz` 两族都说 `abs(a) <= float.epsilon * 8`，**把容差
+> 操作数 `b` 丢了**，而 `instructions.go` 里写的是 `max(b * abs(a), float.epsilon * 8)`。
+> 由于 `init` 会用生成的说明覆盖表里的 Desc，这 9 条手写文本实际**不会出现在编辑器里**；
+> 要修得给 `init` 加一张显式覆盖表（未做）。
 >
 > 「每个预制体支持哪些 logic type、读/写」**必须游戏内扫描**：`CanLogicRead` 读的
 > `HasOnOffState` 等状态在 Unity 资产里。`tools/ingame-exporter` 是一个无 patch、
