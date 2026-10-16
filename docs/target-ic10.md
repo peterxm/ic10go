@@ -339,11 +339,14 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
 > `rmap`、`clr`/`clrd`、`sbn`），只认 `ScriptCommand` 会**整条漏掉**它们 ——
 > `bdnvl`/`bdnvs` 就是这么从 `IC10Instructions` 里消失的。
 >
-> ⚠️ 仍有 **9 条游戏自己的文本不如表里的手写版**：`bapz`/`bapzal`/`bnaz`/`bnazal`/
-> `brapz`/`brnaz`/`sapz`/`snaz` 两族都说 `abs(a) <= float.epsilon * 8`，**把容差
-> 操作数 `b` 丢了**，而 `instructions.go` 里写的是 `max(b * abs(a), float.epsilon * 8)`。
-> 由于 `init` 会用生成的说明覆盖表里的 Desc，这 9 条手写文本实际**不会出现在编辑器里**；
-> 要修得给 `init` 加一张显式覆盖表（未做）。
+> ⚠️ 仍有 **8 条游戏自己的文本不如表里的手写版**：`bapz`/`bapzal`/`bnaz`/`bnazal`/
+> `brapz`/`brnaz`/`sapz`/`snaz` 两族都写 `abs(a) <= float.epsilon * 8`，**把容差
+> 操作数 `b` 丢了**（`bapz a b c` 的 `b` 就是容差），而 `instructions.go` 里是
+> `max(b * abs(a), float.epsilon * 8)`。所以 `init` 会**跳过**这几条的覆盖，保留表里的
+> 手写说明 —— 名单在 [`internal/builtin/help_overrides.go`](../internal/builtin/help_overrides.go)
+> 的 `scriptHelpKeep`。那是张**手工维护**的表（等于对游戏文案下的断言）：游戏哪天把容差
+> 写对，就该把它删掉，`TestHelpOverridesStillDiffer` 会在那时报错提醒；
+> `TestHelpOverridesAreNeeded` 则保证覆盖始终有效。
 >
 > 「每个预制体支持哪些 logic type、读/写」**必须游戏内扫描**：`CanLogicRead` 读的
 > `HasOnOffState` 等状态在 Unity 资产里。`tools/ingame-exporter` 是一个无 patch、
