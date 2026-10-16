@@ -32,7 +32,12 @@ type Device struct {
 // until the in-game exporter has run and its JSON imported.
 var DeviceCatalog = map[string]Device{}
 
-// DeviceCatalogFile is the shape of devices.json (and devicecatalog.json).
+// DeviceCatalogFile is the shape of devices.json (and devicecatalog.json). The
+// header fields are the exporter's stamps: they are what a human compares against
+// the running game's version when deciding whether the catalog needs a re-scan.
 type DeviceCatalogFile struct {
-	Devices []Device `json:"devices"`
+	FormatVersion int      `json:"formatVersion"`
+	GameVersion   string   `json:"gameVersion"`
+	DeviceCount   int      `json:"deviceCount"`
+	Devices       []Device `json:"devices"`
 }
