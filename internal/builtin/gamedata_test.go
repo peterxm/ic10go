@@ -3,6 +3,8 @@ package builtin
 import (
 	"sort"
 	"testing"
+
+	"ic10go/internal/ic10asm"
 )
 
 // TestPrefabsFromGame checks the prefab table was generated from the game and
@@ -54,5 +56,22 @@ func TestGameInstructionCoverage(t *testing.T) {
 	if len(missing) > 0 {
 		t.Errorf("game instructions missing from IC10Instructions: %v\n"+
 			"add them (or map them to an existing builtin) in internal/builtin/instructions.go", missing)
+	}
+}
+
+// TestBranchConditionCoverage fails when the compiler knows a branch condition
+// (internal/ic10asm) but the instruction table has no matching b<condition>
+// opcode. bdnvl/bdnvs slipped through the gap between the two tables: the game's
+// localization has no ScriptCommand* record for them, so TestGameInstructionCoverage
+// (which only walks ScriptCommandHelp) could not see them, while ic10asm,
+// codegen (isLoadValid/isStoreValid), the vscode grammar and docs/target-ic10.md
+// all did. The editor reported them as unknown instructions as a result.
+func TestBranchConditionCoverage(t *testing.T) {
+	for _, cond := range ic10asm.Conditions() {
+		mn := "b" + cond
+		if _, ok := IC10Instructions[mn]; !ok {
+			t.Errorf("指令表缺 %q：ic10asm 认识 %q 这个分支条件，"+
+				"但 IC10Instructions 里没有对应 opcode（编辑器会把它报成未知指令）", mn, cond)
+		}
 	}
 }

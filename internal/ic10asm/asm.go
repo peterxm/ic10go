@@ -4,6 +4,7 @@
 package ic10asm
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -73,6 +74,19 @@ var conditions = map[string]bool{
 	"eqz": true, "nez": true, "ltz": true, "lez": true, "gtz": true, "gez": true,
 	"nan": true, "ap": true, "na": true, "apz": true, "naz": true,
 	"dns": true, "dse": true, "dnvl": true, "dnvs": true,
+}
+
+// Conditions returns every branch condition BranchInfo understands, sorted.
+// Tests use it to check the instruction table really defines b<condition> for
+// all of them (bdnvl/bdnvs were missing while the game's localization, which
+// gates the other coverage test, had no record of them either).
+func Conditions() []string {
+	out := make([]string, 0, len(conditions))
+	for c := range conditions {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // BranchInfo splits a branch mnemonic into its condition and flags.

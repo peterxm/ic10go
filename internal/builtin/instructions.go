@@ -1,7 +1,16 @@
-// Code generated from the game instruction metadata; DO NOT EDIT.
-//
 // IC10Instructions maps a native IC10 mnemonic to its operand kinds and the
 // in-game help text (used by the editor for .ic/.ic10 files).
+//
+// The signatures are maintained by hand (the table is a transcription of the
+// game's instruction metadata, and there is no generator for it): the game's own
+// localization does not cover every mnemonic, so a few entries have to be written
+// out here. Help text the game does provide is overlaid on top at init (see
+// scripthelp_gen.go); the descriptions below are the fallback for everything else.
+//
+// Missing a mnemonic here is not harmless: the editor reports it as an unknown
+// instruction (internal/lsp), the decompiler falls back to arity guesses
+// (internal/decomp) and the device-operand analysis cannot name its operands
+// (internal/tick). TestBranchConditionCoverage guards the branch mnemonics.
 package builtin
 
 // IC10Insn is a native IC10 instruction: operand kinds (space-separated) and
@@ -27,6 +36,11 @@ var IC10Instructions = map[string]IC10Insn{
 	"bapzal": {"VALUE VALUE VALUE", "Branch to line c if abs(a) <= max(b * abs(a), float.epsilon * 8) and store next line number in ra"},
 	"bdns":   {"DEVICE VALUE", "Branch to line a if device d isn't set"},
 	"bdnsal": {"DEVICE VALUE", "Jump execution to line a and store next line number if device is not set"},
+	// bdnvl/bdnvs have no ScriptCommand* record in the game's localization, so
+	// their help is written here instead of being overlaid at init. The jump
+	// target is operand 3 — see ic10asm.TargetIndex("dnvl").
+	"bdnvl":  {"DEVICE LOGIC_TYPE VALUE", "Branch to the target line if the device's load for that logicType is invalid"},
+	"bdnvs":  {"DEVICE LOGIC_TYPE VALUE", "Branch to the target line if the device's store for that logicType is invalid"},
 	"bdse":   {"DEVICE VALUE", "Branch to line a if device d is set"},
 	"bdseal": {"DEVICE VALUE", "Jump execution to line a and store next line number if device is set"},
 	"beq":    {"VALUE VALUE VALUE", "Branch to line c if a == b"},
@@ -50,7 +64,7 @@ var IC10Instructions = map[string]IC10Insn{
 	"bltz":   {"VALUE VALUE", "Branch to line b if a < 0"},
 	"bltzal": {"VALUE VALUE", "Branch to line b if a < 0 and store next line number in ra"},
 	"bna":    {"VALUE VALUE VALUE VALUE", "Branch to line d if abs(a - b) > max(c * max(abs(a), abs(b)), float.epsilon * 8)"},
-	"bnaal":  {"VALUE VALUE VALUE VALUE", "Branch to line d if abs(a - b) <= max(c * max(abs(a), abs(b)), float.epsilon * 8) and store next line number in ra"},
+	"bnaal":  {"VALUE VALUE VALUE VALUE", "Branch to line d if abs(a - b) > max(c * max(abs(a), abs(b)), float.epsilon * 8) and store next line number in ra"},
 	"bnan":   {"VALUE VALUE", "Branch to line b if a is not a number (NaN)"},
 	"bnaz":   {"VALUE VALUE VALUE", "Branch to line c if abs(a) > max (b * abs(a), float.epsilon * 8)"},
 	"bnazal": {"VALUE VALUE VALUE", "Branch to line c if abs(a) > max (b * abs(a), float.epsilon * 8) and store next line number in ra"},
