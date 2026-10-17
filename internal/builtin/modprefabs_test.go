@@ -2,16 +2,16 @@ package builtin
 
 import "testing"
 
-// TestModPrefabsAreInTable keeps modPrefabs a subset of Prefabs: the list is a
-// claim about names that do exist (with the mod installed), so a stale or
-// mistyped entry would otherwise silently do nothing.
-func TestModPrefabsAreInTable(t *testing.T) {
+// TestModPrefabsAreNotInTable: the tables are the game's, not the enabled mods'.
+// tools/import-devices drops every name in modPrefabs on import, so a name that
+// is back means either the filter was bypassed or the export smuggled a mod in.
+func TestModPrefabsAreNotInTable(t *testing.T) {
 	if len(modPrefabs) == 0 {
 		t.Fatal("modPrefabs is empty")
 	}
 	for name := range modPrefabs {
-		if _, ok := Prefabs[name]; !ok {
-			t.Errorf("%q is listed as a mod prefab but is not in Prefabs", name)
+		if _, ok := Prefabs[name]; ok {
+			t.Errorf("%q comes from a third-party mod but is in Prefabs; re-run tools/import-devices", name)
 		}
 		for _, r := range name {
 			if r > 127 {

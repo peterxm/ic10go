@@ -68,14 +68,15 @@ Two details that cost a run to learn:
   bundle — Mirrored Devices adds an `*Mirrored` copy of many structures from its
   DLL — so a single early scan would miss them.
 - **`displayName` follows the player's game language.** `tools/import-devices`
-  therefore keeps the existing (English) titles and uses the prefab name for new
-  entries; run the game in English if you want the scan itself to carry English
-  titles.
-- **The tables mirror the export's mod set.** Every enabled workshop mod
-  contributes its prefabs and devices like the game's own: the same machine wrote
-  2016 prefabs with the decoration mods on and 1759 with two of them off. Decide
-  which mods belong in the tables before exporting, and compare the count with
-  the previous run's to confirm the mod set is what you expected.
+  therefore keeps the existing (English) prefab titles, uses the prefab name for
+  new entries, and re-titles devices from the game's English localization; the
+  checked-in tables are English whatever language the game runs in.
+- **The export mirrors the mod set, the tables do not.** Every enabled workshop
+  mod contributes its prefabs and devices to the scan: the same machine wrote
+  2016 prefabs in one run and 1759 in another after mods were disabled. The
+  prefab count in the log is therefore how you tell which mod set an export saw.
+  `tools/import-devices` then drops the names in `internal/builtin/modprefabs.go`,
+  so the checked-in tables stay the game's.
 
 ```json
 {
@@ -109,10 +110,7 @@ This merges the prefab names into `internal/builtin/prefabs.go` (so the
 non-localized names are kept) and writes `internal/builtin/devicecatalog_gen.go`,
 which the editor uses to offer a prefab's own properties after `all(Prefab).`.
 
-Prefabs that an enabled mod adds come through like any other. They stay in the
-tables, because their hashes are real for players who install the mod, but the
-community wiki has no page for them: `internal/builtin/modprefabs.go` lists them
-so `ic10c lsp` does not turn a `hash("...")` into a dead search link. At the time
-of writing 395 of the 2522 prefabs and 115 of the 567 devices came from the six
-mods in that list. Re-derive the list (and its count test) when the mod set
-changes.
+Prefabs and devices that an enabled mod adds are dropped: `internal/builtin/modprefabs.go`
+lists the 395 prefabs and 115 devices that the 2026-10-18 export carried from six
+workshop mods, and the importer filters them out of both the export and the table
+it merges into. Re-derive the list (and its count test) when the mod set changes.

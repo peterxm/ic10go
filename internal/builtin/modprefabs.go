@@ -1,14 +1,13 @@
 package builtin
 
-// modPrefabs lists the prefabs that third-party mods add on top of the game.
+// modPrefabs lists the prefabs that third-party mods add on top of the game, so
+// that the tables can stay the game's.
 //
-// The tables mirror the export's mod set: every workshop mod that is enabled
-// when the exporter runs contributes its prefabs and devices like the game's own
-// (2016 prefabs with the decoration mods on, 1759 with them off). Their hashes
-// are real for the players who install those mods, so hash("...") completion and
-// the numeric hash reverse lookup keep them. The community wiki has no page for
-// them, though, and a search link that finds nothing is a wrong claim -- so
-// document links skip these names.
+// The tables are built from an in-game export, and an export mirrors the mod set
+// that was enabled when it ran: with the decoration/console mods on it wrote 2016
+// prefabs, with two of them off 1759. tools/import-devices drops every name below
+// -- from the export it is reading and from the table it is merging into -- so
+// the checked-in tables describe the game, and not somebody's mod list.
 //
 // Provenance (workshop 544550, 2026-10-18): each entry is a prefab file in the
 // mod's *.assets.manifest or a key in its gameData/Language/english.xml, plus the
@@ -22,10 +21,10 @@ package builtin
 //	Mirrored Devices (3614893812): 20
 //
 // StructureWallGeometryTMirrored is the one "*Mirrored" name the game itself
-// localizes, so it stays a game prefab and keeps its link. This is a
-// hand-maintained list on purpose, in the same spirit as scriptHelpKeep:
-// re-derive it when the mod set changes. TestModPrefabsAreInTable keeps it a
-// subset of Prefabs, and TestModPrefabsCount makes a re-derivation explicit.
+// localizes, so it stays a game prefab. This is a hand-maintained list on purpose,
+// in the same spirit as scriptHelpKeep: re-derive it when the mod set changes.
+// TestModPrefabsAreNotInTable fails if one of them ever reaches Prefabs again,
+// and TestModPrefabsCount makes a re-derivation explicit.
 var modPrefabs = map[string]bool{
 	"CompositeWallRounded":               true,
 	"CompositeWallRoundedBase":           true,
