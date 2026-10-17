@@ -142,14 +142,29 @@ func importPrefabs(jsonPath, outPath string) error {
 		if _, exists := merged[p.Name]; exists {
 			continue
 		}
-		title := p.DisplayName
-		if title == "" {
-			title = p.Name
+		// The scan's DisplayName follows the player's game language, so using it
+		// here would write e.g. Chinese titles for whatever the localization does
+		// not carry (measured: 239 new names, all with CJK titles). The table is
+		// English, and gengamedata can supply a real English title for any name the
+		// localization has; for the rest the prefab name is the truthful title.
+		merged[p.Name] = p.Name
+	}
+	// Titles an older import took from a localized scan carry the game's
+	// missing-localisation marker ("<N:CN:Key>", "<N:EN:Key>"); that is not a
+	// title. Normalise after the merge so entries that are not in this scan at all
+	// are repaired too.
+	repaired := 0
+	for name, title := range merged {
+		if strings.HasPrefix(title, "<N:") {
+			merged[name] = name
+			repaired++
 		}
-		merged[p.Name] = title
 	}
 	if err := writePrefabs(outPath, merged); err != nil {
 		return err
+	}
+	if repaired > 0 {
+		fmt.Printf("repaired %d missing-localisation titles\n", repaired)
 	}
 	fmt.Printf("wrote %s: %d prefabs (was %d, added %d)\n",
 		outPath, len(merged), before, len(merged)-before)

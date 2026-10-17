@@ -59,7 +59,18 @@ Documents\My Games\Stationeers\ic10go\
 ```
 
 `devices.json` uses the same shape as IZCode's catalog, so a file produced by
-either mod can be consumed:
+either mod can be consumed.
+
+Two details that cost a run to learn:
+
+- **The scan waits for the prefab count to stop changing**, and rescans when it
+  grows (a world load registers more). Prefabs arrive in stages — the game's own,
+  then each mod's, then variants like the `*Mirrored` structures — and scanning at
+  the first `Prefab.OnPrefabsLoaded` misses the later ones.
+- **`displayName` follows the player's game language.** `tools/import-devices`
+  therefore keeps the existing (English) titles and uses the prefab name for new
+  entries; run the game in English if you want the scan itself to carry English
+  titles.
 
 ```json
 {

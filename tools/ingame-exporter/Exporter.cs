@@ -43,17 +43,45 @@ namespace Ic10Go.Exporter
             if (_initialized) return;
             _initialized = true;
             Debug.Log("[" + ModId + "] " + ModName + " starting through " + entryPoint);
+            // Prefabs arrive in stages: the game's own data, then each mod's (the
+            // modular-console mod registers its parts from its entry point), and
+            // some variants (the *Mirrored structures) later still. Scanning on the
+            // first non-empty list -- or on Prefab.OnPrefabsLoaded, which fires
+            // after the first stage -- misses the later ones: measured 1716 prefabs
+            // and 547 devices that way, against 20 more devices in the previous
+            // export. Wait until the count has stopped changing instead.
+            _watchPrefabs = true;
+        }
+
+        private static bool _watchPrefabs;
+        private static int _lastPrefabCount = -1;
+        private static int _lastScannedCount = -1;
+        private static int _scans;
+        private static float _stableSince;
+
+        private void Update()
+        {
+            if (!_watchPrefabs) return;
+            int n = Prefab.AllPrefabs != null ? Prefab.AllPrefabs.Count : 0;
+            float now = Time.realtimeSinceStartup;
+            if (n == 0 || n != _lastPrefabCount)
+            {
+                _lastPrefabCount = n;
+                _stableSince = now;
+                return;
+            }
+            if (now - _stableSince < 5f) return;
+            // Scan again when the count grew: loading a world registers more
+            // prefabs (the *Mirrored structure variants among them), and a mod's
+            // entry point may add its own after the first pass. Four scans is
+            // plenty (boot, world load, and slack).
+            if (n == _lastScannedCount || _scans >= 4) return;
+            _lastScannedCount = n;
+            _scans++;
+            Debug.Log("[" + ModId + "] " + n + " prefabs stable for 5s; scanning (" + _scans + ")");
             try
             {
-                if (Prefab.AllPrefabs != null && Prefab.AllPrefabs.Count > 0)
-                {
-                    Scan();
-                }
-                else
-                {
-                    Debug.Log("[" + ModId + "] prefabs not loaded yet; waiting for OnPrefabsLoaded");
-                    Prefab.OnPrefabsLoaded += Scan;
-                }
+                Scan();
             }
             catch (Exception ex)
             {
@@ -157,7 +185,20 @@ namespace Ic10Go.Exporter
 
         private static string SafeName(Thing thing)
         {
-            try { return thing.PrefabName ?? string.Empty; } catch { return string.Empty; }
+            try
+            {
+                string name = thing.PrefabName;
+                if (!string.IsNullOrEmpty(name)) return name;
+            }
+            catch { }
+            // Prefabs that come from a mod's asset bundle can leave PrefabName
+            // empty; the asset's own name is what a hash("...") in a program has to
+            // match. This covers real, buildable things: the lettering kit's
+            // Text_0..Text_z are characters you can build (Stationpedia shows them
+            // under "Kit (Letters Small)"), and the rounded wall/panel variants are
+            // structures -- all with an empty PrefabName. Being untitled (the game
+            // shows "<N:CN:...>" for them) is not a reason to drop them.
+            try { return thing.name ?? string.Empty; } catch { return string.Empty; }
         }
 
         private static string SafeTitle(Thing thing, string fallback)

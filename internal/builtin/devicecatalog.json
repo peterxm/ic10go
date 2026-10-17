@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "gameVersion": "0.2.6428.27798",
-  "deviceCount": 566,
+  "deviceCount": 567,
   "devices": [
     {
       "prefabName": "Battery_Wireless_cell",
@@ -646,7 +646,7 @@
     {
       "prefabName": "ModularDeviceAlarm",
       "prefabHash": 1922318669,
-      "displayName": "<N:CN:ModularDeviceAlarm>",
+      "displayName": "Logic Alarm",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -654,7 +654,7 @@
     {
       "prefabName": "ModularDeviceBigLever",
       "prefabHash": -1095397205,
-      "displayName": "<N:CN:ModularDeviceBigLever>",
+      "displayName": "Big Lever",
       "slotCount": 0,
       "properties": [{"name": "Open", "logicType": 2, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -662,7 +662,7 @@
     {
       "prefabName": "ModularDeviceCardReader",
       "prefabHash": 1866581662,
-      "displayName": "<N:CN:ModularDeviceCardReader>",
+      "displayName": "Access Card Reader",
       "slotCount": 1,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Mode", "logicType": 3, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": [{"name": "Occupied", "logicSlotType": 1}, {"name": "OccupantHash", "logicSlotType": 2}, {"name": "Quantity", "logicSlotType": 3}, {"name": "Damage", "logicSlotType": 4}, {"name": "Class", "logicSlotType": 12}, {"name": "MaxQuantity", "logicSlotType": 15}, {"name": "PrefabHash", "logicSlotType": 17}, {"name": "SortingClass", "logicSlotType": 24}, {"name": "ReferenceId", "logicSlotType": 26}, {"name": "FreeSlots", "logicSlotType": 31}, {"name": "TotalSlots", "logicSlotType": 32}]
@@ -670,7 +670,7 @@
     {
       "prefabName": "ModularDeviceComputer",
       "prefabHash": -2028449761,
-      "displayName": "<N:CN:ModularDeviceComputer>",
+      "displayName": "Computer",
       "slotCount": 3,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Open", "logicType": 2, "read": true, "write": true}, {"name": "Error", "logicType": 4, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": [{"name": "Occupied", "logicSlotType": 1}, {"name": "OccupantHash", "logicSlotType": 2}, {"name": "Quantity", "logicSlotType": 3}, {"name": "Damage", "logicSlotType": 4}, {"name": "Class", "logicSlotType": 12}, {"name": "MaxQuantity", "logicSlotType": 15}, {"name": "PrefabHash", "logicSlotType": 17}, {"name": "SortingClass", "logicSlotType": 24}, {"name": "ReferenceId", "logicSlotType": 26}, {"name": "FreeSlots", "logicSlotType": 31}, {"name": "TotalSlots", "logicSlotType": 32}]
@@ -678,7 +678,7 @@
     {
       "prefabName": "ModularDeviceConsole",
       "prefabHash": -651766268,
-      "displayName": "<N:CN:ModularDeviceConsole>",
+      "displayName": "Console",
       "slotCount": 2,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Open", "logicType": 2, "read": true, "write": true}, {"name": "Error", "logicType": 4, "read": true, "write": false}, {"name": "Activate", "logicType": 9, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": [{"name": "Occupied", "logicSlotType": 1}, {"name": "OccupantHash", "logicSlotType": 2}, {"name": "Quantity", "logicSlotType": 3}, {"name": "Damage", "logicSlotType": 4}, {"name": "Class", "logicSlotType": 12}, {"name": "MaxQuantity", "logicSlotType": 15}, {"name": "PrefabHash", "logicSlotType": 17}, {"name": "SortingClass", "logicSlotType": 24}, {"name": "ReferenceId", "logicSlotType": 26}, {"name": "Mode", "logicSlotType": 28}, {"name": "FreeSlots", "logicSlotType": 31}, {"name": "TotalSlots", "logicSlotType": 32}]
@@ -686,7 +686,7 @@
     {
       "prefabName": "ModularDeviceDial",
       "prefabHash": 1465300791,
-      "displayName": "<N:CN:ModularDeviceDial>",
+      "displayName": "Logic Dial",
       "slotCount": 0,
       "properties": [{"name": "Mode", "logicType": 3, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "Ratio", "logicType": 24, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -694,7 +694,7 @@
     {
       "prefabName": "ModularDeviceDialSmall",
       "prefabHash": -1158984141,
-      "displayName": "<N:CN:ModularDeviceDialSmall>",
+      "displayName": "Logic Dial Small",
       "slotCount": 0,
       "properties": [{"name": "Mode", "logicType": 3, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "Ratio", "logicType": 24, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -702,7 +702,7 @@
     {
       "prefabName": "ModularDeviceEdgewiseMeter3",
       "prefabHash": -1958702412,
-      "displayName": "<N:CN:ModularDeviceEdgewiseMeter3>",
+      "displayName": "Edgewise Meter",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "Maximum", "logicType": 23, "read": true, "write": true}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}, {"name": "Minimum", "logicType": 277, "read": true, "write": true}],
       "slotProperties": []
@@ -710,15 +710,23 @@
     {
       "prefabName": "ModularDeviceEmergencyButton3x3",
       "prefabHash": 2088517573,
-      "displayName": "<N:CN:ModularDeviceEmergencyButton3x3>",
+      "displayName": "Emergency Button",
       "slotCount": 0,
       "properties": [{"name": "Activate", "logicType": 9, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
     },
     {
+      "prefabName": "ModularDeviceFlipCoverButton",
+      "prefabHash": -1542918971,
+      "displayName": "Flip Cover Button",
+      "slotCount": 0,
+      "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Open", "logicType": 2, "read": true, "write": true}, {"name": "Activate", "logicType": 9, "read": true, "write": true}, {"name": "Lock", "logicType": 10, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
+      "slotProperties": []
+    },
+    {
       "prefabName": "ModularDeviceFlipCoverSwitch",
       "prefabHash": -236516384,
-      "displayName": "<N:CN:ModularDeviceFlipCoverSwitch>",
+      "displayName": "Flip Cover Switch",
       "slotCount": 0,
       "properties": [{"name": "Open", "logicType": 2, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -726,7 +734,7 @@
     {
       "prefabName": "ModularDeviceFlipSwitch",
       "prefabHash": 1773255945,
-      "displayName": "<N:CN:ModularDeviceFlipSwitch>",
+      "displayName": "Flip Switch",
       "slotCount": 0,
       "properties": [{"name": "Setting", "logicType": 12, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -734,7 +742,7 @@
     {
       "prefabName": "ModularDeviceGauge2x2",
       "prefabHash": -1013553731,
-      "displayName": "<N:CN:ModularDeviceGauge2x2>",
+      "displayName": "Gauge 2x2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "Maximum", "logicType": 23, "read": true, "write": true}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}, {"name": "Minimum", "logicType": 277, "read": true, "write": true}],
       "slotProperties": []
@@ -742,7 +750,7 @@
     {
       "prefabName": "ModularDeviceGauge3x3",
       "prefabHash": -1252835556,
-      "displayName": "<N:CN:ModularDeviceGauge3x3>",
+      "displayName": "Gauge 3x3",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "Maximum", "logicType": 23, "read": true, "write": true}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}, {"name": "Minimum", "logicType": 277, "read": true, "write": true}],
       "slotProperties": []
@@ -750,7 +758,7 @@
     {
       "prefabName": "ModularDeviceLEDdisplay2",
       "prefabHash": -2041948072,
-      "displayName": "<N:CN:ModularDeviceLEDdisplay2>",
+      "displayName": "LED Display 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Mode", "logicType": 3, "read": true, "write": true}, {"name": "Error", "logicType": 4, "read": true, "write": false}, {"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -758,7 +766,7 @@
     {
       "prefabName": "ModularDeviceLEDdisplay3",
       "prefabHash": -246585138,
-      "displayName": "<N:CN:ModularDeviceLEDdisplay3>",
+      "displayName": "LED Display 3",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Mode", "logicType": 3, "read": true, "write": true}, {"name": "Error", "logicType": 4, "read": true, "write": false}, {"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -766,7 +774,7 @@
     {
       "prefabName": "ModularDeviceLabelDiode2",
       "prefabHash": 688119132,
-      "displayName": "<N:CN:ModularDeviceLabelDiode2>",
+      "displayName": "Label Diode 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Mode", "logicType": 3, "read": true, "write": true}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -774,7 +782,7 @@
     {
       "prefabName": "ModularDeviceLabelDiode3",
       "prefabHash": 1577381322,
-      "displayName": "<N:CN:ModularDeviceLabelDiode3>",
+      "displayName": "Label Diode 3",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Mode", "logicType": 3, "read": true, "write": true}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -782,7 +790,7 @@
     {
       "prefabName": "ModularDeviceLight",
       "prefabHash": 1829854055,
-      "displayName": "<N:CN:ModularDeviceLight>",
+      "displayName": "Light Diode",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -790,7 +798,7 @@
     {
       "prefabName": "ModularDeviceLightLarge",
       "prefabHash": 1644427753,
-      "displayName": "<N:CN:ModularDeviceLightLarge>",
+      "displayName": "Light Diode Large",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -798,7 +806,7 @@
     {
       "prefabName": "ModularDeviceLightSmall",
       "prefabHash": 1311586884,
-      "displayName": "<N:CN:ModularDeviceLightSmall>",
+      "displayName": "Light Diode Small",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -806,7 +814,7 @@
     {
       "prefabName": "ModularDeviceMeter3x3",
       "prefabHash": -1399920604,
-      "displayName": "<N:CN:ModularDeviceMeter3x3>",
+      "displayName": "Meter 3x3",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Mode", "logicType": 3, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "Maximum", "logicType": 23, "read": true, "write": false}, {"name": "Ratio", "logicType": 24, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -814,7 +822,7 @@
     {
       "prefabName": "ModularDeviceNumpad",
       "prefabHash": -377257892,
-      "displayName": "<N:CN:ModularDeviceNumpad>",
+      "displayName": "Logic Num Pad",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Mode", "logicType": 3, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -822,7 +830,7 @@
     {
       "prefabName": "ModularDeviceRoundButton",
       "prefabHash": 489382030,
-      "displayName": "<N:CN:ModularDeviceRoundButton>",
+      "displayName": "Logic Button Round",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Activate", "logicType": 9, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -830,7 +838,7 @@
     {
       "prefabName": "ModularDeviceSlider",
       "prefabHash": 1070499908,
-      "displayName": "<N:CN:ModularDeviceSlider>",
+      "displayName": "Logic Slider",
       "slotCount": 0,
       "properties": [{"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -838,7 +846,7 @@
     {
       "prefabName": "ModularDeviceSliderDiode1",
       "prefabHash": 2015129381,
-      "displayName": "<N:CN:ModularDeviceSliderDiode1>",
+      "displayName": "Diode Slide 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -846,7 +854,7 @@
     {
       "prefabName": "ModularDeviceSliderDiode2",
       "prefabHash": -518701409,
-      "displayName": "<N:CN:ModularDeviceSliderDiode2>",
+      "displayName": "Diode Slide 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -854,7 +862,7 @@
     {
       "prefabName": "ModularDeviceSquareButton",
       "prefabHash": 1462769197,
-      "displayName": "<N:CN:ModularDeviceSquareButton>",
+      "displayName": "Logic Button Square",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Activate", "logicType": 9, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -862,7 +870,7 @@
     {
       "prefabName": "ModularDeviceSwitch",
       "prefabHash": -1612655781,
-      "displayName": "<N:CN:ModularDeviceSwitch>",
+      "displayName": "Logic Switch",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "Setting", "logicType": 12, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": true}, {"name": "Color", "logicType": 38, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -870,7 +878,7 @@
     {
       "prefabName": "ModularDeviceThrottle3x2",
       "prefabHash": -1649777768,
-      "displayName": "<N:CN:ModularDeviceThrottle3x2>",
+      "displayName": "Logic Throttle",
       "slotCount": 0,
       "properties": [{"name": "Setting", "logicType": 12, "read": true, "write": true}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -878,7 +886,7 @@
     {
       "prefabName": "ModularDeviceUtilityButton2x2",
       "prefabHash": -1446063838,
-      "displayName": "<N:CN:ModularDeviceUtilityButton2x2>",
+      "displayName": "Utility Button",
       "slotCount": 0,
       "properties": [{"name": "Activate", "logicType": 9, "read": true, "write": true}, {"name": "Setting", "logicType": 12, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1606,7 +1614,7 @@
     {
       "prefabName": "StructureConsoleBase1",
       "prefabHash": 42559286,
-      "displayName": "<N:CN:StructureConsoleBase1>",
+      "displayName": "Console Base 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1614,7 +1622,7 @@
     {
       "prefabName": "StructureConsoleBase1Double",
       "prefabHash": -1213229589,
-      "displayName": "<N:CN:StructureConsoleBase1Double>",
+      "displayName": "Console Base 1 Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1622,7 +1630,7 @@
     {
       "prefabName": "StructureConsoleBase2",
       "prefabHash": -1686096244,
-      "displayName": "<N:CN:StructureConsoleBase2>",
+      "displayName": "Console Base 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1630,7 +1638,7 @@
     {
       "prefabName": "StructureConsoleBase2Double",
       "prefabHash": -2042130570,
-      "displayName": "<N:CN:StructureConsoleBase2Double>",
+      "displayName": "Console Base 2 Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1638,7 +1646,7 @@
     {
       "prefabName": "StructureConsoleBase3",
       "prefabHash": -326695398,
-      "displayName": "<N:CN:StructureConsoleBase3>",
+      "displayName": "Console Base 3",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1646,7 +1654,7 @@
     {
       "prefabName": "StructureConsoleBase3Double",
       "prefabHash": 540050626,
-      "displayName": "<N:CN:StructureConsoleBase3Double>",
+      "displayName": "Console Base 3 Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1654,7 +1662,7 @@
     {
       "prefabName": "StructureConsoleBase4",
       "prefabHash": 1927517113,
-      "displayName": "<N:CN:StructureConsoleBase4>",
+      "displayName": "Console Base 4",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1662,7 +1670,7 @@
     {
       "prefabName": "StructureConsoleBase4Double",
       "prefabHash": -443041204,
-      "displayName": "<N:CN:StructureConsoleBase4Double>",
+      "displayName": "Console Base 4 Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1670,7 +1678,7 @@
     {
       "prefabName": "StructureConsoleBase5",
       "prefabHash": 98870063,
-      "displayName": "<N:CN:StructureConsoleBase5>",
+      "displayName": "Console Base 5",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1678,7 +1686,7 @@
     {
       "prefabName": "StructureConsoleBase5Double",
       "prefabHash": 1138799096,
-      "displayName": "<N:CN:StructureConsoleBase5Double>",
+      "displayName": "Console Base 5 Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1686,7 +1694,7 @@
     {
       "prefabName": "StructureConsoleBase6",
       "prefabHash": -1662127467,
-      "displayName": "<N:CN:StructureConsoleBase6>",
+      "displayName": "Console Base 6",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1694,7 +1702,7 @@
     {
       "prefabName": "StructureConsoleBase6Double",
       "prefabHash": 1913170789,
-      "displayName": "<N:CN:StructureConsoleBase6Double>",
+      "displayName": "Console Base 6 Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1702,7 +1710,7 @@
     {
       "prefabName": "StructureConsoleBaseCorner1",
       "prefabHash": 55811590,
-      "displayName": "<N:CN:StructureConsoleBaseCorner1>",
+      "displayName": "Console Base Corner 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1710,7 +1718,7 @@
     {
       "prefabName": "StructureConsoleBaseCorner2",
       "prefabHash": -1705324612,
-      "displayName": "<N:CN:StructureConsoleBaseCorner2>",
+      "displayName": "Console Base Corner 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1718,7 +1726,7 @@
     {
       "prefabName": "StructureConsoleBaseCorner3",
       "prefabHash": -312606934,
-      "displayName": "<N:CN:StructureConsoleBaseCorner3>",
+      "displayName": "Console Base Corner 3",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1726,7 +1734,7 @@
     {
       "prefabName": "StructureConsoleBaseCorner4",
       "prefabHash": 1933142665,
-      "displayName": "<N:CN:StructureConsoleBaseCorner4>",
+      "displayName": "Console Base Corner 4",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1734,7 +1742,7 @@
     {
       "prefabName": "StructureConsoleBaseCorner5",
       "prefabHash": 71195167,
-      "displayName": "<N:CN:StructureConsoleBaseCorner5>",
+      "displayName": "Console Base Corner 5",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1742,7 +1750,7 @@
     {
       "prefabName": "StructureConsoleBaseCorner6",
       "prefabHash": -1657336923,
-      "displayName": "<N:CN:StructureConsoleBaseCorner6>",
+      "displayName": "Console Base Corner 6",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1750,7 +1758,7 @@
     {
       "prefabName": "StructureConsoleCornerInner1",
       "prefabHash": -1939225579,
-      "displayName": "<N:CN:StructureConsoleCornerInner1>",
+      "displayName": "Console Corner Inner 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1758,7 +1766,7 @@
     {
       "prefabName": "StructureConsoleCornerInner1Center",
       "prefabHash": -1496094388,
-      "displayName": "<N:CN:StructureConsoleCornerInner1Center>",
+      "displayName": "Console Corner Inner 1 Center",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1766,7 +1774,7 @@
     {
       "prefabName": "StructureConsoleCornerInner1Double",
       "prefabHash": 1019506823,
-      "displayName": "<N:CN:StructureConsoleCornerInner1Double>",
+      "displayName": "Console Corner Inner 1 Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1774,7 +1782,7 @@
     {
       "prefabName": "StructureConsoleCornerInner2",
       "prefabHash": 358651311,
-      "displayName": "<N:CN:StructureConsoleCornerInner2>",
+      "displayName": "Console Corner Inner 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1782,7 +1790,7 @@
     {
       "prefabName": "StructureConsoleCornerInner2Center",
       "prefabHash": -1757711407,
-      "displayName": "<N:CN:StructureConsoleCornerInner2Center>",
+      "displayName": "Console Corner Inner 2 Center",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1790,7 +1798,7 @@
     {
       "prefabName": "StructureConsoleCornerInner2Double",
       "prefabHash": 221014554,
-      "displayName": "<N:CN:StructureConsoleCornerInner2Double>",
+      "displayName": "Console Corner Inner 2 Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1806,7 +1814,7 @@
     {
       "prefabName": "StructureConsoleFlat1",
       "prefabHash": 1226329381,
-      "displayName": "<N:CN:StructureConsoleFlat1>",
+      "displayName": "Console Flat 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1814,7 +1822,7 @@
     {
       "prefabName": "StructureConsoleFlat1Corner",
       "prefabHash": 460781936,
-      "displayName": "<N:CN:StructureConsoleFlat1Corner>",
+      "displayName": "Console Flat 1 Corner",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1822,7 +1830,7 @@
     {
       "prefabName": "StructureConsoleFlat1Corner2",
       "prefabHash": 1254865352,
-      "displayName": "<N:CN:StructureConsoleFlat1Corner2>",
+      "displayName": "Console Flat 1 Corner 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1830,7 +1838,7 @@
     {
       "prefabName": "StructureConsoleFlat1Corner3",
       "prefabHash": 1036814686,
-      "displayName": "<N:CN:StructureConsoleFlat1Corner3>",
+      "displayName": "Console Flat 1 Corner 3",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1838,7 +1846,7 @@
     {
       "prefabName": "StructureConsoleFlat1Double",
       "prefabHash": -1062259045,
-      "displayName": "<N:CN:StructureConsoleFlat1Double>",
+      "displayName": "Console Flat 1 Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1846,7 +1854,7 @@
     {
       "prefabName": "StructureConsoleFlat2",
       "prefabHash": -804184929,
-      "displayName": "<N:CN:StructureConsoleFlat2>",
+      "displayName": "Console Flat 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1854,7 +1862,7 @@
     {
       "prefabName": "StructureConsoleFlat2Double",
       "prefabHash": -246993914,
-      "displayName": "<N:CN:StructureConsoleFlat2Double>",
+      "displayName": "Console Flat 2 Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1862,7 +1870,7 @@
     {
       "prefabName": "StructureConsoleFlat3",
       "prefabHash": -1491719159,
-      "displayName": "<N:CN:StructureConsoleFlat3>",
+      "displayName": "Console Flat 3",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1870,7 +1878,7 @@
     {
       "prefabName": "StructureConsoleFlat3Double",
       "prefabHash": 1462773682,
-      "displayName": "<N:CN:StructureConsoleFlat3Double>",
+      "displayName": "Console Flat 3 Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1878,7 +1886,7 @@
     {
       "prefabName": "StructureConsoleFlat3x2",
       "prefabHash": -1913470915,
-      "displayName": "<N:CN:StructureConsoleFlat3x2>",
+      "displayName": "Console Flat 3x2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1886,7 +1894,7 @@
     {
       "prefabName": "StructureConsoleFlat3x2Double",
       "prefabHash": 1228430734,
-      "displayName": "<N:CN:StructureConsoleFlat3x2Double>",
+      "displayName": "Console Flat 3x2 Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1894,7 +1902,7 @@
     {
       "prefabName": "StructureConsoleFlatCornerInner",
       "prefabHash": 1942925259,
-      "displayName": "<N:CN:StructureConsoleFlatCornerInner>",
+      "displayName": "Console Flat Corner Inner",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1902,7 +1910,7 @@
     {
       "prefabName": "StructureConsoleFlatCornerInnerDouble",
       "prefabHash": -1808376107,
-      "displayName": "<N:CN:StructureConsoleFlatCornerInnerDouble>",
+      "displayName": "Console Flat Corner Inner Double",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1910,7 +1918,7 @@
     {
       "prefabName": "StructureConsoleFlatCornerInnerDoubleCenter",
       "prefabHash": -1378441867,
-      "displayName": "<N:CN:StructureConsoleFlatCornerInnerDoubleCenter>",
+      "displayName": "Console Flat Corner Inner Center",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1966,7 +1974,7 @@
     {
       "prefabName": "StructureConsoleTerminal",
       "prefabHash": -1596279553,
-      "displayName": "<N:CN:StructureConsoleTerminal>",
+      "displayName": "Console Terminal",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1974,7 +1982,7 @@
     {
       "prefabName": "StructureConsoleTerminal2",
       "prefabHash": 930581300,
-      "displayName": "<N:CN:StructureConsoleTerminal2>",
+      "displayName": "Console Terminal 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1982,7 +1990,7 @@
     {
       "prefabName": "StructureConsoleWallMount1",
       "prefabHash": 4406430,
-      "displayName": "<N:CN:StructureConsoleWallMount1>",
+      "displayName": "Console Wall Mount 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -1990,7 +1998,7 @@
     {
       "prefabName": "StructureConsoleWallMount2",
       "prefabHash": -1723175644,
-      "displayName": "<N:CN:StructureConsoleWallMount2>",
+      "displayName": "Console Wall Mount 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4126,7 +4134,7 @@
     {
       "prefabName": "StructureTerminal1",
       "prefabHash": 586823709,
-      "displayName": "<N:CN:StructureTerminal1>",
+      "displayName": "Terminal 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4134,7 +4142,7 @@
     {
       "prefabName": "StructureTerminal2",
       "prefabHash": -1141675609,
-      "displayName": "<N:CN:StructureTerminal2>",
+      "displayName": "Terminal 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4142,7 +4150,7 @@
     {
       "prefabName": "StructureTerminalBase1",
       "prefabHash": -1334317299,
-      "displayName": "<N:CN:StructureTerminalBase1>",
+      "displayName": "Terminal Base 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4150,7 +4158,7 @@
     {
       "prefabName": "StructureTerminalBase2",
       "prefabHash": 696172215,
-      "displayName": "<N:CN:StructureTerminalBase2>",
+      "displayName": "Terminal Base 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4158,7 +4166,7 @@
     {
       "prefabName": "StructureTerminalBase3",
       "prefabHash": 1585024545,
-      "displayName": "<N:CN:StructureTerminalBase3>",
+      "displayName": "Terminal Base 3",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4166,7 +4174,7 @@
     {
       "prefabName": "StructureTerminalBase4",
       "prefabHash": -1071834238,
-      "displayName": "<N:CN:StructureTerminalBase4>",
+      "displayName": "Terminal Base 4",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4174,7 +4182,7 @@
     {
       "prefabName": "StructureTerminalCorner1",
       "prefabHash": -1782809989,
-      "displayName": "<N:CN:StructureTerminalCorner1>",
+      "displayName": "Terminal Corner 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4182,7 +4190,7 @@
     {
       "prefabName": "StructureTerminalCorner2",
       "prefabHash": 213199809,
-      "displayName": "<N:CN:StructureTerminalCorner2>",
+      "displayName": "Terminal Corner 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4190,7 +4198,7 @@
     {
       "prefabName": "StructureTerminalFlat2",
       "prefabHash": 1659868324,
-      "displayName": "<N:CN:StructureTerminalFlat2>",
+      "displayName": "Terminal Flat 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4198,7 +4206,7 @@
     {
       "prefabName": "StructureTerminalJoint1",
       "prefabHash": 272710579,
-      "displayName": "<N:CN:StructureTerminalJoint1>",
+      "displayName": "Terminal Joint 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4206,7 +4214,7 @@
     {
       "prefabName": "StructureTerminalJoint2",
       "prefabHash": -1991742967,
-      "displayName": "<N:CN:StructureTerminalJoint2>",
+      "displayName": "Terminal Joint 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4214,7 +4222,7 @@
     {
       "prefabName": "StructureTerminalJoint3",
       "prefabHash": -28353889,
-      "displayName": "<N:CN:StructureTerminalJoint3>",
+      "displayName": "Terminal Joint 3",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4222,7 +4230,7 @@
     {
       "prefabName": "StructureTerminalJoint4",
       "prefabHash": 1613483836,
-      "displayName": "<N:CN:StructureTerminalJoint4>",
+      "displayName": "Terminal Joint 4",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4230,7 +4238,7 @@
     {
       "prefabName": "StructureTerminalJoint5",
       "prefabHash": 388825002,
-      "displayName": "<N:CN:StructureTerminalJoint5>",
+      "displayName": "Terminal Joint 5",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4238,7 +4246,7 @@
     {
       "prefabName": "StructureTerminalJoint6",
       "prefabHash": -1910133232,
-      "displayName": "<N:CN:StructureTerminalJoint6>",
+      "displayName": "Terminal Joint 6",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4246,7 +4254,7 @@
     {
       "prefabName": "StructureTerminalJoint7",
       "prefabHash": -115171706,
-      "displayName": "<N:CN:StructureTerminalJoint7>",
+      "displayName": "Terminal Joint 7",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4254,7 +4262,7 @@
     {
       "prefabName": "StructureTerminalJoint8",
       "prefabHash": 1771930391,
-      "displayName": "<N:CN:StructureTerminalJoint8>",
+      "displayName": "Terminal Joint 8",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4262,7 +4270,7 @@
     {
       "prefabName": "StructureTerminalMount1",
       "prefabHash": 395043628,
-      "displayName": "<N:CN:StructureTerminalMount1>",
+      "displayName": "Terminal Mount 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4270,7 +4278,7 @@
     {
       "prefabName": "StructureTerminalMount2",
       "prefabHash": -1904037226,
-      "displayName": "<N:CN:StructureTerminalMount2>",
+      "displayName": "Terminal Mount 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4278,7 +4286,7 @@
     {
       "prefabName": "StructureTerminalSplit1",
       "prefabHash": -457601532,
-      "displayName": "<N:CN:StructureTerminalSplit1>",
+      "displayName": "Terminal Split 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4286,7 +4294,7 @@
     {
       "prefabName": "StructureTerminalTop1",
       "prefabHash": -1864713206,
-      "displayName": "<N:CN:StructureTerminalTop1>",
+      "displayName": "Terminal Top 1",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
@@ -4294,7 +4302,7 @@
     {
       "prefabName": "StructureTerminalTop2",
       "prefabHash": 164883888,
-      "displayName": "<N:CN:StructureTerminalTop2>",
+      "displayName": "Terminal Top 2",
       "slotCount": 0,
       "properties": [{"name": "Power", "logicType": 1, "read": true, "write": false}, {"name": "On", "logicType": 28, "read": true, "write": false}, {"name": "RequiredPower", "logicType": 33, "read": true, "write": false}, {"name": "PrefabHash", "logicType": 84, "read": true, "write": false}, {"name": "ReferenceId", "logicType": 217, "read": true, "write": false}, {"name": "NameHash", "logicType": 268, "read": true, "write": false}],
       "slotProperties": []
