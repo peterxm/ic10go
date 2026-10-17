@@ -25,7 +25,7 @@ func TestModPrefabsAreInTable(t *testing.T) {
 // TestModPrefabsCount pins the size of the list. Re-deriving it after a new
 // export is a deliberate act (see the comment on modPrefabs): update both.
 func TestModPrefabsCount(t *testing.T) {
-	const want = 138
+	const want = 395
 	if got := len(modPrefabs); got != want {
 		t.Errorf("modPrefabs has %d entries, want %d; if the mod set changed, "+
 			"re-derive the list and update this count", got, want)

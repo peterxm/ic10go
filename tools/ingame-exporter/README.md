@@ -64,19 +64,18 @@ either mod can be consumed.
 Two details that cost a run to learn:
 
 - **The scan waits for the prefab count to stop changing**, and rescans when it
-  grows (a world load registers more). Prefabs arrive in stages — the game's own,
-  then each mod's, then variants like the `*Mirrored` structures — and scanning at
-  the first `Prefab.OnPrefabsLoaded` misses the later ones.
+  grows. Some mods create prefabs at runtime instead of shipping them in their
+  bundle — Mirrored Devices adds an `*Mirrored` copy of many structures from its
+  DLL — so a single early scan would miss them.
 - **`displayName` follows the player's game language.** `tools/import-devices`
   therefore keeps the existing (English) titles and uses the prefab name for new
   entries; run the game in English if you want the scan itself to carry English
   titles.
-- **The prefab count has to be checked, not trusted.** The canary above waits for
-  the count to stop changing, but a scan can still end up short: the same mod set
-  produced 2016 prefabs in one run and 1759 in another, and loading a world
-  afterwards did not add the difference back. Compare the count in the log with
-  the previous export and re-run if it dropped -- `tools/import-devices` cannot
-  tell a short scan from a complete one.
+- **The tables mirror the export's mod set.** Every enabled workshop mod
+  contributes its prefabs and devices like the game's own: the same machine wrote
+  2016 prefabs with the decoration mods on and 1759 with two of them off. Decide
+  which mods belong in the tables before exporting, and compare the count with
+  the previous run's to confirm the mod set is what you expected.
 
 ```json
 {
@@ -113,5 +112,7 @@ which the editor uses to offer a prefab's own properties after `all(Prefab).`.
 Prefabs that an enabled mod adds come through like any other. They stay in the
 tables, because their hashes are real for players who install the mod, but the
 community wiki has no page for them: `internal/builtin/modprefabs.go` lists them
-so `ic10c lsp` does not turn a `hash("...")` into a dead search link. Re-derive
-that list (and its count test) after an export that has mods enabled.
+so `ic10c lsp` does not turn a `hash("...")` into a dead search link. At the time
+of writing 395 of the 2522 prefabs and 115 of the 567 devices came from the six
+mods in that list. Re-derive the list (and its count test) when the mod set
+changes.

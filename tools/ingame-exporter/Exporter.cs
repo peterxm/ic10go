@@ -191,13 +191,15 @@ namespace Ic10Go.Exporter
                 if (!string.IsNullOrEmpty(name)) return name;
             }
             catch { }
-            // Prefabs that come from a mod's asset bundle can leave PrefabName
-            // empty; the asset's own name is what a hash("...") in a program has to
-            // match. This covers real, buildable things: the lettering kit's
-            // Text_0..Text_z are characters you can build (Stationpedia shows them
-            // under "Kit (Letters Small)"), and the rounded wall/panel variants are
-            // structures -- all with an empty PrefabName. Being untitled (the game
-            // shows "<N:CN:...>" for them) is not a reason to drop them.
+            // Prefabs can leave PrefabName empty; the asset's own name is what a
+            // hash("...") in a program has to match. This is not only a mod
+            // problem: LettersMod ships Text_0..Text_z (and LText_*) with an empty
+            // PrefabName, and the game reports CRC32("Text_K") = 1448182275 for
+            // that character, so the asset name is the hash key. T.U.B.E. has the
+            // same shape for its rounded wall/panel variants. Being untitled (the
+            // game shows "<N:CN:...>" for them) is not a reason to drop them, and
+            // it is not a claim that they are the game's own prefabs -- the
+            // exporter writes whatever the loaded mod set provides.
             try { return thing.name ?? string.Empty; } catch { return string.Empty; }
         }
 
