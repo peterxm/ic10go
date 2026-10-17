@@ -260,7 +260,9 @@ func wikiURL(title string) string {
 }
 
 // prefabLinksFor links prefab names inside hash("…") / HASH("…") and numeric
-// prefab hashes to the community wiki.
+// prefab hashes to the community wiki. Prefabs that only exist with a
+// third-party mod get no link: the wiki has no page for them, and a search that
+// finds nothing is worse than no link at all.
 func prefabLinksFor(text string) []any {
 	var out []any
 	for _, fn := range []string{`hash("`, `HASH("`} {
@@ -278,7 +280,7 @@ func prefabLinksFor(text string) []any {
 			name := text[contentStart : contentStart+end]
 			idx = contentStart + end
 			title, ok := builtin.Prefabs[name]
-			if !ok {
+			if !ok || builtin.IsModPrefab(name) {
 				continue
 			}
 			start := offsetToLSP(text, contentStart)
@@ -300,7 +302,7 @@ func prefabLinksFor(text string) []any {
 			continue
 		}
 		name, ok := builtin.PrefabByHash[h]
-		if !ok {
+		if !ok || builtin.IsModPrefab(name) {
 			continue
 		}
 		start := offsetToLSP(text, t.Pos.Offset)

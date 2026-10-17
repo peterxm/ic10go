@@ -71,6 +71,12 @@ Two details that cost a run to learn:
   therefore keeps the existing (English) titles and uses the prefab name for new
   entries; run the game in English if you want the scan itself to carry English
   titles.
+- **The prefab count has to be checked, not trusted.** The canary above waits for
+  the count to stop changing, but a scan can still end up short: the same mod set
+  produced 2016 prefabs in one run and 1759 in another, and loading a world
+  afterwards did not add the difference back. Compare the count in the log with
+  the previous export and re-run if it dropped -- `tools/import-devices` cannot
+  tell a short scan from a complete one.
 
 ```json
 {
@@ -103,3 +109,9 @@ go run ./tools/import-devices            # finds the files under My Games
 This merges the prefab names into `internal/builtin/prefabs.go` (so the
 non-localized names are kept) and writes `internal/builtin/devicecatalog_gen.go`,
 which the editor uses to offer a prefab's own properties after `all(Prefab).`.
+
+Prefabs that an enabled mod adds come through like any other. They stay in the
+tables, because their hashes are real for players who install the mod, but the
+community wiki has no page for them: `internal/builtin/modprefabs.go` lists them
+so `ic10c lsp` does not turn a `hash("...")` into a dead search link. Re-derive
+that list (and its count test) after an export that has mods enabled.

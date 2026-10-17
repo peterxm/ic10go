@@ -786,6 +786,21 @@ func TestDocumentLinkPrefab(t *testing.T) {
 	}
 }
 
+func TestDocumentLinkSkipsModPrefabs(t *testing.T) {
+	const name = "ModularDeviceConsole"
+	if !builtin.IsModPrefab(name) {
+		t.Fatalf("%s should be listed as a mod prefab", name)
+	}
+	out := openAndRequest(t, "m.icg", `func main() { d0.Setting = hash("`+name+`") }`, "textDocument/documentLink", "")
+	if strings.Contains(out, "stationeers-wiki.com") {
+		t.Errorf("a mod prefab has no wiki page, so it must not link there:\n%s", out)
+	}
+	out = openAndRequest(t, "m2.icg", fmt.Sprintf("func main() { d0.Setting = %d }", builtin.Hash(name)), "textDocument/documentLink", "")
+	if strings.Contains(out, "stationeers-wiki.com") {
+		t.Errorf("a numeric mod prefab hash must not link to the wiki either:\n%s", out)
+	}
+}
+
 func TestIC10Formatting(t *testing.T) {
 	out := openAndRequest(t, "f.ic", "move   r0   1\nadd r1 2 3\n", "textDocument/formatting", "")
 	if !strings.Contains(out, `"newText"`) || !strings.Contains(out, "move r0 1") {
