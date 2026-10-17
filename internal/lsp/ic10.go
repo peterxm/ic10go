@@ -63,12 +63,12 @@ func ic10Diagnostics(text string) []lspDiagnostic {
 
 // ic10CompletionItems offers instructions, logic types, batch modes and, inside
 // HASH("…"), prefab names.
-func ic10CompletionItems(text string, pos lspPosition) []completionItem {
+func (s *Server) ic10CompletionItems(text string, pos lspPosition) []completionItem {
 	off := posToOffset(text, pos)
 	if start, prefix, ok := hashArgContext(text, off); ok {
-		return prefabItems(text, start, off, prefix)
+		return s.prefabItems(text, start, off, prefix)
 	}
-	if items, ok := ic10ArgItems(text, off); ok {
+	if items, ok := s.ic10ArgItems(text, off); ok {
 		return items
 	}
 	items := make([]completionItem, 0, len(builtin.IC10Instructions)+32)
@@ -94,7 +94,7 @@ func ic10CompletionItems(text string, pos lspPosition) []completionItem {
 
 // ic10ArgItems completes native IC10 operands by their declared kind
 // (DEVICE_TYPE → prefab, LOGIC_TYPE / BATCH_MODE / SLOT_LOGIC_TYPE → names).
-func ic10ArgItems(text string, off int) ([]completionItem, bool) {
+func (s *Server) ic10ArgItems(text string, off int) ([]completionItem, bool) {
 	lineStart := strings.LastIndexByte(text[:off], '\n') + 1
 	lineEnd := len(text)
 	if i := strings.IndexByte(text[off:], '\n'); i >= 0 {
@@ -130,7 +130,7 @@ func ic10ArgItems(text string, off int) ([]completionItem, bool) {
 	rng := lspRange{Start: offsetToLSP(text, start), End: offsetToLSP(text, end)}
 	switch kinds[argIdx] {
 	case "DEVICE_TYPE":
-		return prefabEditItems(rng, strings.ToLower(text[start:off]), true), true
+		return s.prefabEditItems(rng, strings.ToLower(text[start:off]), true), true
 	case "LOGIC_TYPE":
 		return nameEditItems(text, start, end, off, logicTypeNames(), "logic type", false), true
 	case "BATCH_MODE":

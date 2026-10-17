@@ -187,6 +187,12 @@
           "default": [],
           "markdownDescription": "%icg.libDirs.desc%"
         },
+        "icg.modPacks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "%icg.modPacks.desc%"
+        },
         "icg.trace.server": {
           "type": "string",
           "enum": ["off", "messages"],

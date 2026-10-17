@@ -46,6 +46,9 @@ type decompiler struct {
 	// bankLo/bankHi are the registers a dynamic indirect access can name; they
 	// stay physical (reserveRegs + ireg/setIreg). noBank when there is none.
 	bankLo, bankHi int
+	// prefabs resolves numeric hashes back to prefab names; the game tables by
+	// default, plus any mod packs the caller loaded.
+	prefabs *builtin.Catalog
 }
 
 // sharedStackDirective marks the output's housing stack as shared, so the
@@ -53,26 +56,50 @@ type decompiler struct {
 // private scratch. See the comment in decompile where it is emitted.
 const sharedStackDirective = "// icg: shared-stack\n"
 
+// Options tune a decompilation. The zero value is the plain one: the embedded
+// game tables and nothing else.
+type Options struct {
+	// Prefabs resolves numeric hashes to prefab names. A catalog with mod packs
+	// lets a program that uses a mod's prefabs decompile to hash("Name") instead
+	// of a bare number. Nil means builtin.Base().
+	Prefabs *builtin.Catalog
+}
+
 // Decompile converts IC10 source into .icg source. Control flow is expressed
 // with label/goto/call/ret.
 func Decompile(src string) (string, []Warning, error) {
-	return decompile(src, false)
+	return DecompileWith(src, Options{})
+}
+
+// DecompileWith is Decompile with options.
+func DecompileWith(src string, opts Options) (string, []Warning, error) {
+	return decompile(src, false, opts)
 }
 
 // DecompileStructured is like Decompile but attempts to recover structured
 // control flow (if/else/for). It is best-effort and falls back to goto for
 // patterns it cannot recognise.
 func DecompileStructured(src string) (string, []Warning, error) {
-	return decompile(src, true)
+	return DecompileStructuredWith(src, Options{})
 }
 
-func decompile(src string, structured bool) (string, []Warning, error) {
+// DecompileStructuredWith is DecompileStructured with options.
+func DecompileStructuredWith(src string, opts Options) (string, []Warning, error) {
+	return decompile(src, true, opts)
+}
+
+func decompile(src string, structured bool, opts Options) (string, []Warning, error) {
+	prefabs := opts.Prefabs
+	if prefabs == nil {
+		prefabs = builtin.Base()
+	}
 	d := &decompiler{
 		symbols:    map[string]string{},
 		labelsAt:   map[int][]string{},
 		nameToLine: map[string]int{},
 		labelAt:    map[int]string{},
 		usedLabels: map[string]bool{},
+		prefabs:    prefabs,
 	}
 
 	raw := strings.Split(src, "\n")
@@ -269,7 +296,7 @@ func (d *decompiler) operand(s string) string {
 	if isBareIdent(s) && !d.valueOperandOK(s) {
 		return "raw(" + strconv.Quote(s) + ")"
 	}
-	return normalizeCall(normalizeHash(normalizeNumber(s)))
+	return normalizeCall(d.normalizeHash(normalizeNumber(s)))
 }
 
 // isBareIdent reports whether s is a plain identifier (letters, digits and
@@ -277,12 +304,12 @@ func (d *decompiler) operand(s string) string {
 
 // normalizeHash rewrites a numeric prefab hash back to hash("Name") when the
 // value is a known prefab. It is semantically identical but far more readable.
-func normalizeHash(s string) string {
+func (d *decompiler) normalizeHash(s string) string {
 	v, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return s
 	}
-	if name, ok := builtin.PrefabByHash[uint32(int32(v))]; ok {
+	if name, ok := d.prefabs.PrefabName(uint32(int32(v))); ok {
 		return "hash(" + strconv.Quote(name) + ")"
 	}
 	return s

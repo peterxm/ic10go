@@ -22,6 +22,7 @@
   "icg.mergeRenamedTails.desc": "在可证明安全时，额外合并寄存器分配不同但结构相同的尾块。实验性；默认关闭。",
   "icg.extractSetup.desc": "把序言里的一次性常量设备写外提到一次性 loader（runtime 更短；需先运行一次 loader）。有 data 段时会自动复用 loader，此项让 128 行以内也强制外提。",
   "icg.libDirs.desc": "在导入文件所在目录之后，额外搜索 `import` 的目录。相对路径以第一个工作区目录为基准。",
+  "icg.modPacks.desc": "游戏内导出的 `prefabs.json`/`devices.json`（或包含它们的目录，或 `标签=路径`），让补全认识 mod 的预制体与设备。只有游戏表里没有的名字才算 mod 数据，且不生成社区 wiki 链接。相对路径以第一个工作区目录为基准。",
   "icg.trace.server.desc": "在 IC10 Go 输出通道中记录与语言服务器之间的消息。",
   "icg.runSteps.desc": "`IC10 Go: 在内置 VM 中运行` 的步数上限（`--steps`）。0 使用编译器默认值（1000）。",
   "icg.runTrace.desc": "在内置 VM 运行时打印每条执行的指令（`--trace`）。",

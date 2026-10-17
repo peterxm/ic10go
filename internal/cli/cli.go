@@ -558,7 +558,7 @@ var Commands = []Command{
 		Examples: []string{"ic10c disasm old.ic"},
 	},
 	{
-		Name: "decompile", Args: "[-s] [--stack-id SLOT=REFID ...] [-o out.icg] <file.ic>",
+		Name: "decompile", Args: "[-s] [--stack-id SLOT=REFID ...] [--mods [LABEL=]PATH ...] [-o out.icg] <file.ic>",
 		Summary: text{EN: "translate IC10 into .icg source", ZH: "将 IC10 反编译为 .icg 源码"},
 		Long: text{
 			EN: "Translate an IC10 program into .icg source. Aliases and defines\n" +
@@ -570,6 +570,10 @@ var Commands = []Command{
 				"literal id, so the id-loading scaffolding disappears.\n\n" +
 				"With --structured the decompiler recovers if/else/for using the\n" +
 				"post-dominator tree, and falls back to goto where it cannot.\n\n" +
+				"With --mods the prefix/device hashes of a mod are resolved too: pass\n" +
+				"the in-game exporter's output directory (or its prefabs.json), and\n" +
+				"repeat the flag for several packs. The tables themselves stay the\n" +
+				"game's.\n\n" +
 				"To only shrink the line count while keeping the original\n" +
 				"instructions and register usage, use `ic10c minify` instead.",
 			ZH: "--stack-id SLOT=REFID（可重复）把「设备 ReferenceId 存在宿主栈里」\n" +
@@ -578,6 +582,8 @@ var Commands = []Command{
 				"变量 r0..r15，控制流变为 label/goto/call/ret。不支持的指令会在\n" +
 				"stderr 报告，并在源码中作为注释保留。\n\n" +
 				"加 --structured 时用后支配树还原 if/else/for；无法还原的部分回退为 goto。\n\n" +
+				"加 --mods 时连 mod 的预制体 hash 也能还原成名字：参数给游戏内导出器的\n" +
+				"输出目录（或它的 prefabs.json），多个包可重复该选项。表本身仍是游戏的。\n\n" +
 				"若只想压缩行数、保持原指令与寄存器分配不变，请改用 `ic10c minify`。",
 		},
 		Flags: []Flag{
@@ -589,11 +595,16 @@ var Commands = []Command{
 				EN: "write the result to a file instead of stdout",
 				ZH: "将结果写入文件而不是标准输出",
 			}},
+			{Long: "--mods", Arg: "[LABEL=]PATH", Desc: text{
+				EN: "also resolve prefab hashes from an in-game export (repeatable)",
+				ZH: "额外从游戏内导出解析预制体 hash（可重复）",
+			}},
 			commonHelp,
 		},
 		Examples: []string{
 			"ic10c decompile old.ic",
 			"ic10c decompile --structured -o old.icg old.ic",
+			`ic10c decompile --mods LettersMod=~/mods/letters.export old.ic`,
 		},
 	},
 	{

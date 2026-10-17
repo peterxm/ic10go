@@ -121,7 +121,8 @@ class LspClient {
                     e.affectsConfiguration('icg.userStack') ||
                     e.affectsConfiguration('icg.redundantDeviceWrites') ||
                     e.affectsConfiguration('icg.mergeRenamedTails') ||
-                    e.affectsConfiguration('icg.libDirs')
+                    e.affectsConfiguration('icg.libDirs') ||
+                    e.affectsConfiguration('icg.modPacks')
                 ) {
                     this.restart();
                 }
@@ -259,6 +260,7 @@ class LspClient {
             locale: vscode.env.language,
             initializationOptions: {
                 libDirs: this.resolvedLibDirs(),
+                modPacks: this.resolvedModPacks(),
             },
             capabilities: {
                 textDocument: {
@@ -439,6 +441,30 @@ class LspClient {
         return dirs
             .filter((d) => typeof d === 'string' && d.length > 0)
             .map((d) => (folder && !path.isAbsolute(d) ? path.join(folder.uri.fsPath, d) : d));
+    }
+
+    // resolvedModPacks returns icg.modPacks ("path" or "label=path") with
+    // relative paths resolved against the first workspace folder. The language
+    // server loads them; only the label part may be relative-free.
+    resolvedModPacks() {
+        const packs = vscode.workspace.getConfiguration('icg').get('modPacks') || [];
+        const folder = (vscode.workspace.workspaceFolders || [])[0];
+        return packs
+            .filter((p) => typeof p === 'string' && p.length > 0)
+            .map((p) => {
+                const eq = p.indexOf('=');
+                const label = eq >= 0 ? p.slice(0, eq) : '';
+                const target = eq >= 0 ? p.slice(eq + 1) : p;
+                const resolved = folder && !path.isAbsolute(target) ? path.join(folder.uri.fsPath, target) : target;
+                return label ? `${label}=${resolved}` : resolved;
+            });
+    }
+
+    // modArgs returns the `--mods PACK` flags for the configured mod packs.
+    modArgs() {
+        const args = [];
+        for (const p of this.resolvedModPacks()) args.push('--mods', p);
+        return args;
     }
 
     // execCli runs the ic10c binary with the given arguments.
@@ -681,7 +707,7 @@ class LspClient {
 
     async decompile() {
         const doc = this.activeDoc(['ic10']);
-        if (doc) await this.runTool(doc, ['decompile', '-s'], 'icg');
+        if (doc) await this.runTool(doc, ['decompile', '-s', ...this.modArgs()], 'icg');
     }
 
     async minify() {

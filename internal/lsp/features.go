@@ -173,7 +173,7 @@ func (s *Server) documentLink(w *bufio.Writer, id json.RawMessage, params json.R
 		return
 	}
 	links := documentLinksFor(p.TextDocument.URI, s.docs[p.TextDocument.URI])
-	links = append(links, prefabLinksFor(s.docs[p.TextDocument.URI])...)
+	links = append(links, s.prefabLinksFor(s.docs[p.TextDocument.URI])...)
 	links = append(links, s.importLinksFor(p.TextDocument.URI, s.docs[p.TextDocument.URI])...)
 	reply(w, id, links)
 }
@@ -263,7 +263,7 @@ func wikiURL(title string) string {
 // prefab hashes to the community wiki. Only names the table carries get a link:
 // the tables are the game's (tools/import-devices drops third-party prefabs), so
 // a mod's prefab has no entry and therefore no link.
-func prefabLinksFor(text string) []any {
+func (s *Server) prefabLinksFor(text string) []any {
 	var out []any
 	for _, fn := range []string{`hash("`, `HASH("`} {
 		idx := 0
@@ -279,15 +279,15 @@ func prefabLinksFor(text string) []any {
 			}
 			name := text[contentStart : contentStart+end]
 			idx = contentStart + end
-			title, ok := builtin.Prefabs[name]
-			if !ok {
+			e, ok := s.catalog.Prefab(name)
+			if !ok || !e.Source.IsGame() {
 				continue
 			}
 			start := offsetToLSP(text, contentStart)
 			stop := offsetToLSP(text, contentStart+end)
 			out = append(out, map[string]any{
 				"range":  lspRange{Start: start, End: stop},
-				"target": wikiURL(title),
+				"target": wikiURL(e.Title),
 			})
 		}
 	}
@@ -301,15 +301,19 @@ func prefabLinksFor(text string) []any {
 		if !ok {
 			continue
 		}
-		name, ok := builtin.PrefabByHash[h]
+		name, ok := s.catalog.PrefabName(h)
 		if !ok {
+			continue
+		}
+		e, ok := s.catalog.Prefab(name)
+		if !ok || !e.Source.IsGame() {
 			continue
 		}
 		start := offsetToLSP(text, t.Pos.Offset)
 		end := lspPosition{Line: start.Line, Character: start.Character + utf16Len(t.Text)}
 		out = append(out, map[string]any{
 			"range":  lspRange{Start: start, End: end},
-			"target": wikiURL(builtin.Prefabs[name]),
+			"target": wikiURL(e.Title),
 		})
 	}
 	return out

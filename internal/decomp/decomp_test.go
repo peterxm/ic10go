@@ -1,8 +1,12 @@
 package decomp
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"ic10go/internal/builtin"
 )
 
 func TestDecompileBasic(t *testing.T) {
@@ -578,5 +582,34 @@ func TestDecompileNumericDeviceID(t *testing.T) {
 	}
 	if strings.Contains(code, "704.") {
 		t.Errorf("a bare ReferenceId must not be rendered as a port:\n%s", code)
+	}
+}
+
+func TestDecompileWithModCatalogNamesModHashes(t *testing.T) {
+	// 1448182275 = Hash("Text_K"), a LettersMod prefab the game tables do not have.
+	src := "s d0 Setting 1448182275\n"
+	code, _, err := Decompile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(code, "Text_K") {
+		t.Fatalf("the game catalog should not know Text_K:\n%s", code)
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "prefabs.json"),
+		[]byte(`{"prefabs":[{"name":"Text_K","displayName":"Letter K"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pack, err := builtin.LoadPack("LettersMod", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, err = DecompileWith(src, Options{Prefabs: builtin.Base().WithPacks(pack)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(code, `hash("Text_K")`) {
+		t.Errorf("a mod prefab hash should resolve once the pack is loaded:\n%s", code)
 	}
 }

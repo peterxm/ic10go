@@ -22,6 +22,7 @@
   "icg.mergeRenamedTails.desc": "Also merge structurally-identical tails whose registers were allocated differently, when provably safe. Experimental; off by default.",
   "icg.extractSetup.desc": "Hoist one-time constant device writes into a one-time loader (shorter runtime; run the loader once). A data segment already reuses the loader automatically; this forces it under the line limit too.",
   "icg.libDirs.desc": "Extra directories to search for `import` files, after the importing file's directory. Relative paths resolve against the first workspace folder.",
+  "icg.modPacks.desc": "In-game exports (`prefabs.json`/`devices.json`, a directory holding them, or `label=path`) whose extra prefabs and devices completion should know about. Only names the game tables do not have are treated as mod data, and they get no wiki link. Relative paths resolve against the first workspace folder.",
   "icg.trace.server.desc": "Trace the messages exchanged with the language server in the IC10 Go output channel.",
   "icg.runSteps.desc": "Instruction budget for `IC10 Go: Run in VM` (`--steps`). 0 uses the compiler default (1000).",
   "icg.runTrace.desc": "Print every executed instruction when running in the VM (`--trace`).",

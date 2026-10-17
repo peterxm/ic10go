@@ -63,6 +63,12 @@ type Server struct {
 	root  string // workspace root (filesystem path), for workspace symbols
 	// libDirs are extra search roots for imports, from initializationOptions.
 	libDirs []string
+	// catalog is the embedded game tables plus the mod packs the client named in
+	// initializationOptions.modPacks. Base() unless packs were loaded.
+	catalog *builtin.Catalog
+	// packLog holds what loadPacks wants to tell the user. It is flushed after
+	// the initialize response: a server must not send notifications before it.
+	packLog []string
 	// importDiags maps a document URI to the imported-file URIs it last
 	// published diagnostics for, so removed imports can be cleared.
 	importDiags map[string]map[string]bool
@@ -70,7 +76,7 @@ type Server struct {
 
 // New returns a Server.
 func New() *Server {
-	return &Server{docs: map[string]string{}, langs: map[string]string{}, importDiags: map[string]map[string]bool{}}
+	return &Server{docs: map[string]string{}, langs: map[string]string{}, importDiags: map[string]map[string]bool{}, catalog: builtin.Base()}
 }
 
 // Run serves the connection until EOF or an exit notification.
@@ -99,12 +105,14 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 					URI string `json:"uri"`
 				} `json:"workspaceFolders"`
 				InitializationOptions struct {
-					LibDirs []string `json:"libDirs"`
+					LibDirs  []string `json:"libDirs"`
+					ModPacks []string `json:"modPacks"`
 				} `json:"initializationOptions"`
 			}
 			_ = json.Unmarshal(msg.Params, &init)
 			s.zh = strings.HasPrefix(strings.ToLower(init.Locale), "zh")
 			s.libDirs = init.InitializationOptions.LibDirs
+			s.loadPacks(init.InitializationOptions.ModPacks)
 			switch {
 			case len(init.Workspaces) > 0:
 				s.root = fileURIToPath(init.Workspaces[0].URI)
@@ -153,7 +161,7 @@ func (s *Server) Run(r io.Reader, w io.Writer) error {
 				"serverInfo": map[string]any{"name": "ic10c", "version": version.Short()},
 			})
 		case "initialized":
-			// no-op
+			s.flushPackLog(writer)
 		case "shutdown":
 			reply(writer, msg.ID, nil)
 		case "exit":
@@ -632,8 +640,10 @@ func (s *Server) resolveCompletion(w *bufio.Writer, id json.RawMessage, params j
 		item.Documentation = &markupContent{Kind: "markdown", Value: fmt.Sprintf("constant `%s = %v`", label, builtin.RawConstants[label])}
 	case isBatchMode(label):
 		item.Documentation = &markupContent{Kind: "markdown", Value: fmt.Sprintf("batch mode `%s = %v`", label, builtin.BatchModes[label])}
-	case isPrefab(label):
-		item.Documentation = &markupContent{Kind: "markdown", Value: fmt.Sprintf("prefab `%s` (%s) = `%d`", label, builtin.Prefabs[label], int32(builtin.Hash(label)))}
+	case s.isPrefab(label):
+		if e, ok := s.catalog.Prefab(label); ok {
+			item.Documentation = &markupContent{Kind: "markdown", Value: s.prefabText(label, e)}
+		}
 	}
 	reply(w, id, item)
 }
@@ -655,7 +665,7 @@ func (s *Server) completion(w *bufio.Writer, id json.RawMessage, params json.Raw
 	}
 	text := s.docs[p.TextDocument.URI]
 	if s.native(p.TextDocument.URI) {
-		reply(w, id, attachDetail(ic10CompletionItems(text, p.Position)))
+		reply(w, id, attachDetail(s.ic10CompletionItems(text, p.Position)))
 		return
 	}
 	off := posToOffset(text, p.Position)
@@ -667,7 +677,7 @@ func (s *Server) completion(w *bufio.Writer, id json.RawMessage, params json.Raw
 		reply(w, id, attachDetail(importPathItems(text, start, off, dir, prefix)))
 		return
 	}
-	reply(w, id, attachDetail(completionItemsFor(text, p.Position)))
+	reply(w, id, attachDetail(s.completionItemsFor(text, p.Position)))
 }
 
 // importArgContext reports whether the cursor is inside the path of an
@@ -744,11 +754,11 @@ func importPathItems(text string, start, off int, dir, prefix string) []completi
 // completionItemsFor returns context-aware completion items: after a device
 // port it offers logic types, after "batch" the batch methods, after an enum
 // name its members, and elsewhere keywords plus the document's own symbols.
-func completionItemsFor(text string, pos lspPosition) []completionItem {
+func (s *Server) completionItemsFor(text string, pos lspPosition) []completionItem {
 	off := posToOffset(text, pos)
 	// Inside hash("…") / HASH("…") complete prefab names.
 	if start, prefix, ok := hashArgContext(text, off); ok {
-		return prefabItems(text, start, off, prefix)
+		return s.prefabItems(text, start, off, prefix)
 	}
 	i := off
 	for i > 0 && isWordByte(text[i-1]) {
@@ -758,7 +768,7 @@ func completionItemsFor(text string, pos lspPosition) []completionItem {
 		if i >= 2 && text[i-2] == ']' {
 			return slotTypeItems()
 		}
-		if items, ok := trailingSelectorItems(text[:i-1]); ok {
+		if items, ok := s.trailingSelectorItems(text[:i-1]); ok {
 			return items
 		}
 		j := i - 1
@@ -769,7 +779,7 @@ func completionItemsFor(text string, pos lspPosition) []completionItem {
 		if items, ok := busSlotItems(text, recv); ok {
 			return items
 		}
-		if items, ok := devicePropertyItems(recv); ok {
+		if items, ok := s.devicePropertyItems(recv); ok {
 			return items
 		}
 		switch {
@@ -787,7 +797,7 @@ func completionItemsFor(text string, pos lspPosition) []completionItem {
 			return deviceMemberItems()
 		}
 	}
-	if items, ok := argCompletionItems(text, off); ok {
+	if items, ok := s.argCompletionItems(text, off); ok {
 		return items
 	}
 	items := baseCompletionItems()
@@ -881,8 +891,8 @@ func logicTypeItems() []completionItem {
 // devicePropertyItems completes a logic-capable prefab's own properties when the
 // scan knows it, so `all(StructureVolumePump).` offers what that pump accepts
 // instead of the whole vocabulary.
-func devicePropertyItems(prefab string) ([]completionItem, bool) {
-	d, ok := builtin.DeviceCatalog[prefab]
+func (s *Server) devicePropertyItems(prefab string) ([]completionItem, bool) {
+	d, ok := s.catalog.Device(prefab)
 	if !ok || len(d.Properties) == 0 {
 		return nil, false
 	}
@@ -904,12 +914,12 @@ func devicePropertyItems(prefab string) ([]completionItem, bool) {
 // trailingSelectorItems completes after a selector written as `all(Name).`. The
 // text before the dot is scanned for the call; a bare word receiver is left to
 // the ordinary path.
-func trailingSelectorItems(before string) ([]completionItem, bool) {
+func (s *Server) trailingSelectorItems(before string) ([]completionItem, bool) {
 	name, ok := trailingAllSelector(before)
 	if !ok {
 		return nil, false
 	}
-	return devicePropertyItems(name)
+	return s.devicePropertyItems(name)
 }
 
 // trailingAllSelector reports whether s ends with `all(Name)` and returns Name.
@@ -1081,8 +1091,8 @@ func isBatchMode(name string) bool {
 	return ok
 }
 
-func isPrefab(name string) bool {
-	_, ok := builtin.Prefabs[name]
+func (s *Server) isPrefab(name string) bool {
+	_, ok := s.catalog.Prefab(name)
 	return ok
 }
 
@@ -1121,26 +1131,35 @@ func hashArgContext(text string, off int) (int, string, bool) {
 
 // prefabItems completes prefab names inside a hash("…") string, replacing the
 // typed prefix via a text edit (the default word range is empty in a string).
-func prefabItems(text string, contentStart, off int, prefix string) []completionItem {
+func (s *Server) prefabItems(text string, contentStart, off int, prefix string) []completionItem {
 	rng := lspRange{Start: offsetToLSP(text, contentStart), End: offsetToLSP(text, off)}
 	lp := strings.ToLower(prefix)
 	items := make([]completionItem, 0, 32)
-	for name, title := range builtin.Prefabs {
+	s.catalog.EachPrefab(func(name string, e builtin.PrefabEntry) {
 		if lp != "" &&
 			!strings.Contains(strings.ToLower(name), lp) &&
-			!strings.Contains(strings.ToLower(title), lp) {
-			continue
+			!strings.Contains(strings.ToLower(e.Title), lp) {
+			return
 		}
 		items = append(items, completionItem{
 			Label:    name,
 			Kind:     21,
-			Detail:   title,
+			Detail:   prefabDetail(e),
 			TextEdit: &textEdit{Range: rng, NewText: name},
 			Data:     map[string]any{"label": name},
 		})
-	}
+	})
 	sortItems(items)
 	return items
+}
+
+// prefabDetail is a completion item's detail line: the title, plus the pack a
+// mod prefab came from.
+func prefabDetail(e builtin.PrefabEntry) string {
+	if e.Source.IsGame() {
+		return e.Title
+	}
+	return e.Title + " · " + e.Source.Name
 }
 
 // callParams maps a call target to the kind of completion offered at each
@@ -1180,7 +1199,7 @@ var callParams = map[string][]string{
 
 // argCompletionItems returns context-specific completions when off sits at a
 // known call argument (batch.*, sorter/printer hash builders, hash builtins).
-func argCompletionItems(text string, off int) ([]completionItem, bool) {
+func (s *Server) argCompletionItems(text string, off int) ([]completionItem, bool) {
 	callee, argIndex, argStart, ok := callContext(text, off)
 	if !ok {
 		return nil, false
@@ -1191,7 +1210,7 @@ func argCompletionItems(text string, off int) ([]completionItem, bool) {
 	}
 	switch kinds[argIndex] {
 	case "prefab":
-		return prefabArgItems(text, argStart, off), true
+		return s.prefabArgItems(text, argStart, off), true
 	case "logic":
 		return quotedArgItems(text, argStart, off, logicTypeNames(), "logic type"), true
 	case "mode":
@@ -1204,24 +1223,24 @@ func argCompletionItems(text string, off int) ([]completionItem, bool) {
 
 // prefabArgItems completes prefab names at a call argument, inserting
 // hash("Name") so the compiler folds it to a CRC-32 constant.
-func prefabArgItems(text string, argStart, off int) []completionItem {
+func (s *Server) prefabArgItems(text string, argStart, off int) []completionItem {
 	start, end := wordOffsetsAt(text, off)
 	if start < argStart {
 		start = argStart
 	}
 	rng := lspRange{Start: offsetToLSP(text, start), End: offsetToLSP(text, end)}
-	return prefabEditItems(rng, strings.ToLower(text[start:off]), false)
+	return s.prefabEditItems(rng, strings.ToLower(text[start:off]), false)
 }
 
 // prefabEditItems builds prefab completions replacing rng with hash("…") (or
 // HASH("…") for native IC10).
-func prefabEditItems(rng lspRange, lp string, upper bool) []completionItem {
+func (s *Server) prefabEditItems(rng lspRange, lp string, upper bool) []completionItem {
 	items := make([]completionItem, 0, 64)
-	for name, title := range builtin.Prefabs {
+	s.catalog.EachPrefab(func(name string, e builtin.PrefabEntry) {
 		if lp != "" &&
 			!strings.Contains(strings.ToLower(name), lp) &&
-			!strings.Contains(strings.ToLower(title), lp) {
-			continue
+			!strings.Contains(strings.ToLower(e.Title), lp) {
+			return
 		}
 		newText := fmt.Sprintf("hash(%q)", name)
 		if upper {
@@ -1230,11 +1249,11 @@ func prefabEditItems(rng lspRange, lp string, upper bool) []completionItem {
 		items = append(items, completionItem{
 			Label:    name,
 			Kind:     21,
-			Detail:   title,
+			Detail:   prefabDetail(e),
 			TextEdit: &textEdit{Range: rng, NewText: newText},
 			Data:     map[string]any{"label": name},
 		})
-	}
+	})
 	sortItems(items)
 	return items
 }
@@ -1370,24 +1389,34 @@ func prefabHashAt(text string, pos lspPosition) (uint32, bool) {
 	return uint32(v), true
 }
 
-func (s *Server) prefabText(name, title string) string {
+func (s *Server) prefabText(name string, e builtin.PrefabEntry) string {
 	h := int32(builtin.Hash(name))
-	if s.zh {
-		return fmt.Sprintf("预制体 `%s`（%s）= `%d`\n\n`hash(\"%s\")`", name, title, h, name)
+	note := ""
+	if !e.Source.IsGame() {
+		if s.zh {
+			note = fmt.Sprintf("\n\n来自 mod 包 `%s` —— 社区 wiki 没有它的页面", e.Source.Name)
+		} else {
+			note = fmt.Sprintf("\n\nfrom the mod pack `%s`; the community wiki has no page for it", e.Source.Name)
+		}
 	}
-	return fmt.Sprintf("prefab `%s` (%s) = `%d`\n\n`hash(\"%s\")`", name, title, h, name)
+	if s.zh {
+		return fmt.Sprintf("预制体 `%s`（%s）= `%d`\n\n`hash(\"%s\")`%s", name, e.Title, h, name, note)
+	}
+	return fmt.Sprintf("prefab `%s` (%s) = `%d`\n\n`hash(\"%s\")`%s", name, e.Title, h, name, note)
 }
 
 // prefabHoverAt returns hover text for a prefab name or numeric prefab hash.
 func (s *Server) prefabHoverAt(text string, pos lspPosition) string {
 	if word, _ := wordAtOffset(text, pos); word != "" {
-		if title, ok := builtin.Prefabs[word]; ok {
-			return s.prefabText(word, title)
+		if e, ok := s.catalog.Prefab(word); ok {
+			return s.prefabText(word, e)
 		}
 	}
 	if h, ok := prefabHashAt(text, pos); ok {
-		if name, ok := builtin.PrefabByHash[h]; ok {
-			return s.prefabText(name, builtin.Prefabs[name])
+		if name, ok := s.catalog.PrefabName(h); ok {
+			if e, ok := s.catalog.Prefab(name); ok {
+				return s.prefabText(name, e)
+			}
 		}
 	}
 	return ""
@@ -1401,11 +1430,53 @@ func (s *Server) prefabTable(w *bufio.Writer, id json.RawMessage) {
 		Name  string `json:"name"`
 		Title string `json:"title"`
 	}
-	out := make(map[string]entry, len(builtin.PrefabByHash))
-	for h, name := range builtin.PrefabByHash {
-		out[strconv.FormatUint(uint64(h), 10)] = entry{Name: name, Title: builtin.Prefabs[name]}
-	}
+	out := make(map[string]entry, s.catalog.Len())
+	s.catalog.EachPrefab(func(name string, e builtin.PrefabEntry) {
+		out[strconv.FormatUint(uint64(builtin.Hash(name)), 10)] = entry{Name: name, Title: prefabDetail(e)}
+	})
 	reply(w, id, map[string]any{"prefabs": out})
+}
+
+// loadPacks merges the client's mod packs into the catalog. A broken pack is a
+// log line, not a failed startup: the game tables still work, and leaving the
+// editor half-initialized would be worse.
+func (s *Server) loadPacks(specs []string) {
+	if len(specs) == 0 {
+		return
+	}
+	base := builtin.Base()
+	packs := make([]*builtin.Pack, 0, len(specs))
+	for _, spec := range specs {
+		p, err := builtin.LoadPackSpec(spec)
+		if err != nil {
+			s.packLog = append(s.packLog, "ic10go: "+err.Error())
+			continue
+		}
+		packs = append(packs, p)
+	}
+	s.catalog = base.WithPacks(packs...)
+	if n := s.catalog.ModPrefabs(); n > 0 {
+		s.packLog = append(s.packLog, fmt.Sprintf("ic10go: +%d mod prefabs, +%d mod devices from %d pack(s)",
+			n, s.catalog.ModDevices(), len(packs)))
+	}
+	for _, warn := range s.catalog.Warnings() {
+		s.packLog = append(s.packLog, "ic10go: "+warn)
+	}
+}
+
+// flushPackLog reports what loadPacks found. It runs on the "initialized"
+// notification, after the client has the initialize response.
+func (s *Server) flushPackLog(w *bufio.Writer) {
+	for _, line := range s.packLog {
+		s.logMessage(w, line)
+	}
+	s.packLog = nil
+}
+
+// logMessage sends a window/logMessage notification (type 3 = info). The client
+// shows it in its output channel; nothing here is a diagnostic.
+func (s *Server) logMessage(w *bufio.Writer, text string) {
+	notify(w, "window/logMessage", map[string]any{"type": 3, "message": text})
 }
 
 // busSlotHoverAt describes a bus name or a `Bus.slot` access.

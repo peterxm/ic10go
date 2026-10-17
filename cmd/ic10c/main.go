@@ -12,8 +12,10 @@ import (
 	"strings"
 
 	"ic10go/internal/ast"
+	"ic10go/internal/builtin"
 	"ic10go/internal/cfg"
 	"ic10go/internal/cli"
+	"ic10go/internal/decomp"
 	"ic10go/internal/diag"
 	"ic10go/internal/disasm"
 	"ic10go/internal/flow"
@@ -1833,7 +1835,7 @@ func cmdDisasm(args []string) int {
 func cmdDecompile(args []string) int {
 	in, out := "", ""
 	structured := false
-	var stackIDs []string
+	var stackIDs, modSpecs []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "-o", "--output":
@@ -1843,6 +1845,11 @@ func cmdDecompile(args []string) int {
 			}
 		case "-s", "--structured":
 			structured = true
+		case "--mods":
+			if i+1 < len(args) {
+				modSpecs = append(modSpecs, args[i+1])
+				i++
+			}
 		case "--stack-id":
 			if i+1 < len(args) {
 				stackIDs = append(stackIDs, args[i+1])
@@ -1865,7 +1872,12 @@ func cmdDecompile(args []string) int {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 2
 	}
-	code, warns, err := ic10.Decompile(in, data, structured)
+	catalog, err := modCatalog(modSpecs)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ic10c:", err)
+		return 1
+	}
+	code, warns, err := ic10.DecompileWith(in, data, structured, decomp.Options{Prefabs: catalog})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ic10c:", err)
 		return 1
@@ -1882,6 +1894,29 @@ func cmdDecompile(args []string) int {
 	}
 	fmt.Print(code)
 	return 0
+}
+
+// modCatalog returns the embedded game tables plus the packs named by --mods
+// ("path" or "label=path", repeatable). Warnings go to stderr; the tables still
+// work when a pack is stale.
+func modCatalog(specs []string) (*builtin.Catalog, error) {
+	base := builtin.Base()
+	if len(specs) == 0 {
+		return base, nil
+	}
+	packs := make([]*builtin.Pack, 0, len(specs))
+	for _, spec := range specs {
+		p, err := builtin.LoadPackSpec(spec)
+		if err != nil {
+			return nil, err
+		}
+		packs = append(packs, p)
+	}
+	cat := base.WithPacks(packs...)
+	for _, w := range cat.Warnings() {
+		fmt.Fprintln(os.Stderr, "ic10c: "+w)
+	}
+	return cat, nil
 }
 
 func cmdLSP() int {

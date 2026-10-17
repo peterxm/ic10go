@@ -801,6 +801,53 @@ func TestDocumentLinkSkipsModPrefabs(t *testing.T) {
 	}
 }
 
+func TestModPackCompletesAndSkipsWiki(t *testing.T) {
+	dir := t.TempDir()
+	prefabs := `{"formatVersion":1,"gameVersion":"0.2.6428.27798","prefabs":[` +
+		`{"name":"Text_K","hash":1448182275,"displayName":"Letter K"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "prefabs.json"), []byte(prefabs), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec := "LettersMod=" + dir
+	init := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"initializationOptions":{"modPacks":[` + jsonString(spec) + `]}}}`
+
+	// Completion inside HASH("…") sees the pack's prefab.
+	src := `func main() { d0.Setting = hash("Tex") }`
+	pos := 36 // just after "Tex"
+	out := runServer(t,
+		frame(init),
+		frame(`{"jsonrpc":"2.0","method":"initialized","params":{}}`),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"mp.icg","text":`+jsonString(src)+`}}}`),
+		frame(fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":"mp.icg"},"position":{"line":0,"character":%d}}}`, pos)),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "+1 mod prefabs") {
+		t.Errorf("the server should report what the pack added:\n%s", out)
+	}
+	if !strings.Contains(out, "Text_K") {
+		t.Errorf("mod pack prefab missing from completion:\n%s", out)
+	}
+	if !strings.Contains(out, "LettersMod") {
+		t.Errorf("completion detail should name the pack:\n%s", out)
+	}
+
+	// Hover names the pack; the document link stays away from the wiki.
+	src = `func main() { d0.Setting = hash("Text_K") }`
+	out = runServer(t,
+		frame(init),
+		frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"mp2.icg","text":`+jsonString(src)+`}}}`),
+		frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"mp2.icg"},"position":{"line":0,"character":34}}}`),
+		frame(`{"jsonrpc":"2.0","id":3,"method":"textDocument/documentLink","params":{"textDocument":{"uri":"mp2.icg"}}}`),
+		frame(`{"jsonrpc":"2.0","id":4,"method":"shutdown"}`),
+	)
+	if !strings.Contains(out, "LettersMod") {
+		t.Errorf("hover should name the mod pack:\n%s", out)
+	}
+	if strings.Contains(out, "stationeers-wiki.com") {
+		t.Errorf("a mod prefab must not link to the community wiki:\n%s", out)
+	}
+}
+
 func TestIC10Formatting(t *testing.T) {
 	out := openAndRequest(t, "f.ic", "move   r0   1\nadd r1 2 3\n", "textDocument/formatting", "")
 	if !strings.Contains(out, `"newText"`) || !strings.Contains(out, "move r0 1") {
@@ -825,9 +872,10 @@ func TestCompletionChipScope(t *testing.T) {
 	src := "const Shared = 1\n" +
 		"chip a {\n    const LocalA = 2\n    func main() { x := 0 }\n}\n" +
 		"chip b {\n    const LocalB = 3\n    func main() { }\n}\n"
+	srv := New()
 	labels := func(pos lspPosition) string {
 		var out []string
-		for _, it := range completionItemsFor(src, pos) {
+		for _, it := range srv.completionItemsFor(src, pos) {
 			out = append(out, it.Label)
 		}
 		return strings.Join(out, ",")
@@ -854,7 +902,7 @@ func TestBusEditorSupport(t *testing.T) {
 	// Bus.slot completion.
 	src := "bus B {\n    x num\n    y num\n}\nchip c {\n    func main() { B. }\n}\n"
 	var labels []string
-	for _, it := range completionItemsFor(src, lspPosition{Line: 5, Character: 20}) {
+	for _, it := range New().completionItemsFor(src, lspPosition{Line: 5, Character: 20}) {
 		labels = append(labels, it.Label)
 	}
 	joined := strings.Join(labels, ",")

@@ -114,3 +114,8 @@ Prefabs and devices that an enabled mod adds are dropped: `internal/builtin/modp
 lists the 395 prefabs and 115 devices that the 2026-10-18 export carried from six
 workshop mods, and the importer filters them out of both the export and the table
 it merges into. Re-derive the list (and its count test) when the mod set changes.
+
+The same export can feed the editor without touching the tables: point
+`icg.modPacks` (or `ic10c decompile --mods`) at this directory. The names the
+game tables already have stay the game's; only the rest are attributed to the
+pack, appear in completion and hover, and get no community-wiki link.

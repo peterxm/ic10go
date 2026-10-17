@@ -199,6 +199,7 @@ func main() {
 | `icg.mergeRenamedTails` | `false` | 在可证明安全时额外合并寄存器分配不同但结构相同的尾块（实验性） |
 | `icg.extractSetup` | `false` | 把序言里的一次性常量设备写外提到一次性 loader（runtime 更短；上传时会自动先跑 loader） |
 | `icg.libDirs` | `[]` | 额外的 `import` 搜索目录（在导入文件所在目录之后查找）；相对路径以第一个工作区目录为基准。同时作用于语言服务器与编译/运行 |
+| `icg.modPacks` | `[]` | 游戏内导出的 mod 数据：`prefabs.json`/`devices.json`、包含它们的目录，或 `标签=路径`。只有游戏表里没有的名字才算 mod 数据（自动打上来源），补全会列出它们，`hash("…")`/hover/数字反查都能用，但**不生成社区 wiki 链接**。相对路径以第一个工作区目录为基准。改设置会重启语言服务器 |
 | `icg.trace.server` | `off` | 设为 `messages` 时在 `IC10 Go` 输出通道记录与语言服务器之间的消息 |
 | `icg.runSteps` | `0` | VM 运行步数上限（`--steps`）；`0` 用编译器默认 1000 |
 | `icg.runTrace` | `false` | VM 运行时打印每条执行的指令（`--trace`） |

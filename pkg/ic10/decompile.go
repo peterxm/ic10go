@@ -22,15 +22,21 @@ const dynamicStackDirective = "// icg: dynamic-stack\n"
 // the default fixed user-stack bound, so the output gets the `dynamic-stack`
 // pragma and builds without flags (CLI and editor alike).
 func Decompile(name string, src []byte, structured bool) (string, []decomp.Warning, error) {
+	return DecompileWith(name, src, structured, decomp.Options{})
+}
+
+// DecompileWith is Decompile with decompiler options: a catalog that includes
+// mod packs resolves those prefab hashes to names too.
+func DecompileWith(name string, src []byte, structured bool, opts decomp.Options) (string, []decomp.Warning, error) {
 	if !structured {
-		code, warns, err := decomp.Decompile(string(src))
+		code, warns, err := decomp.DecompileWith(string(src), opts)
 		if err != nil {
 			return code, warns, err
 		}
 		code, _ = compileOrMarkDynamic(name, code)
 		return code, warns, nil
 	}
-	code, warns, err := decomp.DecompileStructured(string(src))
+	code, warns, err := decomp.DecompileStructuredWith(string(src), opts)
 	if err != nil {
 		return code, warns, err
 	}
@@ -38,7 +44,7 @@ func Decompile(name string, src []byte, structured bool) (string, []decomp.Warni
 		return marked, warns, nil
 	}
 	// Structuring could not be trusted; fall back to the flat form.
-	flat, fwarns, ferr := decomp.Decompile(string(src))
+	flat, fwarns, ferr := decomp.DecompileWith(string(src), opts)
 	if ferr != nil {
 		return flat, fwarns, ferr
 	}
