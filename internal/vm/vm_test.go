@@ -391,25 +391,24 @@ func TestWorldWire(t *testing.T) {
 	}
 }
 
-func TestForwardAliasResolution(t *testing.T) {
-	// IC10 aliases are position independent: `self` is aliased to db after it
-	// is used, so the write must land on db rather than a device named "self".
+func TestForwardAliasIsNotResolved(t *testing.T) {
+	// IC10 aliases bind in source order: a use above its `alias` line does not
+	// see it. Measured in game (0.2.6428.27798, 2026-10-18): the chip raises
+	// IncorrectVariable. The VM is lenient and treats the name as a device, so
+	// the write must not land on db.
 	src := "s self Mode 1\nalias self db\n"
 	m := run(t, src, 10)
-	if got := m.Get("db", "Mode"); got != 1 {
-		t.Errorf("db.Mode = %v, want 1", got)
-	}
-	if _, ok := m.Devices["self"]; ok {
-		t.Errorf("created a device named %q; alias was not resolved", "self")
+	if got := m.Get("db", "Mode"); got == 1 {
+		t.Errorf("db.Mode = 1; a forward alias must not resolve")
 	}
 }
 
-func TestForwardDefineResolution(t *testing.T) {
-	// A define used above its definition must still be substituted.
+func TestForwardDefineIsNotResolved(t *testing.T) {
+	// The same source-order rule applies to define.
 	src := "move r0 LIMIT\ns d0 Setting r0\ndefine LIMIT 42\n"
 	m := run(t, src, 10)
-	if got := m.Get("d0", "Setting"); got != 42 {
-		t.Errorf("d0.Setting = %v, want 42", got)
+	if got := m.Get("d0", "Setting"); got == 42 {
+		t.Errorf("d0.Setting = 42; a forward define must not resolve")
 	}
 }
 
@@ -496,5 +495,22 @@ func TestReset(t *testing.T) {
 	}
 	if got := m.Get("d0", "Setting"); got != 11 {
 		t.Errorf("after Reset: Setting = %v, want 11 (register preserved)", got)
+	}
+}
+
+// TestAliasBindsAtPointOfUse pins the game's alias scoping, measured in game
+// (2026-10-18): a use sees the binding in effect on its own line, so the write
+// below goes through r0 even though `alias v r1` follows it.
+func TestAliasBindsAtPointOfUse(t *testing.T) {
+	m := New()
+	m.Device("d0")
+	if err := m.Load("alias v r0\nmove r0 111\nmove r1 222\ns d0 Setting v\nalias v r1\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Run(10); err != nil && err != ErrStepLimit {
+		t.Fatal(err)
+	}
+	if got := m.Devices["d0"].Values["Setting"]; got != 111 {
+		t.Errorf("Setting = %v, want 111 (the r0 binding in effect on that line)", got)
 	}
 }

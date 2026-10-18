@@ -50,17 +50,20 @@ func requireIc10Code(t *testing.T) {
 // intentionally skip: invalid IC10 (the original would not assemble in-game),
 // or a decompile->recompile that cannot preserve behaviour. Keys are file base
 // names with or without extension.
-var knownUnsupported = map[string]string{}
+var knownUnsupported = map[string]string{
+	"filtration_automation_2026_04_003.ic10": "uses `self` above `alias self db`; the game rejects a forward alias with IncorrectVariable (measured in game 2026-10-18)",
+}
 
 // knownUnsupportedPorts lists hand ports whose original cannot be run for the
 // port-equivalence test (invalid IC10: the source uses an undefined `hash`
 // register, which would not assemble in-game).
 var knownUnsupportedPorts = map[string]string{
-	"oreSorter":      "source uses an undefined `hash` register (invalid IC10)",
-	"sorterSample":   "source uses an undefined `hash` register (invalid IC10)",
-	"solverLarge":    "over the 128-line budget and publishes to the housing stack without `shared-stack`",
-	"solverLargeRAW": "over the 128-line budget and publishes to the housing stack without `shared-stack`",
-	"主气闸管理IC":        "keeps its device ReferenceIds in the host stack; the harness does not preset the stack, so the original has nothing to compare",
+	"oreSorter":                         "source uses an undefined `hash` register (invalid IC10)",
+	"sorterSample":                      "source uses an undefined `hash` register (invalid IC10)",
+	"solverLarge":                       "over the 128-line budget and publishes to the housing stack without `shared-stack`",
+	"solverLargeRAW":                    "over the 128-line budget and publishes to the housing stack without `shared-stack`",
+	"主气闸管理IC":                           "keeps its device ReferenceIds in the host stack; the harness does not preset the stack, so the original has nothing to compare",
+	"filtration_automation_2026_04_003": "uses `self` above `alias self db`; the game rejects a forward alias with IncorrectVariable (measured 2026-10-18)",
 }
 
 // skipKnownUnsupported skips a corpus file listed in knownUnsupported.
