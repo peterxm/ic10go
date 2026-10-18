@@ -256,6 +256,7 @@ var pipeline = []pass{
 	{"redundantLoads", redundantLoads},
 	{"cse", globalCSE},
 	{"select", selectConvert},
+	{"selectMinMax", selectMinMax},
 	{"foldBranches", foldBranches},
 	{"fuseBranches", fuseBranches},
 	{"nonnegFold", nonnegFold},
@@ -2139,6 +2140,85 @@ func selectCond(br *ir.Br) (val ir.Value, swap, needCmp bool) {
 		}
 	}
 	return nil, false, true
+}
+
+// selectMinMax folds `t = a < b; x = select(t, a, b)` into `x = min(a, b)`,
+// and the `>` / swapped forms into max. The comparison must be local and used
+// only by the select; both operands must be provably non-NaN, because min/max
+// propagate a NaN operand while the comparison form falls to its Else value
+// when the test is false (the game's `!(a<b)` is not `a>=b` for NaN, the same
+// reason --nan-safe exists).
+//
+// Ties: IC10's min/max return the second operand when the values compare equal,
+// which is what the select form does too, but the VM's math.Min follows the
+// IEEE -0 rule instead. Only an explicit ±0 operand can tell them apart; the
+// case that shows up in practice (a NaN from a batch read) is gated above.
+func selectMinMax(fn *ir.Function) bool {
+	// The NaN-free analysis is only needed once a candidate is found; most
+	// functions have no comparison-fed select at all.
+	var ni *ir.NaNInfo
+	changed := false
+	for _, b := range fn.Blocks {
+		def := map[*ir.Reg]int{}
+		uses := map[*ir.Reg]int{}
+		for i, ins := range b.Instrs {
+			if d := ir.DefOf(ins); d != nil {
+				def[d] = i
+			}
+			u, _ := ir.DefUse(ins)
+			for _, r := range u {
+				uses[r]++
+			}
+		}
+		for _, r := range ir.TermUses(b.Term) {
+			uses[r]++
+		}
+		for i, ins := range b.Instrs {
+			sel, ok := ins.(*ir.Select)
+			if !ok {
+				continue
+			}
+			condReg, ok := sel.Cond.(*ir.Reg)
+			if !ok {
+				continue
+			}
+			j, ok := def[condReg]
+			if !ok || j >= i {
+				continue
+			}
+			cmp, ok := b.Instrs[j].(*ir.Cmp)
+			if !ok || uses[condReg] != 1 {
+				continue
+			}
+			then, ok1 := sel.Then.(*ir.Reg)
+			els, ok2 := sel.Else.(*ir.Reg)
+			if !ok1 || !ok2 {
+				continue
+			}
+			var op ir.BinOp
+			switch {
+			case cmp.Cond == ir.Lt && cmp.A == ir.Value(then) && cmp.B == ir.Value(els):
+				op = ir.Min
+			case cmp.Cond == ir.Gt && cmp.A == ir.Value(then) && cmp.B == ir.Value(els):
+				op = ir.Max
+			case cmp.Cond == ir.Lt && cmp.A == ir.Value(els) && cmp.B == ir.Value(then):
+				op = ir.Max
+			case cmp.Cond == ir.Gt && cmp.A == ir.Value(els) && cmp.B == ir.Value(then):
+				op = ir.Min
+			default:
+				continue
+			}
+			if ni == nil {
+				ni = ir.AnalyzeNaN(fn)
+			}
+			if !ni.ValFree(b, cmp.A) || !ni.ValFree(b, cmp.B) {
+				continue
+			}
+			b.Instrs[i] = &ir.Bin{Op: op, Dst: sel.Dst, A: cmp.A, B: cmp.B}
+			changed = true
+		}
+	}
+	return changed
 }
 
 // tailCall rewrites a call whose return block only jumps onward into a tail

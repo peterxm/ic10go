@@ -2422,3 +2422,53 @@ func TestLICMKeepsDeviceReadsInTheLoop(t *testing.T) {
 		t.Errorf("the wait loop must branch back to the read (line %d), not spin on a hoisted value:\n%s", readLine, code)
 	}
 }
+
+// TestSelectMinMaxUsesTheNativeInstruction: `if a < b { x = a } else { x = b }`
+// lowers to a comparison plus a select. Both are one instruction, but the
+// comparison has to be materialised first; IC10's min/max is a single
+// instruction. Operands that may be NaN keep the long form (min/max propagate
+// NaN while the comparison form picks Else).
+func TestSelectMinMaxUsesTheNativeInstruction(t *testing.T) {
+	build := func(setup string) string {
+		src := `func main() {
+    label loop:
+    a := d0.Setting
+    b := d1.Setting
+    x := 0
+    ` + setup + `
+    d2.Setting = x
+    yield()
+    goto loop
+}`
+		code, diags, err := ic10.Compile("t.icg", []byte(src))
+		if err != nil || diags.HasErrors() {
+			t.Fatalf("compile: %v %v", err, diags.Diags)
+		}
+		return code
+	}
+	if code := build("if a < b { x = a } else { x = b }"); !strings.Contains(code, "min ") {
+		t.Errorf("the min idiom should use `min`:\n%s", code)
+	}
+	if code := build("if a > b { x = a } else { x = b }"); !strings.Contains(code, "max ") {
+		t.Errorf("the max idiom should use `max`:\n%s", code)
+	}
+
+	// A NaN operand keeps the comparison + select.
+	src := `func main() {
+    label loop:
+    a := nan
+    b := d1.Setting
+    x := 0
+    if a < b { x = a } else { x = b }
+    d0.Setting = x
+    yield()
+    goto loop
+}`
+	code, diags, err := ic10.Compile("t.icg", []byte(src))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", err, diags.Diags)
+	}
+	if strings.Contains(code, "min ") {
+		t.Errorf("a NaN operand must not fold to min:\n%s", code)
+	}
+}

@@ -1002,3 +1002,46 @@ func TestFoldBranchesFoldsDeviceValidity(t *testing.T) {
 		t.Fatalf("entry term = %T, want *ir.Jmp", fn.Blocks[0].Term)
 	}
 }
+
+func TestSelectMinMaxFoldsDeviceOperands(t *testing.T) {
+	b := ir.NewBuilder("f")
+	a, c := b.NewReg("a"), b.NewReg("b")
+	cond, dst := b.NewReg("t"), b.NewReg("x")
+	b.Emit(&ir.Load{Dst: a, Dev: "d0", Logic: "Setting"})
+	b.Emit(&ir.Load{Dst: c, Dev: "d1", Logic: "Setting"})
+	b.Emit(&ir.Cmp{Cond: ir.Lt, Dst: cond, A: a, B: c})
+	b.Emit(&ir.Select{Dst: dst, Cond: cond, Then: a, Else: c})
+	b.SetTerm(&ir.Ret{})
+
+	fn := b.Fn()
+	if !selectMinMax(fn) {
+		t.Fatal("selectMinMax made no change")
+	}
+	bin, ok := fn.Blocks[0].Instrs[3].(*ir.Bin)
+	if !ok {
+		t.Fatalf("instr = %T, want *ir.Bin", fn.Blocks[0].Instrs[3])
+	}
+	if bin.Op != ir.Min || bin.A != ir.Value(a) || bin.B != ir.Value(c) {
+		t.Errorf("folded to %v %v %v, want min a b", bin.Op, bin.A, bin.B)
+	}
+}
+
+func TestSelectMinMaxKeepsNaNOperands(t *testing.T) {
+	b := ir.NewBuilder("f")
+	a, c := b.NewReg("a"), b.NewReg("b")
+	cond, dst := b.NewReg("t"), b.NewReg("x")
+	// min/max propagate NaN; `slt` is false for NaN and the select picks Else.
+	b.Emit(&ir.Assign{Dst: a, Src: &ir.Const{Special: "nan"}})
+	b.Emit(&ir.Load{Dst: c, Dev: "d1", Logic: "Setting"})
+	b.Emit(&ir.Cmp{Cond: ir.Lt, Dst: cond, A: a, B: c})
+	b.Emit(&ir.Select{Dst: dst, Cond: cond, Then: a, Else: c})
+	b.SetTerm(&ir.Ret{})
+
+	fn := b.Fn()
+	if selectMinMax(fn) {
+		t.Error("a NaN operand must keep the comparison+select form")
+	}
+	if _, ok := fn.Blocks[0].Instrs[3].(*ir.Select); !ok {
+		t.Errorf("instr = %T, want the select kept", fn.Blocks[0].Instrs[3])
+	}
+}

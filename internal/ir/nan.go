@@ -1,10 +1,6 @@
-package codegen
+package ir
 
-import (
-	"math"
-
-	"ic10go/internal/ir"
-)
+import "math"
 
 // nanInfo carries the "provably not NaN" analysis used to decide when an
 // ordering comparison (`< <= > >=`) may be negated. It has two parts:
@@ -18,29 +14,29 @@ import (
 // The property is "not NaN", not "finite": `inf - inf` is NaN, so arithmetic on
 // values that may be infinite is not fully covered. A single-device read
 // returns a number or faults the chip; a batched read can be NaN (no match).
-type nanInfo struct {
-	global map[*ir.Reg]bool
-	guard  map[*ir.Block]map[*ir.Reg]bool
+type NaNInfo struct {
+	global map[*Reg]bool
+	guard  map[*Block]map[*Reg]bool
 }
 
-func analyzeNaN(fn *ir.Function) *nanInfo {
-	return &nanInfo{global: nanFreeRegs(fn), guard: guardedRegs(fn)}
+func AnalyzeNaN(fn *Function) *NaNInfo {
+	return &NaNInfo{global: nanFreeRegs(fn), guard: guardedRegs(fn)}
 }
 
-func (ni *nanInfo) regFree(b *ir.Block, r *ir.Reg) bool {
+func (ni *NaNInfo) RegFree(b *Block, r *Reg) bool {
 	if r == nil {
 		return true
 	}
 	return ni.global[r] || ni.guard[b][r]
 }
 
-func (ni *nanInfo) valFree(b *ir.Block, v ir.Value) bool {
+func (ni *NaNInfo) ValFree(b *Block, v Value) bool {
 	switch x := v.(type) {
 	case nil:
 		return true
-	case *ir.Reg:
-		return ni.regFree(b, x)
-	case *ir.Const:
+	case *Reg:
+		return ni.RegFree(b, x)
+	case *Const:
 		return !isNaNConst(x)
 	}
 	return true
@@ -49,26 +45,26 @@ func (ni *nanInfo) valFree(b *ir.Block, v ir.Value) bool {
 // branchInvertible reports whether br's condition can be negated exactly:
 // equality and zero tests always can, an ordering test only when both operands
 // are provably numbers, and a NaN test never (IC10 has no branch-if-not-NaN).
-func (ni *nanInfo) branchInvertible(b *ir.Block, br *ir.Br) bool {
+func (ni *NaNInfo) BranchInvertible(b *Block, br *Br) bool {
 	if br.Cond.Invertible() {
 		return true
 	}
-	if br.Cond == ir.NaN {
+	if br.Cond == NaN {
 		return false
 	}
-	return ni.valFree(b, br.A) && ni.valFree(b, br.B)
+	return ni.ValFree(b, br.A) && ni.ValFree(b, br.B)
 }
 
 // nanFreeRegs returns the set of registers that never hold NaN on any path.
 // Registers are SSA-like (a mutable variable has several definitions), so a
 // register is free when every definition is free; the fixpoint starts
 // optimistic and shrinks, which keeps loop counters free.
-func nanFreeRegs(fn *ir.Function) map[*ir.Reg]bool {
-	defs := map[*ir.Reg][]ir.Instr{}
-	regs := map[*ir.Reg]bool{}
+func nanFreeRegs(fn *Function) map[*Reg]bool {
+	defs := map[*Reg][]Instr{}
+	regs := map[*Reg]bool{}
 	for _, b := range fn.Blocks {
 		for _, ins := range b.Instrs {
-			use, def := ir.DefUse(ins)
+			use, def := DefUse(ins)
 			for _, r := range use {
 				regs[r] = true
 			}
@@ -77,15 +73,15 @@ func nanFreeRegs(fn *ir.Function) map[*ir.Reg]bool {
 				defs[r] = append(defs[r], ins)
 			}
 		}
-		for _, r := range ir.TermUses(b.Term) {
+		for _, r := range TermUses(b.Term) {
 			regs[r] = true
 		}
 	}
-	free := map[*ir.Reg]bool{}
+	free := map[*Reg]bool{}
 	for r := range regs {
 		free[r] = true
 	}
-	freeVal := func(v ir.Value) bool { return nanFreeValue(v, free) }
+	freeVal := func(v Value) bool { return nanFreeValue(v, free) }
 	for changed := true; changed; {
 		changed = false
 		for r := range regs {
@@ -111,12 +107,12 @@ func nanFreeRegs(fn *ir.Function) map[*ir.Reg]bool {
 // guardedRegs returns, per block, the registers proven to be numbers on entry.
 // It is a must-analysis: a register is guarded only if every path into the
 // block narrowed it with an `isNaN` test.
-func guardedRegs(fn *ir.Function) map[*ir.Block]map[*ir.Reg]bool {
+func guardedRegs(fn *Function) map[*Block]map[*Reg]bool {
 	fn.BuildCFG()
-	regs := map[*ir.Reg]bool{}
+	regs := map[*Reg]bool{}
 	for _, b := range fn.Blocks {
 		for _, ins := range b.Instrs {
-			use, def := ir.DefUse(ins)
+			use, def := DefUse(ins)
 			for _, r := range use {
 				regs[r] = true
 			}
@@ -125,13 +121,13 @@ func guardedRegs(fn *ir.Function) map[*ir.Block]map[*ir.Reg]bool {
 			}
 		}
 	}
-	in := map[*ir.Block]map[*ir.Reg]bool{}
+	in := map[*Block]map[*Reg]bool{}
 	for _, b := range fn.Blocks {
 		if b == fn.Entry {
-			in[b] = map[*ir.Reg]bool{}
+			in[b] = map[*Reg]bool{}
 			continue
 		}
-		m := make(map[*ir.Reg]bool, len(regs))
+		m := make(map[*Reg]bool, len(regs))
 		for r := range regs {
 			m[r] = true
 		}
@@ -143,9 +139,9 @@ func guardedRegs(fn *ir.Function) map[*ir.Block]map[*ir.Reg]bool {
 			if b == fn.Entry {
 				continue
 			}
-			var next map[*ir.Reg]bool
+			var next map[*Reg]bool
 			for _, p := range b.Preds {
-				c := make(map[*ir.Reg]bool, len(in[p])+1)
+				c := make(map[*Reg]bool, len(in[p])+1)
 				for r := range in[p] {
 					c[r] = true
 				}
@@ -163,7 +159,7 @@ func guardedRegs(fn *ir.Function) map[*ir.Block]map[*ir.Reg]bool {
 				}
 			}
 			if next == nil {
-				next = map[*ir.Reg]bool{}
+				next = map[*Reg]bool{}
 			}
 			if !sameSet(next, in[b]) {
 				in[b] = next
@@ -176,28 +172,16 @@ func guardedRegs(fn *ir.Function) map[*ir.Block]map[*ir.Reg]bool {
 
 // nanGuardReg returns the register that p's terminator proves to be a number
 // when control reaches to: the else edge of a NaN branch is the `!isNaN` path.
-func nanGuardReg(p, to *ir.Block) (*ir.Reg, bool) {
-	br, ok := p.Term.(*ir.Br)
-	if !ok || br.Cond != ir.NaN || br.Else != to {
+func nanGuardReg(p, to *Block) (*Reg, bool) {
+	br, ok := p.Term.(*Br)
+	if !ok || br.Cond != NaN || br.Else != to {
 		return nil, false
 	}
-	r, ok := br.A.(*ir.Reg)
+	r, ok := br.A.(*Reg)
 	return r, ok
 }
 
-func sameSet(a, b map[*ir.Reg]bool) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for r := range a {
-		if !b[r] {
-			return false
-		}
-	}
-	return true
-}
-
-func isNaNConst(c *ir.Const) bool {
+func isNaNConst(c *Const) bool {
 	if c.Raw != "" {
 		return false
 	}
@@ -209,25 +193,25 @@ func isNaNConst(c *ir.Const) bool {
 
 // nanFreeInstr reports whether the value defined by ins is provably not NaN,
 // assuming freeVal for its operands.
-func nanFreeInstr(ins ir.Instr, freeVal func(ir.Value) bool) bool {
+func nanFreeInstr(ins Instr, freeVal func(Value) bool) bool {
 	switch v := ins.(type) {
-	case *ir.Assign:
+	case *Assign:
 		return freeVal(v.Src)
-	case *ir.Bin:
+	case *Bin:
 		// 0/0 (Div) and x%0 (Mod) are NaN; the rest preserve "not NaN".
-		if v.Op == ir.Div || v.Op == ir.Mod {
+		if v.Op == Div || v.Op == Mod {
 			return false
 		}
 		return freeVal(v.A) && freeVal(v.B)
-	case *ir.Un:
+	case *Un:
 		return freeVal(v.A)
-	case *ir.Cmp:
+	case *Cmp:
 		return true // a comparison yields 0 or 1
-	case *ir.Select:
+	case *Select:
 		return freeVal(v.Then) && freeVal(v.Else)
-	case *ir.Builtin:
+	case *Builtin:
 		return nanFreeBuiltin(v, freeVal)
-	case *ir.Load, *ir.LoadSlot, *ir.LoadDyn:
+	case *Load, *LoadSlot, *LoadDyn:
 		// A single-device read returns a logic value (a number) or faults the
 		// chip; only batched reads yield NaN when nothing matches (verified in
 		// game). `LoadDyn` covers reagent (`lr`) reads too.
@@ -247,7 +231,7 @@ var nanUnsafeBuiltins = map[string]bool{
 	"readByIdSlot": true,
 }
 
-func nanFreeBuiltin(v *ir.Builtin, freeVal func(ir.Value) bool) bool {
+func nanFreeBuiltin(v *Builtin, freeVal func(Value) bool) bool {
 	switch v.Name {
 	case "isNaN", "isNotNaN", "snan", "snanz":
 		return true // 0 or 1
@@ -264,13 +248,13 @@ func nanFreeBuiltin(v *ir.Builtin, freeVal func(ir.Value) bool) bool {
 }
 
 // nanFreeValue reports whether v provably never holds NaN.
-func nanFreeValue(v ir.Value, nf map[*ir.Reg]bool) bool {
+func nanFreeValue(v Value, nf map[*Reg]bool) bool {
 	switch x := v.(type) {
 	case nil:
 		return true
-	case *ir.Reg:
+	case *Reg:
 		return nf[x]
-	case *ir.Const:
+	case *Const:
 		return !isNaNConst(x)
 	}
 	return true

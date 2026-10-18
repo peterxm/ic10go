@@ -216,9 +216,9 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID, n
 	fn.BuildCFG()
 	// The NaN analysis is only needed when NaN-safe codegen is requested; off by
 	// default, the codegen negates ordering branches freely for the shorter form.
-	var ni *nanInfo
+	var ni *ir.NaNInfo
 	if nanSafe {
-		ni = analyzeNaN(fn)
+		ni = ir.AnalyzeNaN(fn)
 	}
 	var blocks []*ir.Block
 	if ni != nil {
@@ -475,7 +475,7 @@ func layoutLines(fn *ir.Function, colors map[*ir.Reg]int, spillDB, legacyByID, n
 			// NaNSafe analysis proved the operands (or that check is disabled).
 			inv := t.Cond.Invertible()
 			if !inv && t.Cond != ir.NaN {
-				inv = ni == nil || ni.branchInvertible(b, t)
+				inv = ni == nil || ni.BranchInvertible(b, t)
 			}
 			emitBr := func(text string, target *ir.Block) {
 				add(text, target, b.Func)
@@ -904,7 +904,7 @@ func branchTextFolded(c ir.Cond, a, b ir.Value, loaded *ir.Reg, operand string, 
 // into its branch terminator, so the load line disappears:
 // `u = sp; bgtz u L` -> `bgtz sp L`. It mirrors foldLoadOperand for terminators
 // (only plain Br; the approximate/valid forms take device operands).
-func foldLoadTerminator(instrs []ir.Instr, i int, blk *ir.Block, next *ir.Block, uses map[*ir.Reg]int, colors map[*ir.Reg]int, src int, ni *nanInfo) ([]line, bool) {
+func foldLoadTerminator(instrs []ir.Instr, i int, blk *ir.Block, next *ir.Block, uses map[*ir.Reg]int, colors map[*ir.Reg]int, src int, ni *ir.NaNInfo) ([]line, bool) {
 	operand, loaded, ci, ok := loadOperand(instrs, i, uses, colors)
 	if !ok || ci != len(instrs) {
 		return nil, false
@@ -923,7 +923,7 @@ func foldLoadTerminator(instrs []ir.Instr, i int, blk *ir.Block, next *ir.Block,
 	}
 	inv := br.Cond.Invertible()
 	if !inv && br.Cond != ir.NaN {
-		inv = ni == nil || ni.branchInvertible(blk, br)
+		inv = ni == nil || ni.BranchInvertible(blk, br)
 	}
 	mk := func(c ir.Cond, target *ir.Block) line {
 		return line{text: branchTextFolded(c, br.A, br.B, loaded, operand, colors) + " ", target: target, fn: fn, src: src, safeInvert: inv}
@@ -1335,9 +1335,9 @@ func brDev(dev string, ptr ir.Value, colors map[*ir.Reg]int) string {
 // taking NaN-freeness into account: a branch whose condition cannot be negated
 // lays its else edge out as the fall-through, so the codegen can branch on the
 // condition directly with one instruction.
-func successorsFor(b *ir.Block, ni *nanInfo) []*ir.Block {
+func successorsFor(b *ir.Block, ni *ir.NaNInfo) []*ir.Block {
 	if br, ok := b.Term.(*ir.Br); ok {
-		if br.Cond == ir.NaN || !ni.branchInvertible(b, br) {
+		if br.Cond == ir.NaN || !ni.BranchInvertible(b, br) {
 			return []*ir.Block{br.Then, br.Else}
 		}
 	}
@@ -1345,7 +1345,7 @@ func successorsFor(b *ir.Block, ni *nanInfo) []*ir.Block {
 }
 
 // rpoOrdered is rpo with a NaN-aware successor preference.
-func rpoOrdered(fn *ir.Function, ni *nanInfo) []*ir.Block {
+func rpoOrdered(fn *ir.Function, ni *ir.NaNInfo) []*ir.Block {
 	var order []*ir.Block
 	visited := map[*ir.Block]bool{}
 	var dfs func(*ir.Block)
