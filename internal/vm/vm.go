@@ -592,12 +592,21 @@ func Parse(src string) (*Program, error) {
 		}
 		return s
 	}
-	// IC10 aliases/defines bind in source order: a use sees the binding in
-	// effect on its own line, and a use above the definition fails with the
-	// game's IncorrectVariable (verified in game 2026-10-18: `alias v r0 ... use`
-	// writes through r0, while a use above `alias v r0` errors on the chip).
-	// Collecting every binding first (a later alias winning globally) would model
-	// a language the game does not have.
+	// IC10 defines are position independent: a use above `define LIMIT 42` still
+	// substitutes 42 (verified in game 2026-10-18), and a duplicate define is a
+	// compile error (`ExtraDefine`), so there is no later binding to win.
+	// Aliases are different -- they bind in source order and a use above the
+	// alias fails with IncorrectVariable -- so only defines are collected here.
+	for _, raw := range lines {
+		line := strings.TrimSpace(ic10asm.StripComment(raw))
+		if line == "" || ic10asm.IsLabel(line) {
+			continue
+		}
+		fields := ic10asm.Tokenize(line)
+		if len(fields) >= 3 && strings.EqualFold(fields[0], "define") {
+			prog.Symbols[fields[1]] = strings.Join(fields[2:], " ")
+		}
+	}
 	for i, raw := range lines {
 		line := strings.TrimSpace(ic10asm.StripComment(raw))
 		if line == "" {
@@ -609,11 +618,14 @@ func Parse(src string) (*Program, error) {
 		}
 		fields := ic10asm.Tokenize(line)
 		op := strings.ToLower(fields[0])
-		if op == "alias" || op == "define" {
+		if op == "alias" {
 			if len(fields) >= 3 {
 				prog.Symbols[fields[1]] = strings.Join(fields[2:], " ")
 			}
 			continue
+		}
+		if op == "define" {
+			continue // collected above (position independent)
 		}
 		args := make([]string, 0, len(fields)-1)
 		for _, f := range fields[1:] {

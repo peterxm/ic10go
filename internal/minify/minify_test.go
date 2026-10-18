@@ -163,3 +163,24 @@ func TestMinifyKeepsEveryInstruction(t *testing.T) {
 		})
 	}
 }
+
+func TestMinifyForwardDefineAndOrderedAlias(t *testing.T) {
+	// Defines are position independent, aliases bind in source order (measured in
+	// game 2026-10-18). Minify must substitute the former globally and the latter
+	// as it walks.
+	got, err := Minify("move r0 LIMIT\ns d0 Setting r0\ndefine LIMIT 42\n", Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "move r0 42") {
+		t.Errorf("forward define not substituted:\n%s", got)
+	}
+
+	got, err = Minify("alias v d0\ns v On 1\nalias v d1\ns v On 0\n", Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "s d0 On 1") || !strings.Contains(got, "s d1 On 0") {
+		t.Errorf("alias rebinding must follow source order:\n%s", got)
+	}
+}

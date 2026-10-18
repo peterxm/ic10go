@@ -691,3 +691,15 @@ func TestDecompileLabelsAreDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestDecompileResolvesForwardDefine(t *testing.T) {
+	// Defines are position independent (measured in game 2026-10-18): a use
+	// above the definition still substitutes.
+	code, _, err := Decompile("move r0 LIMIT\ns d0 Setting r0\ndefine LIMIT 42\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(code, "r0 := 42") {
+		t.Errorf("the forward define was not substituted:\n%s", code)
+	}
+}

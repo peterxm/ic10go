@@ -403,12 +403,15 @@ func TestForwardAliasIsNotResolved(t *testing.T) {
 	}
 }
 
-func TestForwardDefineIsNotResolved(t *testing.T) {
-	// The same source-order rule applies to define.
+func TestForwardDefineResolution(t *testing.T) {
+	// Defines are position independent, unlike aliases: a use above
+	// `define LIMIT 42` still substitutes (measured in game 2026-10-18). A
+	// duplicate define is an ExtraDefine compile error, so there is no rebinding
+	// to worry about.
 	src := "move r0 LIMIT\ns d0 Setting r0\ndefine LIMIT 42\n"
 	m := run(t, src, 10)
-	if got := m.Get("d0", "Setting"); got == 42 {
-		t.Errorf("d0.Setting = 42; a forward define must not resolve")
+	if got := m.Get("d0", "Setting"); got != 42 {
+		t.Errorf("d0.Setting = %v, want 42", got)
 	}
 }
 

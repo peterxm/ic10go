@@ -74,16 +74,23 @@ func minify(src string, opt Options) (string, error) {
 	raw := strings.Split(src, "\n")
 	items, labels, _ := parse(raw)
 
-	// Aliases/defines bind in source order (measured in game 2026-10-18: a use
-	// sees the binding on its own line, and a use above the definition fails with
-	// IncorrectVariable). Walk the items with the map in effect at each line --
-	// a single global map would let a later rebinding rewrite the lines above it
-	// (e.g. `alias dish d0 ... alias dish d1` would send the first writes to d1).
+	// Defines are position independent (measured in game 2026-10-18: a use above
+	// `define LIMIT 42` still substitutes; duplicates are an ExtraDefine error),
+	// so collect them first. Aliases bind in source order -- a later rebinding
+	// must not rewrite the lines above it -- so they are applied as the walk
+	// reaches them.
 	cur := map[string][]string{}
+	if !opt.KeepDefines {
+		for _, it := range items {
+			if it.kind == kDef && len(it.toks) >= 3 && strings.EqualFold(it.toks[0], "define") {
+				cur[it.name] = it.toks[2:]
+			}
+		}
+	}
 	for i := range items {
 		switch items[i].kind {
 		case kDef:
-			if !opt.KeepDefines && len(items[i].toks) >= 3 {
+			if !opt.KeepDefines && len(items[i].toks) >= 3 && strings.EqualFold(items[i].toks[0], "alias") {
 				cur[items[i].name] = items[i].toks[2:]
 			}
 		case kInstr:

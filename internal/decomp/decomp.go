@@ -121,6 +121,20 @@ func decompile(src string, structured bool, opts Options) (string, []Warning, er
 
 	raw := strings.Split(src, "\n")
 	d.lineCount = len(raw)
+	// Defines are position independent (measured in game 2026-10-18: a use above
+	// `define LIMIT 42` still substitutes 42, and a duplicate is an ExtraDefine
+	// error), so collect them before resolving any operand. Aliases bind in
+	// source order and are applied as the walk reaches them.
+	for _, l := range raw {
+		text := strings.TrimSpace(ic10asm.StripComment(l))
+		if text == "" || ic10asm.IsLabel(text) {
+			continue
+		}
+		fields := ic10asm.Tokenize(text)
+		if len(fields) >= 3 && strings.EqualFold(fields[0], "define") {
+			d.symbols[fields[1]] = strings.Join(fields[2:], " ")
+		}
+	}
 	var lines []icLine
 	for i, l := range raw {
 		text := strings.TrimSpace(ic10asm.StripComment(l))
@@ -141,22 +155,19 @@ func decompile(src string, structured bool, opts Options) (string, []Warning, er
 		args := fields[1:]
 		switch op {
 		case "define":
-			if len(args) >= 2 {
-				d.symbols[args[0]] = strings.Join(args[1:], " ")
-			}
-			continue
+			continue // collected above (position independent)
 		case "alias":
 			if len(args) >= 2 {
 				d.symbols[args[0]] = args[1]
 			}
 			continue
 		}
-		// Bind aliases and defines as of this line. IC10 resolves them in source
-		// order, and real programs re-alias a name to switch which device it
-		// means, jumping over the second `alias`; substituting the final binding
-		// into the whole program would flatten that switch to one device. (Seen
-		// in a dish controller: `alias dish d0` ... `alias dish d0`/`jr 2`/
-		// `alias dish d1` -- the first three writes are d0's, the rest are d1's.)
+		// Bind aliases as of this line. A real program re-aliases a name to
+		// change which device it means, and the lines above the rebinding keep
+		// the old binding (seen in a dish controller: `alias dish d0` ... `alias
+		// dish d0`/`jr 2`/`alias dish d1` -- the first three writes are d0's, the
+		// rest are d1's). Substituting the final binding into the whole program
+		// would flatten that to one device.
 		for j, a := range args {
 			args[j] = d.resolve(a)
 		}
