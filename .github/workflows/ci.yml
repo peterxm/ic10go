@@ -26,7 +26,11 @@ jobs:
       - name: vet
         run: go vet ./...
       - name: test
-        run: go test ./...
+        # The community corpus (including the 70-program Venus backup) pushes
+        # the whole-corpus compile matrix plus the hand-port equivalence runs
+        # past the default 10 minute test timeout (measured 13m on the dev
+        # machine); give the package room without skipping any coverage.
+        run: go test -timeout 20m ./...
       - name: differential (extra seeds)
         run: go test ./pkg/ic10 -run 'TestDifferential' -count=1
 
