@@ -703,3 +703,19 @@ func TestDecompileResolvesForwardDefine(t *testing.T) {
 		t.Errorf("the forward define was not substituted:\n%s", code)
 	}
 }
+
+func TestDecompileHexDeviceID(t *testing.T) {
+	// A device operand can be a ReferenceId written as a hex literal; .icg has
+	// no `$` spelling, so it must become 0x and go through read/writeById.
+	// (One real program writes `s $1CB1EA Horizontal H`.)
+	code, warns, err := Decompile("alias H r11\nmove r11 5\ns $1CB1EA Horizontal H\nl r0 $1CB1EA Setting\n")
+	if err != nil || len(warns) > 0 {
+		t.Fatalf("decompile: %v %v", err, warns)
+	}
+	if !strings.Contains(code, "writeById(0x1CB1EA") {
+		t.Errorf("hex device id was not lowered to writeById:\n%s", code)
+	}
+	if !strings.Contains(code, "readById(0x1CB1EA") {
+		t.Errorf("hex device id was not lowered to readById:\n%s", code)
+	}
+}

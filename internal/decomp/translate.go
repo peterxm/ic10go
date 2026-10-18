@@ -475,9 +475,11 @@ func (d *decompiler) deviceIDArg(devArg string) (string, bool) {
 		return d.operand(dev), true
 	}
 	// A bare number is a ReferenceId too: ports are always written d0..d5 / db,
-	// so `l r0 704 Setting` addresses the device with ReferenceId 704.
-	if n, err := strconv.Atoi(dev); err == nil && n > 0 {
-		return dev, true
+	// so `l r0 704 Setting` addresses the device with ReferenceId 704. IC10's
+	// `$hex` / `%bin` literals are device ids as well (a real program writes
+	// `s $1CB1EA Horizontal H`); .icg spells them 0x / 0b.
+	if isNumberOperand(dev) && dev != "nan" && dev != "pinf" && dev != "ninf" {
+		return normalizeNumber(dev), true
 	}
 	return "", false
 }
