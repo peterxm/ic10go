@@ -64,6 +64,7 @@ var knownUnsupportedPorts = map[string]string{
 	"solverLargeRAW":                    "over the 128-line budget and publishes to the housing stack without `shared-stack`",
 	"主气闸管理IC":                           "keeps its device ReferenceIds in the host stack; the harness does not preset the stack, so the original has nothing to compare",
 	"filtration_automation_2026_04_003": "uses `self` above `alias self db`; the game rejects a forward alias with IncorrectVariable (measured 2026-10-18)",
+	"chip-435861":                       "addresses the CO2/N/FX vents by a ReferenceId read from devices the harness does not create; the VM treats the resulting NaN id differently from the original's register form, so only the in-game comparison is meaningful",
 }
 
 // skipKnownUnsupported skips a corpus file listed in knownUnsupported.
