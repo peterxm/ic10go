@@ -596,7 +596,7 @@ ic10go/
 
 IC10 → `.icg` 的翻译分两步：
 
-1. **扁平翻译**（`Decompile`）：替换 `alias`/`define`，把 `r0..r15` 映射为同名变量（先读后写才发 `var`，其余首次赋值用 `:=`），控制流翻译为 `label`/`goto`/`call`/`ret`，手写的 `move ra <line>`（返回地址）写回为对应标签（`ra = L49`），`HASH()/STR()` → `hash()/str()`，`$hex`/`%bin` → `0x`/`0b`，已知 prefab 哈希还原为 `hash("Name")`，不支持的指令告警并留注释。
+1. **扁平翻译**（`Decompile`）：替换 `alias`/`define`，把 `r0..r15` 映射为同名变量（先读后写才发 `var`，其余首次赋值用 `:=`；注意 `var rX` 的初值是 `0` 是 `.icg` 的变量语义 —— 不是"清掉上一个程序的残留"，`clr db` 清的是宿主栈，对寄存器无效），控制流翻译为 `label`/`goto`/`call`/`ret`，手写的 `move ra <line>`（返回地址）写回为对应标签（`ra = L49`），`HASH()/STR()` → `hash()/str()`，`$hex`/`%bin` → `0x`/`0b`，已知 prefab 哈希还原为 `hash("Name")`，不支持的指令告警并留注释。
    - **操作数校验**：按游戏元数据的操作数种类（`REGISTER`/`DEVICE`/`DEVICE_ID`/`VALUE`/`LOGIC_TYPE`…）检查每个非跳转操作数；未定义设备名、试剂、越界寄存器或非法字符不再生成非法 `.icg`，而是告警并注释掉该行。被注释的指令不参与寄存器声明。
    - **设备操作数**：`d?`/`db`、端口寄存器 `drN`、ReferenceId 寄存器 `r?` 分别映射到 `read`/`readDev`/`readById`（写同理），`sdse/sdns`、`rmap`、`clr` 接受寄存器/id。
    - **标签**：非法字符替换为 `_`，与 `.icg` 关键字冲突的（如 `return`、`for`）加 `_` 后缀；每个跳转目标都登记清理后的标签名，越界/负数目标作为程序末尾停机，未定义的标签目标告警并注释。

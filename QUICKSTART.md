@@ -292,7 +292,7 @@ ic10c decompile -o old.icg old.ic  # 输出到文件
 反编译会：
 
 - 替换 `alias` 与 `define`
-- 只对"先读后写"的寄存器发 `var`，其余首次赋值用 `:=`
+- 只对"先读后写"的寄存器发 `var`，其余首次赋值用 `:=`（`var` 的初值是 `0` 属于 `.icg` 的变量语义；`clr db` 清的是宿主栈，不能替代它）
 - 用 `label` / `goto` / `call` / `ret` 表达控制流
 
 加 `--structured` 会基于后支配树还原 `if`/`else`/`for`（无法还原的部分自动回退到 goto）：
