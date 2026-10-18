@@ -1079,23 +1079,32 @@ func idleSegment(path []int, nodes map[int]*node) bool {
 }
 
 // pollSegment reports whether a segment is a busy-wait: it never yields (so the
-// chip cannot leave it until the tick budget runs out), its dominant loop is tiny
-// and that loop only reads devices. The loop *body* is what matters here, not the
-// loop's Spans flag: a small spin loop can sit inside a bigger loop that does
-// contain a yield.
+// chip cannot leave it until the tick budget runs out) and the part of the path
+// it repeats only reads devices.
+//
+// The repeated lines are what matter, not the whole path: a segment that sets a
+// device up and then waits would otherwise be disqualified by the setup write.
+// Measured on a dish controller: three setup writes followed by a 31-iteration
+// spin over four read-only lines, and the setup writes hid the spin.
 func pollSegment(seg Segment, nodes map[int]*node) bool {
 	if seg.Barrier >= 0 || seg.Dominant < 0 || len(seg.Path) == 0 {
 		return false
 	}
-	reads, writes := 0, 0
-	distinct := map[int]bool{}
+	counts := map[int]int{}
 	for _, ln := range seg.Path {
-		distinct[ln] = true
-		n := nodes[ln]
-		if n == nil {
+		counts[ln]++
+	}
+	reads, writes, distinct := 0, 0, 0
+	for ln, n := range counts {
+		if n < 2 {
+			continue // executed once: setup, not the spin
+		}
+		distinct++
+		nd := nodes[ln]
+		if nd == nil {
 			continue
 		}
-		if dev, _, write, _ := deviceOperand(n); dev != "" {
+		if dev, _, write, _ := deviceOperand(nd); dev != "" {
 			if write {
 				writes++
 			} else {
@@ -1103,11 +1112,12 @@ func pollSegment(seg Segment, nodes map[int]*node) bool {
 			}
 		}
 	}
-	// A spin loop repeats a couple of instructions until the value changes, so
-	// the *distinct* instructions (not the path length) tell the two apart: a
-	// segment that reads devices, writes none, and reuses a handful of lines is
-	// waiting; a bigger one is doing work and this hint would mislead.
-	return reads > 0 && writes == 0 && len(distinct) <= 6
+	// No line repeated: the loop ran at most once in the budget, so this is work,
+	// not a spin -- the hint would mislead.
+	if distinct == 0 {
+		return false
+	}
+	return reads > 0 && writes == 0 && distinct <= 6
 }
 
 // passWriteTargets counts the distinct device targets written in one pass, using

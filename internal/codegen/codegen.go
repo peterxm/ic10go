@@ -1190,7 +1190,7 @@ func dropNoOpBranches(lines []line, start map[*ir.Block]int) ([]line, map[*ir.Bl
 		if ln.target == nil || ln.table || start[ln.target] != i+1 {
 			continue
 		}
-		if _, isBranch := invertBranch(ln.text); !isBranch && !strings.HasPrefix(ln.text, "j ") {
+		if !isJumpOrBranch(ln.text) {
 			continue
 		}
 		removed[i] = true
@@ -1252,6 +1252,15 @@ var invertedBranch = map[string]string{
 
 // invertBranch returns the text with the branch mnemonic negated, or false if
 // the text is not a conditional branch.
+// isJumpOrBranch reports whether text is an unconditional jump or any
+// conditional branch. Every IC10 conditional branch starts with `b` (beq, bdns,
+// bdnvl, bap, ...), so a branch to the very next line is a no-op even when IC10
+// has no inverse for it -- `bdnvl`/`bdnvs` have none, but they still fall
+// through to the same line either way.
+func isJumpOrBranch(text string) bool {
+	return strings.HasPrefix(text, "j ") || strings.HasPrefix(text, "b")
+}
+
 func invertBranch(text string) (string, bool) {
 	sp := strings.IndexByte(text, ' ')
 	mnemonic := text

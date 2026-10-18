@@ -2243,22 +2243,46 @@ func dce(fn *ir.Function) bool {
 func foldBranches(fn *ir.Function) bool {
 	changed := false
 	for _, b := range fn.Blocks {
-		br, ok := b.Term.(*ir.Br)
-		if !ok {
-			continue
-		}
-		if br.Then == br.Else {
-			b.Term = &ir.Jmp{Target: br.Then}
-			changed = true
-			continue
-		}
-		if take, ok := constCond(br); ok {
-			target := br.Else
-			if take {
-				target = br.Then
+		// A conditional whose two successors are the same block does not branch.
+		// Only plain Br used to be checked, so a BrSet/BrValid/BrApprox whose
+		// paths converged kept a device test that could not change anything: a
+		// decompiled `if isUnset(d1) { ... }` over an alias-switch block left a
+		// `bdns` jumping to the next line (measured on a real dish controller).
+		switch t := b.Term.(type) {
+		case *ir.Br:
+			if t.Then == t.Else {
+				b.Term = &ir.Jmp{Target: t.Then}
+				changed = true
+				continue
 			}
-			b.Term = &ir.Jmp{Target: target}
-			changed = true
+			if take, ok := constCond(t); ok {
+				target := t.Else
+				if take {
+					target = t.Then
+				}
+				b.Term = &ir.Jmp{Target: target}
+				changed = true
+			}
+		case *ir.BrSet:
+			if t.Then == t.Else {
+				b.Term = &ir.Jmp{Target: t.Then}
+				changed = true
+			}
+		case *ir.BrValid:
+			if t.Valid == t.Invalid {
+				b.Term = &ir.Jmp{Target: t.Valid}
+				changed = true
+			}
+		case *ir.BrApprox:
+			if t.Then == t.Else {
+				b.Term = &ir.Jmp{Target: t.Then}
+				changed = true
+			}
+		case *ir.BrApproxZero:
+			if t.Then == t.Else {
+				b.Term = &ir.Jmp{Target: t.Then}
+				changed = true
+			}
 		}
 	}
 	return changed
@@ -3016,39 +3040,6 @@ func redirect(b *ir.Block, from, to *ir.Block) {
 
 func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool, dom map[*ir.Block]map[*ir.Block]bool) bool {
 	changed := false
-	// Device reads may be hoisted only when the loop neither writes the device
-	// nor contains a barrier (yield/sleep or a dynamic store) that could change
-	// it between iterations.
-	barrier := false
-	writes := map[string]bool{}
-	for _, b := range fn.Blocks {
-		if !lp.blocks[b] {
-			continue
-		}
-		for _, ins := range b.Instrs {
-			switch v := ins.(type) {
-			case *ir.Store:
-				writes[v.Dev] = true
-			case *ir.StoreSlot:
-				writes[v.Dev] = true
-			case *ir.Batch:
-				switch v.Kind {
-				case ir.BatchStore, ir.BatchStoreName, ir.BatchStoreSlot:
-					if dev, ok := constText(v.Device); ok {
-						writes[dev] = true
-					} else {
-						barrier = true
-					}
-				}
-			case *ir.StoreDyn, *ir.StoreIndirect:
-				barrier = true
-			case *ir.Builtin:
-				if builtin.SemOf(v.Name).Barrier {
-					barrier = true
-				}
-			}
-		}
-	}
 	for {
 		definedSet := map[*ir.Reg]bool{}
 		defCount := map[*ir.Reg]int{}
@@ -3080,12 +3071,14 @@ func hoistLoop(fn *ir.Function, lp *loop, pre *ir.Block, liveIn map[*ir.Reg]bool
 				// loop is unsound: a use could observe a different definition
 				// on some iteration.
 				soleDef := d != nil && defCount[d] == 1
+				// Device reads are never hoisted. A loop read is how a program
+				// observes the outside world: another chip, a player, or the device
+				// itself can change it between iterations, and a loop that spans a
+				// tick (IC10 pauses every 128 instructions) sees a new value even
+				// when the body has no yield or write. Hoisting turned a wait loop
+				// (`l r0 d1 On; blez r0 wait`) into a one-time read plus a spin on
+				// the stale value.
 				canHoist := hoistable(ins)
-				if !canHoist {
-					if dev, ok := hoistableLoad(ins); ok && !barrier && !writes[dev] {
-						canHoist = true
-					}
-				}
 				if canHoist && !usesAny(ins, definedSet) && !definesLiveIn(ins, liveIn) &&
 					soleDef && dominatesAllUses(b, d, useBlocks, dom) {
 					pre.Instrs = append(pre.Instrs, ins)
@@ -3158,26 +3151,6 @@ func hasPhysRegOperand(i ir.Instr) bool {
 		return isPhysRegRaw(v.Cond) || isPhysRegRaw(v.Then) || isPhysRegRaw(v.Else)
 	}
 	return false
-}
-
-// hoistableLoad reports whether an instruction is a device read that may be
-// hoisted out of a loop (subject to the loop-write and barrier checks), and the
-// device it reads.
-func hoistableLoad(i ir.Instr) (string, bool) {
-	switch v := i.(type) {
-	case *ir.Load:
-		return v.Dev, true
-	case *ir.LoadSlot:
-		return v.Dev, true
-	case *ir.Batch:
-		switch v.Kind {
-		case ir.BatchLoad, ir.BatchLoadName, ir.BatchLoadSlot, ir.BatchLoadNameSlot:
-			if dev, ok := constText(v.Device); ok {
-				return dev, true
-			}
-		}
-	}
-	return "", false
 }
 
 func usesAny(i ir.Instr, defined map[*ir.Reg]bool) bool {

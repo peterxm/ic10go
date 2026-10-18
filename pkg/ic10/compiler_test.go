@@ -2353,3 +2353,72 @@ func TestDispatchTreePragma(t *testing.T) {
 		t.Errorf("an ineligible switch must warn: %v", diags.Diags)
 	}
 }
+
+// TestFoldBranchesRemovesConvergedDeviceTest: a device-set test whose two paths
+// land on the same block cannot branch. Decompiled alias-switch blocks used to
+// leave a `bdns` that jumped to the next line because foldBranches only looked
+// at plain Br.
+func TestFoldBranchesRemovesConvergedDeviceTest(t *testing.T) {
+	src := `func main() {
+    label L:
+    r0 := d0.On
+    if isUnset(d1) { goto A }
+    if r0 > 2 { goto B }
+    label A:
+    goto B
+    label B:
+    d1.On = 1
+    yield()
+    goto L
+}`
+	code, diags, err := ic10.Compile("t.icg", []byte(src))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", err, diags.Diags)
+	}
+	if strings.Contains(code, "bdns") || strings.Contains(code, "bdse") {
+		t.Errorf("the converged device test should be gone:\n%s", code)
+	}
+}
+
+// TestLICMKeepsDeviceReadsInTheLoop: a device read is how a program observes the
+// outside world (another chip, a player, the device itself), so it is not
+// loop-invariant. LICM used to hoist it when the loop had no yield or write,
+// turning `l r0 d1 On; blez r0 wait` into a one-time read plus a spin on the
+// stale value.
+func TestLICMKeepsDeviceReadsInTheLoop(t *testing.T) {
+	src := `func main() {
+    d0.On = 1
+    d0.Mode = 2
+    label wait:
+    r0 := d1.On
+    if r0 <= 0 { goto wait }
+    d1.Setting = 5
+}`
+	code, diags, err := ic10.Compile("t.icg", []byte(src))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v", err, diags.Diags)
+	}
+	lines := strings.Split(strings.TrimRight(code, "\n"), "\n")
+	readLine := -1
+	for i, ln := range lines {
+		if strings.HasPrefix(ln, "l ") && strings.HasSuffix(ln, "d1 On") {
+			readLine = i
+		}
+	}
+	if readLine < 0 {
+		t.Fatalf("no device read in the output:\n%s", code)
+	}
+	loopsBack := false
+	for _, ln := range lines {
+		f := strings.Fields(ln)
+		if len(f) < 2 || !strings.HasPrefix(f[0], "b") {
+			continue
+		}
+		if f[len(f)-1] == strconv.Itoa(readLine) {
+			loopsBack = true
+		}
+	}
+	if !loopsBack {
+		t.Errorf("the wait loop must branch back to the read (line %d), not spin on a hoisted value:\n%s", readLine, code)
+	}
+}

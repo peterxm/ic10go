@@ -417,3 +417,23 @@ func TestHintsIdlePollAndWriteTargets(t *testing.T) {
 		t.Errorf("report should give the group-guard hint:\n%s", rep.String())
 	}
 }
+
+// TestPollIgnoresSetupWrites: a segment that sets devices up and then waits is
+// still a busy-wait. The setup lines run once; the spin lines repeat. A dish
+// controller (three setup writes, then 31 iterations over four read-only lines)
+// was missed because the setup writes counted as "this segment writes".
+func TestPollIgnoresSetupWrites(t *testing.T) {
+	rep, err := Analyze("yield\ns d0 On 1\ns d0 Mode 2\ns d0 Setting 3\nl r0 d1 On\nbeqz r0 4\nj 4\n", 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	polls := 0
+	for _, s := range rep.Segments {
+		if s.Poll {
+			polls++
+		}
+	}
+	if polls == 0 {
+		t.Errorf("a spin after setup writes should still be a poll:\n%s", rep.String())
+	}
+}

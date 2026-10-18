@@ -605,3 +605,25 @@ func TestFoldCopiedLoadIntoBranch(t *testing.T) {
 		t.Fatalf("want a branch on sp:\n%s", code)
 	}
 }
+
+func TestDropNoOpBranchesCoversDeviceTests(t *testing.T) {
+	// A device-set test whose two successors are the same block cannot branch.
+	// `invertBranch` only knows the arithmetic/zero forms, so `bdns`/`bdse` (and
+	// the forms without an inverse, like bdnvl) used to survive as a branch to
+	// the next line.
+	b := ir.NewBuilder("t")
+	x := b.NewReg("x")
+	next := b.NewBlock()
+	b.SetTerm(&ir.BrSet{Dev: "d1", Set: false, Then: next, Else: next})
+	b.SetBlock(next)
+	b.Emit(&ir.Assign{Dst: x, Src: &ir.Const{V: 1}})
+	b.SetTerm(&ir.Ret{})
+
+	code, err := Generate(b.Fn(), map[*ir.Reg]int{x: 0})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if strings.Contains(code, "bdns") || strings.Contains(code, "bdse") {
+		t.Errorf("a branch to the next line should be dropped:\n%s", code)
+	}
+}

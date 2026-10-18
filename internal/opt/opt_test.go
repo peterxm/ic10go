@@ -970,3 +970,35 @@ func TestThreadBranchesKeepsNonEmptyTarget(t *testing.T) {
 		t.Error("threadBranches changed a branch whose target has instructions")
 	}
 }
+
+func TestFoldBranchesFoldsDeviceSet(t *testing.T) {
+	b := ir.NewBuilder("f")
+	target := b.NewBlock()
+	b.SetTerm(&ir.BrSet{Dev: "d0", Set: true, Then: target, Else: target})
+	b.SetBlock(target)
+	b.SetTerm(&ir.Ret{})
+
+	fn := b.Fn()
+	if !foldBranches(fn) {
+		t.Fatal("foldBranches made no change")
+	}
+	if _, ok := fn.Blocks[0].Term.(*ir.Jmp); !ok {
+		t.Fatalf("entry term = %T, want *ir.Jmp (both paths go to the same block)", fn.Blocks[0].Term)
+	}
+}
+
+func TestFoldBranchesFoldsDeviceValidity(t *testing.T) {
+	b := ir.NewBuilder("f")
+	target := b.NewBlock()
+	b.SetTerm(&ir.BrValid{Dev: "d0", Logic: "On", Valid: target, Invalid: target})
+	b.SetBlock(target)
+	b.SetTerm(&ir.Ret{})
+
+	fn := b.Fn()
+	if !foldBranches(fn) {
+		t.Fatal("foldBranches made no change")
+	}
+	if _, ok := fn.Blocks[0].Term.(*ir.Jmp); !ok {
+		t.Fatalf("entry term = %T, want *ir.Jmp", fn.Blocks[0].Term)
+	}
+}
