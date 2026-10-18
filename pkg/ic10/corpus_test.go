@@ -65,6 +65,7 @@ var knownUnsupportedPorts = map[string]string{
 	"主气闸管理IC":                           "keeps its device ReferenceIds in the host stack; the harness does not preset the stack, so the original has nothing to compare",
 	"filtration_automation_2026_04_003": "uses `self` above `alias self db`; the game rejects a forward alias with IncorrectVariable (measured 2026-10-18)",
 	"chip-435861":                       "addresses the CO2/N/FX vents by a ReferenceId read from devices the harness does not create; the VM treats the resulting NaN id differently from the original's register form, so only the in-game comparison is meaningful",
+	"chip-375982":                       "resolves the pipes and pumps by name; without those devices the harness's NaN ReferenceId writes fall back to db, and the port's shorter instruction path reaches a different db.On, so only the in-game comparison is meaningful",
 }
 
 // skipKnownUnsupported skips a corpus file listed in knownUnsupported.
