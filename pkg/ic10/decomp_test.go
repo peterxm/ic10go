@@ -240,6 +240,9 @@ func roundTripWith(t *testing.T, path string, setup func(*vm.Machine), dec func(
 	if diags.HasErrors() || err != nil {
 		t.Fatalf("decompiled source failed to compile: diags=%v err=%v\n%s", diags.Diags, err, code)
 	}
+	if grew := countInstructions(compiled) - countInstructions(string(src)); grew > 0 {
+		t.Errorf("round trip grew from %d to %d instructions", countInstructions(string(src)), countInstructions(compiled))
+	}
 
 	orig := vm.New()
 	setup(orig)
@@ -331,5 +334,86 @@ func TestDecompileStructuredCallInLoop(t *testing.T) {
 	}
 	if strings.Contains(code, "break") {
 		t.Errorf("call was mis-structured as a break:\n%s", code)
+	}
+}
+
+// countInstructions counts the IC10 instruction lines in a program: no blanks,
+// no comments, no labels.
+func countInstructions(code string) int {
+	n := 0
+	for _, raw := range strings.Split(code, "\n") {
+		line := strings.TrimSpace(strings.SplitN(raw, "#", 2)[0])
+		if line == "" || strings.HasSuffix(line, ":") {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// TestDecompiledBackEdgeIsOneInstruction: `if cond { goto L }` with L behind
+// used to compile to `b<inv> skip` + `j L`. The code generator only folds the
+// branch when the target is the fall-through block, so an empty block left by
+// the lowering kept the extra jump. threadBranches folds it.
+func TestDecompiledBackEdgeIsOneInstruction(t *testing.T) {
+	src := "alias d d0\nloop:\nl r0 d Setting\nblez r0 loop\ns d On 1\n"
+	code, warns, err := decomp.Decompile(src)
+	if err != nil || len(warns) > 0 {
+		t.Fatalf("decompile: %v %v", err, warns)
+	}
+	compiled, diags, err := ic10.CompileWithOptions("t", []byte(code), ic10.Options{DynamicStack: true})
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: %v %v\n%s", err, diags.Diags, code)
+	}
+	if got := countInstructions(compiled); got != 3 {
+		t.Errorf("back-edge round trip = %d instructions, want 3 (l, branch, s):\n%s", got, compiled)
+	}
+	if strings.Contains(compiled, "j 0") || strings.Contains(compiled, "j -") {
+		t.Errorf("the back-edge still costs an extra jump:\n%s", compiled)
+	}
+}
+
+// TestRoundTripInstructionCountDoesNotGrow: a decompiled program must not need
+// more instructions than the IC10 it came from. The compiler is free to produce
+// fewer (CSE, dead stores), but growth means the round trip is losing efficiency
+// the original had -- exactly what the back-edge bug did (+7 on a 119-instruction
+// dish controller).
+func TestRoundTripInstructionCountDoesNotGrow(t *testing.T) {
+	cases := map[string]string{
+		"back-edge": `alias d d0
+loop:
+l r0 d Setting
+blez r0 loop
+s d On 1
+`,
+		"nested-conditions": `alias d d0
+loop:
+l r0 d Setting
+blez r0 loop
+brgt r0 2 3
+  s d On 1
+  j done
+s d On 0
+done:
+yield
+j loop
+`,
+		"hash-and-batch": `lbn r0 -400115994 HASH("Bank 1") Ratio 0
+sbn 1220484876 HASH("Override") Open 1
+`,
+	}
+	for name, src := range cases {
+		code, warns, err := decomp.Decompile(src)
+		if err != nil || len(warns) > 0 {
+			t.Fatalf("%s: decompile: %v %v", name, err, warns)
+		}
+		compiled, diags, err := ic10.CompileWithOptions(name, []byte(code), ic10.Options{DynamicStack: true})
+		if err != nil || diags.HasErrors() {
+			t.Fatalf("%s: compile: %v %v\n%s", name, err, diags.Diags, code)
+		}
+		before, after := countInstructions(src), countInstructions(compiled)
+		if after > before {
+			t.Errorf("%s: round trip grew from %d to %d instructions\n%s", name, before, after, compiled)
+		}
 	}
 }

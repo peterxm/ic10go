@@ -54,8 +54,8 @@ func TestGreenhousePort(t *testing.T) {
 			if err := b.Load(code); err != nil {
 				t.Fatal(err)
 			}
-			wa := writeSequence(a, 30, 20000)
-			wb := writeSequence(b, 30, 20000)
+			wa, _ := writeSequence(a, 30, 20000)
+			wb, _ := writeSequence(b, 30, 20000)
 			if strings.Join(wa, "|") != strings.Join(wb, "|") {
 				t.Errorf("writes differ\n orig: %v\n port: %v", wa, wb)
 			}

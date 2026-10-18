@@ -1191,3 +1191,23 @@ func TestTickAdvisoryDiagnostics(t *testing.T) {
 		t.Errorf("a clean program should produce no advisory, got %+v", d)
 	}
 }
+
+func TestIC10AliasRebindWarning(t *testing.T) {
+	// The second binding only takes effect for lines after it: a branch that
+	// jumps over it cannot switch the device at runtime.
+	src := "alias dish d0\ns dish On 1\nalias dish d1\ns dish On 0\n"
+	out := openAndRequest(t, "ar.ic", src, "textDocument/hover", `,"position":{"line":0,"character":0}`)
+	if !strings.Contains(out, "ic10-alias-rebind") {
+		t.Fatalf("expected an alias-rebind warning:\n%s", out)
+	}
+	if !strings.Contains(out, "compile-time") {
+		t.Errorf("the warning should say aliases are compile-time:\n%s", out)
+	}
+
+	// Re-binding to the same value is not a rebind.
+	out = openAndRequest(t, "ar2.ic", "alias dish d0\ns dish On 1\nalias dish d0\ns dish On 0\n",
+		"textDocument/hover", `,"position":{"line":0,"character":0}`)
+	if strings.Contains(out, "ic10-alias-rebind") {
+		t.Errorf("same-value re-alias should not warn:\n%s", out)
+	}
+}

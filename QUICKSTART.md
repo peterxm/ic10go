@@ -97,6 +97,10 @@ ic10c -L zh --help      # 强制中文
 ./ic10c minify --keep-defines -o small.ic big.ic
 ```
 
+`minify` 只做行级压缩（删注释 / `alias` / `define` / 未用标签、内联、删不可达、压缩重复尾段）。
+脚本本身没有冗余时它不会更短：一份 128 行、119 条指令的圆盘控制脚本 `minify` 后仍是 119 条
+—— 真正的空间在编译器的指令选择（例如回边 `if … { goto L }` 是否折成单条分支），不在 `minify`。
+
 检查是否超出 IC10 限制：
 
 ```bash

@@ -920,3 +920,53 @@ func TestFuseIsSetValueBranch(t *testing.T) {
 		t.Fatalf("isSet value branch not fused to BrSet")
 	}
 }
+
+func TestThreadBranchesBackEdge(t *testing.T) {
+	b := ir.NewBuilder("f")
+	cond := b.NewReg("c")
+	b.Emit(&ir.Load{Dst: cond, Dev: "d0", Logic: "Setting"})
+	head := b.NewBlock()
+	skip := b.NewBlock()
+	empty := b.NewBlock()
+	// if cond { goto <empty> } else { skip }
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: cond, Then: empty, Else: skip})
+	// The empty block is exactly what `if cond { goto L }` lowers to.
+	b.SetBlock(empty)
+	b.SetTerm(&ir.Jmp{Target: head})
+	b.SetBlock(head)
+	b.Emit(&ir.Builtin{Name: "yield"})
+	b.SetTerm(&ir.Jmp{Target: skip})
+	b.SetBlock(skip)
+	b.SetTerm(&ir.Ret{})
+
+	fn := b.Fn()
+	if !threadBranches(fn) {
+		t.Fatal("threadBranches made no change")
+	}
+	br, ok := fn.Blocks[0].Term.(*ir.Br)
+	if !ok {
+		t.Fatalf("entry term = %T, want *ir.Br", fn.Blocks[0].Term)
+	}
+	if br.Then != head {
+		t.Errorf("br.Then = %v, want the loop head %v", br.Then, head)
+	}
+}
+
+func TestThreadBranchesKeepsNonEmptyTarget(t *testing.T) {
+	b := ir.NewBuilder("f")
+	cond := b.NewReg("c")
+	b.Emit(&ir.Load{Dst: cond, Dev: "d0", Logic: "Setting"})
+	target := b.NewBlock()
+	skip := b.NewBlock()
+	b.SetTerm(&ir.Br{Cond: ir.NonZero, A: cond, Then: target, Else: skip})
+	b.SetBlock(target)
+	b.Emit(&ir.Builtin{Name: "yield"})
+	b.SetTerm(&ir.Jmp{Target: skip})
+	b.SetBlock(skip)
+	b.SetTerm(&ir.Ret{})
+
+	fn := b.Fn()
+	if threadBranches(fn) {
+		t.Error("threadBranches changed a branch whose target has instructions")
+	}
+}

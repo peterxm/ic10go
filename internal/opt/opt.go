@@ -266,6 +266,7 @@ var pipeline = []pass{
 	{"deadStores", deadStores},
 	{"redundantDeviceStores", redundantDeviceStores},
 	{"threadJumps", threadJumps},
+	{"threadBranches", threadBranches},
 }
 
 // Optimize runs the optimization pipeline to a fixed point (capped at
@@ -3601,6 +3602,72 @@ func stackReadKey(i ir.Instr) (string, bool) {
 // own target. Inlined calls and if/else chains leave chains of empty join
 // blocks; collapsing them lets tail merging see that branches share a
 // terminator (and removes a redundant jump).
+// threadBranches redirects a conditional branch's successors past empty blocks
+// that only jump onward. `if cond { goto L }` lowers to exactly such a block,
+// and without this the code generator emits `b<cond> T` plus `T: j L` -- two
+// instructions where IC10 has one.
+//
+// It matters most for loop back-edges: a forward `if cond { goto L }` already
+// collapses because its target is the fall-through block, but a back-edge keeps
+// the extra jump. Measured on a real dish controller: 7 of its 17 conditional
+// gotos were back-edges and each cost an extra `j`.
+//
+// The empty block is not deleted here (other edges may still target it);
+// removeUnreachable runs later in the same fixed-point loop.
+func threadBranches(fn *ir.Function) bool {
+	follow := func(t *ir.Block) *ir.Block {
+		seen := map[*ir.Block]bool{}
+		for t != nil && len(t.Instrs) == 0 && !seen[t] {
+			seen[t] = true
+			switch term := t.Term.(type) {
+			case *ir.Jmp:
+				if term.Target == nil || term.Target == t {
+					return t
+				}
+				t = term.Target
+			case *ir.Goto:
+				if term.Target == nil || term.Target == t {
+					return t
+				}
+				t = term.Target
+			default:
+				return t
+			}
+		}
+		return t
+	}
+	changed := false
+	thread := func(p **ir.Block) {
+		if *p == nil {
+			return
+		}
+		if t := follow(*p); t != *p {
+			*p = t
+			changed = true
+		}
+	}
+	for _, b := range fn.Blocks {
+		switch t := b.Term.(type) {
+		case *ir.Br:
+			thread(&t.Then)
+			thread(&t.Else)
+		case *ir.BrSet:
+			thread(&t.Then)
+			thread(&t.Else)
+		case *ir.BrValid:
+			thread(&t.Valid)
+			thread(&t.Invalid)
+		case *ir.BrApprox:
+			thread(&t.Then)
+			thread(&t.Else)
+		case *ir.BrApproxZero:
+			thread(&t.Then)
+			thread(&t.Else)
+		}
+	}
+	return changed
+}
+
 func threadJumps(fn *ir.Function) bool {
 	changed := false
 	for _, b := range fn.Blocks {

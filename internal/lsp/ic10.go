@@ -16,6 +16,12 @@ import (
 func ic10Diagnostics(text string) []lspDiagnostic {
 	var out []lspDiagnostic
 	labels := map[string]int{}
+	// alias is an assembly-time directive: a second binding replaces the first
+	// for everything textually after it, regardless of how control flows. A
+	// runtime branch that jumps over the rebinding therefore does not switch the
+	// device, which is a common misconception (and a silent no-op in practice).
+	aliasVal := map[string]string{}
+	aliasLine := map[string]int{}
 	for i, raw := range strings.Split(text, "\n") {
 		line := strings.TrimSpace(ic10asm.StripComment(raw))
 		if line == "" {
@@ -40,7 +46,28 @@ func ic10Diagnostics(text string) []lspDiagnostic {
 			continue
 		}
 		op := strings.ToLower(fields[0])
-		if op == "alias" || op == "define" {
+		if op == "alias" {
+			if len(fields) >= 3 {
+				name, val := fields[1], fields[2]
+				if prev, ok := aliasVal[name]; ok && prev != val {
+					col := strings.Index(raw, name)
+					if col < 0 {
+						col = 0
+					}
+					out = append(out, lspDiagnostic{
+						Range:    lspRange{Start: lspPosition{i, col}, End: lspPosition{i, col + len(name)}},
+						Severity: 2,
+						Source:   "ic10c",
+						Code:     "ic10-alias-rebind",
+						Message:  fmt.Sprintf("alias %q was already bound to %q on line %d; aliases are compile-time, so a branch that jumps over this line does not switch it at runtime", name, prev, aliasLine[name]+1),
+					})
+				}
+				aliasVal[name] = val
+				aliasLine[name] = i
+			}
+			continue
+		}
+		if op == "define" {
 			continue
 		}
 		if _, ok := builtin.IC10Instructions[op]; ok {

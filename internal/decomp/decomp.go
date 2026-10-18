@@ -56,6 +56,23 @@ type decompiler struct {
 // private scratch. See the comment in decompile where it is emitted.
 const sharedStackDirective = "// icg: shared-stack\n"
 
+// usesHousingStack reports whether the program touches the housing stack: the
+// 512 slots behind `db`, written by `put db`, `push`/`poke` and read by
+// `get db`, `pop`/`peek`. Only such a program needs the shared-stack pragma.
+func usesHousingStack(lines []icLine) bool {
+	for _, l := range lines {
+		switch l.op {
+		case "push", "pop", "peek", "poke":
+			return true
+		case "get", "put":
+			if len(l.args) > 0 && l.args[0] == "db" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Options tune a decompilation. The zero value is the plain one: the embedded
 // game tables and nothing else.
 type Options struct {
@@ -134,6 +151,15 @@ func decompile(src string, structured bool, opts Options) (string, []Warning, er
 			}
 			continue
 		}
+		// Bind aliases and defines as of this line. IC10 resolves them in source
+		// order, and real programs re-alias a name to switch which device it
+		// means, jumping over the second `alias`; substituting the final binding
+		// into the whole program would flatten that switch to one device. (Seen
+		// in a dish controller: `alias dish d0` ... `alias dish d0`/`jr 2`/
+		// `alias dish d1` -- the first three writes are d0's, the rest are d1's.)
+		for j, a := range args {
+			args[j] = d.resolve(a)
+		}
 		lines = append(lines, icLine{num: i, op: op, args: args, raw: text})
 	}
 
@@ -144,7 +170,17 @@ func decompile(src string, structured bool, opts Options) (string, []Warning, er
 			targets[t] = true
 		}
 	}
+	// Sorted, not map order: two targets can land on the same instruction (both
+	// the alias line and the line after it resolve to the next real instruction),
+	// and the first one processed names the shared label. Left to map order the
+	// output named it L15 or L16 at random, and the flat emitter could then print
+	// a goto to a label it had dropped.
+	order := make([]int, 0, len(targets))
 	for t := range targets {
+		order = append(order, t)
+	}
+	sort.Ints(order)
+	for _, t := range order {
 		if names := d.labelsAt[t]; len(names) > 0 {
 			d.labelAt[t] = names[0]
 			continue
@@ -162,9 +198,14 @@ func decompile(src string, structured bool, opts Options) (string, []Warning, er
 			continue
 		} else if ok {
 			// The target does not land on an emitted instruction (a directive
-			// or blank line): attach the label to the next instruction.
-			d.labelAt[t] = name
-			d.labelsAt[next] = append(d.labelsAt[next], name)
+			// or blank line): attach the label to the next instruction, reusing
+			// the name already attached there.
+			if names := d.labelsAt[next]; len(names) > 0 {
+				d.labelAt[t] = names[0]
+			} else {
+				d.labelAt[t] = name
+				d.labelsAt[next] = append(d.labelsAt[next], name)
+			}
 			continue
 		}
 		// Past the last instruction: a jump here ends the program.
@@ -178,10 +219,12 @@ func decompile(src string, structured bool, opts Options) (string, []Warning, er
 	// publishes values for others to read. The compiler otherwise treats a
 	// single-chip program's stack as private and may drop housing-stack writes
 	// that the program never reads back, silently deleting the published data
-	// (a `put db N v` loader compiles to nothing). Mark the output shared so
-	// those writes survive; the cost is small (few programs write slots they do
-	// not also read).
-	b.WriteString(sharedStackDirective)
+	// (a `put db N v` loader compiles to nothing). Mark the output shared only
+	// when the program actually touches the housing stack; most programs do not,
+	// and for them the directive is noise that also pins the stack layout.
+	if usesHousingStack(lines) {
+		b.WriteString(sharedStackDirective)
+	}
 	b.WriteString("func main() {\n")
 	d.bankLo, d.bankHi = noBank, noBank
 	if line, has := dynamicIndirect(lines); has {
@@ -235,11 +278,11 @@ func decompile(src string, structured bool, opts Options) (string, []Warning, er
 // flat emits the program with explicit labels and gotos.
 func (d *decompiler) flat(b *strings.Builder, lines []icLine) {
 	for _, l := range lines {
-		if names := d.labelsAt[l.num]; len(names) > 0 {
-			for _, n := range names {
-				fmt.Fprintf(b, "    label %s:\n", n)
-			}
-		} else if name, ok := d.labelAt[l.num]; ok {
+		names := d.labelsAt[l.num]
+		for _, n := range names {
+			fmt.Fprintf(b, "    label %s:\n", n)
+		}
+		if name, ok := d.labelAt[l.num]; ok && !containsString(names, name) {
 			fmt.Fprintf(b, "    label %s:\n", name)
 		}
 		if l.op == "" {
@@ -254,6 +297,16 @@ func (d *decompiler) flat(b *strings.Builder, lines []icLine) {
 // ---------------------------------------------------------------------------
 // Parsing helpers
 // ---------------------------------------------------------------------------
+
+// containsString reports whether list contains s.
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
 
 func (d *decompiler) resolve(s string) string {
 	for i := 0; i < 10; i++ {

@@ -206,8 +206,24 @@ func (s Score) String() string {
 	if s.TicksPerRound > 1 {
 		round = fmt.Sprintf(" · round >=%d ticks", s.TicksPerRound)
 	}
-	return fmt.Sprintf("%s: lines %d/%d (%.0f%%) · worst tick %d/%d (%.0f%%)%s",
-		s.Grade, s.Lines, s.LineLimit, s.LineUsed*100, s.TickWorst, s.TickLimit, s.TickUsed*100, round)
+	return fmt.Sprintf("%s: lines %d/%d (%.0f%%) · worst tick %d/%d (%.0f%%)%s%s",
+		s.Grade, s.Lines, s.LineLimit, s.LineUsed*100, s.TickWorst, s.TickLimit, s.TickUsed*100, round, s.binds())
+}
+
+// binds names the budget that fails, when one does: fitting the 128-line cap
+// says nothing about fitting a tick, and a program can do one without the other.
+func (s Score) binds() string {
+	overLines := s.Lines > s.LineLimit
+	overTick := s.TickWorst > s.TickLimit
+	switch {
+	case overLines && overTick:
+		return " · both budgets exceeded"
+	case overLines:
+		return " · line budget exceeded"
+	case overTick:
+		return " · tick budget exceeded"
+	}
+	return ""
 }
 
 // BuildResult is the JSON document emitted by `ic10c build --json`. It is a

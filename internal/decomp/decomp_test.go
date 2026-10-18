@@ -613,3 +613,81 @@ func TestDecompileWithModCatalogNamesModHashes(t *testing.T) {
 		t.Errorf("a mod prefab hash should resolve once the pack is loaded:\n%s", code)
 	}
 }
+
+func TestDecompileAliasBindsAtPointOfUse(t *testing.T) {
+	// Aliases are resolved in source order; a later alias must not rewrite an
+	// earlier instruction. Real programs re-alias a name to switch devices.
+	src := `alias dev d0
+s dev On 1
+alias dev d1
+s dev On 0
+`
+	code, _, err := Decompile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(code, "d0.On = 1") {
+		t.Errorf("the first write must still target d0:\n%s", code)
+	}
+	if !strings.Contains(code, "d1.On = 0") {
+		t.Errorf("the second write must target d1:\n%s", code)
+	}
+}
+
+func TestSharedStackDirectiveOnlyWhenHousingStackUsed(t *testing.T) {
+	// A program that never touches the housing stack does not need the pragma,
+	// and without it the compiler stays free to keep the stack private.
+	code, _, err := Decompile("s d0 On 1\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(code, "shared-stack") {
+		t.Errorf("no stack access, but the output pins the shared stack:\n%s", code)
+	}
+
+	// `put db` publishes a slot for other chips; the write must survive.
+	code, _, err = Decompile("put db 1 2\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(code, "shared-stack") {
+		t.Errorf("a housing-stack write needs the pragma:\n%s", code)
+	}
+}
+
+func TestDecompileLabelsAreDeterministic(t *testing.T) {
+	// Two jumps land on the same instruction: `brgt` reaches the alias line and
+	// `jr` reaches the line after it. Both mean the next instruction. The shared
+	// label's name must not depend on map order -- a run used to be able to emit
+	// `goto L16` while the label it printed was `label L15`.
+	src := "alias d d0\nbrgt r1 2 3\n  alias d d0\n  jr 2\n  alias d d1\nl r0 d2 Open\n"
+	first, warns, err := Decompile(src)
+	if err != nil || len(warns) > 0 {
+		t.Fatalf("decompile: %v %v", err, warns)
+	}
+	for i := 0; i < 32; i++ {
+		got, _, err := Decompile(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != first {
+			t.Fatalf("run %d differs:\n%s\n--- vs ---\n%s", i, first, got)
+		}
+	}
+	labels := map[string]bool{}
+	for _, line := range strings.Split(first, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "label ") {
+			labels[strings.TrimSuffix(strings.TrimPrefix(line, "label "), ":")] = true
+		}
+	}
+	for _, line := range strings.Split(first, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "goto ") {
+			name := strings.TrimPrefix(line, "goto ")
+			if !labels[name] {
+				t.Errorf("goto %s has no label:\n%s", name, first)
+			}
+		}
+	}
+}

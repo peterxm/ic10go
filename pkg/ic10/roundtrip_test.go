@@ -89,18 +89,22 @@ func TestIc10CodeRoundTripStructured(t *testing.T) {
 }
 
 // writeSequence records the device writes (dev.logic=value) performed while
-// executing up to maxWrites writes or maxSteps instructions.
-func writeSequence(m *vm.Machine, maxWrites, maxSteps int) []string {
-	var seq []string
+// executing up to maxWrites writes or maxSteps instructions. done reports that
+// the run ended on its own (halted, errored, or reached the write cap) rather
+// than being cut by the step budget.
+func writeSequence(m *vm.Machine, maxWrites, maxSteps int) (seq []string, done bool) {
 	m.OnWrite = func(dev, logic string, v float64) {
 		seq = append(seq, fmt.Sprintf("%s.%s=%v", dev, logic, v))
 	}
-	for i := 0; i < maxSteps && len(seq) < maxWrites; i++ {
+	for i := 0; i < maxSteps; i++ {
+		if len(seq) >= maxWrites || m.Halted {
+			return seq, true
+		}
 		if err := m.Run(1); err != nil && err != vm.ErrStepLimit {
-			break
+			return seq, true
 		}
 	}
-	return seq
+	return seq, false
 }
 
 func preview(s []string) string {
@@ -134,9 +138,15 @@ func compareWrites(src, code string) string {
 		if seed != 0 {
 			writes, steps = 60, 30000
 		}
-		wa := writeSequence(a, writes, steps)
-		wb := writeSequence(b, writes, steps)
+		wa, da := writeSequence(a, writes, steps)
+		wb, db := writeSequence(b, writes, steps)
 		if strings.Join(wa, "|") != strings.Join(wb, "|") {
+			// A faster recompilation gets further in the same step budget. That
+			// is not a behavioural difference: accept it when the shorter run was
+			// cut by the budget (not halted) and is a prefix of the longer one.
+			if cutPrefix(wa, wb, da, db) {
+				continue
+			}
 			i := 0
 			for i < len(wa) && i < len(wb) && wa[i] == wb[i] {
 				i++
@@ -146,6 +156,25 @@ func compareWrites(src, code string) string {
 		}
 	}
 	return ""
+}
+
+// cutPrefix reports whether the shorter write sequence is a prefix of the
+// longer one because its run hit the step budget. If either run ended on its
+// own, a length difference is real: the program halted (or errored) earlier.
+func cutPrefix(wa, wb []string, da, db bool) bool {
+	short, long, shortDone := wa, wb, da
+	if len(wb) < len(wa) {
+		short, long, shortDone = wb, wa, db
+	}
+	if shortDone || len(short) > len(long) {
+		return false
+	}
+	for i := range short {
+		if short[i] != long[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // skipIfNaNSensitive skips a round-trip subtest whose only divergence is the
