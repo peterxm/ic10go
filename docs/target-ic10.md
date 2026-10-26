@@ -289,6 +289,12 @@ On  Open  PrefabHash  SeedingRatio  SortingClass  TotalSlots  Volume
     `JumpToAddress`(5) / `DeviceSetLock`(6) / `EjectReagent`(7) /
     `EjectAllReagents`(8) / `MissingRecipeReagent`(9)
   - `TraderInstruction.*`（Medium Satellite Dish，0..18）
+  - `SuitStorageInstruction`（0..9：`SlotHelmet`(1) / `SlotSuit`(2) / `SlotBackpack`(3) /
+    `SlotAirTank`(4) / `SlotWasteTank`(5) / `SlotBatteryCell`(6) /
+    `SlotPropellentTank`(7) / `SlotFilter`(8) / `SlotCoolantTank`(9)）
+  - `SiloInstruction.SlotContents`(1)；`OccupancyInstruction.Entity`(1) /
+    `Inventory`(2)；`RocketAvionicsInstruction.*`（1..6）；
+    `CelestialTracking.BodyOrientation`(1)
   - 栈容量 / 固定地址（编译器便利常量，非游戏枚举）：`Stack.Size`(512) /
     `SorterStack.Size`(32) / `PrinterStack.Size`(64) / `PrinterStack.StackPointer`(63) /
     `PrinterStack.MissingRecipeReagent`(54)
