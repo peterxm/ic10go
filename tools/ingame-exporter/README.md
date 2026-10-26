@@ -64,10 +64,32 @@ Documents\My Games\Stationeers\ic10go\
 ```
 
 `devices.json` uses the same shape as IZCode's catalog, so a file produced by
-either mod can be consumed. Format 2 adds `slotWriteable` and a `slots` array
+either mod can be consumed. Format 2 adds `slotWriteable`, a `slots` array
 (`index`, `class`, `key`, `keyHash`, `specificPrefabHashes`, `interactable`,
-`swappable`, `locked`, `read`, `write`); `slotProperties` stays as slot 0's
-readable set for format-1 consumers.
+`swappable`, `locked`, `read`, `write`), and a `memory` object:
+
+```json
+"memory": {"readable": true, "writeable": false, "stackSize": 24,
+           "instructionType": "SuitStorageInstruction",
+           "instructions": [{"name": "SlotHelmet", "value": 1,
+                             "format": "0-7 | OP_CODE | BYTE_8 ..."}]}
+```
+
+`memory` is `null` for devices with no logic memory. `readable` / `writeable`
+mean the IC10 `get` / `put` instructions accept the prefab (`IMemoryReadable` /
+`IMemoryWritable`); `stackSize` is `IMemory.GetStackSize()` (the number of
+addresses). For devices with a packed instruction protocol — suit storage,
+printers, sorters, silos, occupancy sensors, satellite dishes, rocket avionics
+and celestial trackers — `instructionType` and `instructions` carry the enum
+names, opcodes and the Stationpedia bit layout (color markup stripped).
+`slotProperties` stays as slot 0's readable set for format-1 consumers.
+
+The suit storage is the read-only example: `get` returns 24 entries, each packed
+as `[opcode 0-7][slot index 8-15][prefab hash 16-47]`; opcodes 1/2/3 are
+helmet/suit/backpack, and 4..9 cover the suit's air/waste/coolant tanks, the
+jetpack propellant, battery cells and gas filters. The hash field is unsigned in
+the Stationpedia text; IC10 `HASH()` values are signed, so subtract 2^32 before
+comparing a hash above 2147483647.
 
 `CanLogicWrite(logicSlotType, slot)` cannot be probed on a prefab: the base
 `Device` implementation refuses while `IsStructureCompleted` is false, and a

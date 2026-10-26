@@ -27,8 +27,10 @@
   然后什么都不做。
 - 产出两个文件到 `Documents/My Games/Stationeers/ic10go/`：
   - `prefabs.json`：每个预制体的 `name` / `hash` / `displayName`。
-  - `devices.json`（format 2）：每个可逻辑设备的槽位数、可读写 `LogicType`，以及**逐槽位**的
-    `class` / `key` / `specificPrefabHashes` / 可读 `ls` / 可写 `ss` 的 `LogicSlotType`。
+  - `devices.json`（format 2）：每个可逻辑设备的槽位数、可读写 `LogicType`，**逐槽位**的
+    `class` / `key` / `specificPrefabHashes` / 可读 `ls` / 可写 `ss` 的 `LogicSlotType`，
+    以及逻辑内存（`get`/`put`）能力：`readable` / `writeable` / `stackSize`，
+    有指令协议的设备还带 `instructionType` 和 `instructions`（opcode + 位域说明）。
 - `devices.json` 与 IZCode 的目录同格式，两个模组任一产出都能被消费。
 
 构建与安装见 [`tools/ingame-exporter/README.md`](../tools/ingame-exporter/README.md)。
@@ -58,6 +60,24 @@ go run ./tools/import-devices prefabs.json devices.json outdir
 - 已随仓库提交：566 个设备、10495 条属性（游戏 `0.2.6428.27798`），以及 161 个
   本地化缺失的预制体名。
 - 游戏更新后重跑导出器并 `go run ./tools/import-devices` 即可。
+
+## 逻辑内存 / 指令栈
+
+`memory` 字段对应游戏的 `IMemory`（`GetStackSize`）、`IMemoryReadable`
+（`ReadMemory` → IC10 `get`）、`IMemoryWritable`（`WriteMemory` → IC10 `put`）和
+`IInstructable`（`GetInstructions` / `GetInstructionDescription`）。典型：
+
+| 设备 | 指令枚举 | 可读 | 可写 | 地址数 |
+|---|---|---|---|---|
+| 太空服收纳柜 `StructureSuitStorage` | `SuitStorageInstruction` | 是 | 否 | 24 |
+| 打印机 / 制造台 | `PrinterInstruction` | 是 | 是 | 见导出 |
+| 逻辑分拣机 | `SorterInstruction` | 是 | 是 | 见导出 |
+| 筒仓 `Silo` | `SiloInstruction` | 是 | 否 | 见导出 |
+| 占用传感器 | `OccupancyInstruction` | 是 | 否 | 见导出 |
+| 中型卫星天线 | `TraderInstruction` | 是 | 是 | 见导出 |
+| 火箭航电 | `RocketAvionicsInstruction` | 是 | 是 | 见导出 |
+
+`instructions[].format` 就是游戏内 Stationpedia「内存」页的位域表（已去掉颜色标签）。
 
 ## 未做
 

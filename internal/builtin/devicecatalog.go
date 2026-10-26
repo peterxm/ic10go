@@ -32,6 +32,27 @@ type DeviceSlot struct {
 	Write                []DeviceSlotProperty `json:"write"`
 }
 
+// DeviceInstruction is one opcode of a device's packed memory protocol (the
+// Stationpedia's "memory" page): its enum member name, numeric opcode, and the
+// bit layout text (color markup stripped) for that opcode.
+type DeviceInstruction struct {
+	Name   string `json:"name"`
+	Value  int    `json:"value"`
+	Format string `json:"format"`
+}
+
+// DeviceMemory is the logic-memory ("stack") surface of a prefab: whether the
+// IC10 `get` / `put` instructions accept it, how many addresses it has, and,
+// for devices with a packed instruction protocol (suit storage, printers,
+// sorters, silos, ...), the instruction enum and its opcodes.
+type DeviceMemory struct {
+	Readable        bool                `json:"readable"`
+	Writeable       bool                `json:"writeable"`
+	StackSize       int                 `json:"stackSize"`
+	InstructionType string              `json:"instructionType"`
+	Instructions    []DeviceInstruction `json:"instructions"`
+}
+
 // Device is one prefab's logic surface, as scanned inside the game by
 // tools/ingame-exporter. It is what completion uses to offer a prefab's own
 // properties instead of the whole vocabulary. The JSON tags match devices.json.
@@ -44,6 +65,7 @@ type Device struct {
 	Properties     []DeviceProperty     `json:"properties"`
 	SlotProperties []DeviceSlotProperty `json:"slotProperties"`
 	Slots          []DeviceSlot         `json:"slots"`
+	Memory         *DeviceMemory        `json:"memory"`
 }
 
 // DeviceCatalog maps a prefab name to its logic surface. It is filled at init

@@ -87,3 +87,34 @@ func TestDeviceCatalogSlotShape(t *testing.T) {
 		t.Errorf("slot 1 read: %+v", got)
 	}
 }
+
+// TestDeviceCatalogMemoryShape guards the format-2 memory surface: get/put
+// support, stack size, and the packed instruction protocol (the Stationpedia
+// "memory" page) for devices such as the suit storage.
+func TestDeviceCatalogMemoryShape(t *testing.T) {
+	const doc = `{"formatVersion":2,"gameVersion":"test","deviceCount":1,"devices":[
+	{"prefabName":"StructureSuitStorage","prefabHash":255034731,"displayName":"Suit Storage",
+	 "slotCount":3,"slotWriteable":true,"properties":[],"slotProperties":[],"slots":[],
+	 "memory":{"readable":true,"writeable":false,"stackSize":24,
+	  "instructionType":"SuitStorageInstruction",
+	  "instructions":[
+	   {"name":"SlotHelmet","value":1,"format":"0-7 | OP_CODE | BYTE_8"},
+	   {"name":"SlotSuit","value":2,"format":"0-7 | OP_CODE | BYTE_8"}]}}]}`
+	var f DeviceCatalogFile
+	if err := json.Unmarshal([]byte(doc), &f); err != nil {
+		t.Fatal(err)
+	}
+	m := f.Devices[0].Memory
+	if m == nil {
+		t.Fatal("memory is nil")
+	}
+	if !m.Readable || m.Writeable || m.StackSize != 24 || m.InstructionType != "SuitStorageInstruction" {
+		t.Errorf("memory header: %+v", m)
+	}
+	if len(m.Instructions) != 2 || m.Instructions[0].Name != "SlotHelmet" || m.Instructions[0].Value != 1 {
+		t.Errorf("instructions: %+v", m.Instructions)
+	}
+	if m.Instructions[1].Format == "" {
+		t.Error("instruction format was dropped")
+	}
+}

@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using Assets.Scripts;
 using Assets.Scripts.Objects;
 using Assets.Scripts.Objects.Electrical;
@@ -162,7 +163,8 @@ namespace Ic10Go.Exporter
             properties.Sort((a, b) => a.LogicType.CompareTo(b.LogicType));
             slotProperties.Sort((a, b) => a.LogicSlotType.CompareTo(b.LogicSlotType));
             return new DeviceEntry(name, thing.PrefabHash, SafeTitle(thing, name), slots,
-                                   slotWriteable != null, properties, slotProperties, slotEntries);
+                                   slotWriteable != null, properties, slotProperties, slotEntries,
+                                   ScanMemory(thing));
         }
 
         /// <summary>
@@ -234,6 +236,57 @@ namespace Ic10Go.Exporter
         private static Slot? SafeGetSlot(ILogicable l, int index)
         {
             try { return l.GetSlot(index); } catch { return null; }
+        }
+
+        /// <summary>
+        /// The device's logic-memory ("stack") surface: `get`/`put` support, the
+        /// number of addresses, and -- for devices with a packed instruction
+        /// protocol (suit storage, printers, sorters, silos, avionics...) -- the
+        /// instruction enum and the bit layout the Stationpedia shows.
+        /// </summary>
+        private static MemoryEntry? ScanMemory(Thing thing)
+        {
+            bool readable = thing is IMemoryReadable;
+            bool writeable = thing is IMemoryWritable;
+            int stackSize = 0;
+            if (thing is IMemory memory)
+            {
+                try { stackSize = memory.GetStackSize(); } catch { }
+            }
+
+            string instructionType = "";
+            var instructions = new List<InstructionEntry>();
+            if (thing is IInstructable instructable)
+            {
+                IEnumCollection? collection = null;
+                try { collection = instructable.GetInstructions(); } catch { }
+                if (collection != null)
+                {
+                    instructionType = collection.GetEnumTypeName();
+                    for (int i = 0; i < collection.Length; i++)
+                    {
+                        int value;
+                        try { value = collection.GetIntFromIndex(i); } catch { continue; }
+                        if (value == 0) continue; // None
+                        string name;
+                        try { name = collection.GetNameFromIndex(i); } catch { continue; }
+                        string format = "";
+                        try { format = StripMarkup(instructable.GetInstructionDescription(i)); } catch { }
+                        instructions.Add(new InstructionEntry(name, value, format));
+                    }
+                }
+            }
+
+            if (!readable && !writeable && stackSize == 0 && instructions.Count == 0)
+                return null;
+            return new MemoryEntry(readable, writeable, stackSize, instructionType, instructions);
+        }
+
+        /// <summary>The Stationpedia text carries &lt;color&gt; tags; strip them for JSON.</summary>
+        private static string StripMarkup(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return Regex.Replace(s, "<[^>]+>", "").TrimEnd();
         }
 
         // -- Defensive probing ------------------------------------------------
@@ -382,7 +435,30 @@ namespace Ic10Go.Exporter
                     WriteSlotProperties(b, s.Write);
                     b.Append("]}");
                 }
-                b.Append("]\n");
+                b.Append("],\n");
+                b.Append("      \"memory\": ");
+                if (d.Memory == null)
+                {
+                    b.Append("null");
+                }
+                else
+                {
+                    b.Append("{\"readable\": ").Append(d.Memory.Readable ? "true" : "false")
+                     .Append(", \"writeable\": ").Append(d.Memory.Writeable ? "true" : "false")
+                     .Append(", \"stackSize\": ").Append(d.Memory.StackSize)
+                     .Append(", \"instructionType\": ").Append(Json(d.Memory.InstructionType))
+                     .Append(", \"instructions\": [");
+                    for (int j = 0; j < d.Memory.Instructions.Count; j++)
+                    {
+                        var ins = d.Memory.Instructions[j];
+                        if (j > 0) b.Append(", ");
+                        b.Append("{\"name\": ").Append(Json(ins.Name))
+                         .Append(", \"value\": ").Append(ins.Value)
+                         .Append(", \"format\": ").Append(Json(ins.Format)).Append("}");
+                    }
+                    b.Append("]}");
+                }
+                b.Append("\n");
                 b.Append("    }");
                 b.Append(i + 1 < devices.Count ? ",\n" : "\n");
             }
@@ -443,13 +519,38 @@ namespace Ic10Go.Exporter
             public readonly List<PropertyEntry> Properties;
             public readonly List<SlotPropertyEntry> SlotProperties;
             public readonly List<SlotEntry> Slots;
+            public readonly MemoryEntry? Memory;
             public DeviceEntry(string name, long hash, string title, int slotCount, bool slotWriteable,
                                List<PropertyEntry> properties, List<SlotPropertyEntry> slotProperties,
-                               List<SlotEntry> slots)
+                               List<SlotEntry> slots, MemoryEntry? memory)
             {
                 Name = name; Hash = hash; Title = title; SlotCount = slotCount; SlotWriteable = slotWriteable;
-                Properties = properties; SlotProperties = slotProperties; Slots = slots;
+                Properties = properties; SlotProperties = slotProperties; Slots = slots; Memory = memory;
             }
+        }
+
+        private sealed class MemoryEntry
+        {
+            public readonly bool Readable;
+            public readonly bool Writeable;
+            public readonly int StackSize;
+            public readonly string InstructionType;
+            public readonly List<InstructionEntry> Instructions;
+            public MemoryEntry(bool readable, bool writeable, int stackSize, string instructionType,
+                               List<InstructionEntry> instructions)
+            {
+                Readable = readable; Writeable = writeable; StackSize = stackSize;
+                InstructionType = instructionType; Instructions = instructions;
+            }
+        }
+
+        private sealed class InstructionEntry
+        {
+            public readonly string Name;
+            public readonly int Value;
+            public readonly string Format;
+            public InstructionEntry(string name, int value, string format)
+            { Name = name; Value = value; Format = format; }
         }
 
         private sealed class SlotEntry

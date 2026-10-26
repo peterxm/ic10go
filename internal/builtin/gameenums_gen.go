@@ -18,6 +18,10 @@ var GameEnums = map[string]map[string]int64{
 		"Offline":  1,
 		"Pressure": 2,
 	},
+	"CelestialTracking": {
+		"BodyOrientation": 1,
+		"None":            0,
+	},
 	"Color": {
 		"Black":  7,
 		"Blue":   0,
@@ -531,6 +535,11 @@ var GameEnums = map[string]map[string]int64{
 		"None":              0,
 		"Static":            2,
 	},
+	"OccupancyInstruction": {
+		"Entity":    1,
+		"Inventory": 2,
+		"None":      0,
+	},
 	"PowerMode": {
 		"Charged":     4,
 		"Charging":    3,
@@ -566,6 +575,15 @@ var GameEnums = map[string]map[string]int64{
 		"StorageFull":  6,
 		"Unload":       4,
 	},
+	"RocketAvionicsInstruction": {
+		"ChildResourceSite": 5,
+		"ChildSurveySite":   6,
+		"JumpToAddress":     2,
+		"None":              0,
+		"ResourceSite":      3,
+		"StackPointer":      1,
+		"SurveySite":        4,
+	},
 	"RocketMode": {
 		"Chart":       5,
 		"Deploy":      6,
@@ -591,6 +609,10 @@ var GameEnums = map[string]map[string]int64{
 		"None":        0,
 		"Small":       1,
 		"SmallGas":    2,
+	},
+	"SiloInstruction": {
+		"None":         0,
+		"SlotContents": 1,
 	},
 	"SlotClass": {
 		"AccessCard":           22,
@@ -707,6 +729,18 @@ var GameEnums = map[string]map[string]int64{
 		"Two":                 30,
 		"Warning":             16,
 		"Welcome":             25,
+	},
+	"SuitStorageInstruction": {
+		"None":               0,
+		"SlotAirTank":        4,
+		"SlotBackpack":       3,
+		"SlotBatteryCell":    6,
+		"SlotCoolantTank":    9,
+		"SlotFilter":         8,
+		"SlotHelmet":         1,
+		"SlotPropellentTank": 7,
+		"SlotSuit":           2,
+		"SlotWasteTank":      5,
 	},
 	"TraderInstruction": {
 		"FilterGasContains":          17,
