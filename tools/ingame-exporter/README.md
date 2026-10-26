@@ -6,9 +6,14 @@ A minimal Stationeers mod that dumps the two things only the running game knows:
   the authoritative prefab list, including the procedural names (`ItemWreckage*`,
   kits) the localization does not carry.
 - **`devices.json`** — for every logic-capable prefab: which `LogicType`s it
-  accepts for **read** and **write**, its slot count, and the `LogicSlotType`s
-  slot 0 answers. This is the data that cannot be read from `Assembly-CSharp.dll`
-  (it lives in Unity's asset bundles).
+  accepts for **read** and **write**, its slot count, and **per slot** what the
+  slot accepts (`class`, `key`, `specificPrefabHashes`) and which
+  `LogicSlotType`s `ls` / `ss` accept for that slot. Slot read/write support is
+  per slot in the game, not per device: a suit storage's helmet slot understands
+  `On` / `Lock` / `Open`, its suit slot adds `PressureWaste` / `PressureAir`, and
+  its back slot has neither. The old device-level `slotProperties` list is kept
+  for format-1 consumers (slot 0's readable set). This is the data that cannot
+  be read from `Assembly-CSharp.dll` (it lives in Unity's asset bundles).
 
 It has **no Harmony patches and no runtime behaviour**: it scans once, writes the
 files and stops. Nothing in the game changes.
@@ -59,7 +64,18 @@ Documents\My Games\Stationeers\ic10go\
 ```
 
 `devices.json` uses the same shape as IZCode's catalog, so a file produced by
-either mod can be consumed.
+either mod can be consumed. Format 2 adds `slotWriteable` and a `slots` array
+(`index`, `class`, `key`, `keyHash`, `specificPrefabHashes`, `interactable`,
+`swappable`, `locked`, `read`, `write`); `slotProperties` stays as slot 0's
+readable set for format-1 consumers.
+
+`CanLogicWrite(logicSlotType, slot)` cannot be probed on a prefab: the base
+`Device` implementation refuses while `IsStructureCompleted` is false, and a
+prefab template never is. The exporter therefore falls back to the same
+class-based rules the game applies once the device is built (`On` for
+Helmet/Tool/Appliance, `Lock` for Helmet, `Open` for Helmet/GasCanister/
+LiquidCanister/LiquidBottle) and to `Console`'s extra `Mode`. If the game changes
+those rules, `Exporter.cs` (`SafeSlotWritable`) has to change with it.
 
 Two details that cost a run to learn:
 

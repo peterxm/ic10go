@@ -27,7 +27,8 @@
   然后什么都不做。
 - 产出两个文件到 `Documents/My Games/Stationeers/ic10go/`：
   - `prefabs.json`：每个预制体的 `name` / `hash` / `displayName`。
-  - `devices.json`：每个可逻辑设备的槽位数、可读写 `LogicType`、槽位属性。
+  - `devices.json`（format 2）：每个可逻辑设备的槽位数、可读写 `LogicType`，以及**逐槽位**的
+    `class` / `key` / `specificPrefabHashes` / 可读 `ls` / 可写 `ss` 的 `LogicSlotType`。
 - `devices.json` 与 IZCode 的目录同格式，两个模组任一产出都能被消费。
 
 构建与安装见 [`tools/ingame-exporter/README.md`](../tools/ingame-exporter/README.md)。
@@ -62,4 +63,8 @@ go run ./tools/import-devices prefabs.json devices.json outdir
 
 - 按 **具体接线** 校验（`d0` 接的是哪个设备）——离线编译器看不到接线，只有游戏内
   编辑器能。ic10go 目前用目录做「预制体级」的收窄，不做「端口级」校验。
-- 槽位属性的按预制体过滤（`all(Prefab).slot[0].` 仍列全部槽位属性）。
+- 按槽位索引的补全过滤（`all(Prefab).slot[i].` 仍列该预制体的槽位属性并集）。
+- 槽位写能力（`ss`）在预制体上无法直接探测：`Device.CanLogicWrite` 要求
+  `IsStructureCompleted`，预制体模板永远不满足。导出器按游戏同样的槽位 `class`
+  规则回退（`On`：Helmet/Tool/Appliance；`Lock`：Helmet；`Open`：
+  Helmet/GasCanister/LiquidCanister/LiquidBottle；`Console` 额外 `Mode`）。

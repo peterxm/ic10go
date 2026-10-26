@@ -16,6 +16,7 @@ using System.Reflection;
 using System.Text;
 using Assets.Scripts;
 using Assets.Scripts.Objects;
+using Assets.Scripts.Objects.Electrical;
 using Assets.Scripts.Objects.Motherboards;
 using Assets.Scripts.Objects.Pipes;
 using UnityEngine;
@@ -109,7 +110,7 @@ namespace Ic10Go.Exporter
                     continue;
 
                 var device = ScanDevice(thing, logicable, name);
-                if (device != null && (device.Properties.Count > 0 || device.SlotProperties.Count > 0))
+                if (device != null && (device.Properties.Count > 0 || device.SlotProperties.Count > 0 || device.Slots.Count > 0))
                     devices.Add(device);
             }
 
@@ -125,7 +126,7 @@ namespace Ic10Go.Exporter
                       " logic devices to " + folder);
         }
 
-        private static DeviceEntry ScanDevice(Thing thing, ILogicable logicable, string name)
+        private static DeviceEntry? ScanDevice(Thing thing, ILogicable logicable, string name)
         {
             var properties = new List<PropertyEntry>();
 
@@ -153,9 +154,86 @@ namespace Ic10Go.Exporter
                 }
             }
 
+            var slotWriteable = logicable as ISlotWriteable;
+            var slotEntries = new List<SlotEntry>();
+            for (int i = 0; i < slots; i++)
+                slotEntries.Add(ScanSlot(logicable, slotWriteable, i));
+
             properties.Sort((a, b) => a.LogicType.CompareTo(b.LogicType));
             slotProperties.Sort((a, b) => a.LogicSlotType.CompareTo(b.LogicSlotType));
-            return new DeviceEntry(name, thing.PrefabHash, SafeTitle(thing, name), slots, properties, slotProperties);
+            return new DeviceEntry(name, thing.PrefabHash, SafeTitle(thing, name), slots,
+                                   slotWriteable != null, properties, slotProperties, slotEntries);
+        }
+
+        /// <summary>
+        /// One prefab slot: what the slot accepts (class / specific prefabs) and
+        /// which slot logic types `ls`/`ss` accept for it. The game answers these
+        /// per slot, not per device -- a suit storage's helmet slot understands
+        /// On/Lock/Open while its suit slot does not, and only the suit slot adds
+        /// PressureWaste/PressureAir.
+        /// </summary>
+        private static SlotEntry ScanSlot(ILogicable logicable, ISlotWriteable? slotWriteable, int index)
+        {
+            Slot? slot = SafeGetSlot(logicable, index);
+            string cls = slot != null ? slot.Type.ToString() : "";
+            string key = slot?.StringKey ?? "";
+            int hash = slot?.StringHash ?? 0;
+            bool interactable = slot != null && slot.IsInteractable;
+            bool swappable = slot != null && slot.IsSwappable;
+            bool locked = slot != null && slot.IsLocked;
+            long[] specific = Array.Empty<long>();
+            if (slot?.SpecificTypePrefabHashes != null)
+            {
+                specific = new long[slot.SpecificTypePrefabHashes.Length];
+                for (int i = 0; i < specific.Length; i++)
+                    specific[i] = slot.SpecificTypePrefabHashes[i];
+            }
+
+            var read = new List<SlotPropertyEntry>();
+            var write = new List<SlotPropertyEntry>();
+            bool isConsole = logicable is Assets.Scripts.Objects.Electrical.Console;
+            foreach (LogicSlotType type in Enum.GetValues(typeof(LogicSlotType)))
+            {
+                int value = (int)type;
+                if (value == 0) continue; // None
+                if (SafeCanReadSlot(logicable, type, index))
+                    read.Add(new SlotPropertyEntry(type.ToString(), value));
+                if (slotWriteable != null && SafeSlotWritable(slotWriteable, type, index, cls, isConsole))
+                    write.Add(new SlotPropertyEntry(type.ToString(), value));
+            }
+            read.Sort((a, b) => a.LogicSlotType.CompareTo(b.LogicSlotType));
+            write.Sort((a, b) => a.LogicSlotType.CompareTo(b.LogicSlotType));
+            return new SlotEntry(index, cls, key, hash, specific, interactable, swappable, locked, read, write);
+        }
+
+        /// <summary>
+        /// Whether `ss` accepts a slot logic type. The virtual CanLogicWrite is
+        /// tried first; Device.CanLogicWrite refuses on an unfinished build, and a
+        /// prefab template is never "completed", so fall back to the same
+        /// class-based rules it applies once built (Device.cs; Console adds Mode).
+        /// Hard-coding them here is deliberate: the scan has no built instance.
+        /// </summary>
+        private static bool SafeSlotWritable(ISlotWriteable l, LogicSlotType type, int slot, string cls, bool isConsole)
+        {
+            try { if (l.CanLogicWrite(type, slot)) return true; } catch { }
+            switch (type)
+            {
+                case LogicSlotType.On:
+                    return cls == "Helmet" || cls == "Tool" || cls == "Appliance";
+                case LogicSlotType.Lock:
+                    return cls == "Helmet";
+                case LogicSlotType.Open:
+                    return cls == "Helmet" || cls == "GasCanister" || cls == "LiquidCanister" || cls == "LiquidBottle";
+                case LogicSlotType.Mode:
+                    return isConsole;
+                default:
+                    return false;
+            }
+        }
+
+        private static Slot? SafeGetSlot(ILogicable l, int index)
+        {
+            try { return l.GetSlot(index); } catch { return null; }
         }
 
         // -- Defensive probing ------------------------------------------------
@@ -251,7 +329,7 @@ namespace Ic10Go.Exporter
         {
             var b = new StringBuilder();
             b.Append("{\n");
-            b.Append("  \"formatVersion\": 1,\n");
+            b.Append("  \"formatVersion\": 2,\n");
             b.Append("  \"gameVersion\": ").Append(Json(version)).Append(",\n");
             b.Append("  \"deviceCount\": ").Append(devices.Count).Append(",\n");
             b.Append("  \"devices\": [\n");
@@ -263,6 +341,7 @@ namespace Ic10Go.Exporter
                 b.Append("      \"prefabHash\": ").Append(d.Hash.ToString()).Append(",\n");
                 b.Append("      \"displayName\": ").Append(Json(d.Title)).Append(",\n");
                 b.Append("      \"slotCount\": ").Append(d.SlotCount).Append(",\n");
+                b.Append("      \"slotWriteable\": ").Append(d.SlotWriteable ? "true" : "false").Append(",\n");
                 b.Append("      \"properties\": [");
                 for (int j = 0; j < d.Properties.Count; j++)
                 {
@@ -274,13 +353,34 @@ namespace Ic10Go.Exporter
                      .Append(", \"write\": ").Append(p.Write ? "true" : "false").Append("}");
                 }
                 b.Append("],\n");
+                // Slot 0's readable set, kept at the top level for consumers of
+                // format 1 (and for IZCode, whose catalog has the same shape).
                 b.Append("      \"slotProperties\": [");
-                for (int j = 0; j < d.SlotProperties.Count; j++)
+                WriteSlotProperties(b, d.SlotProperties);
+                b.Append("],\n");
+                b.Append("      \"slots\": [");
+                for (int j = 0; j < d.Slots.Count; j++)
                 {
-                    var s = d.SlotProperties[j];
+                    var s = d.Slots[j];
                     if (j > 0) b.Append(", ");
-                    b.Append("{\"name\": ").Append(Json(s.Name))
-                     .Append(", \"logicSlotType\": ").Append(s.LogicSlotType).Append("}");
+                    b.Append("{\"index\": ").Append(s.Index)
+                     .Append(", \"class\": ").Append(Json(s.Class))
+                     .Append(", \"key\": ").Append(Json(s.Key))
+                     .Append(", \"keyHash\": ").Append(s.KeyHash)
+                     .Append(", \"interactable\": ").Append(s.Interactable ? "true" : "false")
+                     .Append(", \"swappable\": ").Append(s.Swappable ? "true" : "false")
+                     .Append(", \"locked\": ").Append(s.Locked ? "true" : "false")
+                     .Append(", \"specificPrefabHashes\": [");
+                    for (int k = 0; k < s.SpecificPrefabHashes.Length; k++)
+                    {
+                        if (k > 0) b.Append(", ");
+                        b.Append(s.SpecificPrefabHashes[k].ToString());
+                    }
+                    b.Append("], \"read\": [");
+                    WriteSlotProperties(b, s.Read);
+                    b.Append("], \"write\": [");
+                    WriteSlotProperties(b, s.Write);
+                    b.Append("]}");
                 }
                 b.Append("]\n");
                 b.Append("    }");
@@ -288,6 +388,17 @@ namespace Ic10Go.Exporter
             }
             b.Append("  ]\n}\n");
             return b.ToString();
+        }
+
+        private static void WriteSlotProperties(StringBuilder b, List<SlotPropertyEntry> list)
+        {
+            for (int j = 0; j < list.Count; j++)
+            {
+                var s = list[j];
+                if (j > 0) b.Append(", ");
+                b.Append("{\"name\": ").Append(Json(s.Name))
+                 .Append(", \"logicSlotType\": ").Append(s.LogicSlotType).Append("}");
+            }
         }
 
         private static string Json(string s)
@@ -328,13 +439,39 @@ namespace Ic10Go.Exporter
             public readonly long Hash;
             public readonly string Title;
             public readonly int SlotCount;
+            public readonly bool SlotWriteable;
             public readonly List<PropertyEntry> Properties;
             public readonly List<SlotPropertyEntry> SlotProperties;
-            public DeviceEntry(string name, long hash, string title, int slotCount,
-                               List<PropertyEntry> properties, List<SlotPropertyEntry> slotProperties)
+            public readonly List<SlotEntry> Slots;
+            public DeviceEntry(string name, long hash, string title, int slotCount, bool slotWriteable,
+                               List<PropertyEntry> properties, List<SlotPropertyEntry> slotProperties,
+                               List<SlotEntry> slots)
             {
-                Name = name; Hash = hash; Title = title; SlotCount = slotCount;
-                Properties = properties; SlotProperties = slotProperties;
+                Name = name; Hash = hash; Title = title; SlotCount = slotCount; SlotWriteable = slotWriteable;
+                Properties = properties; SlotProperties = slotProperties; Slots = slots;
+            }
+        }
+
+        private sealed class SlotEntry
+        {
+            public readonly int Index;
+            public readonly string Class;
+            public readonly string Key;
+            public readonly int KeyHash;
+            public readonly long[] SpecificPrefabHashes;
+            public readonly bool Interactable;
+            public readonly bool Swappable;
+            public readonly bool Locked;
+            public readonly List<SlotPropertyEntry> Read;
+            public readonly List<SlotPropertyEntry> Write;
+            public SlotEntry(int index, string cls, string key, int keyHash, long[] specificPrefabHashes,
+                             bool interactable, bool swappable, bool locked,
+                             List<SlotPropertyEntry> read, List<SlotPropertyEntry> write)
+            {
+                Index = index; Class = cls; Key = key; KeyHash = keyHash;
+                SpecificPrefabHashes = specificPrefabHashes;
+                Interactable = interactable; Swappable = swappable; Locked = locked;
+                Read = read; Write = write;
             }
         }
 

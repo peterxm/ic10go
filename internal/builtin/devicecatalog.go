@@ -15,6 +15,23 @@ type DeviceSlotProperty struct {
 	Type int    `json:"logicSlotType"`
 }
 
+// DeviceSlot is one slot on a prefab: what it accepts (Class /
+// SpecificPrefabHashes) and which LogicSlotTypes `ls` and `ss` accept for that
+// slot. The game answers this per slot, so a single device-level list cannot
+// describe e.g. a suit storage (helmet / suit / back slots differ).
+type DeviceSlot struct {
+	Index                int                  `json:"index"`
+	Class                string               `json:"class"`
+	Key                  string               `json:"key"`
+	KeyHash              int32                `json:"keyHash"`
+	SpecificPrefabHashes []int32              `json:"specificPrefabHashes"`
+	Interactable         bool                 `json:"interactable"`
+	Swappable            bool                 `json:"swappable"`
+	Locked               bool                 `json:"locked"`
+	Read                 []DeviceSlotProperty `json:"read"`
+	Write                []DeviceSlotProperty `json:"write"`
+}
+
 // Device is one prefab's logic surface, as scanned inside the game by
 // tools/ingame-exporter. It is what completion uses to offer a prefab's own
 // properties instead of the whole vocabulary. The JSON tags match devices.json.
@@ -23,8 +40,10 @@ type Device struct {
 	Hash           int32                `json:"prefabHash"`
 	Title          string               `json:"displayName"`
 	SlotCount      int                  `json:"slotCount"`
+	SlotWriteable  bool                 `json:"slotWriteable"`
 	Properties     []DeviceProperty     `json:"properties"`
 	SlotProperties []DeviceSlotProperty `json:"slotProperties"`
+	Slots          []DeviceSlot         `json:"slots"`
 }
 
 // DeviceCatalog maps a prefab name to its logic surface. It is filled at init
